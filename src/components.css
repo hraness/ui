@@ -2300,6 +2300,14 @@
 }
 
 @media (forced-colors: active) {
+  /* Forced-colors UAs may remap placeholder text to GrayText, which can fall
+   * below 4.5:1 against Canvas. Preserve the muted token in ordinary themes,
+   * but use the user's full text color for field hints in this mode. */
+  .hraness-field__input::placeholder {
+    color: CanvasText;
+    opacity: 1;
+  }
+
   :where(
     .hraness-button__control,
     .hraness-icon-button__control,

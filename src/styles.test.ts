@@ -131,6 +131,15 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   expect(reset).not.toContain("@theme");
 });
 
+test("forced-colors field placeholders use unfaded system text", async () => {
+  const components = await stylesheet("./components.css");
+  const forcedColors = components.slice(components.indexOf("@media (forced-colors: active)"));
+  const placeholder = declarationBlock(forcedColors, ".hraness-field__input::placeholder {");
+
+  expect(placeholder).toContain("color: CanvasText;");
+  expect(placeholder).toContain("opacity: 1;");
+});
+
 test("semantic token pairs retain accessible contrast in both themes", async () => {
   const tokens = await stylesheet("./tokens.css");
   const light = declarationBlock(tokens, ":root {");
