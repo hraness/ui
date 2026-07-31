@@ -1,8 +1,8 @@
 # hraness/ui
 
-`@hraness/ui` is a source-first set of accessible React primitives for Tailwind CSS applications. It combines React Aria Components behavior with shadcn-style CVA variants and class composition.
+`@hraness/ui` is a source-first set of accessible React primitives and shared styles for Tailwind CSS applications. It combines React Aria Components behavior, semantic data-attribute variants, class composition, portable theme tokens, and a restrained application baseline.
 
-The initial surface includes `Button`, `Badge`, compound `Card` primitives, and `TextField`. The package exports TypeScript and TSX source directly and does not ship a stylesheet.
+The package publishes built ESM runtime entry points and ships its TypeScript and TSX source for declarations, inspection, and contribution. Its CSS exports remain source files and provide the complete default theme as well as separate token, reset, component, and Tailwind integration layers.
 
 ## Install
 
@@ -11,7 +11,7 @@ Pin an immutable release from GitHub:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.1.0"
+    "@hraness/ui": "github:hraness/ui#v0.2.0"
   }
 }
 ```
@@ -24,18 +24,30 @@ bun install
 
 React 18 or 19 and React DOM 18 or 19 are peer dependencies.
 
-## Configure Tailwind CSS v4
+## Import the shared style
 
-Tailwind ignores dependencies by default. Register the package source from the stylesheet that imports Tailwind:
+Import Tailwind once, then import the complete UI stylesheet before product-specific rules:
 
 ```css
 @import "tailwindcss";
-@source "../node_modules/@hraness/ui/src";
+@import "@hraness/ui/styles.css";
+
+/* Optional product-level token overrides and styles follow. */
 ```
 
-The `@source` path is relative to that stylesheet, so adjust it if your CSS lives deeper in the application.
+`styles.css` registers the package source with Tailwind, defines the shared light and dark themes, applies the portable reset, and includes component recipes. Consumers do not need a fragile `node_modules`-relative `@source` path. The stylesheet expects Tailwind CSS v4 processing; it deliberately does not import Tailwind itself, which prevents duplicate Preflight and utility output.
 
-The components use the standard shadcn theme roles: `background`, `foreground`, `card`, `card-foreground`, `primary`, `primary-foreground`, `secondary`, `secondary-foreground`, `muted-foreground`, `accent`, `accent-foreground`, `destructive`, `border`, `input`, and `ring`. Define those roles in the application's Tailwind theme. Existing Tailwind v4 shadcn themes already provide them.
+Set `data-theme="dark"` or the `dark` class on a root element to select the dark recipe. Set `data-theme="light"` for an explicit light island. Product themes override the namespaced roles such as `--ui-background`, `--ui-primary`, and `--ui-ring` after the imports; Tailwind's familiar `bg-background`, `text-muted-foreground`, and related utilities remain available through the included bridge.
+
+For a narrower integration, import any static layer directly:
+
+```css
+@import "@hraness/ui/tokens.css";
+@import "@hraness/ui/reset.css";
+@import "@hraness/ui/components.css";
+```
+
+`tokens.css` and `reset.css` are standards-only CSS and do not require Tailwind. `tailwind.css` owns only source detection, the dark variant, and semantic Tailwind mappings.
 
 ## Use the primitives
 
@@ -54,41 +66,86 @@ import {
 
 export function ProjectCard() {
   return (
-    <Card className="max-w-md">
+    <Card className="max-w-md" tone="card">
       <CardHeader>
-        <Badge variant="secondary">Local</Badge>
+        <Badge tone="success">Local</Badge>
         <CardTitle>Local preview</CardTitle>
         <CardDescription>A Vite application running on this computer.</CardDescription>
       </CardHeader>
       <CardContent>
         <TextField
           description="Used for development notices."
-          inputProps={{ placeholder: "you@example.com" }}
           label="Email"
+          placeholder="you@example.com"
           type="email"
         />
       </CardContent>
       <CardFooter>
-        <Button onPress={() => console.log("Open preview")}>Open application</Button>
+        <Button
+          onPress={() => console.log("Open preview")}
+          variant="primary"
+        >
+          Open application
+        </Button>
       </CardFooter>
     </Card>
   );
 }
 ```
 
-Use React Aria's `onPress` event for button actions. `Button` accepts `default`, `destructive`, `outline`, `secondary`, `ghost`, and `link` variants, plus `default`, `sm`, `lg`, and `icon` sizes.
+Use React Aria's `onPress` event for actions. Action controls use the semantic `primary`, `secondary`, `quiet`, and `danger` variants and the `compact`, `default`, and `large` sizes. `IconButton` and `IconLink` require an accessible name and own their hover/focus tooltip; `aria-label` supplies the default visible copy, while controls named by `aria-labelledby` must also provide `tooltip`.
 
-## Extend classes
-
-Every primitive accepts `className`. Later utilities win when they conflict with a default:
+Connect links to a client router once at the application boundary. Internal links then navigate through the router and prefetch once on hover or focus; external, fragment-only, and protocol-relative links never prefetch:
 
 ```tsx
-<Button className="h-12 px-6" variant="outline">
+import { RouterProvider } from "@hraness/ui";
+
+<RouterProvider
+  navigate={(href) => router.push(href)}
+  prefetch={(href) => router.prefetch(href)}
+>
+  <App />
+</RouterProvider>
+```
+
+## Component coverage
+
+The public barrel includes:
+
+- Actions: `Button`, `IconButton`, `IconLink`, `ToggleButton`, `Link`, and `LinkButton`.
+- Forms: `Form`, text and text-area fields, search and number fields, checkbox and radio groups, switches, native and React Aria selects, and file fields.
+- Collections: tabs, disclosures and accordions, toggle groups, segmented controls, list boxes, and separators.
+- Overlays: menus, dialogs, popovers, tooltips, and an isolated toast provider and queue.
+- Feedback and data: badges, status dots, alerts, spinners, skeletons, progress, meters, sliders, avatars, and data tables.
+- Content and layout: cards, pressable and themed surfaces, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, skip links, viewport frames, and wrapping rows.
+
+Interactive primitives preserve React Aria state through `data-hovered`, `data-pressed`, `data-selected`, `data-invalid`, `data-focus-visible`, and related attributes. The shared CSS includes pointer-coarse target sizing, reduced-motion fallbacks, forced-color support, and visible focus treatment.
+
+## Customize safely
+
+Override semantic roles after the imports to reskin the whole system without depending on component internals:
+
+```css
+:root {
+  --ui-primary: oklch(0.52 0.16 250);
+  --ui-ring: oklch(0.62 0.14 250);
+  --ui-radius: 1rem;
+}
+```
+
+Every primitive accepts `className`. Actions also expose `controlClassName` when the nested semantic control needs a focused override:
+
+```tsx
+<Button className="max-w-full" controlClassName="rounded-xl" variant="quiet">
   Open application
 </Button>
 ```
 
-The package also exports `cn`, `buttonVariants`, and `badgeVariants` for component composition.
+The package exports `cn` for consumer-side class composition. Treat documented component classes and `data-slot` values as stable styling hooks; prefer token overrides for system-wide changes.
+
+## Migrating from 0.1
+
+Version 0.2 replaces recipe helpers with semantic, styled primitives and is intentionally breaking. Rename action variants from `default`, `destructive`, `outline`, `ghost`, and `link` to the closest role among `primary`, `danger`, `secondary`, and `quiet`; replace `sm`, `lg`, and `icon` sizes with `compact`, `large`, and `IconButton`/`IconLink`; and replace `TextField isLabelHidden` with `showLabel={false}`. `buttonVariants` and `badgeVariants` are no longer exported. Conventional `ref` values continue to target the semantic button and field root.
 
 ## Development and contributions
 

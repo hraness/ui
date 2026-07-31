@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   Badge,
   Button,
-  buttonVariants,
   Card,
   CardContent,
   CardDescription,
@@ -12,16 +11,7 @@ import {
   CardHeader,
   CardTitle,
   TextField,
-} from "./index";
-
-test("button variants expose complete, composable Tailwind recipes", () => {
-  const classes = buttonVariants({ size: "icon", variant: "outline" });
-
-  expect(classes).toContain("border-input");
-  expect(classes).toContain("data-[hovered]:bg-accent");
-  expect(classes).toContain("data-[focus-visible]:ring-[3px]");
-  expect(classes).toContain("size-9");
-});
+} from "./index.js";
 
 test("Button keeps native and React Aria disabled semantics", () => {
   const html = renderToStaticMarkup(
@@ -29,7 +19,7 @@ test("Button keeps native and React Aria disabled semantics", () => {
       aria-label="Delete project"
       className="delete-project"
       isDisabled
-      variant="destructive"
+      variant="danger"
     >
       Delete project
     </Button>,
@@ -39,7 +29,8 @@ test("Button keeps native and React Aria disabled semantics", () => {
   expect(html).toContain('aria-label="Delete project"');
   expect(html).toContain('disabled=""');
   expect(html).toContain('data-disabled="true"');
-  expect(html).toContain("bg-destructive");
+  expect(html).toContain('data-variant="danger"');
+  expect(html).toContain("hraness-button__control");
   expect(html).toContain("delete-project");
 });
 
@@ -51,7 +42,7 @@ test("Badge and Card expose predictable composition slots", () => {
         <CardDescription>Listening on port 3000.</CardDescription>
       </CardHeader>
       <CardContent>
-        <Badge variant="secondary">Ready</Badge>
+        <Badge tone="success">Ready</Badge>
       </CardContent>
       <CardFooter>Open application</CardFooter>
     </Card>,
@@ -63,7 +54,7 @@ test("Badge and Card expose predictable composition slots", () => {
   expect(html).toContain('data-slot="card-content"');
   expect(html).toContain('data-slot="card-footer"');
   expect(html).toContain('data-slot="badge"');
-  expect(html).toContain("bg-secondary");
+  expect(html).toContain('data-tone="success"');
   expect(html).toContain("max-w-md");
 });
 
@@ -74,10 +65,10 @@ test("TextField connects its label, description, and validation error", () => {
       errorMessage="Enter a valid email address."
       inputProps={{
         autoComplete: "email",
-        placeholder: "you@example.com",
       }}
       isInvalid
       label="Email"
+      placeholder="you@example.com"
       type="email"
     />,
   );

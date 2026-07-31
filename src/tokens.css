@@ -1,0 +1,189 @@
+:root {
+  color-scheme: light;
+
+  /* Public semantic colors are namespaced so the stylesheet can coexist with
+   * application and legacy design-system variables without changing meaning. */
+  --ui-background: oklch(0.985 0.004 220);
+  --ui-foreground: oklch(0.205 0.018 230);
+  --ui-card: oklch(0.998 0.002 220);
+  --ui-card-foreground: var(--ui-foreground);
+  --ui-popover: oklch(0.998 0.002 220);
+  --ui-popover-foreground: var(--ui-foreground);
+  --ui-primary: oklch(0.405 0.09 215);
+  --ui-primary-foreground: oklch(0.985 0.004 220);
+  --ui-secondary: oklch(0.935 0.018 215);
+  --ui-secondary-foreground: oklch(0.285 0.04 222);
+  --ui-muted: oklch(0.952 0.01 220);
+  --ui-muted-foreground: oklch(0.48 0.028 225);
+  --ui-accent: oklch(0.915 0.03 205);
+  --ui-accent-foreground: oklch(0.255 0.045 220);
+  --ui-destructive: oklch(0.57 0.205 27);
+  --ui-destructive-foreground: oklch(0.985 0.004 220);
+  --ui-border: oklch(0.855 0.02 220);
+  --ui-input: oklch(0.64 0.025 220);
+  --ui-ring: oklch(0.545 0.115 215);
+  --ui-success: oklch(0.49 0.125 155);
+  --ui-success-foreground: oklch(0.985 0.004 220);
+  --ui-success-soft: oklch(0.93 0.035 155);
+  --ui-warning: oklch(0.525 0.125 78);
+  --ui-warning-foreground: oklch(0.19 0.025 78);
+  --ui-warning-soft: oklch(0.94 0.045 88);
+  --ui-info: oklch(0.49 0.12 240);
+  --ui-info-foreground: oklch(0.985 0.004 220);
+  --ui-info-soft: oklch(0.93 0.035 240);
+  --ui-chart-1: oklch(0.57 0.15 35);
+  --ui-chart-2: oklch(0.53 0.105 170);
+  --ui-chart-3: oklch(0.49 0.1 235);
+  --ui-chart-4: oklch(0.65 0.13 90);
+  --ui-chart-5: oklch(0.58 0.14 315);
+
+  --ui-font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ui-font-mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  --ui-radius: 0.75rem;
+
+  /* Portable scales are intentionally unprefixed so consumer design systems
+   * can share them in both Tailwind and standards-only CSS. */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --layout-edge-inset: 1.5rem;
+  --layout-chrome-inset: 0.5rem;
+  --interactive-target-compact: 2.5rem;
+  --interactive-target-min: 3rem;
+  --control-height: 3.25rem;
+  --control-height-primary: 3.5rem;
+  --control-height-transport: 4rem;
+  --text-caption: 0.75rem;
+  --text-label: 0.875rem;
+  --text-body: 1rem;
+  --text-control: 1rem;
+  --text-control-glyph: 1.25rem;
+  --text-heading: 1.5rem;
+  --text-title: 2rem;
+  --text-display: 3.5rem;
+  --font-weight-regular: 450;
+  --font-weight-medium: 550;
+  --font-weight-bold: 700;
+  --radius-sharp: 0;
+  --radius-sm: max(0rem, calc(var(--ui-radius) - 0.5rem));
+  --radius-md: max(0rem, calc(var(--ui-radius) - 0.25rem));
+  --radius-lg: var(--ui-radius);
+  --radius-round: 999px;
+  --control-radius: 9999px;
+  --motion-duration-instant: 0ms;
+  --motion-duration-fast: 120ms;
+  --motion-duration-standard: 180ms;
+  --motion-duration-slow: 280ms;
+  --motion-distance-rail-enter: 14px;
+  --motion-distance-rail-exit: 10px;
+  --motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-easing-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --elevation-none: none;
+  --elevation-low: 0 1px 2px oklch(0 0 0 / 0.08);
+  --elevation-raised: 0 8px 24px -12px oklch(0 0 0 / 0.22);
+  --elevation-overlay: 0 18px 48px -18px oklch(0 0 0 / 0.32);
+  --z-chrome: 50;
+  --z-modal: 2000;
+  --z-tooltip: 3000;
+  --z-skip-link: 4000;
+  --breakpoint-compact: 30rem;
+  --breakpoint-medium: 48rem;
+  --breakpoint-wide: 75rem;
+  --breakpoint-canvas: 90rem;
+}
+
+:root[data-theme="dark"],
+[data-theme="dark"],
+.dark {
+  color-scheme: dark;
+  --ui-background: oklch(0.15 0.014 230);
+  --ui-foreground: oklch(0.955 0.008 220);
+  --ui-card: oklch(0.19 0.016 230);
+  --ui-card-foreground: var(--ui-foreground);
+  --ui-popover: oklch(0.205 0.018 230);
+  --ui-popover-foreground: var(--ui-foreground);
+  --ui-primary: oklch(0.755 0.105 210);
+  --ui-primary-foreground: oklch(0.175 0.02 230);
+  --ui-secondary: oklch(0.255 0.022 225);
+  --ui-secondary-foreground: oklch(0.94 0.01 220);
+  --ui-muted: oklch(0.235 0.018 225);
+  --ui-muted-foreground: oklch(0.715 0.025 220);
+  --ui-accent: oklch(0.275 0.035 210);
+  --ui-accent-foreground: oklch(0.95 0.008 220);
+  --ui-destructive: oklch(0.68 0.19 25);
+  --ui-destructive-foreground: oklch(0.16 0.025 25);
+  --ui-border: oklch(0.32 0.025 225);
+  --ui-input: oklch(0.48 0.03 225);
+  --ui-ring: oklch(0.72 0.105 210);
+  --ui-success: oklch(0.7 0.12 155);
+  --ui-success-foreground: oklch(0.16 0.025 155);
+  --ui-success-soft: oklch(0.25 0.045 155);
+  --ui-warning: oklch(0.78 0.12 82);
+  --ui-warning-foreground: oklch(0.19 0.025 78);
+  --ui-warning-soft: oklch(0.27 0.045 82);
+  --ui-info: oklch(0.72 0.11 240);
+  --ui-info-foreground: oklch(0.16 0.025 240);
+  --ui-info-soft: oklch(0.25 0.04 240);
+  --ui-chart-1: oklch(0.72 0.14 35);
+  --ui-chart-2: oklch(0.7 0.11 170);
+  --ui-chart-3: oklch(0.7 0.11 235);
+  --ui-chart-4: oklch(0.77 0.12 90);
+  --ui-chart-5: oklch(0.72 0.13 315);
+}
+
+/* Explicit light islands win even when an ancestor carries the legacy dark
+ * class. Keep this recipe after the dark recipe. */
+:root[data-theme="light"],
+[data-theme="light"] {
+  color-scheme: light;
+  --ui-background: oklch(0.985 0.004 220);
+  --ui-foreground: oklch(0.205 0.018 230);
+  --ui-card: oklch(0.998 0.002 220);
+  --ui-card-foreground: var(--ui-foreground);
+  --ui-popover: oklch(0.998 0.002 220);
+  --ui-popover-foreground: var(--ui-foreground);
+  --ui-primary: oklch(0.405 0.09 215);
+  --ui-primary-foreground: oklch(0.985 0.004 220);
+  --ui-secondary: oklch(0.935 0.018 215);
+  --ui-secondary-foreground: oklch(0.285 0.04 222);
+  --ui-muted: oklch(0.952 0.01 220);
+  --ui-muted-foreground: oklch(0.48 0.028 225);
+  --ui-accent: oklch(0.915 0.03 205);
+  --ui-accent-foreground: oklch(0.255 0.045 220);
+  --ui-destructive: oklch(0.57 0.205 27);
+  --ui-destructive-foreground: oklch(0.985 0.004 220);
+  --ui-border: oklch(0.855 0.02 220);
+  --ui-input: oklch(0.64 0.025 220);
+  --ui-ring: oklch(0.545 0.115 215);
+  --ui-success: oklch(0.49 0.125 155);
+  --ui-success-foreground: oklch(0.985 0.004 220);
+  --ui-success-soft: oklch(0.93 0.035 155);
+  --ui-warning: oklch(0.525 0.125 78);
+  --ui-warning-foreground: oklch(0.19 0.025 78);
+  --ui-warning-soft: oklch(0.94 0.045 88);
+  --ui-info: oklch(0.49 0.12 240);
+  --ui-info-foreground: oklch(0.985 0.004 220);
+  --ui-info-soft: oklch(0.93 0.035 240);
+  --ui-chart-1: oklch(0.57 0.15 35);
+  --ui-chart-2: oklch(0.53 0.105 170);
+  --ui-chart-3: oklch(0.49 0.1 235);
+  --ui-chart-4: oklch(0.65 0.13 90);
+  --ui-chart-5: oklch(0.58 0.14 315);
+}
+
+@media (pointer: coarse) {
+  :root {
+    --interactive-target-compact: max(2.75rem, var(--interactive-target-min));
+  }
+}
+
+:root[data-verification-pointer="coarse"] {
+  --interactive-target-compact: max(2.75rem, var(--interactive-target-min));
+}

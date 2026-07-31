@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { cn } from "./utils";
+import { cn } from "./utils.js";
 
 test("combines conditional class inputs", () => {
   expect(cn("inline-flex", false, null, ["items-center", undefined], {

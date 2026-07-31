@@ -1,0 +1,42 @@
+@source "./";
+
+@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *):not(:where([data-theme="light"], [data-theme="light"] *)));
+
+@theme inline {
+  --color-background: var(--ui-background);
+  --color-foreground: var(--ui-foreground);
+  --color-card: var(--ui-card);
+  --color-card-foreground: var(--ui-card-foreground);
+  --color-popover: var(--ui-popover);
+  --color-popover-foreground: var(--ui-popover-foreground);
+  --color-primary: var(--ui-primary);
+  --color-primary-foreground: var(--ui-primary-foreground);
+  --color-secondary: var(--ui-secondary);
+  --color-secondary-foreground: var(--ui-secondary-foreground);
+  --color-muted: var(--ui-muted);
+  --color-muted-foreground: var(--ui-muted-foreground);
+  --color-accent: var(--ui-accent);
+  --color-accent-foreground: var(--ui-accent-foreground);
+  --color-destructive: var(--ui-destructive);
+  --color-destructive-foreground: var(--ui-destructive-foreground);
+  --color-border: var(--ui-border);
+  --color-input: var(--ui-input);
+  --color-ring: var(--ui-ring);
+  --color-success: var(--ui-success);
+  --color-success-foreground: var(--ui-success-foreground);
+  --color-warning: var(--ui-warning);
+  --color-warning-foreground: var(--ui-warning-foreground);
+  --color-info: var(--ui-info);
+  --color-info-foreground: var(--ui-info-foreground);
+  --color-chart-1: var(--ui-chart-1);
+  --color-chart-2: var(--ui-chart-2);
+  --color-chart-3: var(--ui-chart-3);
+  --color-chart-4: var(--ui-chart-4);
+  --color-chart-5: var(--ui-chart-5);
+  --font-sans: var(--ui-font-sans);
+  --font-mono: var(--ui-font-mono);
+  --radius-sm: max(0rem, calc(var(--ui-radius) - 0.5rem));
+  --radius-md: max(0rem, calc(var(--ui-radius) - 0.25rem));
+  --radius-lg: var(--ui-radius);
+  --radius-xl: calc(var(--ui-radius) + 0.25rem);
+}

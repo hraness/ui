@@ -1,39 +1,57 @@
-import { cva, type VariantProps } from "class-variance-authority";
-import { forwardRef, type HTMLAttributes } from "react";
+import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
 
 import { cn } from "./lib/utils.js";
 
-export const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-medium transition-[color,box-shadow] [&>svg]:pointer-events-none [&>svg]:size-3",
-  {
-    variants: {
-      variant: {
-        default: "border-transparent bg-primary text-primary-foreground",
-        secondary:
-          "border-transparent bg-secondary text-secondary-foreground",
-        destructive:
-          "border-transparent bg-destructive text-white",
-        outline: "border-border text-foreground",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-    },
-  },
-);
+export type StatusTone = "danger" | "info" | "neutral" | "success" | "warning";
 
-export type BadgeProps = HTMLAttributes<HTMLSpanElement> &
-  VariantProps<typeof badgeVariants>;
+export type StatusDotProps = Omit<HTMLAttributes<HTMLSpanElement>, "children"> & {
+  readonly tone?: StatusTone;
+};
 
-/** A short, non-interactive label for a status, count, or category. */
-export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(
-  ({ className, variant, ...props }, ref) => (
+/** A decorative status marker. Pair it with visible text rather than color alone. */
+export const StatusDot = forwardRef<HTMLSpanElement, StatusDotProps>(
+  ({ className, tone = "neutral", ...props }, ref) => (
     <span
       {...props}
-      className={cn(badgeVariants({ variant }), className)}
-      data-slot="badge"
+      aria-hidden="true"
+      className={cn("hraness-status-dot", className)}
+      data-slot="status-dot"
+      data-tone={tone}
       ref={ref}
     />
+  ),
+);
+
+StatusDot.displayName = "StatusDot";
+
+export type BadgeProps = Omit<
+  HTMLAttributes<HTMLSpanElement>,
+  "aria-live" | "children" | "role"
+> & {
+  readonly children: ReactNode;
+  /** Opt in only when the badge itself is a meaningful status update. */
+  readonly isLive?: boolean;
+  readonly tone?: StatusTone;
+};
+
+function badgeVariants({ tone = "neutral" }: { readonly tone?: StatusTone } = {}) {
+  return cn("hraness-badge", `hraness-badge--${tone}`);
+}
+
+/** A short status, count, or category label. It is not live by default. */
+export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(
+  ({ children, className, isLive = false, tone = "neutral", ...props }, ref) => (
+    <span
+      {...props}
+      aria-live={isLive ? "polite" : undefined}
+      className={cn(badgeVariants({ tone }), className)}
+      data-slot="badge"
+      data-tone={tone}
+      ref={ref}
+      role={isLive ? "status" : undefined}
+    >
+      {children}
+    </span>
   ),
 );
 
