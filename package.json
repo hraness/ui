@@ -4,7 +4,9 @@
   "description": "Accessible React Aria components with shadcn-style Tailwind variants.",
   "license": "MIT",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/index.ts"
+  ],
   "packageManager": "bun@1.3.14",
   "repository": {
     "type": "git",
