@@ -98,6 +98,7 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
     "--ui-muted-foreground:",
     "--ui-destructive:",
     "--ui-ring:",
+    "--ui-font-heading:",
   ]) expect(tokens).toContain(role);
 
   for (const contract of [
@@ -113,6 +114,9 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   ]) expect(components).toContain(contract);
 
   expect(reset.trimStart().startsWith("@layer base {")).toBe(true);
+  expect(declarationBlock(reset, ":where(h1, h2, h3, h4, h5, h6) {")).toContain(
+    "font-family: var(--ui-font-heading);",
+  );
   expect(components.trimStart().startsWith("@layer components {")).toBe(true);
   expect(components).not.toContain('[data-slot="');
   expect(
@@ -127,6 +131,7 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   expect(tailwind).toContain(
     ':not(:where([data-theme="light"], [data-theme="light"] *))',
   );
+  expect(tailwind).toContain("--font-heading: var(--ui-font-heading);");
   expect(tokens).not.toContain("@theme");
   expect(reset).not.toContain("@theme");
 });

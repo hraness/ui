@@ -129,6 +129,7 @@ Override semantic roles after the imports to reskin the whole system without dep
 :root {
   --ui-primary: oklch(0.52 0.16 250);
   --ui-ring: oklch(0.62 0.14 250);
+  --ui-font-heading: "Your Heading Face", ui-monospace, monospace;
   --ui-radius: 1rem;
 }
 ```

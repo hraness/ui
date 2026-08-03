@@ -34,6 +34,7 @@
   --color-chart-4: var(--ui-chart-4);
   --color-chart-5: var(--ui-chart-5);
   --font-sans: var(--ui-font-sans);
+  --font-heading: var(--ui-font-heading);
   --font-mono: var(--ui-font-mono);
   --radius-sm: max(0rem, calc(var(--ui-radius) - 0.5rem));
   --radius-md: max(0rem, calc(var(--ui-radius) - 0.25rem));
