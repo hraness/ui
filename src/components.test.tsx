@@ -10,6 +10,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  Tag,
   TextField,
 } from "./index.js";
 
@@ -56,6 +57,40 @@ test("Badge and Card expose predictable composition slots", () => {
   expect(html).toContain('data-slot="badge"');
   expect(html).toContain('data-tone="success"');
   expect(html).toContain("max-w-md");
+});
+
+test("Tag exposes stable variants and an optional decorative icon", () => {
+  const html = renderToStaticMarkup(
+    <>
+      <Tag
+        accentColor="#D97706"
+        className="project-tag"
+        icon="🧭"
+        style={{ marginInlineStart: "1rem" }}
+        variant="outline"
+      >
+        linked project
+      </Tag>
+      <Tag>project</Tag>
+      <Tag icon={null} variant="muted">reading</Tag>
+    </>,
+  );
+
+  expect(html).toContain('class="hraness-tag project-tag"');
+  expect(html).toContain('data-slot="tag"');
+  expect(html).toContain('data-variant="outline"');
+  expect(html).toContain('--hraness-tag-accent:#D97706');
+  expect(html).toContain('margin-inline-start:1rem');
+  expect(html).toContain(
+    '<span aria-hidden="true" class="hraness-tag__icon" data-slot="tag-icon">🧭</span>',
+  );
+  expect(html).toContain(
+    '<span class="hraness-tag__label" data-slot="tag-label">linked project</span>',
+  );
+  expect(html.match(/data-slot="tag-icon"/gu)).toHaveLength(1);
+  expect(html.match(/data-variant="default"/gu)).toHaveLength(1);
+  expect(html.match(/data-variant="muted"/gu)).toHaveLength(1);
+  expect(html).not.toContain('role="status"');
 });
 
 test("TextField connects its label, description, and validation error", () => {

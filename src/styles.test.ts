@@ -107,6 +107,7 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
     ".hraness-select-field__popover",
     ".hraness-dialog-overlay",
     ".hraness-toast-region",
+    ".hraness-tag",
     '[data-tone="success"]',
     "@media (pointer: coarse)",
     "@media (prefers-reduced-motion: reduce)",
@@ -143,6 +144,31 @@ test("forced-colors field placeholders use unfaded system text", async () => {
 
   expect(placeholder).toContain("color: CanvasText;");
   expect(placeholder).toContain("opacity: 1;");
+});
+
+test("tags keep one border geometry across their visual variants", async () => {
+  const components = await stylesheet("./components.css");
+  const base = declarationBlock(components, ":where(.hraness-badge, .hraness-tag) {");
+  const defaultTag = declarationBlock(components, ".hraness-tag {");
+  const outlineTag = declarationBlock(
+    components,
+    '.hraness-tag[data-variant="outline"] {',
+  );
+  const mutedTag = declarationBlock(
+    components,
+    '.hraness-tag[data-variant="muted"] {',
+  );
+  const forcedColors = components.slice(components.indexOf("@media (forced-colors: active)"));
+
+  expect(base).toContain("border: 1px solid var(--ui-border);");
+  expect(base).toContain("border-radius: var(--radius-round);");
+  expect(defaultTag).toContain("border-color: transparent;");
+  expect(outlineTag).toContain("border-color: var(--hraness-tag-accent);");
+  expect(outlineTag).toContain("background: transparent;");
+  expect(mutedTag).toContain("background: var(--ui-muted);");
+  expect(mutedTag).toContain("color: var(--ui-muted-foreground);");
+  expect(forcedColors).toContain(".hraness-tag,");
+  expect(forcedColors).toContain("border-color: CanvasText;");
 });
 
 test("semantic token pairs retain accessible contrast in both themes", async () => {

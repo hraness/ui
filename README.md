@@ -61,6 +61,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  Tag,
   TextField,
 } from "@hraness/ui";
 
@@ -69,6 +70,9 @@ export function ProjectCard() {
     <Card className="max-w-md" tone="card">
       <CardHeader>
         <Badge tone="success">Local</Badge>
+        <Tag accentColor="#D97706" icon="🧭" variant="outline">
+          agent tools
+        </Tag>
         <CardTitle>Local preview</CardTitle>
         <CardDescription>A Vite application running on this computer.</CardDescription>
       </CardHeader>
@@ -95,6 +99,8 @@ export function ProjectCard() {
 
 Use React Aria's `onPress` event for actions. Action controls use the semantic `primary`, `secondary`, `quiet`, and `danger` variants and the `compact`, `default`, and `large` sizes. `IconButton` and `IconLink` require an accessible name and own their hover/focus tooltip; `aria-label` supplies the default visible copy, while controls named by `aria-labelledby` must also provide `tooltip`.
 
+`Tag` is a noninteractive compact label. Its optional `icon` is decorative because the visible label carries the meaning. Use `default` for ordinary labels, `muted` for subdued metadata, and `outline` with an authored `accentColor` for categorical identity. Keep navigation on a native link that contains the tag instead of making the tag itself interactive.
+
 Connect links to a client router once at the application boundary. Internal links then navigate through the router and prefetch once on hover or focus; external, fragment-only, and protocol-relative links never prefetch:
 
 ```tsx
@@ -116,7 +122,7 @@ The public barrel includes:
 - Forms: `Form`, text and text-area fields, search and number fields, checkbox and radio groups, switches, native and React Aria selects, and file fields.
 - Collections: tabs, disclosures and accordions, toggle groups, segmented controls, list boxes, and separators.
 - Overlays: menus, dialogs, popovers, tooltips, and an isolated toast provider and queue.
-- Feedback and data: badges, status dots, alerts, spinners, skeletons, progress, meters, sliders, avatars, and data tables.
+- Feedback and data: tags, badges, status dots, alerts, spinners, skeletons, progress, meters, sliders, avatars, and data tables.
 - Content and layout: cards, pressable and themed surfaces, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, skip links, viewport frames, and wrapping rows.
 
 Interactive primitives preserve React Aria state through `data-hovered`, `data-pressed`, `data-selected`, `data-invalid`, `data-focus-visible`, and related attributes. The shared CSS includes pointer-coarse target sizing, reduced-motion fallbacks, forced-color support, and visible focus treatment.

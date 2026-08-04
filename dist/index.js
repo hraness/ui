@@ -643,8 +643,45 @@ function IconLink(allProps) {
   }, undefined, false, undefined, this);
 }
 // src/badge.tsx
-import { forwardRef as forwardRef2 } from "react";
+import {
+  forwardRef as forwardRef2
+} from "react";
 import { jsxDEV as jsxDEV4 } from "react/jsx-dev-runtime";
+var Tag = forwardRef2((allProps, ref) => {
+  const {
+    accentColor,
+    children,
+    className,
+    icon,
+    style,
+    variant = "default",
+    ...props
+  } = allProps;
+  const hasIcon = icon !== undefined && icon !== null && icon !== false;
+  const resolvedStyle = accentColor === undefined ? style : { ...style, "--hraness-tag-accent": accentColor };
+  return /* @__PURE__ */ jsxDEV4("span", {
+    ...props,
+    className: cn("hraness-tag", className),
+    "data-slot": "tag",
+    "data-variant": variant,
+    ref,
+    style: resolvedStyle,
+    children: [
+      hasIcon ? /* @__PURE__ */ jsxDEV4("span", {
+        "aria-hidden": "true",
+        className: "hraness-tag__icon",
+        "data-slot": "tag-icon",
+        children: icon
+      }, undefined, false, undefined, this) : null,
+      /* @__PURE__ */ jsxDEV4("span", {
+        className: "hraness-tag__label",
+        "data-slot": "tag-label",
+        children
+      }, undefined, false, undefined, this)
+    ]
+  }, undefined, true, undefined, this);
+});
+Tag.displayName = "Tag";
 var StatusDot = forwardRef2(({ className, tone = "neutral", ...props }, ref) => /* @__PURE__ */ jsxDEV4("span", {
   ...props,
   "aria-hidden": "true",
@@ -2843,6 +2880,7 @@ export {
   ThemedSurface,
   TextField,
   TextAreaField,
+  Tag,
   Tabs,
   SwitchField,
   StatusDot,
