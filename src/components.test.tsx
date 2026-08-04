@@ -71,6 +71,7 @@ test("Tag exposes stable variants and an optional decorative icon", () => {
       >
         linked project
       </Tag>
+      <Tag variant="outline">linked project without an accent</Tag>
       <Tag>project</Tag>
       <Tag icon={null} variant="muted">reading</Tag>
     </>,
@@ -88,6 +89,8 @@ test("Tag exposes stable variants and an optional decorative icon", () => {
     '<span class="hraness-tag__label" data-slot="tag-label">linked project</span>',
   );
   expect(html.match(/data-slot="tag-icon"/gu)).toHaveLength(1);
+  expect(html.match(/data-variant="outline"/gu)).toHaveLength(2);
+  expect(html).toContain("linked project without an accent");
   expect(html.match(/data-variant="default"/gu)).toHaveLength(1);
   expect(html.match(/data-variant="muted"/gu)).toHaveLength(1);
   expect(html).not.toContain('role="status"');

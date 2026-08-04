@@ -19,8 +19,8 @@ type TagBaseProps = Omit<HTMLAttributes<HTMLSpanElement>, "children"> & {
 
 export type TagProps = TagBaseProps & (
   | Readonly<{
-    /** The authored color used for the tag boundary. */
-    accentColor: NonNullable<CSSProperties["borderColor"]>;
+    /** Optional authored color; outline tags otherwise use the muted border role. */
+    accentColor?: NonNullable<CSSProperties["borderColor"]>;
     variant: "outline";
   }>
   | Readonly<{

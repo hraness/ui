@@ -163,7 +163,9 @@ test("tags keep one border geometry across their visual variants", async () => {
   expect(base).toContain("border: 1px solid var(--ui-border);");
   expect(base).toContain("border-radius: var(--radius-round);");
   expect(defaultTag).toContain("border-color: transparent;");
-  expect(outlineTag).toContain("border-color: var(--hraness-tag-accent);");
+  expect(outlineTag).toContain(
+    "border-color: var(--hraness-tag-accent, var(--ui-border));",
+  );
   expect(outlineTag).toContain("background: transparent;");
   expect(mutedTag).toContain("background: var(--ui-muted);");
   expect(mutedTag).toContain("color: var(--ui-muted-foreground);");

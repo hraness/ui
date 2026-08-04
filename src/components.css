@@ -1222,7 +1222,7 @@
   }
 
   .hraness-tag[data-variant="outline"] {
-    border-color: var(--hraness-tag-accent);
+    border-color: var(--hraness-tag-accent, var(--ui-border));
     background: transparent;
     color: var(--ui-foreground);
   }
