@@ -2277,9 +2277,390 @@ function Slider({
     ]
   }, undefined, true, undefined, this);
 }
+// src/knob.tsx
+import {
+  forwardRef as forwardRef9,
+  useEffect,
+  useRef as useRef2
+} from "react";
+import { useMove } from "react-aria";
+import {
+  Label as Label4,
+  Slider as AriaSlider2,
+  SliderOutput as SliderOutput2,
+  SliderThumb as SliderThumb2,
+  SliderTrack as SliderTrack2
+} from "react-aria-components";
+
+// src/knob-model.ts
+var KNOB_DRAG_DISTANCE = 160;
+function resolveKnobTouchIntent(deltaX, deltaY, threshold = 4) {
+  if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < threshold) {
+    return "pending";
+  }
+  return Math.abs(deltaX) > Math.abs(deltaY) ? "scroll" : "adjust";
+}
+function constrainKnobGestureMove(move, pointerType, touchPan) {
+  return pointerType === "touch" && touchPan === "horizontal" ? { ...move, deltaX: 0 } : move;
+}
+var FINE_MOVEMENT_SCALE = 0.1;
+function createKnobFrameQueue(schedule, cancelFrame) {
+  let frame = null;
+  let pendingValue = null;
+  let pendingApply = null;
+  const applyPending = (applyOverride) => {
+    const value = pendingValue;
+    const apply = applyOverride ?? pendingApply;
+    frame = null;
+    pendingValue = null;
+    pendingApply = null;
+    if (value !== null && apply !== null)
+      apply(value);
+  };
+  return {
+    cancel() {
+      if (frame !== null)
+        cancelFrame(frame);
+      frame = null;
+      pendingValue = null;
+      pendingApply = null;
+    },
+    enqueue(value, apply) {
+      pendingValue = value;
+      pendingApply = apply;
+      if (frame === null)
+        frame = schedule(() => applyPending());
+    },
+    flush(apply) {
+      if (frame !== null)
+        cancelFrame(frame);
+      applyPending(apply);
+    }
+  };
+}
+function roundToStepPrecision(value, step) {
+  const stepText = step.toString().toLowerCase();
+  const exponentIndex = stepText.indexOf("e-");
+  let precision = 0;
+  if (exponentIndex > 0) {
+    precision = Math.abs(Math.floor(Math.log10(Math.abs(step)))) + exponentIndex;
+  } else {
+    const decimalIndex = stepText.indexOf(".");
+    if (decimalIndex >= 0)
+      precision = stepText.length - decimalIndex;
+  }
+  if (precision === 0)
+    return value;
+  const scale = 10 ** precision;
+  return Math.round(value * scale) / scale;
+}
+function clampKnobValue(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+function quantizeKnobValue(value, min, max, step) {
+  const maximumStepIndex = Math.floor((max - min) / step + 0.0000000001);
+  const requestedStepIndex = Math.round((value - min) / step);
+  const stepIndex = Math.min(maximumStepIndex, Math.max(0, requestedStepIndex));
+  if (stepIndex === 0)
+    return min;
+  return roundToStepPrecision(min + stepIndex * step, step);
+}
+function knobMovementDelta(deltaX, deltaY) {
+  return Math.abs(deltaX) >= Math.abs(deltaY) ? deltaX : -deltaY;
+}
+function beginKnobGesture(value) {
+  return { active: true, originValue: value, pixelOffset: 0 };
+}
+function cancelKnobGesture(gesture) {
+  return {
+    didCancel: gesture.active,
+    gesture: gesture.active ? { ...gesture, active: false } : gesture,
+    value: gesture.originValue
+  };
+}
+function moveKnobGesture(gesture, move, min, max, step) {
+  if (!gesture.active) {
+    return { gesture, value: quantizeKnobValue(gesture.originValue, min, max, step) };
+  }
+  const movementScale = move.isFine ? FINE_MOVEMENT_SCALE : 1;
+  const pixelOffset = gesture.pixelOffset + knobMovementDelta(move.deltaX, move.deltaY) * movementScale;
+  const rawValue = gesture.originValue + pixelOffset / KNOB_DRAG_DISTANCE * (max - min);
+  return {
+    gesture: { ...gesture, pixelOffset },
+    value: quantizeKnobValue(rawValue, min, max, step)
+  };
+}
+function endKnobGesture(gesture) {
+  if (!gesture.active)
+    return { didEnd: false, gesture };
+  return {
+    didEnd: true,
+    gesture: { ...gesture, active: false }
+  };
+}
+function knobValuePercentage(value, min, max) {
+  return clampKnobValue((value - min) / (max - min), 0, 1);
+}
+
+// src/knob.tsx
+import { jsxDEV as jsxDEV14, Fragment as Fragment5 } from "react/jsx-dev-runtime";
+"use client";
+var EMPTY_GESTURE = {
+  active: false,
+  originValue: 0,
+  pixelOffset: 0
+};
+function validateKnobProps(label, min, max, step, value) {
+  if (label === undefined || label === null || typeof label === "boolean" || typeof label === "string" && label.trim().length === 0) {
+    throw new Error("Knob label must provide an accessible name.");
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+    throw new Error("Knob min and max must be finite, with max greater than min.");
+  }
+  if (!Number.isFinite(step) || step <= 0) {
+    throw new Error("Knob step must be a finite number greater than zero.");
+  }
+  if (!Number.isFinite(value)) {
+    throw new Error("Knob value must be finite.");
+  }
+}
+function KnobDial({ percentage }) {
+  const valueArc = percentage * 75;
+  const indicatorAngle = 135 + percentage * 270;
+  return /* @__PURE__ */ jsxDEV14("svg", {
+    "aria-hidden": "true",
+    className: "hraness-knob__dial",
+    "data-focus-indicator": "true",
+    "data-slot": "knob-dial",
+    focusable: "false",
+    viewBox: "0 0 48 48",
+    children: [
+      /* @__PURE__ */ jsxDEV14("circle", {
+        className: "hraness-knob__face",
+        cx: "24",
+        cy: "24",
+        r: "15"
+      }, undefined, false, undefined, this),
+      /* @__PURE__ */ jsxDEV14("circle", {
+        className: "hraness-knob__arc hraness-knob__arc--track",
+        cx: "24",
+        cy: "24",
+        pathLength: "100",
+        r: "19",
+        strokeDasharray: "75 25",
+        transform: "rotate(135 24 24)"
+      }, undefined, false, undefined, this),
+      /* @__PURE__ */ jsxDEV14("circle", {
+        className: "hraness-knob__arc hraness-knob__arc--value",
+        cx: "24",
+        cy: "24",
+        pathLength: "100",
+        r: "19",
+        strokeDasharray: `${valueArc} 100`,
+        transform: "rotate(135 24 24)"
+      }, undefined, false, undefined, this),
+      /* @__PURE__ */ jsxDEV14("line", {
+        className: "hraness-knob__indicator",
+        transform: `rotate(${indicatorAngle} 24 24)`,
+        x1: "24",
+        x2: "37",
+        y1: "24",
+        y2: "24"
+      }, undefined, false, undefined, this)
+    ]
+  }, undefined, true, undefined, this);
+}
+function KnobGestureSurface({
+  disabled,
+  inputRef,
+  max,
+  min,
+  state,
+  step,
+  touchPan
+}) {
+  const gestureRef = useRef2(EMPTY_GESTURE);
+  const canceledRef = useRef2(false);
+  const draggingStartedRef = useRef2(false);
+  const touchGestureRef = useRef2({
+    deltaX: 0,
+    deltaY: 0,
+    intent: "pending"
+  });
+  const frameQueueRef = useRef2(createKnobFrameQueue((callback) => window.requestAnimationFrame(callback), (frame) => window.cancelAnimationFrame(frame)));
+  const applyValue = (value) => {
+    if (value !== state.getThumbValue(0))
+      state.setThumbValue(0, value);
+  };
+  useEffect(() => () => frameQueueRef.current.cancel(), []);
+  const { moveProps } = useMove({
+    onMoveStart({ pointerType }) {
+      canceledRef.current = false;
+      draggingStartedRef.current = false;
+      touchGestureRef.current = {
+        deltaX: 0,
+        deltaY: 0,
+        intent: "pending"
+      };
+      frameQueueRef.current.cancel();
+      inputRef.current?.focus();
+      gestureRef.current = beginKnobGesture(state.getThumbValue(0));
+      if (!(pointerType === "touch" && touchPan === "horizontal")) {
+        draggingStartedRef.current = true;
+        state.setThumbDragging(0, true);
+      }
+    },
+    onMove({ deltaX, deltaY, pointerType, shiftKey }) {
+      let gestureMove = { deltaX, deltaY, isFine: shiftKey };
+      if (pointerType === "touch" && touchPan === "horizontal") {
+        const touchGesture = touchGestureRef.current;
+        if (touchGesture.intent === "scroll")
+          return;
+        if (touchGesture.intent === "pending") {
+          const totalX = touchGesture.deltaX + deltaX;
+          const totalY = touchGesture.deltaY + deltaY;
+          const intent = resolveKnobTouchIntent(totalX, totalY);
+          touchGestureRef.current = {
+            deltaX: totalX,
+            deltaY: totalY,
+            intent
+          };
+          if (intent === "pending" || intent === "scroll")
+            return;
+          draggingStartedRef.current = true;
+          state.setThumbDragging(0, true);
+          gestureMove = { deltaX: totalX, deltaY: totalY, isFine: shiftKey };
+        }
+      }
+      const update = moveKnobGesture(gestureRef.current, constrainKnobGestureMove(gestureMove, pointerType, touchPan), min, max, step);
+      gestureRef.current = update.gesture;
+      frameQueueRef.current.enqueue(update.value, applyValue);
+    },
+    onMoveEnd() {
+      if (!draggingStartedRef.current) {
+        canceledRef.current = false;
+        frameQueueRef.current.cancel();
+        gestureRef.current = cancelKnobGesture(gestureRef.current).gesture;
+        return;
+      }
+      draggingStartedRef.current = false;
+      if (canceledRef.current) {
+        canceledRef.current = false;
+        frameQueueRef.current.cancel();
+        const cancellation = cancelKnobGesture(gestureRef.current);
+        gestureRef.current = cancellation.gesture;
+        applyValue(cancellation.value);
+        state.setThumbDragging(0, false);
+        return;
+      }
+      frameQueueRef.current.flush(applyValue);
+      const result = endKnobGesture(gestureRef.current);
+      gestureRef.current = result.gesture;
+      if (result.didEnd)
+        state.setThumbDragging(0, false);
+    }
+  });
+  return /* @__PURE__ */ jsxDEV14("span", {
+    ...disabled ? {} : moveProps,
+    "aria-hidden": "true",
+    className: "hraness-knob__gesture",
+    "data-slot": "knob-gesture",
+    onPointerDownCapture: disabled ? undefined : () => inputRef.current?.focus(),
+    onPointerCancelCapture: disabled ? undefined : () => {
+      canceledRef.current = true;
+    }
+  }, undefined, false, undefined, this);
+}
+var Knob = forwardRef9(({
+  className,
+  controlClassName,
+  defaultValue,
+  density = "default",
+  disabled = false,
+  form,
+  inputRef: inputRefProp,
+  label,
+  max = 100,
+  min = 0,
+  name,
+  step = 1,
+  touchPan = "none",
+  value,
+  ...props
+}, ref) => {
+  const fallbackInputRef = useRef2(null);
+  const inputRef = inputRefProp ?? fallbackInputRef;
+  const suppliedValue = value ?? defaultValue;
+  validateKnobProps(label, min, max, step, suppliedValue);
+  return /* @__PURE__ */ jsxDEV14(AriaSlider2, {
+    ...props,
+    ...defaultValue === undefined ? { value } : { defaultValue },
+    className: cn("hraness-knob", className),
+    "data-density": density,
+    "data-slot": "knob",
+    "data-touch-pan": touchPan,
+    isDisabled: disabled,
+    maxValue: max,
+    minValue: min,
+    orientation: "horizontal",
+    ref,
+    step,
+    children: ({ state }) => {
+      const percentage = knobValuePercentage(state.getThumbValue(0), min, max);
+      return /* @__PURE__ */ jsxDEV14(Fragment5, {
+        children: [
+          /* @__PURE__ */ jsxDEV14(SliderTrack2, {
+            className: cn("hraness-knob__control", controlClassName),
+            "data-slot": "knob-control",
+            children: [
+              /* @__PURE__ */ jsxDEV14(SliderThumb2, {
+                className: "hraness-knob__thumb",
+                "data-slot": "knob-thumb",
+                inputRef,
+                ...form === undefined ? {} : { form },
+                ...name === undefined ? {} : { name },
+                style: {
+                  height: "100%",
+                  left: 0,
+                  position: "absolute",
+                  top: 0,
+                  touchAction: "none",
+                  transform: "none",
+                  width: "100%"
+                },
+                children: /* @__PURE__ */ jsxDEV14(KnobDial, {
+                  percentage
+                }, undefined, false, undefined, this)
+              }, undefined, false, undefined, this),
+              /* @__PURE__ */ jsxDEV14(KnobGestureSurface, {
+                disabled,
+                inputRef,
+                max,
+                min,
+                state,
+                step,
+                touchPan
+              }, undefined, false, undefined, this)
+            ]
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ jsxDEV14(Label4, {
+            className: "hraness-knob__label",
+            "data-slot": "knob-label",
+            children: label
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ jsxDEV14(SliderOutput2, {
+            className: "hraness-knob__value",
+            "data-slot": "knob-value"
+          }, undefined, false, undefined, this)
+        ]
+      }, undefined, true, undefined, this);
+    }
+  }, undefined, false, undefined, this);
+});
+Knob.displayName = "Knob";
 // src/list-box.tsx
 import {
-  forwardRef as forwardRef9
+  forwardRef as forwardRef10
 } from "react";
 import {
   Header as Header2,
@@ -2287,28 +2668,28 @@ import {
   ListBoxItem as AriaListBoxItem,
   ListBoxSection as AriaListBoxSection
 } from "react-aria-components";
-import { jsxDEV as jsxDEV14 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV15 } from "react/jsx-dev-runtime";
 "use client";
 function ListBoxInner({ className, ...props }, ref) {
-  return /* @__PURE__ */ jsxDEV14(AriaListBox, {
+  return /* @__PURE__ */ jsxDEV15(AriaListBox, {
     ...props,
     className: cn("hraness-list-box", className),
     "data-slot": "list-box",
     ref
   }, undefined, false, undefined, this);
 }
-var ForwardedListBox = forwardRef9(ListBoxInner);
+var ForwardedListBox = forwardRef10(ListBoxInner);
 ForwardedListBox.displayName = "ListBox";
 var ListBox = ForwardedListBox;
 function ListBoxItemInner({ className, ...props }, ref) {
-  return /* @__PURE__ */ jsxDEV14(AriaListBoxItem, {
+  return /* @__PURE__ */ jsxDEV15(AriaListBoxItem, {
     ...props,
     className: cn("hraness-list-box__item", className),
     "data-slot": "list-box-item",
     ref
   }, undefined, false, undefined, this);
 }
-var ForwardedListBoxItem = forwardRef9(ListBoxItemInner);
+var ForwardedListBoxItem = forwardRef10(ListBoxItemInner);
 ForwardedListBoxItem.displayName = "ListBoxItem";
 var ListBoxItem = ForwardedListBoxItem;
 function ListBoxSectionInner({
@@ -2317,13 +2698,13 @@ function ListBoxSectionInner({
   title,
   ...props
 }, ref) {
-  return /* @__PURE__ */ jsxDEV14(AriaListBoxSection, {
+  return /* @__PURE__ */ jsxDEV15(AriaListBoxSection, {
     ...props,
     className: cn("hraness-list-box__section", className),
     "data-slot": "list-box-section",
     ref,
     children: [
-      title === undefined ? null : /* @__PURE__ */ jsxDEV14(Header2, {
+      title === undefined ? null : /* @__PURE__ */ jsxDEV15(Header2, {
         className: "hraness-list-box__header",
         "data-slot": "list-box-header",
         children: title
@@ -2332,36 +2713,36 @@ function ListBoxSectionInner({
     ]
   }, undefined, true, undefined, this);
 }
-var ForwardedListBoxSection = forwardRef9(ListBoxSectionInner);
+var ForwardedListBoxSection = forwardRef10(ListBoxSectionInner);
 ForwardedListBoxSection.displayName = "ListBoxSection";
 var ListBoxSection = ForwardedListBoxSection;
 // src/navigation.tsx
 import {
-  forwardRef as forwardRef10
+  forwardRef as forwardRef11
 } from "react";
-import { jsxDEV as jsxDEV15 } from "react/jsx-dev-runtime";
-var Breadcrumbs = forwardRef10(({
+import { jsxDEV as jsxDEV16 } from "react/jsx-dev-runtime";
+var Breadcrumbs = forwardRef11(({
   "aria-label": ariaLabel = "Breadcrumbs",
   className,
   items,
   ...props
-}, ref) => /* @__PURE__ */ jsxDEV15("nav", {
+}, ref) => /* @__PURE__ */ jsxDEV16("nav", {
   ...props,
   "aria-label": ariaLabel,
   className: cn("hraness-breadcrumbs", className),
   "data-slot": "breadcrumbs",
   ref,
-  children: /* @__PURE__ */ jsxDEV15("ol", {
+  children: /* @__PURE__ */ jsxDEV16("ol", {
     "data-slot": "breadcrumbs-list",
     children: items.map((item, index) => {
       const current = index === items.length - 1;
-      return /* @__PURE__ */ jsxDEV15("li", {
+      return /* @__PURE__ */ jsxDEV16("li", {
         "data-slot": "breadcrumbs-item",
-        children: item.href === undefined || current ? /* @__PURE__ */ jsxDEV15("span", {
+        children: item.href === undefined || current ? /* @__PURE__ */ jsxDEV16("span", {
           "aria-current": current ? "page" : undefined,
           "data-slot": current ? "breadcrumbs-current" : "breadcrumbs-label",
           children: item.label
-        }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV15("a", {
+        }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV16("a", {
           "data-slot": "breadcrumbs-link",
           href: item.href,
           children: item.label
@@ -2412,7 +2793,7 @@ function paginationRange(currentPage, totalPages, siblings = 1) {
 function pageLinkProps(page, current) {
   return page === current ? { "aria-current": "page" } : {};
 }
-var Pagination = forwardRef10(({
+var Pagination = forwardRef11(({
   "aria-label": ariaLabel = "Pagination",
   className,
   currentPage,
@@ -2425,20 +2806,20 @@ var Pagination = forwardRef10(({
   const parts = paginationRange(current, total, siblings);
   const previous = current - 1;
   const next = current + 1;
-  return /* @__PURE__ */ jsxDEV15("nav", {
+  return /* @__PURE__ */ jsxDEV16("nav", {
     ...props,
     "aria-label": ariaLabel,
     className: cn("hraness-pagination", className),
     "data-slot": "pagination",
     ref,
     children: [
-      previous < 1 ? /* @__PURE__ */ jsxDEV15("span", {
+      previous < 1 ? /* @__PURE__ */ jsxDEV16("span", {
         "aria-disabled": "true",
         className: "hraness-pagination__boundary",
         "data-direction": "previous",
         "data-slot": "pagination-previous",
         children: "Previous"
-      }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV15("a", {
+      }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV16("a", {
         className: "hraness-pagination__boundary",
         "data-direction": "previous",
         "data-slot": "pagination-previous",
@@ -2446,16 +2827,16 @@ var Pagination = forwardRef10(({
         rel: "prev",
         children: "Previous"
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV15("ol", {
+      /* @__PURE__ */ jsxDEV16("ol", {
         "data-slot": "pagination-list",
-        children: parts.map((part, index) => /* @__PURE__ */ jsxDEV15("li", {
+        children: parts.map((part, index) => /* @__PURE__ */ jsxDEV16("li", {
           "data-slot": "pagination-item",
-          children: part === "ellipsis" ? /* @__PURE__ */ jsxDEV15("span", {
+          children: part === "ellipsis" ? /* @__PURE__ */ jsxDEV16("span", {
             "aria-hidden": "true",
             className: "hraness-pagination__ellipsis",
             "data-slot": "pagination-ellipsis",
             children: "…"
-          }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV15("a", {
+          }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV16("a", {
             ...pageLinkProps(part, current),
             "data-slot": "pagination-link",
             href: hrefForPage(part),
@@ -2463,13 +2844,13 @@ var Pagination = forwardRef10(({
           }, undefined, false, undefined, this)
         }, `${String(part)}-${String(index)}`, false, undefined, this))
       }, undefined, false, undefined, this),
-      next > total ? /* @__PURE__ */ jsxDEV15("span", {
+      next > total ? /* @__PURE__ */ jsxDEV16("span", {
         "aria-disabled": "true",
         className: "hraness-pagination__boundary",
         "data-direction": "next",
         "data-slot": "pagination-next",
         children: "Next"
-      }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV15("a", {
+      }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV16("a", {
         className: "hraness-pagination__boundary",
         "data-direction": "next",
         "data-slot": "pagination-next",
@@ -2484,7 +2865,7 @@ Pagination.displayName = "Pagination";
 // src/select-field.tsx
 import {
   Button as AriaButton6,
-  Label as Label4,
+  Label as Label5,
   ListBox as ListBox2,
   ListBoxItem as ListBoxItem2,
   Popover as Popover2,
@@ -2492,7 +2873,7 @@ import {
   SelectValue,
   Text as Text3
 } from "react-aria-components";
-import { jsxDEV as jsxDEV16 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV17 } from "react/jsx-dev-runtime";
 "use client";
 function SelectField({
   className,
@@ -2516,7 +2897,7 @@ function SelectField({
     const candidate = String(key);
     return options.find((option) => option.id === candidate)?.id ?? null;
   };
-  return /* @__PURE__ */ jsxDEV16(AriaSelect, {
+  return /* @__PURE__ */ jsxDEV17(AriaSelect, {
     ...props,
     className: cn("hraness-select-field", className),
     "data-size": size,
@@ -2528,51 +2909,51 @@ function SelectField({
     ref: selectRef,
     ...value === undefined ? {} : { selectedKey: value },
     children: [
-      /* @__PURE__ */ jsxDEV16(Label4, {
+      /* @__PURE__ */ jsxDEV17(Label5, {
         className: cn("hraness-select-field__label", !showLabel && "hraness-visually-hidden"),
         children: label
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV16(AriaButton6, {
+      /* @__PURE__ */ jsxDEV17(AriaButton6, {
         className: "hraness-select-field__trigger",
         children: [
-          /* @__PURE__ */ jsxDEV16(SelectValue, {
+          /* @__PURE__ */ jsxDEV17(SelectValue, {
             className: "hraness-select-field__value"
           }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV16("span", {
+          /* @__PURE__ */ jsxDEV17("span", {
             "aria-hidden": "true",
             className: "hraness-select-field__indicator",
             children: "⌄"
           }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this),
-      description === undefined ? null : /* @__PURE__ */ jsxDEV16(FieldDescription, {
+      description === undefined ? null : /* @__PURE__ */ jsxDEV17(FieldDescription, {
         className: "hraness-select-field__description",
         children: description
       }, undefined, false, undefined, this),
-      errorMessage === undefined ? null : /* @__PURE__ */ jsxDEV16(FieldError, {
+      errorMessage === undefined ? null : /* @__PURE__ */ jsxDEV17(FieldError, {
         className: "hraness-select-field__error",
         children: errorMessage
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV16(Popover2, {
+      /* @__PURE__ */ jsxDEV17(Popover2, {
         className: "hraness-select-field__popover",
         placement: "bottom start",
-        children: /* @__PURE__ */ jsxDEV16(ListBox2, {
+        children: /* @__PURE__ */ jsxDEV17(ListBox2, {
           className: "hraness-select-field__list-box",
           items: options,
-          children: (option) => /* @__PURE__ */ jsxDEV16(ListBoxItem2, {
+          children: (option) => /* @__PURE__ */ jsxDEV17(ListBoxItem2, {
             className: "hraness-select-field__option",
             id: option.id,
             ...option.disabled === undefined ? {} : { isDisabled: option.disabled },
             textValue: option.textValue,
-            children: /* @__PURE__ */ jsxDEV16("span", {
+            children: /* @__PURE__ */ jsxDEV17("span", {
               className: "hraness-select-field__option-copy",
               children: [
-                /* @__PURE__ */ jsxDEV16(Text3, {
+                /* @__PURE__ */ jsxDEV17(Text3, {
                   className: "hraness-select-field__option-label",
                   slot: "label",
                   children: option.label
                 }, undefined, false, undefined, this),
-                option.description === undefined ? null : /* @__PURE__ */ jsxDEV16(Text3, {
+                option.description === undefined ? null : /* @__PURE__ */ jsxDEV17(Text3, {
                   className: "hraness-select-field__option-description",
                   slot: "description",
                   children: option.description
@@ -2587,9 +2968,9 @@ function SelectField({
 }
 // src/skip-link.tsx
 import {
-  forwardRef as forwardRef11
+  forwardRef as forwardRef12
 } from "react";
-import { jsxDEV as jsxDEV17 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV18 } from "react/jsx-dev-runtime";
 "use client";
 function attemptFocus(target, ownerDocument) {
   try {
@@ -2642,7 +3023,7 @@ function focusHashTarget(href) {
   scrollTargetIntoView(target);
   return true;
 }
-var SkipLink = forwardRef11(({
+var SkipLink = forwardRef12(({
   children = "Skip to main content",
   className,
   href = "#main-content",
@@ -2666,7 +3047,7 @@ var SkipLink = forwardRef11(({
     if (focusHashTarget(href))
       event.preventDefault();
   };
-  return /* @__PURE__ */ jsxDEV17("a", {
+  return /* @__PURE__ */ jsxDEV18("a", {
     ...props,
     className: cn("hraness-skip-link", className),
     "data-slot": "skip-link",
@@ -2680,9 +3061,9 @@ var SkipLink = forwardRef11(({
 SkipLink.displayName = "SkipLink";
 // src/surfaces.tsx
 import {
-  forwardRef as forwardRef12
+  forwardRef as forwardRef13
 } from "react";
-import { jsxDEV as jsxDEV18 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV19 } from "react/jsx-dev-runtime";
 function setForwardedRef(ref, value) {
   if (typeof ref === "function") {
     ref(value);
@@ -2690,9 +3071,9 @@ function setForwardedRef(ref, value) {
     ref.current = value;
   }
 }
-var ViewportFrame = forwardRef12(({ as = "div", className, ...props }, ref) => {
+var ViewportFrame = forwardRef13(({ as = "div", className, ...props }, ref) => {
   const Element = as;
-  return /* @__PURE__ */ jsxDEV18(Element, {
+  return /* @__PURE__ */ jsxDEV19(Element, {
     ...props,
     className: cn("hraness-viewport-frame", className),
     "data-slot": "viewport-frame",
@@ -2702,9 +3083,9 @@ var ViewportFrame = forwardRef12(({ as = "div", className, ...props }, ref) => {
   }, undefined, false, undefined, this);
 });
 ViewportFrame.displayName = "ViewportFrame";
-var WrappingRow = forwardRef12(({ as = "div", className, ...props }, ref) => {
+var WrappingRow = forwardRef13(({ as = "div", className, ...props }, ref) => {
   const Element = as;
-  return /* @__PURE__ */ jsxDEV18(Element, {
+  return /* @__PURE__ */ jsxDEV19(Element, {
     ...props,
     className: cn("hraness-wrapping-row", className),
     "data-slot": "wrapping-row",
@@ -2714,7 +3095,7 @@ var WrappingRow = forwardRef12(({ as = "div", className, ...props }, ref) => {
   }, undefined, false, undefined, this);
 });
 WrappingRow.displayName = "WrappingRow";
-var ThemedSurface = forwardRef12(({
+var ThemedSurface = forwardRef13(({
   as = "div",
   className,
   shape = "rounded",
@@ -2722,7 +3103,7 @@ var ThemedSurface = forwardRef12(({
   ...props
 }, ref) => {
   const Element = as;
-  return /* @__PURE__ */ jsxDEV18(Element, {
+  return /* @__PURE__ */ jsxDEV19(Element, {
     ...props,
     className: cn("hraness-themed-surface", className),
     "data-shape": shape,
@@ -2748,7 +3129,7 @@ import {
   UNSTABLE_ToastRegion as AriaToastRegion,
   Text as Text4
 } from "react-aria-components";
-import { jsxDEV as jsxDEV19 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV20 } from "react/jsx-dev-runtime";
 "use client";
 var ToastContext = createContext2(null);
 var DEFAULT_DURATION = 5000;
@@ -2781,36 +3162,36 @@ function ToastProvider({
       }
     })
   }), [duration, queue]);
-  return /* @__PURE__ */ jsxDEV19(ToastContext.Provider, {
+  return /* @__PURE__ */ jsxDEV20(ToastContext.Provider, {
     value: controller,
     children: [
       children,
-      /* @__PURE__ */ jsxDEV19(AriaToastRegion, {
+      /* @__PURE__ */ jsxDEV20(AriaToastRegion, {
         "aria-label": label,
         className: "hraness-toast-region",
         "data-slot": "toast-region",
         queue,
-        children: ({ toast }) => /* @__PURE__ */ jsxDEV19(AriaToast, {
+        children: ({ toast }) => /* @__PURE__ */ jsxDEV20(AriaToast, {
           className: "hraness-toast",
           "data-slot": "toast",
           "data-tone": toast.content.tone ?? "info",
           toast,
           children: [
-            /* @__PURE__ */ jsxDEV19(AriaToastContent, {
+            /* @__PURE__ */ jsxDEV20(AriaToastContent, {
               className: "hraness-toast__content",
               "data-slot": "toast-content",
               children: [
-                /* @__PURE__ */ jsxDEV19("div", {
+                /* @__PURE__ */ jsxDEV20("div", {
                   className: "hraness-toast__copy",
                   "data-slot": "toast-copy",
                   children: [
-                    /* @__PURE__ */ jsxDEV19(Text4, {
+                    /* @__PURE__ */ jsxDEV20(Text4, {
                       className: "hraness-toast__title",
                       "data-slot": "toast-title",
                       slot: "title",
                       children: toast.content.title
                     }, undefined, false, undefined, this),
-                    toast.content.description === undefined ? null : /* @__PURE__ */ jsxDEV19(Text4, {
+                    toast.content.description === undefined ? null : /* @__PURE__ */ jsxDEV20(Text4, {
                       className: "hraness-toast__description",
                       "data-slot": "toast-description",
                       slot: "description",
@@ -2818,19 +3199,19 @@ function ToastProvider({
                     }, undefined, false, undefined, this)
                   ]
                 }, undefined, true, undefined, this),
-                toast.content.action === undefined ? null : /* @__PURE__ */ jsxDEV19("div", {
+                toast.content.action === undefined ? null : /* @__PURE__ */ jsxDEV20("div", {
                   className: "hraness-toast__action",
                   "data-slot": "toast-action",
                   children: toast.content.action
                 }, undefined, false, undefined, this)
               ]
             }, undefined, true, undefined, this),
-            /* @__PURE__ */ jsxDEV19(AriaButton7, {
+            /* @__PURE__ */ jsxDEV20(AriaButton7, {
               "aria-label": closeLabel,
               className: "hraness-toast__close",
               "data-slot": "toast-close",
               slot: "close",
-              children: /* @__PURE__ */ jsxDEV19("span", {
+              children: /* @__PURE__ */ jsxDEV20("span", {
                 "aria-hidden": "true",
                 children: "×"
               }, undefined, false, undefined, this)
@@ -2849,13 +3230,13 @@ function useToast() {
   return controller;
 }
 // src/toolbar.tsx
-import { forwardRef as forwardRef13 } from "react";
+import { forwardRef as forwardRef14 } from "react";
 import {
   Toolbar as AriaToolbar
 } from "react-aria-components";
-import { jsxDEV as jsxDEV20 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV21 } from "react/jsx-dev-runtime";
 "use client";
-var Toolbar = forwardRef13(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV20(AriaToolbar, {
+var Toolbar = forwardRef14(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV21(AriaToolbar, {
   ...props,
   className: cn("hraness-toolbar", className),
   "data-slot": "toolbar",
@@ -2915,6 +3296,7 @@ export {
   ListBox,
   LinkButton,
   Link,
+  Knob,
   KeyHint,
   InlineAlert,
   IconLink,

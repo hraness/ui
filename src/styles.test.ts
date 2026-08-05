@@ -146,6 +146,36 @@ test("forced-colors field placeholders use unfaded system text", async () => {
   expect(placeholder).toContain("opacity: 1;");
 });
 
+test("knob densities keep a 48px gesture target and distinct dial sizes", async () => {
+  const components = await stylesheet("./components.css");
+  const control = declarationBlock(components, ".hraness-knob__control {");
+  const dial = declarationBlock(components, ".hraness-knob__dial {");
+  const compactDial = declarationBlock(
+    components,
+    '.hraness-knob[data-density="compact"] .hraness-knob__dial {',
+  );
+  const horizontalTouchPan = declarationBlock(
+    components,
+    '.hraness-knob[data-touch-pan="horizontal"] .hraness-knob__control,',
+  );
+  const disabledControl = declarationBlock(
+    components,
+    ".hraness-knob[data-disabled] .hraness-knob__control {",
+  );
+
+  expect(control).toContain("width: 3rem;");
+  expect(control).toContain("min-width: 3rem;");
+  expect(control).toContain("height: 3rem;");
+  expect(control).toContain("min-height: 3rem;");
+  expect(control).toContain("touch-action: none;");
+  expect(dial).toContain("width: 2.5rem;");
+  expect(compactDial).toContain("width: 2rem;");
+  expect(horizontalTouchPan).toContain("touch-action: pan-x;");
+  expect(disabledControl).toContain("opacity: 0.5;");
+  expect(components).not.toContain(".hraness-knob[data-disabled] {\n    opacity:");
+  expect(components).not.toContain(".hraness-knob__gesture:hover");
+});
+
 test("tags keep one border geometry across their visual variants", async () => {
   const components = await stylesheet("./components.css");
   const base = declarationBlock(components, ":where(.hraness-badge, .hraness-tag) {");

@@ -1150,6 +1150,123 @@
     outline-offset: 2px;
   }
 
+  .hraness-knob {
+    display: inline-grid;
+    min-width: 3rem;
+    justify-items: center;
+    gap: var(--space-1);
+    color: var(--ui-foreground);
+    vertical-align: middle;
+  }
+
+  .hraness-knob__control {
+    position: relative;
+    width: 3rem;
+    min-width: 3rem;
+    height: 3rem;
+    min-height: 3rem;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .hraness-knob__thumb {
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    outline: none;
+    pointer-events: none;
+  }
+
+  .hraness-knob__gesture {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    border-radius: var(--radius-round);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .hraness-knob[data-touch-pan="horizontal"] .hraness-knob__control,
+  .hraness-knob[data-touch-pan="horizontal"] .hraness-knob__gesture {
+    touch-action: pan-x;
+  }
+
+  .hraness-knob__thumb[data-dragging] + .hraness-knob__gesture {
+    cursor: grabbing;
+  }
+
+  .hraness-knob__dial {
+    display: block;
+    width: 2.5rem;
+    height: 2.5rem;
+    overflow: visible;
+    border-radius: var(--radius-round);
+  }
+
+  .hraness-knob[data-density="compact"] .hraness-knob__dial {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .hraness-knob__face {
+    fill: var(--ui-card);
+    stroke: var(--ui-border);
+    stroke-width: 1.5;
+  }
+
+  .hraness-knob__arc {
+    fill: none;
+    stroke-linecap: round;
+    stroke-width: 3;
+  }
+
+  .hraness-knob__arc--track {
+    stroke: var(--ui-muted);
+  }
+
+  .hraness-knob__arc--value {
+    stroke: var(--ui-primary);
+  }
+
+  .hraness-knob__indicator {
+    stroke: var(--ui-foreground);
+    stroke-linecap: round;
+    stroke-width: 2.5;
+  }
+
+  .hraness-knob__thumb[data-focus-visible] .hraness-knob__dial {
+    outline: 2px solid var(--ui-ring);
+    outline-offset: 2px;
+  }
+
+  .hraness-knob__label,
+  .hraness-knob__value {
+    max-width: 100%;
+    font-size: var(--text-label);
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  .hraness-knob__label {
+    font-weight: var(--font-weight-medium);
+  }
+
+  .hraness-knob__value {
+    color: var(--ui-muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hraness-knob[data-disabled] .hraness-knob__control {
+    opacity: 0.5;
+  }
+
+  .hraness-knob[data-disabled] .hraness-knob__gesture {
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
   .hraness-card {
     --hraness-card-description: var(--ui-muted-foreground);
     display: flex;
@@ -2390,6 +2507,19 @@
   .hraness-slider__thumb {
     border-color: Highlight;
     background: Canvas;
+  }
+
+  .hraness-knob__face {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+
+  .hraness-knob__arc--track {
+    stroke: GrayText;
+  }
+
+  :where(.hraness-knob__arc--value, .hraness-knob__indicator) {
+    stroke: Highlight;
   }
 
   .hraness-skeleton {

@@ -9,6 +9,7 @@ export * from "./feedback.js";
 export * from "./fields.js";
 export * from "./form.js";
 export * from "./indicators.js";
+export * from "./knob.js";
 export * from "./list-box.js";
 export * from "./navigation.js";
 export * from "./overlays.js";
