@@ -65,6 +65,21 @@ test("knob renders its 270 degree dial at the normalized value", () => {
   expect(html).toContain('data-slot="knob-gesture"');
 });
 
+test("knob can simplify visible copy without weakening accessible value text", () => {
+  const html = renderToStaticMarkup(
+    <Knob
+      formatOptions={{ style: "unit", unit: "percent" }}
+      label="Volume"
+      renderValue={value => Math.round(value)}
+      value={83}
+    />,
+  );
+
+  expect(html).toContain('aria-valuetext="83%"');
+  expect(html).toContain('data-slot="knob-value">83</output>');
+  expect(html).not.toContain('data-slot="knob-value">83%</output>');
+});
+
 test("disabled knob retains its value while removing native and gesture interaction", () => {
   const html = renderToStaticMarkup(
     <Knob defaultValue={48} disabled label="Output" name="output" />,

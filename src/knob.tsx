@@ -69,6 +69,11 @@ type KnobBaseProps = Omit<
     max?: number;
     min?: number;
     name?: string;
+    /**
+     * Overrides only the visible output. The native range keeps using
+     * `formatOptions` for its accessible value text.
+     */
+    renderValue?: (value: number) => ReactNode;
     touchPan?: KnobTouchPan;
   }>;
 
@@ -303,6 +308,7 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
       max = 100,
       min = 0,
       name,
+      renderValue,
       step = 1,
       touchPan = "none",
       value,
@@ -370,7 +376,21 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
               <Label className="hraness-knob__label" data-slot="knob-label">
                 {label}
               </Label>
-              <SliderOutput className="hraness-knob__value" data-slot="knob-value" />
+              {renderValue === undefined ? (
+                <SliderOutput
+                  className="hraness-knob__value"
+                  data-slot="knob-value"
+                />
+              ) : (
+                <output
+                  aria-hidden="true"
+                  aria-live="off"
+                  className="hraness-knob__value"
+                  data-slot="knob-value"
+                >
+                  {renderValue(state.getThumbValue(0))}
+                </output>
+              )}
             </>
           );
         }}

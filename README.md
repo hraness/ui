@@ -108,6 +108,9 @@ native range semantics, and `name` plus `form` preserve form submission.
 In a horizontally scrollable rack, set `touchPan="horizontal"`. Touch users
 then swipe left or right to scroll the rack and drag vertically to adjust the
 knob; mouse and trackpad pointers retain both adjustment axes.
+Use `renderValue` when compact visible copy should differ from the formatted
+accessible value. For example, a rack may show `83` while `formatOptions`
+keeps the native range announcement at `83%`.
 
 ```tsx
 <Knob

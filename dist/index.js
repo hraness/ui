@@ -2583,6 +2583,7 @@ var Knob = forwardRef9(({
   max = 100,
   min = 0,
   name,
+  renderValue,
   step = 1,
   touchPan = "none",
   value,
@@ -2648,9 +2649,15 @@ var Knob = forwardRef9(({
             "data-slot": "knob-label",
             children: label
           }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV14(SliderOutput2, {
+          renderValue === undefined ? /* @__PURE__ */ jsxDEV14(SliderOutput2, {
             className: "hraness-knob__value",
             "data-slot": "knob-value"
+          }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV14("output", {
+            "aria-hidden": "true",
+            "aria-live": "off",
+            className: "hraness-knob__value",
+            "data-slot": "knob-value",
+            children: renderValue(state.getThumbValue(0))
           }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this);
