@@ -45,6 +45,7 @@
   "files": [
     "dist",
     "src/actions.tsx",
+    "src/autocomplete.tsx",
     "src/badge.tsx",
     "src/card.tsx",
     "src/checkbox-group.tsx",

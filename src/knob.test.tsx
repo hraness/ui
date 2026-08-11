@@ -80,6 +80,35 @@ test("knob can simplify visible copy without weakening accessible value text", (
   expect(html).not.toContain('data-slot="knob-value">83%</output>');
 });
 
+test("knob can hide its output visually without removing value semantics", () => {
+  const html = renderToStaticMarkup(
+    <Knob
+      formatOptions={{ style: "unit", unit: "percent" }}
+      label="Volume"
+      outputVisibility="visually-hidden"
+      value={83}
+    />,
+  );
+
+  expect(html).toContain('data-output-visibility="visually-hidden"');
+  expect(html).toContain('aria-valuetext="83%"');
+  expect(html).toMatch(
+    /<output\b[^>]*data-slot="knob-value"[^>]*class="hraness-knob__value hraness-visually-hidden"[^>]*>83%<\/output>/u,
+  );
+});
+
+test("knob output stays visible by default", () => {
+  const html = renderToStaticMarkup(
+    <Knob defaultValue={25} label="Drive" />,
+  );
+
+  expect(html).toContain('data-output-visibility="visible"');
+  expect(html).toContain('class="hraness-knob__value"');
+  expect(html).not.toContain(
+    'class="hraness-knob__value hraness-visually-hidden"',
+  );
+});
+
 test("disabled knob retains its value while removing native and gesture interaction", () => {
   const html = renderToStaticMarkup(
     <Knob defaultValue={48} disabled label="Output" name="output" />,

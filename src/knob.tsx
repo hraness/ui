@@ -33,6 +33,7 @@ import {
 import { cn } from "./lib/utils.js";
 
 export type KnobDensity = "compact" | "default";
+export type KnobOutputVisibility = "visible" | "visually-hidden";
 export type KnobTouchPan = "horizontal" | "none";
 
 type KnobValueProps =
@@ -69,6 +70,13 @@ type KnobBaseProps = Omit<
     max?: number;
     min?: number;
     name?: string;
+    /**
+     * Keeps the output node and the native range value semantics while
+     * allowing a compact composition to hide the output visually.
+     *
+     * @default "visible"
+     */
+    outputVisibility?: KnobOutputVisibility;
     /**
      * Overrides only the visible output. The native range keeps using
      * `formatOptions` for its accessible value text.
@@ -308,6 +316,7 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
       max = 100,
       min = 0,
       name,
+      outputVisibility = "visible",
       renderValue,
       step = 1,
       touchPan = "none",
@@ -327,6 +336,7 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
         {...(defaultValue === undefined ? { value } : { defaultValue })}
         className={cn("hraness-knob", className)}
         data-density={density}
+        data-output-visibility={outputVisibility}
         data-slot="knob"
         data-touch-pan={touchPan}
         isDisabled={disabled}
@@ -378,14 +388,22 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
               </Label>
               {renderValue === undefined ? (
                 <SliderOutput
-                  className="hraness-knob__value"
+                  className={cn(
+                    "hraness-knob__value",
+                    outputVisibility === "visually-hidden"
+                      && "hraness-visually-hidden",
+                  )}
                   data-slot="knob-value"
                 />
               ) : (
                 <output
                   aria-hidden="true"
                   aria-live="off"
-                  className="hraness-knob__value"
+                  className={cn(
+                    "hraness-knob__value",
+                    outputVisibility === "visually-hidden"
+                      && "hraness-visually-hidden",
+                  )}
                   data-slot="knob-value"
                 >
                   {renderValue(state.getThumbValue(0))}

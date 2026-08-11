@@ -642,11 +642,22 @@ function IconLink(allProps) {
     }, undefined, false, undefined, this)
   }, undefined, false, undefined, this);
 }
+// src/autocomplete.tsx
+import {
+  Autocomplete as AriaAutocomplete
+} from "react-aria-components";
+import { jsxDEV as jsxDEV4 } from "react/jsx-dev-runtime";
+"use client";
+function Autocomplete(props) {
+  return /* @__PURE__ */ jsxDEV4(AriaAutocomplete, {
+    ...props
+  }, undefined, false, undefined, this);
+}
 // src/badge.tsx
 import {
   forwardRef as forwardRef2
 } from "react";
-import { jsxDEV as jsxDEV4 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV5 } from "react/jsx-dev-runtime";
 var Tag = forwardRef2((allProps, ref) => {
   const {
     accentColor,
@@ -659,7 +670,7 @@ var Tag = forwardRef2((allProps, ref) => {
   } = allProps;
   const hasIcon = icon !== undefined && icon !== null && icon !== false;
   const resolvedStyle = accentColor === undefined ? style : { ...style, "--hraness-tag-accent": accentColor };
-  return /* @__PURE__ */ jsxDEV4("span", {
+  return /* @__PURE__ */ jsxDEV5("span", {
     ...props,
     className: cn("hraness-tag", className),
     "data-slot": "tag",
@@ -667,13 +678,13 @@ var Tag = forwardRef2((allProps, ref) => {
     ref,
     style: resolvedStyle,
     children: [
-      hasIcon ? /* @__PURE__ */ jsxDEV4("span", {
+      hasIcon ? /* @__PURE__ */ jsxDEV5("span", {
         "aria-hidden": "true",
         className: "hraness-tag__icon",
         "data-slot": "tag-icon",
         children: icon
       }, undefined, false, undefined, this) : null,
-      /* @__PURE__ */ jsxDEV4("span", {
+      /* @__PURE__ */ jsxDEV5("span", {
         className: "hraness-tag__label",
         "data-slot": "tag-label",
         children
@@ -682,7 +693,7 @@ var Tag = forwardRef2((allProps, ref) => {
   }, undefined, true, undefined, this);
 });
 Tag.displayName = "Tag";
-var StatusDot = forwardRef2(({ className, tone = "neutral", ...props }, ref) => /* @__PURE__ */ jsxDEV4("span", {
+var StatusDot = forwardRef2(({ className, tone = "neutral", ...props }, ref) => /* @__PURE__ */ jsxDEV5("span", {
   ...props,
   "aria-hidden": "true",
   className: cn("hraness-status-dot", className),
@@ -694,7 +705,7 @@ StatusDot.displayName = "StatusDot";
 function badgeVariants({ tone = "neutral" } = {}) {
   return cn("hraness-badge", `hraness-badge--${tone}`);
 }
-var Badge = forwardRef2(({ children, className, isLive = false, tone = "neutral", ...props }, ref) => /* @__PURE__ */ jsxDEV4("span", {
+var Badge = forwardRef2(({ children, className, isLive = false, tone = "neutral", ...props }, ref) => /* @__PURE__ */ jsxDEV5("span", {
   ...props,
   "aria-live": isLive ? "polite" : undefined,
   className: cn(badgeVariants({ tone }), className),
@@ -712,9 +723,9 @@ import {
 import {
   Button as AriaButton3
 } from "react-aria-components";
-import { jsxDEV as jsxDEV5 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV6 } from "react/jsx-dev-runtime";
 "use client";
-var Card = forwardRef3(({ className, shape = "rounded", tone = "card", ...props }, ref) => /* @__PURE__ */ jsxDEV5("div", {
+var Card = forwardRef3(({ className, shape = "rounded", tone = "card", ...props }, ref) => /* @__PURE__ */ jsxDEV6("div", {
   ...props,
   className: cn("hraness-card", className),
   "data-shape": shape,
@@ -723,35 +734,35 @@ var Card = forwardRef3(({ className, shape = "rounded", tone = "card", ...props 
   ref
 }, undefined, false, undefined, this));
 Card.displayName = "Card";
-var CardHeader = forwardRef3(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV5("div", {
+var CardHeader = forwardRef3(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV6("div", {
   ...props,
   className: cn("hraness-card__header", className),
   "data-slot": "card-header",
   ref
 }, undefined, false, undefined, this));
 CardHeader.displayName = "CardHeader";
-var CardTitle = forwardRef3(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV5("h3", {
+var CardTitle = forwardRef3(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV6("h3", {
   ...props,
   className: cn("hraness-card__title", className),
   "data-slot": "card-title",
   ref
 }, undefined, false, undefined, this));
 CardTitle.displayName = "CardTitle";
-var CardDescription = forwardRef3(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV5("p", {
+var CardDescription = forwardRef3(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV6("p", {
   ...props,
   className: cn("hraness-card__description", className),
   "data-slot": "card-description",
   ref
 }, undefined, false, undefined, this));
 CardDescription.displayName = "CardDescription";
-var CardContent = forwardRef3(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV5("div", {
+var CardContent = forwardRef3(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV6("div", {
   ...props,
   className: cn("hraness-card__content", className),
   "data-slot": "card-content",
   ref
 }, undefined, false, undefined, this));
 CardContent.displayName = "CardContent";
-var CardFooter = forwardRef3(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV5("div", {
+var CardFooter = forwardRef3(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV6("div", {
   ...props,
   className: cn("hraness-card__footer", className),
   "data-slot": "card-footer",
@@ -765,7 +776,7 @@ function PressableCard({
   tone = "card",
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV5(AriaButton3, {
+  return /* @__PURE__ */ jsxDEV6(AriaButton3, {
     ...props,
     className: cn("hraness-pressable-card", className),
     "data-shape": shape,
@@ -804,10 +815,10 @@ import {
   TextArea as AriaTextArea,
   TextField as AriaTextField
 } from "react-aria-components";
-import { jsxDEV as jsxDEV6, Fragment as Fragment3 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV7, Fragment as Fragment3 } from "react/jsx-dev-runtime";
 "use client";
 function FieldDescription({ className, ...props }) {
-  return /* @__PURE__ */ jsxDEV6(Text2, {
+  return /* @__PURE__ */ jsxDEV7(Text2, {
     ...props,
     className: cn("hraness-field__description", className),
     "data-slot": "field-description",
@@ -815,7 +826,7 @@ function FieldDescription({ className, ...props }) {
   }, undefined, false, undefined, this);
 }
 function FieldError({ className, ...props }) {
-  return /* @__PURE__ */ jsxDEV6(AriaFieldError, {
+  return /* @__PURE__ */ jsxDEV7(AriaFieldError, {
     ...props,
     className: cn("hraness-field__error", className),
     "data-slot": "field-error"
@@ -825,12 +836,12 @@ function FieldMessages({
   description,
   errorMessage
 }) {
-  return /* @__PURE__ */ jsxDEV6(Fragment3, {
+  return /* @__PURE__ */ jsxDEV7(Fragment3, {
     children: [
-      description === undefined ? null : /* @__PURE__ */ jsxDEV6(FieldDescription, {
+      description === undefined ? null : /* @__PURE__ */ jsxDEV7(FieldDescription, {
         children: description
       }, undefined, false, undefined, this),
-      errorMessage === undefined ? null : /* @__PURE__ */ jsxDEV6(FieldError, {
+      errorMessage === undefined ? null : /* @__PURE__ */ jsxDEV7(FieldError, {
         children: errorMessage
       }, undefined, false, undefined, this)
     ]
@@ -850,7 +861,7 @@ var TextField = forwardRef4(({
   size = "default",
   surface = "default",
   ...props
-}, ref) => /* @__PURE__ */ jsxDEV6(AriaTextField, {
+}, ref) => /* @__PURE__ */ jsxDEV7(AriaTextField, {
   ...props,
   className: cn("hraness-field", "hraness-text-field", className),
   "data-size": size,
@@ -859,15 +870,15 @@ var TextField = forwardRef4(({
   isDisabled,
   ref,
   children: [
-    /* @__PURE__ */ jsxDEV6(Label, {
+    /* @__PURE__ */ jsxDEV7(Label, {
       className: cn("hraness-field__label", !showLabel && "hraness-visually-hidden"),
       "data-slot": "field-label",
       children: label
     }, undefined, false, undefined, this),
-    /* @__PURE__ */ jsxDEV6("div", {
+    /* @__PURE__ */ jsxDEV7("div", {
       className: "hraness-field__control",
       "data-slot": "field-control",
-      children: /* @__PURE__ */ jsxDEV6(AriaInput, {
+      children: /* @__PURE__ */ jsxDEV7(AriaInput, {
         ...inputProps,
         className: cn("hraness-field__input", inputClassName),
         "data-slot": "field-input",
@@ -875,7 +886,7 @@ var TextField = forwardRef4(({
         ref: inputRef
       }, undefined, false, undefined, this)
     }, undefined, false, undefined, this),
-    /* @__PURE__ */ jsxDEV6(FieldMessages, {
+    /* @__PURE__ */ jsxDEV7(FieldMessages, {
       description,
       errorMessage
     }, undefined, false, undefined, this)
@@ -899,7 +910,7 @@ function TextAreaField({
   textAreaRef,
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV6(AriaTextField, {
+  return /* @__PURE__ */ jsxDEV7(AriaTextField, {
     ...props,
     className: cn("hraness-field", "hraness-text-area-field", className),
     "data-resize": resize,
@@ -909,15 +920,15 @@ function TextAreaField({
     isDisabled,
     ref: fieldRef,
     children: [
-      /* @__PURE__ */ jsxDEV6(Label, {
+      /* @__PURE__ */ jsxDEV7(Label, {
         className: cn("hraness-field__label", !showLabel && "hraness-visually-hidden"),
         "data-slot": "field-label",
         children: label
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV6("div", {
+      /* @__PURE__ */ jsxDEV7("div", {
         className: "hraness-field__control",
         "data-slot": "field-control",
-        children: /* @__PURE__ */ jsxDEV6(AriaTextArea, {
+        children: /* @__PURE__ */ jsxDEV7(AriaTextArea, {
           ...textAreaProps,
           className: cn("hraness-field__input", textAreaClassName),
           "data-slot": "field-textarea",
@@ -925,7 +936,7 @@ function TextAreaField({
           ref: textAreaRef
         }, undefined, false, undefined, this)
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV6(FieldMessages, {
+      /* @__PURE__ */ jsxDEV7(FieldMessages, {
         description,
         errorMessage
       }, undefined, false, undefined, this)
@@ -949,7 +960,7 @@ function SearchField({
   surface = "default",
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV6(AriaSearchField, {
+  return /* @__PURE__ */ jsxDEV7(AriaSearchField, {
     ...props,
     className: cn("hraness-field", "hraness-search-field", className),
     "data-size": size,
@@ -957,18 +968,18 @@ function SearchField({
     "data-surface": surface,
     isDisabled,
     ref: fieldRef,
-    children: ({ isEmpty }) => /* @__PURE__ */ jsxDEV6(Fragment3, {
+    children: ({ isEmpty }) => /* @__PURE__ */ jsxDEV7(Fragment3, {
       children: [
-        /* @__PURE__ */ jsxDEV6(Label, {
+        /* @__PURE__ */ jsxDEV7(Label, {
           className: cn("hraness-field__label", !showLabel && "hraness-visually-hidden"),
           "data-slot": "field-label",
           children: label
         }, undefined, false, undefined, this),
-        /* @__PURE__ */ jsxDEV6(Group, {
+        /* @__PURE__ */ jsxDEV7(Group, {
           className: "hraness-field__control hraness-search-field__control",
           "data-slot": "field-control",
           children: [
-            /* @__PURE__ */ jsxDEV6(AriaInput, {
+            /* @__PURE__ */ jsxDEV7(AriaInput, {
               ...inputProps,
               className: cn("hraness-field__input", inputClassName),
               "data-slot": "field-input",
@@ -976,18 +987,18 @@ function SearchField({
               ref: inputRef,
               type: "search"
             }, undefined, false, undefined, this),
-            isEmpty ? null : /* @__PURE__ */ jsxDEV6(AriaButton4, {
+            isEmpty ? null : /* @__PURE__ */ jsxDEV7(AriaButton4, {
               "aria-label": clearLabel,
               className: "hraness-search-field__clear",
               "data-slot": "search-clear",
-              children: /* @__PURE__ */ jsxDEV6("span", {
+              children: /* @__PURE__ */ jsxDEV7("span", {
                 "aria-hidden": "true",
                 children: "×"
               }, undefined, false, undefined, this)
             }, undefined, false, undefined, this)
           ]
         }, undefined, true, undefined, this),
-        /* @__PURE__ */ jsxDEV6(FieldMessages, {
+        /* @__PURE__ */ jsxDEV7(FieldMessages, {
           description,
           errorMessage
         }, undefined, false, undefined, this)
@@ -1012,7 +1023,7 @@ function NumberField({
   surface = "default",
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV6(AriaNumberField, {
+  return /* @__PURE__ */ jsxDEV7(AriaNumberField, {
     ...props,
     className: cn("hraness-field", "hraness-number-field", className),
     "data-size": size,
@@ -1021,44 +1032,44 @@ function NumberField({
     isDisabled,
     ref: fieldRef,
     children: [
-      /* @__PURE__ */ jsxDEV6(Label, {
+      /* @__PURE__ */ jsxDEV7(Label, {
         className: cn("hraness-field__label", !showLabel && "hraness-visually-hidden"),
         "data-slot": "field-label",
         children: label
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV6(Group, {
+      /* @__PURE__ */ jsxDEV7(Group, {
         className: "hraness-number-field__control",
         "data-slot": "field-control",
         children: [
-          /* @__PURE__ */ jsxDEV6(AriaButton4, {
+          /* @__PURE__ */ jsxDEV7(AriaButton4, {
             "aria-label": decrementLabel,
             className: "hraness-number-field__step",
             "data-slot": "number-decrement",
             slot: "decrement",
-            children: /* @__PURE__ */ jsxDEV6("span", {
+            children: /* @__PURE__ */ jsxDEV7("span", {
               "aria-hidden": "true",
               children: "−"
             }, undefined, false, undefined, this)
           }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV6(AriaInput, {
+          /* @__PURE__ */ jsxDEV7(AriaInput, {
             ...inputProps,
             className: cn("hraness-field__input", inputClassName),
             "data-slot": "field-input",
             ref: inputRef
           }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV6(AriaButton4, {
+          /* @__PURE__ */ jsxDEV7(AriaButton4, {
             "aria-label": incrementLabel,
             className: "hraness-number-field__step",
             "data-slot": "number-increment",
             slot: "increment",
-            children: /* @__PURE__ */ jsxDEV6("span", {
+            children: /* @__PURE__ */ jsxDEV7("span", {
               "aria-hidden": "true",
               children: "+"
             }, undefined, false, undefined, this)
           }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this),
-      /* @__PURE__ */ jsxDEV6(FieldMessages, {
+      /* @__PURE__ */ jsxDEV7(FieldMessages, {
         description,
         errorMessage
       }, undefined, false, undefined, this)
@@ -1074,24 +1085,24 @@ function CheckboxField({
   label,
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV6(AriaCheckboxField, {
+  return /* @__PURE__ */ jsxDEV7(AriaCheckboxField, {
     ...props,
     className: cn("hraness-checkbox-field", className),
     "data-slot": "checkbox-field",
     ref: fieldRef,
     children: [
-      /* @__PURE__ */ jsxDEV6(AriaCheckboxButton, {
+      /* @__PURE__ */ jsxDEV7(AriaCheckboxButton, {
         className: cn("hraness-checkbox-field__control", controlClassName),
         "data-slot": "checkbox-control",
-        children: ({ isIndeterminate, isSelected }) => /* @__PURE__ */ jsxDEV6(Fragment3, {
+        children: ({ isIndeterminate, isSelected }) => /* @__PURE__ */ jsxDEV7(Fragment3, {
           children: [
-            /* @__PURE__ */ jsxDEV6("span", {
+            /* @__PURE__ */ jsxDEV7("span", {
               "aria-hidden": "true",
               className: "hraness-checkbox-field__indicator",
               "data-slot": "checkbox-indicator",
               children: isIndeterminate ? "−" : isSelected ? "✓" : null
             }, undefined, false, undefined, this),
-            /* @__PURE__ */ jsxDEV6("span", {
+            /* @__PURE__ */ jsxDEV7("span", {
               className: "hraness-checkbox-field__label",
               "data-slot": "checkbox-label",
               children: label
@@ -1099,7 +1110,7 @@ function CheckboxField({
           ]
         }, undefined, true, undefined, this)
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV6(FieldMessages, {
+      /* @__PURE__ */ jsxDEV7(FieldMessages, {
         description,
         errorMessage
       }, undefined, false, undefined, this)
@@ -1116,23 +1127,23 @@ function RadioGroup({
   optionsClassName,
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV6(AriaRadioGroup, {
+  return /* @__PURE__ */ jsxDEV7(AriaRadioGroup, {
     ...props,
     className: cn("hraness-radio-group", className),
     "data-slot": "radio-group",
     ref: groupRef,
     children: [
-      /* @__PURE__ */ jsxDEV6(Label, {
+      /* @__PURE__ */ jsxDEV7(Label, {
         className: "hraness-radio-group__label",
         "data-slot": "field-label",
         children: label
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV6("div", {
+      /* @__PURE__ */ jsxDEV7("div", {
         className: cn("hraness-radio-group__options", optionsClassName),
         "data-slot": "radio-options",
         children
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV6(FieldMessages, {
+      /* @__PURE__ */ jsxDEV7(FieldMessages, {
         description,
         errorMessage
       }, undefined, false, undefined, this)
@@ -1147,29 +1158,29 @@ function RadioOption({
   label,
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV6(AriaRadioField, {
+  return /* @__PURE__ */ jsxDEV7(AriaRadioField, {
     ...props,
     className: cn("hraness-radio-option", className),
     "data-slot": "radio-option",
     ref: fieldRef,
     children: [
-      /* @__PURE__ */ jsxDEV6(AriaRadioButton, {
+      /* @__PURE__ */ jsxDEV7(AriaRadioButton, {
         className: cn("hraness-radio-option__control", controlClassName),
         "data-slot": "radio-control",
         children: [
-          /* @__PURE__ */ jsxDEV6("span", {
+          /* @__PURE__ */ jsxDEV7("span", {
             "aria-hidden": "true",
             className: "hraness-radio-option__indicator",
             "data-slot": "radio-indicator"
           }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV6("span", {
+          /* @__PURE__ */ jsxDEV7("span", {
             className: "hraness-radio-option__label",
             "data-slot": "radio-label",
             children: label
           }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this),
-      description === undefined ? null : /* @__PURE__ */ jsxDEV6(FieldDescription, {
+      description === undefined ? null : /* @__PURE__ */ jsxDEV7(FieldDescription, {
         className: "hraness-radio-option__description",
         children: description
       }, undefined, false, undefined, this)
@@ -1185,33 +1196,33 @@ function SwitchField({
   label,
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV6(AriaSwitchField, {
+  return /* @__PURE__ */ jsxDEV7(AriaSwitchField, {
     ...props,
     className: cn("hraness-switch-field", className),
     "data-slot": "switch-field",
     ref: fieldRef,
     children: [
-      /* @__PURE__ */ jsxDEV6(AriaSwitchButton, {
+      /* @__PURE__ */ jsxDEV7(AriaSwitchButton, {
         className: cn("hraness-switch-field__control", controlClassName),
         "data-slot": "switch-control",
         children: [
-          /* @__PURE__ */ jsxDEV6("span", {
+          /* @__PURE__ */ jsxDEV7("span", {
             "aria-hidden": "true",
             className: "hraness-switch-field__track",
             "data-slot": "switch-track",
-            children: /* @__PURE__ */ jsxDEV6("span", {
+            children: /* @__PURE__ */ jsxDEV7("span", {
               className: "hraness-switch-field__thumb",
               "data-slot": "switch-thumb"
             }, undefined, false, undefined, this)
           }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV6("span", {
+          /* @__PURE__ */ jsxDEV7("span", {
             className: "hraness-switch-field__label",
             "data-slot": "switch-label",
             children: label
           }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this),
-      /* @__PURE__ */ jsxDEV6(FieldMessages, {
+      /* @__PURE__ */ jsxDEV7(FieldMessages, {
         description,
         errorMessage
       }, undefined, false, undefined, this)
@@ -1251,7 +1262,7 @@ function NativeSelectField({
   const errorId = showsError ? `${controlId}-error` : undefined;
   const describedBy = [ariaDescribedBy, descriptionId, errorId].filter((candidate) => typeof candidate === "string" && candidate.length > 0).join(" ") || undefined;
   const resolvedAriaInvalid = reportsInvalid(ariaInvalid) ? ariaInvalid : invalid ? true : ariaInvalid;
-  return /* @__PURE__ */ jsxDEV6("div", {
+  return /* @__PURE__ */ jsxDEV7("div", {
     className: cn("hraness-field", "hraness-native-select-field", className),
     "data-disabled": disabled || undefined,
     "data-invalid": invalid || undefined,
@@ -1259,16 +1270,16 @@ function NativeSelectField({
     "data-slot": "native-select-field",
     "data-surface": surface,
     children: [
-      /* @__PURE__ */ jsxDEV6("label", {
+      /* @__PURE__ */ jsxDEV7("label", {
         className: cn("hraness-field__label", !showLabel && "hraness-visually-hidden"),
         "data-slot": "field-label",
         htmlFor: controlId,
         children: label
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV6("div", {
+      /* @__PURE__ */ jsxDEV7("div", {
         className: "hraness-field__control",
         "data-slot": "field-control",
-        children: /* @__PURE__ */ jsxDEV6("select", {
+        children: /* @__PURE__ */ jsxDEV7("select", {
           ...props,
           "aria-describedby": describedBy,
           "aria-invalid": resolvedAriaInvalid,
@@ -1285,12 +1296,12 @@ function NativeSelectField({
           ref: selectRef,
           ...value === undefined ? {} : { value },
           children: [
-            placeholder === undefined ? null : /* @__PURE__ */ jsxDEV6("option", {
+            placeholder === undefined ? null : /* @__PURE__ */ jsxDEV7("option", {
               disabled: true,
               value: "",
               children: placeholder
             }, undefined, false, undefined, this),
-            options.map((option) => /* @__PURE__ */ jsxDEV6("option", {
+            options.map((option) => /* @__PURE__ */ jsxDEV7("option", {
               disabled: option.disabled,
               value: option.id,
               children: option.label
@@ -1298,13 +1309,13 @@ function NativeSelectField({
           ]
         }, undefined, true, undefined, this)
       }, undefined, false, undefined, this),
-      description === undefined ? null : /* @__PURE__ */ jsxDEV6("span", {
+      description === undefined ? null : /* @__PURE__ */ jsxDEV7("span", {
         className: "hraness-field__description",
         "data-slot": "field-description",
         id: descriptionId,
         children: description
       }, undefined, false, undefined, this),
-      !showsError ? null : /* @__PURE__ */ jsxDEV6("span", {
+      !showsError ? null : /* @__PURE__ */ jsxDEV7("span", {
         className: "hraness-field__error",
         "data-slot": "field-error",
         id: errorId,
@@ -1338,7 +1349,7 @@ function FileField({
   const errorId = showsError ? `${controlId}-error` : undefined;
   const describedBy = [ariaDescribedBy, descriptionId, errorId].filter((candidate) => typeof candidate === "string" && candidate.length > 0).join(" ") || undefined;
   const resolvedAriaInvalid = reportsInvalid(ariaInvalid) ? ariaInvalid : invalid ? true : ariaInvalid;
-  return /* @__PURE__ */ jsxDEV6("div", {
+  return /* @__PURE__ */ jsxDEV7("div", {
     className: cn("hraness-field", "hraness-file-field", className),
     "data-disabled": disabled || undefined,
     "data-invalid": invalid || undefined,
@@ -1346,16 +1357,16 @@ function FileField({
     "data-slot": "file-field",
     "data-surface": surface,
     children: [
-      /* @__PURE__ */ jsxDEV6("label", {
+      /* @__PURE__ */ jsxDEV7("label", {
         className: cn("hraness-field__label", !showLabel && "hraness-visually-hidden"),
         "data-slot": "field-label",
         htmlFor: controlId,
         children: label
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV6("div", {
+      /* @__PURE__ */ jsxDEV7("div", {
         className: "hraness-field__control",
         "data-slot": "field-control",
-        children: /* @__PURE__ */ jsxDEV6("input", {
+        children: /* @__PURE__ */ jsxDEV7("input", {
           ...props,
           "aria-describedby": describedBy,
           "aria-invalid": resolvedAriaInvalid,
@@ -1367,13 +1378,13 @@ function FileField({
           type: "file"
         }, undefined, false, undefined, this)
       }, undefined, false, undefined, this),
-      description === undefined ? null : /* @__PURE__ */ jsxDEV6("span", {
+      description === undefined ? null : /* @__PURE__ */ jsxDEV7("span", {
         className: "hraness-field__description",
         "data-slot": "field-description",
         id: descriptionId,
         children: description
       }, undefined, false, undefined, this),
-      !showsError ? null : /* @__PURE__ */ jsxDEV6("span", {
+      !showsError ? null : /* @__PURE__ */ jsxDEV7("span", {
         className: "hraness-field__error",
         "data-slot": "field-error",
         id: errorId,
@@ -1384,7 +1395,7 @@ function FileField({
 }
 
 // src/checkbox-group.tsx
-import { jsxDEV as jsxDEV7 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV8 } from "react/jsx-dev-runtime";
 "use client";
 function CheckboxGroup({
   children,
@@ -1396,24 +1407,24 @@ function CheckboxGroup({
   optionsClassName,
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV7(AriaCheckboxGroup, {
+  return /* @__PURE__ */ jsxDEV8(AriaCheckboxGroup, {
     ...props,
     className: cn("hraness-checkbox-group", className),
     "data-slot": "checkbox-group",
     ref: groupRef,
     children: [
-      /* @__PURE__ */ jsxDEV7(Label2, {
+      /* @__PURE__ */ jsxDEV8(Label2, {
         className: "hraness-checkbox-group__label",
         children: label
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV7("div", {
+      /* @__PURE__ */ jsxDEV8("div", {
         className: cn("hraness-checkbox-group__options", optionsClassName),
         children
       }, undefined, false, undefined, this),
-      description === undefined ? null : /* @__PURE__ */ jsxDEV7(FieldDescription, {
+      description === undefined ? null : /* @__PURE__ */ jsxDEV8(FieldDescription, {
         children: description
       }, undefined, false, undefined, this),
-      errorMessage === undefined ? null : /* @__PURE__ */ jsxDEV7(FieldError, {
+      errorMessage === undefined ? null : /* @__PURE__ */ jsxDEV8(FieldError, {
         children: errorMessage
       }, undefined, false, undefined, this)
     ]
@@ -1437,7 +1448,7 @@ import {
   ToggleButton as ToggleButton2,
   ToggleButtonGroup
 } from "react-aria-components";
-import { jsxDEV as jsxDEV8 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV9 } from "react/jsx-dev-runtime";
 "use client";
 function ownedStringIdForKey(items, key) {
   const candidate = String(key);
@@ -1464,7 +1475,7 @@ function Tabs({
   value,
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV8(AriaTabs, {
+  return /* @__PURE__ */ jsxDEV9(AriaTabs, {
     ...props,
     className: cn("hraness-tabs", className),
     "data-slot": "tabs",
@@ -1478,29 +1489,29 @@ function Tabs({
     ref: tabsRef,
     ...value === undefined ? {} : { selectedKey: value },
     children: [
-      /* @__PURE__ */ jsxDEV8("div", {
+      /* @__PURE__ */ jsxDEV9("div", {
         className: "hraness-tabs__bar",
         "data-slot": "tabs-bar",
         children: [
-          /* @__PURE__ */ jsxDEV8(TabList, {
+          /* @__PURE__ */ jsxDEV9(TabList, {
             "aria-label": ariaLabel,
             className: "hraness-tabs__list",
             "data-slot": "tabs-list",
             items,
-            children: (item) => /* @__PURE__ */ jsxDEV8(Tab, {
+            children: (item) => /* @__PURE__ */ jsxDEV9(Tab, {
               ...item.ariaLabel === undefined ? {} : { "aria-label": item.ariaLabel },
               className: "hraness-tabs__tab",
               "data-slot": "tab",
               id: item.id,
               ...item.isDisabled === undefined ? {} : { isDisabled: item.isDisabled },
               children: [
-                item.leading === undefined ? null : /* @__PURE__ */ jsxDEV8("span", {
+                item.leading === undefined ? null : /* @__PURE__ */ jsxDEV9("span", {
                   "aria-hidden": "true",
                   className: "hraness-tabs__leading",
                   "data-slot": "tab-leading",
                   children: item.leading
                 }, undefined, false, undefined, this),
-                /* @__PURE__ */ jsxDEV8("span", {
+                /* @__PURE__ */ jsxDEV9("span", {
                   className: "hraness-tabs__label",
                   "data-slot": "tab-label",
                   children: item.label
@@ -1509,18 +1520,18 @@ function Tabs({
               ]
             }, undefined, true, undefined, this)
           }, undefined, false, undefined, this),
-          end === undefined ? null : /* @__PURE__ */ jsxDEV8("div", {
+          end === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
             className: "hraness-tabs__end",
             "data-slot": "tabs-end",
             children: end
           }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this),
-      /* @__PURE__ */ jsxDEV8(TabPanels, {
+      /* @__PURE__ */ jsxDEV9(TabPanels, {
         className: "hraness-tabs__panels",
         "data-slot": "tab-panels",
         items,
-        children: (item) => /* @__PURE__ */ jsxDEV8(TabPanel, {
+        children: (item) => /* @__PURE__ */ jsxDEV9(TabPanel, {
           className: "hraness-tabs__panel",
           "data-slot": "tab-panel",
           id: item.id,
@@ -1539,27 +1550,27 @@ function Disclosure({
   title,
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV8(AriaDisclosure, {
+  return /* @__PURE__ */ jsxDEV9(AriaDisclosure, {
     ...props,
     className: cn("hraness-disclosure", className),
     "data-slot": "disclosure",
     "data-size": size,
     children: [
-      /* @__PURE__ */ jsxDEV8(Heading2, {
+      /* @__PURE__ */ jsxDEV9(Heading2, {
         className: "hraness-disclosure__heading",
         "data-slot": "disclosure-heading",
         level: headingLevel,
-        children: /* @__PURE__ */ jsxDEV8(AriaButton5, {
+        children: /* @__PURE__ */ jsxDEV9(AriaButton5, {
           className: "hraness-disclosure__trigger",
           "data-slot": "disclosure-trigger",
           slot: "trigger",
           children: [
-            /* @__PURE__ */ jsxDEV8("span", {
+            /* @__PURE__ */ jsxDEV9("span", {
               className: "hraness-disclosure__title",
               "data-slot": "disclosure-title",
               children: title
             }, undefined, false, undefined, this),
-            /* @__PURE__ */ jsxDEV8("span", {
+            /* @__PURE__ */ jsxDEV9("span", {
               "aria-hidden": "true",
               className: "hraness-disclosure__indicator",
               "data-slot": "disclosure-indicator",
@@ -1568,7 +1579,7 @@ function Disclosure({
           ]
         }, undefined, true, undefined, this)
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV8(AriaDisclosurePanel, {
+      /* @__PURE__ */ jsxDEV9(AriaDisclosurePanel, {
         className: "hraness-disclosure__panel",
         "data-slot": "disclosure-panel",
         children
@@ -1577,7 +1588,7 @@ function Disclosure({
   }, undefined, true, undefined, this);
 }
 function Accordion({ children, className, ...props }) {
-  return /* @__PURE__ */ jsxDEV8(AriaDisclosureGroup, {
+  return /* @__PURE__ */ jsxDEV9(AriaDisclosureGroup, {
     ...props,
     className: cn("hraness-accordion", className),
     "data-slot": "accordion",
@@ -1599,7 +1610,7 @@ function ToggleGroup({
     return owned === null ? [] : [owned];
   });
   const selectedKeys = selectionMode === "single" ? ownedSelectedKeys.slice(0, 1) : ownedSelectedKeys;
-  return /* @__PURE__ */ jsxDEV8(ToggleButtonGroup, {
+  return /* @__PURE__ */ jsxDEV9(ToggleButtonGroup, {
     "aria-label": ariaLabel,
     className: cn("hraness-toggle-group", className),
     "data-slot": "toggle-group",
@@ -1618,20 +1629,20 @@ function ToggleGroup({
     orientation,
     selectedKeys,
     selectionMode,
-    children: items.map((item) => /* @__PURE__ */ jsxDEV8(ToggleButton2, {
+    children: items.map((item) => /* @__PURE__ */ jsxDEV9(ToggleButton2, {
       ...item.textValue === undefined ? {} : { "aria-label": item.textValue },
       className: "hraness-toggle-group__item",
       "data-slot": "toggle-group-item",
       id: item.id,
       ...item.isDisabled === undefined ? {} : { isDisabled: item.isDisabled },
       children: [
-        item.leading === undefined ? null : /* @__PURE__ */ jsxDEV8("span", {
+        item.leading === undefined ? null : /* @__PURE__ */ jsxDEV9("span", {
           "aria-hidden": "true",
           className: "hraness-toggle-group__leading",
           "data-slot": "toggle-group-leading",
           children: item.leading
         }, undefined, false, undefined, this),
-        /* @__PURE__ */ jsxDEV8("span", {
+        /* @__PURE__ */ jsxDEV9("span", {
           className: "hraness-toggle-group__label",
           "data-slot": "toggle-group-label",
           children: item.label
@@ -1651,7 +1662,7 @@ function SegmentedControl({
 }) {
   const fallbackValue = items.find((item) => item.isDisabled !== true)?.id ?? items[0].id;
   const normalizedValue = ownedStringIdForKey(items, value) ?? fallbackValue;
-  return /* @__PURE__ */ jsxDEV8(RadioGroup2, {
+  return /* @__PURE__ */ jsxDEV9(RadioGroup2, {
     "aria-label": ariaLabel,
     className: cn("hraness-segmented-control", className),
     "data-slot": "segmented-control",
@@ -1664,25 +1675,25 @@ function SegmentedControl({
     },
     orientation: "horizontal",
     value: normalizedValue,
-    children: items.map((item) => /* @__PURE__ */ jsxDEV8(AriaRadio, {
+    children: items.map((item) => /* @__PURE__ */ jsxDEV9(AriaRadio, {
       ...item.ariaLabel === undefined ? {} : { "aria-label": item.ariaLabel },
       className: "hraness-segmented-control__item",
       "data-slot": "segmented-control-item",
       ...item.isDisabled === undefined ? {} : { isDisabled: item.isDisabled },
       value: item.id,
       children: [
-        /* @__PURE__ */ jsxDEV8("span", {
+        /* @__PURE__ */ jsxDEV9("span", {
           "aria-hidden": "true",
           className: "hraness-segmented-control__indicator",
           "data-slot": "segmented-control-indicator"
         }, undefined, false, undefined, this),
-        item.leading === undefined ? null : /* @__PURE__ */ jsxDEV8("span", {
+        item.leading === undefined ? null : /* @__PURE__ */ jsxDEV9("span", {
           "aria-hidden": "true",
           className: "hraness-segmented-control__leading",
           "data-slot": "segmented-control-leading",
           children: item.leading
         }, undefined, false, undefined, this),
-        /* @__PURE__ */ jsxDEV8("span", {
+        /* @__PURE__ */ jsxDEV9("span", {
           className: "hraness-segmented-control__label",
           "data-slot": "segmented-control-label",
           children: item.label
@@ -1692,7 +1703,7 @@ function SegmentedControl({
   }, undefined, false, undefined, this);
 }
 function Separator({ className, ...props }) {
-  return /* @__PURE__ */ jsxDEV8(AriaSeparator2, {
+  return /* @__PURE__ */ jsxDEV9(AriaSeparator2, {
     ...props,
     className: cn("hraness-separator", className),
     "data-slot": "separator"
@@ -1702,8 +1713,8 @@ function Separator({ className, ...props }) {
 import {
   forwardRef as forwardRef5
 } from "react";
-import { jsxDEV as jsxDEV9 } from "react/jsx-dev-runtime";
-var KeyHint = forwardRef5(({ children, className, ...props }, ref) => /* @__PURE__ */ jsxDEV9("kbd", {
+import { jsxDEV as jsxDEV10 } from "react/jsx-dev-runtime";
+var KeyHint = forwardRef5(({ children, className, ...props }, ref) => /* @__PURE__ */ jsxDEV10("kbd", {
   ...props,
   className: cn("hraness-key-hint", className),
   "data-slot": "key-hint",
@@ -1722,34 +1733,34 @@ var PageIntro = forwardRef5(({
   ...props
 }, ref) => {
   const Heading3 = titleAs;
-  return /* @__PURE__ */ jsxDEV9("section", {
+  return /* @__PURE__ */ jsxDEV10("section", {
     ...props,
     className: cn("hraness-page-intro", className),
     "data-slot": "page-intro",
     ref,
     children: [
-      /* @__PURE__ */ jsxDEV9("div", {
+      /* @__PURE__ */ jsxDEV10("div", {
         className: "hraness-page-intro__copy",
         "data-slot": "page-intro-copy",
         children: [
-          eyebrow === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
+          eyebrow === undefined ? null : /* @__PURE__ */ jsxDEV10("div", {
             className: "hraness-page-intro__eyebrow",
             "data-slot": "page-intro-eyebrow",
             children: eyebrow
           }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV9(Heading3, {
+          /* @__PURE__ */ jsxDEV10(Heading3, {
             className: "hraness-page-intro__title",
             "data-slot": "page-intro-title",
             children: title
           }, undefined, false, undefined, this),
-          description === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
+          description === undefined ? null : /* @__PURE__ */ jsxDEV10("div", {
             className: "hraness-page-intro__description",
             "data-slot": "page-intro-description",
             children: description
           }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this),
-      actions === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
+      actions === undefined ? null : /* @__PURE__ */ jsxDEV10("div", {
         className: "hraness-page-intro__actions",
         "data-slot": "page-intro-actions",
         children: actions
@@ -1769,29 +1780,29 @@ var EmptyState = forwardRef5(({
   ...props
 }, ref) => {
   const Heading3 = titleAs;
-  return /* @__PURE__ */ jsxDEV9("section", {
+  return /* @__PURE__ */ jsxDEV10("section", {
     ...props,
     className: cn("hraness-empty-state", className),
     "data-slot": "empty-state",
     ref,
     children: [
-      icon === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
+      icon === undefined ? null : /* @__PURE__ */ jsxDEV10("div", {
         "aria-hidden": "true",
         className: "hraness-empty-state__icon",
         "data-slot": "empty-state-icon",
         children: icon
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV9(Heading3, {
+      /* @__PURE__ */ jsxDEV10(Heading3, {
         className: "hraness-empty-state__title",
         "data-slot": "empty-state-title",
         children: title
       }, undefined, false, undefined, this),
-      description === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
+      description === undefined ? null : /* @__PURE__ */ jsxDEV10("div", {
         className: "hraness-empty-state__description",
         "data-slot": "empty-state-description",
         children: description
       }, undefined, false, undefined, this),
-      action === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
+      action === undefined ? null : /* @__PURE__ */ jsxDEV10("div", {
         className: "hraness-empty-state__action",
         "data-slot": "empty-state-action",
         children: action
@@ -1813,7 +1824,7 @@ var InlineAlert = forwardRef5(({
 }, ref) => {
   const resolvedAriaLive = ariaLive ?? (isLive ? tone === "danger" ? "assertive" : "polite" : undefined);
   const resolvedRole = role ?? (isLive ? tone === "danger" ? "alert" : "status" : undefined);
-  return /* @__PURE__ */ jsxDEV9("div", {
+  return /* @__PURE__ */ jsxDEV10("div", {
     ...props,
     "aria-live": resolvedAriaLive,
     className: cn("hraness-inline-alert", className),
@@ -1822,22 +1833,22 @@ var InlineAlert = forwardRef5(({
     ref,
     role: resolvedRole,
     children: [
-      icon === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
+      icon === undefined ? null : /* @__PURE__ */ jsxDEV10("div", {
         "aria-hidden": "true",
         className: "hraness-inline-alert__icon",
         "data-slot": "inline-alert-icon",
         children: icon
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV9("div", {
+      /* @__PURE__ */ jsxDEV10("div", {
         className: "hraness-inline-alert__content",
         "data-slot": "inline-alert-content",
         children: [
-          title === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
+          title === undefined ? null : /* @__PURE__ */ jsxDEV10("div", {
             className: "hraness-inline-alert__title",
             "data-slot": "inline-alert-title",
             children: title
           }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV9("div", {
+          /* @__PURE__ */ jsxDEV10("div", {
             className: "hraness-inline-alert__body",
             "data-slot": "inline-alert-body",
             children
@@ -1859,40 +1870,40 @@ var SettingsCard = forwardRef5(({
   ...props
 }, ref) => {
   const Heading3 = titleAs;
-  return /* @__PURE__ */ jsxDEV9("section", {
+  return /* @__PURE__ */ jsxDEV10("section", {
     ...props,
     className: cn("hraness-settings-card", className),
     "data-shape": shape,
     "data-slot": "settings-card",
     ref,
     children: [
-      /* @__PURE__ */ jsxDEV9("header", {
+      /* @__PURE__ */ jsxDEV10("header", {
         className: "hraness-settings-card__header",
         "data-slot": "settings-card-header",
         children: [
-          /* @__PURE__ */ jsxDEV9("div", {
+          /* @__PURE__ */ jsxDEV10("div", {
             "data-slot": "settings-card-heading",
             children: [
-              /* @__PURE__ */ jsxDEV9(Heading3, {
+              /* @__PURE__ */ jsxDEV10(Heading3, {
                 className: "hraness-settings-card__title",
                 "data-slot": "settings-card-title",
                 children: title
               }, undefined, false, undefined, this),
-              description === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
+              description === undefined ? null : /* @__PURE__ */ jsxDEV10("div", {
                 className: "hraness-settings-card__description",
                 "data-slot": "settings-card-description",
                 children: description
               }, undefined, false, undefined, this)
             ]
           }, undefined, true, undefined, this),
-          actions === undefined ? null : /* @__PURE__ */ jsxDEV9("div", {
+          actions === undefined ? null : /* @__PURE__ */ jsxDEV10("div", {
             className: "hraness-settings-card__actions",
             "data-slot": "settings-card-actions",
             children: actions
           }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this),
-      /* @__PURE__ */ jsxDEV9("div", {
+      /* @__PURE__ */ jsxDEV10("div", {
         className: "hraness-settings-card__body",
         "data-slot": "settings-card-body",
         children
@@ -1905,7 +1916,7 @@ SettingsCard.displayName = "SettingsCard";
 import {
   forwardRef as forwardRef6
 } from "react";
-import { jsxDEV as jsxDEV10 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV11 } from "react/jsx-dev-runtime";
 function avatarInitials(name) {
   const words = name.trim().split(/\s+/u).filter(Boolean);
   if (words.length === 0)
@@ -1926,7 +1937,7 @@ var Avatar = forwardRef6(({
 }, ref) => {
   const fallbackLabel = ariaLabel ?? (alt === "" ? undefined : alt);
   const imageProps = { alt, src };
-  return /* @__PURE__ */ jsxDEV10("span", {
+  return /* @__PURE__ */ jsxDEV11("span", {
     ...props,
     "aria-label": src === undefined ? fallbackLabel : ariaLabel,
     className: cn("hraness-avatar", className),
@@ -1935,12 +1946,12 @@ var Avatar = forwardRef6(({
     ref,
     role: role ?? (src === undefined && fallbackLabel !== undefined ? "img" : undefined),
     title: title ?? name,
-    children: src === undefined ? /* @__PURE__ */ jsxDEV10("span", {
+    children: src === undefined ? /* @__PURE__ */ jsxDEV11("span", {
       "aria-hidden": "true",
       className: "hraness-avatar__fallback",
       "data-slot": "avatar-fallback",
       children: avatarInitials(name)
-    }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV10("img", {
+    }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV11("img", {
       ...imageProps,
       className: "hraness-avatar__image",
       "data-slot": "avatar-image"
@@ -1958,24 +1969,24 @@ function DataTableInner({
   wrapperClassName,
   ...props
 }, ref) {
-  return /* @__PURE__ */ jsxDEV10("div", {
+  return /* @__PURE__ */ jsxDEV11("div", {
     className: cn("hraness-data-table", wrapperClassName),
     "data-slot": "data-table-wrapper",
-    children: /* @__PURE__ */ jsxDEV10("table", {
+    children: /* @__PURE__ */ jsxDEV11("table", {
       ...props,
       className: cn("hraness-data-table__table", className),
       "data-slot": "data-table",
       ref,
       children: [
-        caption === undefined ? null : /* @__PURE__ */ jsxDEV10("caption", {
+        caption === undefined ? null : /* @__PURE__ */ jsxDEV11("caption", {
           "data-slot": "data-table-caption",
           children: caption
         }, undefined, false, undefined, this),
-        /* @__PURE__ */ jsxDEV10("thead", {
+        /* @__PURE__ */ jsxDEV11("thead", {
           "data-slot": "data-table-head",
-          children: /* @__PURE__ */ jsxDEV10("tr", {
+          children: /* @__PURE__ */ jsxDEV11("tr", {
             "data-slot": "data-table-header-row",
-            children: columns.map((column) => /* @__PURE__ */ jsxDEV10("th", {
+            children: columns.map((column) => /* @__PURE__ */ jsxDEV11("th", {
               "data-align": column.align ?? "start",
               "data-slot": "data-table-header",
               scope: "col",
@@ -1983,19 +1994,19 @@ function DataTableInner({
             }, column.id, false, undefined, this))
           }, undefined, false, undefined, this)
         }, undefined, false, undefined, this),
-        /* @__PURE__ */ jsxDEV10("tbody", {
+        /* @__PURE__ */ jsxDEV11("tbody", {
           "data-slot": "data-table-body",
-          children: rows.length === 0 ? /* @__PURE__ */ jsxDEV10("tr", {
+          children: rows.length === 0 ? /* @__PURE__ */ jsxDEV11("tr", {
             "data-slot": "data-table-empty-row",
-            children: /* @__PURE__ */ jsxDEV10("td", {
+            children: /* @__PURE__ */ jsxDEV11("td", {
               className: "hraness-data-table__empty",
               colSpan: columns.length,
               "data-slot": "data-table-empty",
               children: empty
             }, undefined, false, undefined, this)
-          }, undefined, false, undefined, this) : rows.map((row) => /* @__PURE__ */ jsxDEV10("tr", {
+          }, undefined, false, undefined, this) : rows.map((row) => /* @__PURE__ */ jsxDEV11("tr", {
             "data-slot": "data-table-row",
-            children: columns.map((column) => /* @__PURE__ */ jsxDEV10("td", {
+            children: columns.map((column) => /* @__PURE__ */ jsxDEV11("td", {
               "data-align": column.align ?? "start",
               "data-slot": "data-table-cell",
               children: column.cell(row)
@@ -2014,8 +2025,8 @@ import {
   forwardRef as forwardRef7,
   useId as useId2
 } from "react";
-import { jsxDEV as jsxDEV11 } from "react/jsx-dev-runtime";
-var Spinner = forwardRef7(({ className, label, size = "default", ...props }, ref) => /* @__PURE__ */ jsxDEV11("span", {
+import { jsxDEV as jsxDEV12 } from "react/jsx-dev-runtime";
+var Spinner = forwardRef7(({ className, label, size = "default", ...props }, ref) => /* @__PURE__ */ jsxDEV12("span", {
   ...props,
   "aria-hidden": label === undefined ? "true" : undefined,
   className: cn("hraness-spinner", className),
@@ -2023,7 +2034,7 @@ var Spinner = forwardRef7(({ className, label, size = "default", ...props }, ref
   "data-slot": "spinner",
   ref,
   role: label === undefined ? undefined : "status",
-  children: label === undefined ? null : /* @__PURE__ */ jsxDEV11("span", {
+  children: label === undefined ? null : /* @__PURE__ */ jsxDEV12("span", {
     className: "hraness-visually-hidden",
     "data-slot": "spinner-label",
     children: label
@@ -2037,7 +2048,7 @@ var Skeleton = forwardRef7(({
   style,
   width,
   ...props
-}, ref) => /* @__PURE__ */ jsxDEV11("div", {
+}, ref) => /* @__PURE__ */ jsxDEV12("div", {
   ...props,
   "aria-hidden": "true",
   className: cn("hraness-skeleton", className),
@@ -2071,22 +2082,22 @@ var Progress = forwardRef7(({
 }, ref) => {
   const normalized = normalizeProgress(value, max);
   const labelId = `${useId2()}-label`;
-  return /* @__PURE__ */ jsxDEV11("div", {
+  return /* @__PURE__ */ jsxDEV12("div", {
     ...props,
     className: cn("hraness-progress", className),
     "data-slot": "progress",
     ref,
     children: [
-      /* @__PURE__ */ jsxDEV11("div", {
+      /* @__PURE__ */ jsxDEV12("div", {
         className: "hraness-progress__label-row",
         "data-slot": "progress-label-row",
         children: [
-          /* @__PURE__ */ jsxDEV11("span", {
+          /* @__PURE__ */ jsxDEV12("span", {
             "data-slot": "progress-label",
             id: labelId,
             children: label
           }, undefined, false, undefined, this),
-          showValue ? /* @__PURE__ */ jsxDEV11("span", {
+          showValue ? /* @__PURE__ */ jsxDEV12("span", {
             "data-slot": "progress-value",
             children: [
               Math.round(normalized.percent),
@@ -2095,7 +2106,7 @@ var Progress = forwardRef7(({
           }, undefined, true, undefined, this) : null
         ]
       }, undefined, true, undefined, this),
-      /* @__PURE__ */ jsxDEV11("progress", {
+      /* @__PURE__ */ jsxDEV12("progress", {
         "aria-labelledby": labelId,
         className: "hraness-progress__control",
         "data-slot": "progress-control",
@@ -2111,9 +2122,9 @@ import { forwardRef as forwardRef8 } from "react";
 import {
   Form as AriaForm
 } from "react-aria-components";
-import { jsxDEV as jsxDEV12 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV13 } from "react/jsx-dev-runtime";
 "use client";
-var Form = forwardRef8(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV12(AriaForm, {
+var Form = forwardRef8(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV13(AriaForm, {
   ...props,
   className: cn("hraness-form", className),
   "data-slot": "form",
@@ -2131,7 +2142,7 @@ import {
   SliderThumb,
   SliderTrack
 } from "react-aria-components";
-import { jsxDEV as jsxDEV13, Fragment as Fragment4 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV14, Fragment as Fragment4 } from "react/jsx-dev-runtime";
 "use client";
 function percentageStyle(percentage) {
   const finitePercentage = percentage === undefined || !Number.isFinite(percentage) ? 0 : percentage;
@@ -2146,33 +2157,33 @@ function ProgressBar({
   showValue = false,
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV13(AriaProgressBar, {
+  return /* @__PURE__ */ jsxDEV14(AriaProgressBar, {
     ...props,
     className: cn("hraness-progress-bar", className),
     "data-slot": "progress-bar",
     ref: progressRef,
-    children: ({ percentage, valueText }) => /* @__PURE__ */ jsxDEV13(Fragment4, {
+    children: ({ percentage, valueText }) => /* @__PURE__ */ jsxDEV14(Fragment4, {
       children: [
-        /* @__PURE__ */ jsxDEV13("div", {
+        /* @__PURE__ */ jsxDEV14("div", {
           className: "hraness-progress-bar__header hraness-progress-bar__label-row",
           "data-slot": "progress-bar-header",
           children: [
-            /* @__PURE__ */ jsxDEV13(Label3, {
+            /* @__PURE__ */ jsxDEV14(Label3, {
               className: "hraness-progress-bar__label",
               "data-slot": "progress-bar-label",
               children: label
             }, undefined, false, undefined, this),
-            showValue && valueText !== undefined ? /* @__PURE__ */ jsxDEV13("span", {
+            showValue && valueText !== undefined ? /* @__PURE__ */ jsxDEV14("span", {
               className: "hraness-progress-bar__value",
               "data-slot": "progress-bar-value",
               children: valueText
             }, undefined, false, undefined, this) : null
           ]
         }, undefined, true, undefined, this),
-        /* @__PURE__ */ jsxDEV13("div", {
+        /* @__PURE__ */ jsxDEV14("div", {
           className: "hraness-progress-bar__track",
           "data-slot": "progress-bar-track",
-          children: /* @__PURE__ */ jsxDEV13("span", {
+          children: /* @__PURE__ */ jsxDEV14("span", {
             className: "hraness-progress-bar__fill",
             "data-indeterminate": percentage === undefined || undefined,
             "data-slot": "progress-bar-fill",
@@ -2191,34 +2202,34 @@ function Meter({
   tone = "default",
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV13(AriaMeter, {
+  return /* @__PURE__ */ jsxDEV14(AriaMeter, {
     ...props,
     className: cn("hraness-meter", className),
     "data-slot": "meter",
     "data-tone": tone,
     ref: meterRef,
-    children: ({ percentage, valueText }) => /* @__PURE__ */ jsxDEV13(Fragment4, {
+    children: ({ percentage, valueText }) => /* @__PURE__ */ jsxDEV14(Fragment4, {
       children: [
-        /* @__PURE__ */ jsxDEV13("div", {
+        /* @__PURE__ */ jsxDEV14("div", {
           className: "hraness-meter__header hraness-meter__label-row",
           "data-slot": "meter-header",
           children: [
-            /* @__PURE__ */ jsxDEV13(Label3, {
+            /* @__PURE__ */ jsxDEV14(Label3, {
               className: "hraness-meter__label",
               "data-slot": "meter-label",
               children: label
             }, undefined, false, undefined, this),
-            showValue && valueText !== undefined ? /* @__PURE__ */ jsxDEV13("span", {
+            showValue && valueText !== undefined ? /* @__PURE__ */ jsxDEV14("span", {
               className: "hraness-meter__value",
               "data-slot": "meter-value",
               children: valueText
             }, undefined, false, undefined, this) : null
           ]
         }, undefined, true, undefined, this),
-        /* @__PURE__ */ jsxDEV13("div", {
+        /* @__PURE__ */ jsxDEV14("div", {
           className: "hraness-meter__track",
           "data-slot": "meter-track",
-          children: /* @__PURE__ */ jsxDEV13("span", {
+          children: /* @__PURE__ */ jsxDEV14("span", {
             className: "hraness-meter__fill",
             "data-slot": "meter-fill",
             style: percentageStyle(percentage)
@@ -2237,36 +2248,36 @@ function Slider({
   thumbLabel,
   ...props
 }) {
-  return /* @__PURE__ */ jsxDEV13(AriaSlider, {
+  return /* @__PURE__ */ jsxDEV14(AriaSlider, {
     ...props,
     className: cn("hraness-slider", className),
     "data-slot": "slider",
     ref: sliderRef,
     children: [
-      /* @__PURE__ */ jsxDEV13("div", {
+      /* @__PURE__ */ jsxDEV14("div", {
         className: "hraness-slider__label-row",
         "data-slot": "slider-header",
         children: [
-          /* @__PURE__ */ jsxDEV13(Label3, {
+          /* @__PURE__ */ jsxDEV14(Label3, {
             className: "hraness-slider__label",
             "data-slot": "slider-label",
             children: label
           }, undefined, false, undefined, this),
-          showValue ? /* @__PURE__ */ jsxDEV13(SliderOutput, {
+          showValue ? /* @__PURE__ */ jsxDEV14(SliderOutput, {
             className: "hraness-slider__value",
             "data-slot": "slider-value"
           }, undefined, false, undefined, this) : null
         ]
       }, undefined, true, undefined, this),
-      /* @__PURE__ */ jsxDEV13(SliderTrack, {
+      /* @__PURE__ */ jsxDEV14(SliderTrack, {
         className: "hraness-slider__track",
         "data-slot": "slider-track",
         children: [
-          /* @__PURE__ */ jsxDEV13(SliderFill, {
+          /* @__PURE__ */ jsxDEV14(SliderFill, {
             className: "hraness-slider__fill",
             "data-slot": "slider-fill"
           }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV13(SliderThumb, {
+          /* @__PURE__ */ jsxDEV14(SliderThumb, {
             ...thumbLabel === undefined ? {} : { "aria-label": thumbLabel },
             className: "hraness-slider__thumb",
             "data-slot": "slider-thumb",
@@ -2403,7 +2414,7 @@ function knobValuePercentage(value, min, max) {
 }
 
 // src/knob.tsx
-import { jsxDEV as jsxDEV14, Fragment as Fragment5 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV15, Fragment as Fragment5 } from "react/jsx-dev-runtime";
 "use client";
 var EMPTY_GESTURE = {
   active: false,
@@ -2427,7 +2438,7 @@ function validateKnobProps(label, min, max, step, value) {
 function KnobDial({ percentage }) {
   const valueArc = percentage * 75;
   const indicatorAngle = 135 + percentage * 270;
-  return /* @__PURE__ */ jsxDEV14("svg", {
+  return /* @__PURE__ */ jsxDEV15("svg", {
     "aria-hidden": "true",
     className: "hraness-knob__dial",
     "data-focus-indicator": "true",
@@ -2435,13 +2446,13 @@ function KnobDial({ percentage }) {
     focusable: "false",
     viewBox: "0 0 48 48",
     children: [
-      /* @__PURE__ */ jsxDEV14("circle", {
+      /* @__PURE__ */ jsxDEV15("circle", {
         className: "hraness-knob__face",
         cx: "24",
         cy: "24",
         r: "15"
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV14("circle", {
+      /* @__PURE__ */ jsxDEV15("circle", {
         className: "hraness-knob__arc hraness-knob__arc--track",
         cx: "24",
         cy: "24",
@@ -2450,7 +2461,7 @@ function KnobDial({ percentage }) {
         strokeDasharray: "75 25",
         transform: "rotate(135 24 24)"
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV14("circle", {
+      /* @__PURE__ */ jsxDEV15("circle", {
         className: "hraness-knob__arc hraness-knob__arc--value",
         cx: "24",
         cy: "24",
@@ -2459,7 +2470,7 @@ function KnobDial({ percentage }) {
         strokeDasharray: `${valueArc} 100`,
         transform: "rotate(135 24 24)"
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV14("line", {
+      /* @__PURE__ */ jsxDEV15("line", {
         className: "hraness-knob__indicator",
         transform: `rotate(${indicatorAngle} 24 24)`,
         x1: "24",
@@ -2560,7 +2571,7 @@ function KnobGestureSurface({
         state.setThumbDragging(0, false);
     }
   });
-  return /* @__PURE__ */ jsxDEV14("span", {
+  return /* @__PURE__ */ jsxDEV15("span", {
     ...disabled ? {} : moveProps,
     "aria-hidden": "true",
     className: "hraness-knob__gesture",
@@ -2583,6 +2594,7 @@ var Knob = forwardRef9(({
   max = 100,
   min = 0,
   name,
+  outputVisibility = "visible",
   renderValue,
   step = 1,
   touchPan = "none",
@@ -2593,11 +2605,12 @@ var Knob = forwardRef9(({
   const inputRef = inputRefProp ?? fallbackInputRef;
   const suppliedValue = value ?? defaultValue;
   validateKnobProps(label, min, max, step, suppliedValue);
-  return /* @__PURE__ */ jsxDEV14(AriaSlider2, {
+  return /* @__PURE__ */ jsxDEV15(AriaSlider2, {
     ...props,
     ...defaultValue === undefined ? { value } : { defaultValue },
     className: cn("hraness-knob", className),
     "data-density": density,
+    "data-output-visibility": outputVisibility,
     "data-slot": "knob",
     "data-touch-pan": touchPan,
     isDisabled: disabled,
@@ -2608,13 +2621,13 @@ var Knob = forwardRef9(({
     step,
     children: ({ state }) => {
       const percentage = knobValuePercentage(state.getThumbValue(0), min, max);
-      return /* @__PURE__ */ jsxDEV14(Fragment5, {
+      return /* @__PURE__ */ jsxDEV15(Fragment5, {
         children: [
-          /* @__PURE__ */ jsxDEV14(SliderTrack2, {
+          /* @__PURE__ */ jsxDEV15(SliderTrack2, {
             className: cn("hraness-knob__control", controlClassName),
             "data-slot": "knob-control",
             children: [
-              /* @__PURE__ */ jsxDEV14(SliderThumb2, {
+              /* @__PURE__ */ jsxDEV15(SliderThumb2, {
                 className: "hraness-knob__thumb",
                 "data-slot": "knob-thumb",
                 inputRef,
@@ -2629,11 +2642,11 @@ var Knob = forwardRef9(({
                   transform: "none",
                   width: "100%"
                 },
-                children: /* @__PURE__ */ jsxDEV14(KnobDial, {
+                children: /* @__PURE__ */ jsxDEV15(KnobDial, {
                   percentage
                 }, undefined, false, undefined, this)
               }, undefined, false, undefined, this),
-              /* @__PURE__ */ jsxDEV14(KnobGestureSurface, {
+              /* @__PURE__ */ jsxDEV15(KnobGestureSurface, {
                 disabled,
                 inputRef,
                 max,
@@ -2644,18 +2657,18 @@ var Knob = forwardRef9(({
               }, undefined, false, undefined, this)
             ]
           }, undefined, true, undefined, this),
-          /* @__PURE__ */ jsxDEV14(Label4, {
+          /* @__PURE__ */ jsxDEV15(Label4, {
             className: "hraness-knob__label",
             "data-slot": "knob-label",
             children: label
           }, undefined, false, undefined, this),
-          renderValue === undefined ? /* @__PURE__ */ jsxDEV14(SliderOutput2, {
-            className: "hraness-knob__value",
+          renderValue === undefined ? /* @__PURE__ */ jsxDEV15(SliderOutput2, {
+            className: cn("hraness-knob__value", outputVisibility === "visually-hidden" && "hraness-visually-hidden"),
             "data-slot": "knob-value"
-          }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV14("output", {
+          }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV15("output", {
             "aria-hidden": "true",
             "aria-live": "off",
-            className: "hraness-knob__value",
+            className: cn("hraness-knob__value", outputVisibility === "visually-hidden" && "hraness-visually-hidden"),
             "data-slot": "knob-value",
             children: renderValue(state.getThumbValue(0))
           }, undefined, false, undefined, this)
@@ -2675,10 +2688,10 @@ import {
   ListBoxItem as AriaListBoxItem,
   ListBoxSection as AriaListBoxSection
 } from "react-aria-components";
-import { jsxDEV as jsxDEV15 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV16 } from "react/jsx-dev-runtime";
 "use client";
 function ListBoxInner({ className, ...props }, ref) {
-  return /* @__PURE__ */ jsxDEV15(AriaListBox, {
+  return /* @__PURE__ */ jsxDEV16(AriaListBox, {
     ...props,
     className: cn("hraness-list-box", className),
     "data-slot": "list-box",
@@ -2689,7 +2702,7 @@ var ForwardedListBox = forwardRef10(ListBoxInner);
 ForwardedListBox.displayName = "ListBox";
 var ListBox = ForwardedListBox;
 function ListBoxItemInner({ className, ...props }, ref) {
-  return /* @__PURE__ */ jsxDEV15(AriaListBoxItem, {
+  return /* @__PURE__ */ jsxDEV16(AriaListBoxItem, {
     ...props,
     className: cn("hraness-list-box__item", className),
     "data-slot": "list-box-item",
@@ -2705,13 +2718,13 @@ function ListBoxSectionInner({
   title,
   ...props
 }, ref) {
-  return /* @__PURE__ */ jsxDEV15(AriaListBoxSection, {
+  return /* @__PURE__ */ jsxDEV16(AriaListBoxSection, {
     ...props,
     className: cn("hraness-list-box__section", className),
     "data-slot": "list-box-section",
     ref,
     children: [
-      title === undefined ? null : /* @__PURE__ */ jsxDEV15(Header2, {
+      title === undefined ? null : /* @__PURE__ */ jsxDEV16(Header2, {
         className: "hraness-list-box__header",
         "data-slot": "list-box-header",
         children: title
@@ -2727,29 +2740,29 @@ var ListBoxSection = ForwardedListBoxSection;
 import {
   forwardRef as forwardRef11
 } from "react";
-import { jsxDEV as jsxDEV16 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV17 } from "react/jsx-dev-runtime";
 var Breadcrumbs = forwardRef11(({
   "aria-label": ariaLabel = "Breadcrumbs",
   className,
   items,
   ...props
-}, ref) => /* @__PURE__ */ jsxDEV16("nav", {
+}, ref) => /* @__PURE__ */ jsxDEV17("nav", {
   ...props,
   "aria-label": ariaLabel,
   className: cn("hraness-breadcrumbs", className),
   "data-slot": "breadcrumbs",
   ref,
-  children: /* @__PURE__ */ jsxDEV16("ol", {
+  children: /* @__PURE__ */ jsxDEV17("ol", {
     "data-slot": "breadcrumbs-list",
     children: items.map((item, index) => {
       const current = index === items.length - 1;
-      return /* @__PURE__ */ jsxDEV16("li", {
+      return /* @__PURE__ */ jsxDEV17("li", {
         "data-slot": "breadcrumbs-item",
-        children: item.href === undefined || current ? /* @__PURE__ */ jsxDEV16("span", {
+        children: item.href === undefined || current ? /* @__PURE__ */ jsxDEV17("span", {
           "aria-current": current ? "page" : undefined,
           "data-slot": current ? "breadcrumbs-current" : "breadcrumbs-label",
           children: item.label
-        }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV16("a", {
+        }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV17("a", {
           "data-slot": "breadcrumbs-link",
           href: item.href,
           children: item.label
@@ -2813,20 +2826,20 @@ var Pagination = forwardRef11(({
   const parts = paginationRange(current, total, siblings);
   const previous = current - 1;
   const next = current + 1;
-  return /* @__PURE__ */ jsxDEV16("nav", {
+  return /* @__PURE__ */ jsxDEV17("nav", {
     ...props,
     "aria-label": ariaLabel,
     className: cn("hraness-pagination", className),
     "data-slot": "pagination",
     ref,
     children: [
-      previous < 1 ? /* @__PURE__ */ jsxDEV16("span", {
+      previous < 1 ? /* @__PURE__ */ jsxDEV17("span", {
         "aria-disabled": "true",
         className: "hraness-pagination__boundary",
         "data-direction": "previous",
         "data-slot": "pagination-previous",
         children: "Previous"
-      }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV16("a", {
+      }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV17("a", {
         className: "hraness-pagination__boundary",
         "data-direction": "previous",
         "data-slot": "pagination-previous",
@@ -2834,16 +2847,16 @@ var Pagination = forwardRef11(({
         rel: "prev",
         children: "Previous"
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV16("ol", {
+      /* @__PURE__ */ jsxDEV17("ol", {
         "data-slot": "pagination-list",
-        children: parts.map((part, index) => /* @__PURE__ */ jsxDEV16("li", {
+        children: parts.map((part, index) => /* @__PURE__ */ jsxDEV17("li", {
           "data-slot": "pagination-item",
-          children: part === "ellipsis" ? /* @__PURE__ */ jsxDEV16("span", {
+          children: part === "ellipsis" ? /* @__PURE__ */ jsxDEV17("span", {
             "aria-hidden": "true",
             className: "hraness-pagination__ellipsis",
             "data-slot": "pagination-ellipsis",
             children: "…"
-          }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV16("a", {
+          }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV17("a", {
             ...pageLinkProps(part, current),
             "data-slot": "pagination-link",
             href: hrefForPage(part),
@@ -2851,13 +2864,13 @@ var Pagination = forwardRef11(({
           }, undefined, false, undefined, this)
         }, `${String(part)}-${String(index)}`, false, undefined, this))
       }, undefined, false, undefined, this),
-      next > total ? /* @__PURE__ */ jsxDEV16("span", {
+      next > total ? /* @__PURE__ */ jsxDEV17("span", {
         "aria-disabled": "true",
         className: "hraness-pagination__boundary",
         "data-direction": "next",
         "data-slot": "pagination-next",
         children: "Next"
-      }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV16("a", {
+      }, undefined, false, undefined, this) : /* @__PURE__ */ jsxDEV17("a", {
         className: "hraness-pagination__boundary",
         "data-direction": "next",
         "data-slot": "pagination-next",
@@ -2880,7 +2893,7 @@ import {
   SelectValue,
   Text as Text3
 } from "react-aria-components";
-import { jsxDEV as jsxDEV17 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV18 } from "react/jsx-dev-runtime";
 "use client";
 function SelectField({
   className,
@@ -2904,7 +2917,7 @@ function SelectField({
     const candidate = String(key);
     return options.find((option) => option.id === candidate)?.id ?? null;
   };
-  return /* @__PURE__ */ jsxDEV17(AriaSelect, {
+  return /* @__PURE__ */ jsxDEV18(AriaSelect, {
     ...props,
     className: cn("hraness-select-field", className),
     "data-size": size,
@@ -2916,51 +2929,51 @@ function SelectField({
     ref: selectRef,
     ...value === undefined ? {} : { selectedKey: value },
     children: [
-      /* @__PURE__ */ jsxDEV17(Label5, {
+      /* @__PURE__ */ jsxDEV18(Label5, {
         className: cn("hraness-select-field__label", !showLabel && "hraness-visually-hidden"),
         children: label
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV17(AriaButton6, {
+      /* @__PURE__ */ jsxDEV18(AriaButton6, {
         className: "hraness-select-field__trigger",
         children: [
-          /* @__PURE__ */ jsxDEV17(SelectValue, {
+          /* @__PURE__ */ jsxDEV18(SelectValue, {
             className: "hraness-select-field__value"
           }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV17("span", {
+          /* @__PURE__ */ jsxDEV18("span", {
             "aria-hidden": "true",
             className: "hraness-select-field__indicator",
             children: "⌄"
           }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this),
-      description === undefined ? null : /* @__PURE__ */ jsxDEV17(FieldDescription, {
+      description === undefined ? null : /* @__PURE__ */ jsxDEV18(FieldDescription, {
         className: "hraness-select-field__description",
         children: description
       }, undefined, false, undefined, this),
-      errorMessage === undefined ? null : /* @__PURE__ */ jsxDEV17(FieldError, {
+      errorMessage === undefined ? null : /* @__PURE__ */ jsxDEV18(FieldError, {
         className: "hraness-select-field__error",
         children: errorMessage
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV17(Popover2, {
+      /* @__PURE__ */ jsxDEV18(Popover2, {
         className: "hraness-select-field__popover",
         placement: "bottom start",
-        children: /* @__PURE__ */ jsxDEV17(ListBox2, {
+        children: /* @__PURE__ */ jsxDEV18(ListBox2, {
           className: "hraness-select-field__list-box",
           items: options,
-          children: (option) => /* @__PURE__ */ jsxDEV17(ListBoxItem2, {
+          children: (option) => /* @__PURE__ */ jsxDEV18(ListBoxItem2, {
             className: "hraness-select-field__option",
             id: option.id,
             ...option.disabled === undefined ? {} : { isDisabled: option.disabled },
             textValue: option.textValue,
-            children: /* @__PURE__ */ jsxDEV17("span", {
+            children: /* @__PURE__ */ jsxDEV18("span", {
               className: "hraness-select-field__option-copy",
               children: [
-                /* @__PURE__ */ jsxDEV17(Text3, {
+                /* @__PURE__ */ jsxDEV18(Text3, {
                   className: "hraness-select-field__option-label",
                   slot: "label",
                   children: option.label
                 }, undefined, false, undefined, this),
-                option.description === undefined ? null : /* @__PURE__ */ jsxDEV17(Text3, {
+                option.description === undefined ? null : /* @__PURE__ */ jsxDEV18(Text3, {
                   className: "hraness-select-field__option-description",
                   slot: "description",
                   children: option.description
@@ -2977,7 +2990,7 @@ function SelectField({
 import {
   forwardRef as forwardRef12
 } from "react";
-import { jsxDEV as jsxDEV18 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV19 } from "react/jsx-dev-runtime";
 "use client";
 function attemptFocus(target, ownerDocument) {
   try {
@@ -3054,7 +3067,7 @@ var SkipLink = forwardRef12(({
     if (focusHashTarget(href))
       event.preventDefault();
   };
-  return /* @__PURE__ */ jsxDEV18("a", {
+  return /* @__PURE__ */ jsxDEV19("a", {
     ...props,
     className: cn("hraness-skip-link", className),
     "data-slot": "skip-link",
@@ -3070,7 +3083,7 @@ SkipLink.displayName = "SkipLink";
 import {
   forwardRef as forwardRef13
 } from "react";
-import { jsxDEV as jsxDEV19 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV20 } from "react/jsx-dev-runtime";
 function setForwardedRef(ref, value) {
   if (typeof ref === "function") {
     ref(value);
@@ -3080,7 +3093,7 @@ function setForwardedRef(ref, value) {
 }
 var ViewportFrame = forwardRef13(({ as = "div", className, ...props }, ref) => {
   const Element = as;
-  return /* @__PURE__ */ jsxDEV19(Element, {
+  return /* @__PURE__ */ jsxDEV20(Element, {
     ...props,
     className: cn("hraness-viewport-frame", className),
     "data-slot": "viewport-frame",
@@ -3092,7 +3105,7 @@ var ViewportFrame = forwardRef13(({ as = "div", className, ...props }, ref) => {
 ViewportFrame.displayName = "ViewportFrame";
 var WrappingRow = forwardRef13(({ as = "div", className, ...props }, ref) => {
   const Element = as;
-  return /* @__PURE__ */ jsxDEV19(Element, {
+  return /* @__PURE__ */ jsxDEV20(Element, {
     ...props,
     className: cn("hraness-wrapping-row", className),
     "data-slot": "wrapping-row",
@@ -3110,7 +3123,7 @@ var ThemedSurface = forwardRef13(({
   ...props
 }, ref) => {
   const Element = as;
-  return /* @__PURE__ */ jsxDEV19(Element, {
+  return /* @__PURE__ */ jsxDEV20(Element, {
     ...props,
     className: cn("hraness-themed-surface", className),
     "data-shape": shape,
@@ -3136,7 +3149,7 @@ import {
   UNSTABLE_ToastRegion as AriaToastRegion,
   Text as Text4
 } from "react-aria-components";
-import { jsxDEV as jsxDEV20 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV21 } from "react/jsx-dev-runtime";
 "use client";
 var ToastContext = createContext2(null);
 var DEFAULT_DURATION = 5000;
@@ -3169,36 +3182,36 @@ function ToastProvider({
       }
     })
   }), [duration, queue]);
-  return /* @__PURE__ */ jsxDEV20(ToastContext.Provider, {
+  return /* @__PURE__ */ jsxDEV21(ToastContext.Provider, {
     value: controller,
     children: [
       children,
-      /* @__PURE__ */ jsxDEV20(AriaToastRegion, {
+      /* @__PURE__ */ jsxDEV21(AriaToastRegion, {
         "aria-label": label,
         className: "hraness-toast-region",
         "data-slot": "toast-region",
         queue,
-        children: ({ toast }) => /* @__PURE__ */ jsxDEV20(AriaToast, {
+        children: ({ toast }) => /* @__PURE__ */ jsxDEV21(AriaToast, {
           className: "hraness-toast",
           "data-slot": "toast",
           "data-tone": toast.content.tone ?? "info",
           toast,
           children: [
-            /* @__PURE__ */ jsxDEV20(AriaToastContent, {
+            /* @__PURE__ */ jsxDEV21(AriaToastContent, {
               className: "hraness-toast__content",
               "data-slot": "toast-content",
               children: [
-                /* @__PURE__ */ jsxDEV20("div", {
+                /* @__PURE__ */ jsxDEV21("div", {
                   className: "hraness-toast__copy",
                   "data-slot": "toast-copy",
                   children: [
-                    /* @__PURE__ */ jsxDEV20(Text4, {
+                    /* @__PURE__ */ jsxDEV21(Text4, {
                       className: "hraness-toast__title",
                       "data-slot": "toast-title",
                       slot: "title",
                       children: toast.content.title
                     }, undefined, false, undefined, this),
-                    toast.content.description === undefined ? null : /* @__PURE__ */ jsxDEV20(Text4, {
+                    toast.content.description === undefined ? null : /* @__PURE__ */ jsxDEV21(Text4, {
                       className: "hraness-toast__description",
                       "data-slot": "toast-description",
                       slot: "description",
@@ -3206,19 +3219,19 @@ function ToastProvider({
                     }, undefined, false, undefined, this)
                   ]
                 }, undefined, true, undefined, this),
-                toast.content.action === undefined ? null : /* @__PURE__ */ jsxDEV20("div", {
+                toast.content.action === undefined ? null : /* @__PURE__ */ jsxDEV21("div", {
                   className: "hraness-toast__action",
                   "data-slot": "toast-action",
                   children: toast.content.action
                 }, undefined, false, undefined, this)
               ]
             }, undefined, true, undefined, this),
-            /* @__PURE__ */ jsxDEV20(AriaButton7, {
+            /* @__PURE__ */ jsxDEV21(AriaButton7, {
               "aria-label": closeLabel,
               className: "hraness-toast__close",
               "data-slot": "toast-close",
               slot: "close",
-              children: /* @__PURE__ */ jsxDEV20("span", {
+              children: /* @__PURE__ */ jsxDEV21("span", {
                 "aria-hidden": "true",
                 children: "×"
               }, undefined, false, undefined, this)
@@ -3241,9 +3254,9 @@ import { forwardRef as forwardRef14 } from "react";
 import {
   Toolbar as AriaToolbar
 } from "react-aria-components";
-import { jsxDEV as jsxDEV21 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV22 } from "react/jsx-dev-runtime";
 "use client";
-var Toolbar = forwardRef14(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV21(AriaToolbar, {
+var Toolbar = forwardRef14(({ className, ...props }, ref) => /* @__PURE__ */ jsxDEV22(AriaToolbar, {
   ...props,
   className: cn("hraness-toolbar", className),
   "data-slot": "toolbar",
@@ -3329,5 +3342,6 @@ export {
   Breadcrumbs,
   Badge,
   Avatar,
+  Autocomplete,
   Accordion
 };

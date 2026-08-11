@@ -1,4 +1,5 @@
 export * from "./actions.js";
+export * from "./autocomplete.js";
 export * from "./badge.js";
 export * from "./card.js";
 export * from "./checkbox-group.js";
