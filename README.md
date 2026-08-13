@@ -11,7 +11,7 @@ Pin an immutable release from GitHub:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.3.0"
+    "@hraness/ui": "github:hraness/ui#v0.3.1"
   }
 }
 ```
@@ -124,7 +124,8 @@ import {
 `SocialIcon` provides the finite Bluesky, GitHub, Instagram, LinkedIn,
 Substack, Threads, X, and YouTube marks used beside visible profile labels.
 `AppearanceIcon` provides the shared Light, Dark, and System glyphs for
-controls that own their accessible names.
+controls that own their accessible names. Icon-only `SegmentedControl` labels
+are centered independently of inline text baselines.
 
 Use React Aria's `onPress` event for actions. Action controls use the semantic `primary`, `secondary`, `quiet`, and `danger` variants and the `compact`, `default`, and `large` sizes. `IconButton` and `IconLink` require an accessible name and own their hover/focus tooltip; `aria-label` supplies the default visible copy, while controls named by `aria-labelledby` must also provide `tooltip`.
 

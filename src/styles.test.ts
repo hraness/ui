@@ -146,6 +146,20 @@ test("forced-colors field placeholders use unfaded system text", async () => {
   expect(placeholder).toContain("opacity: 1;");
 });
 
+test("segmented controls center icon labels without inline baseline drift", async () => {
+  const components = await stylesheet("./components.css");
+  const label = declarationBlock(
+    components,
+    ".hraness-segmented-control__label {",
+  );
+
+  expect(label).toContain("display: inline-grid;");
+  expect(label).toContain("place-items: center;");
+  expect(components).toContain(
+    ':root[data-verification-pointer="coarse"] .hraness-segmented-control__item {\n  min-width: var(--interactive-target-min);',
+  );
+});
+
 test("knob densities keep a 48px gesture target and distinct dial sizes", async () => {
   const components = await stylesheet("./components.css");
   const control = declarationBlock(components, ".hraness-knob__control {");

@@ -1555,6 +1555,11 @@
     overflow-wrap: anywhere;
   }
 
+  .hraness-segmented-control__label {
+    display: inline-grid;
+    place-items: center;
+  }
+
   .hraness-tabs__end {
     display: flex;
     min-width: 0;
@@ -2379,6 +2384,10 @@
     min-width: var(--interactive-target-min);
   }
 
+  .hraness-segmented-control__item {
+    min-width: var(--interactive-target-min);
+  }
+
   :where(.hraness-field, .hraness-search-field, .hraness-number-field,
     .hraness-native-select-field, .hraness-file-field, .hraness-select-field) {
     --hraness-field-height: var(--interactive-target-min);
@@ -2406,6 +2415,10 @@
   .hraness-pagination__boundary
 ) {
   min-height: var(--interactive-target-min);
+}
+
+:root[data-verification-pointer="coarse"] .hraness-segmented-control__item {
+  min-width: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
