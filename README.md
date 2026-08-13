@@ -11,7 +11,7 @@ Pin an immutable release from GitHub:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.2.0"
+    "@hraness/ui": "github:hraness/ui#v0.3.0"
   }
 }
 ```
@@ -97,6 +97,35 @@ export function ProjectCard() {
 }
 ```
 
+Quiet personal and project sites can share the same centered page and footer
+measure without copying layout rules:
+
+```tsx
+import {
+  AppearanceIcon,
+  QuietSiteFooter,
+  QuietSitePage,
+  SocialIcon,
+} from "@hraness/ui";
+
+<QuietSitePage>
+  <a href="https://instagram.com/example">
+    <SocialIcon name="instagram" />
+    <span>instagram</span>
+  </a>
+</QuietSitePage>
+<QuietSiteFooter>
+  <button aria-label="Appearance: System">
+    <AppearanceIcon name="system" />
+  </button>
+</QuietSiteFooter>
+```
+
+`SocialIcon` provides the finite Bluesky, GitHub, Instagram, LinkedIn,
+Substack, Threads, X, and YouTube marks used beside visible profile labels.
+`AppearanceIcon` provides the shared Light, Dark, and System glyphs for
+controls that own their accessible names.
+
 Use React Aria's `onPress` event for actions. Action controls use the semantic `primary`, `secondary`, `quiet`, and `danger` variants and the `compact`, `default`, and `large` sizes. `IconButton` and `IconLink` require an accessible name and own their hover/focus tooltip; `aria-label` supplies the default visible copy, while controls named by `aria-labelledby` must also provide `tooltip`.
 
 `Knob` is a circular, single-value slider for compact numeric controls. It
@@ -148,7 +177,8 @@ The public barrel includes:
 - Collections: tabs, disclosures and accordions, toggle groups, segmented controls, list boxes, and separators.
 - Overlays: menus, dialogs, popovers, tooltips, and an isolated toast provider and queue.
 - Feedback and data: tags, badges, status dots, alerts, spinners, skeletons, progress, meters, sliders, knobs, avatars, and data tables.
-- Content and layout: cards, pressable and themed surfaces, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, skip links, viewport frames, and wrapping rows.
+- Content and layout: cards, pressable and themed surfaces, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, skip links, viewport frames, wrapping rows, and quiet-site page and footer landmarks.
+- Icons: the current-color HugeIcons renderer plus finite social-profile and appearance glyphs.
 
 Interactive primitives preserve React Aria state through `data-hovered`, `data-pressed`, `data-selected`, `data-invalid`, `data-focus-visible`, and related attributes. The shared CSS includes pointer-coarse target sizing, reduced-motion fallbacks, forced-color support, and visible focus treatment.
 

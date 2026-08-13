@@ -1,6 +1,6 @@
 {
   "name": "@hraness/ui",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Accessible product-neutral React Aria components with a shared CSS theme.",
   "license": "MIT",
   "type": "module",
@@ -56,6 +56,7 @@
     "src/feedback.tsx",
     "src/fields.tsx",
     "src/form.tsx",
+    "src/icon.tsx",
     "src/index.ts",
     "src/indicators.tsx",
     "src/knob-model.ts",
@@ -64,6 +65,7 @@
     "src/list-box.tsx",
     "src/navigation.tsx",
     "src/overlays.tsx",
+    "src/quiet-site.tsx",
     "src/reset.css",
     "src/router.tsx",
     "src/select-field.tsx",
@@ -78,7 +80,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun -e 'await (await import(\"node:fs/promises\")).rm(\"./dist\", { recursive: true, force: true })' && bun build ./src/index.ts --outdir ./dist --root ./src --target browser --format esm --splitting --packages external",
+    "build": "bun -e 'await (await import(\"node:fs/promises\")).rm(\"./dist\", { recursive: true, force: true })' && bun build ./src/index.ts --outdir ./dist --root ./src --target browser --format esm --splitting --packages external --production && bun run ./scripts/mark-react-client-package.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test ./src",
     "test:package": "bun run ./scripts/package-smoke.ts",
@@ -86,6 +88,8 @@
     "prepack": "bun run check"
   },
   "dependencies": {
+    "@hugeicons/core-free-icons": "^4.2.2",
+    "@hugeicons/react": "^1.1.9",
     "clsx": "^2.1.1",
     "react-aria": "3.50.0",
     "react-aria-components": "1.19.0",
