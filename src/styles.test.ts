@@ -217,6 +217,14 @@ test("tags keep one border geometry across their visual variants", async () => {
   expect(forcedColors).toContain("border-color: CanvasText;");
 });
 
+test("control curves stay bounded while pills and circles remain explicit", async () => {
+  const tokens = await stylesheet("./tokens.css");
+  const light = declarationBlock(tokens, ":root {");
+
+  expect(light).toContain("--control-radius: 1rem;");
+  expect(light).toContain("--radius-round: 999px;");
+});
+
 test("semantic token pairs retain accessible contrast in both themes", async () => {
   const tokens = await stylesheet("./tokens.css");
   const light = declarationBlock(tokens, ":root {");

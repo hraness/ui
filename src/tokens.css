@@ -77,7 +77,7 @@
   --radius-md: max(0rem, calc(var(--ui-radius) - 0.25rem));
   --radius-lg: var(--ui-radius);
   --radius-round: 999px;
-  --control-radius: 9999px;
+  --control-radius: 1rem;
   --motion-duration-instant: 0ms;
   --motion-duration-fast: 120ms;
   --motion-duration-standard: 180ms;
