@@ -7,6 +7,7 @@
 - `src/lib/utils.ts` – `cn` class composition and Tailwind conflict resolution.
 - `src/tokens.css`, `src/reset.css`, `src/components.css`, `src/tailwind.css`, and `src/styles.css` – portable tokens, baseline, component recipes, Tailwind integration, and the ordered public stylesheet.
 - `src/*.test.tsx` and `src/lib/*.test.ts` – server-rendered semantics, class recipes, and composition regressions.
+- `portfolio-inventory.json` and `scripts/check-portfolio-inventory.ts` – canonical public package inventory and its standalone consistency gate.
 - `package.json`, `tsconfig.json`, and `bun.lock` – source-first @hraness/ui package and standalone verification configuration.
 - `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `LICENSE` – public usage, project policy, and terms.
 
@@ -21,4 +22,5 @@
 - Keep social and appearance glyph sets finite. Icons remain decorative beside visible text or inside controls with their own accessible names.
 - Add a readable regression test for every behavior, style contract, or public export change. Use server-rendered markup when it proves the contract and browser interaction tests when it does not.
 - Treat the repository as the complete public hraness/ui project. Files and Git prose may use only public package names, paths, commands, examples, and dependencies.
+- Keep `portfolio-inventory.json` byte-canonical and consistent with the public package identity, version, repository, and direct `@hraness/*` dependency edges.
 - Run `bun run check` before handing off a change.

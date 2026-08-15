@@ -81,10 +81,11 @@
   ],
   "scripts": {
     "build": "bun -e 'await (await import(\"node:fs/promises\")).rm(\"./dist\", { recursive: true, force: true })' && bun build ./src/index.ts --outdir ./dist --root ./src --target browser --format esm --splitting --packages external --production && bun run ./scripts/mark-react-client-package.ts",
+    "check:portfolio-inventory": "bun ./scripts/check-portfolio-inventory.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test ./src",
     "test:package": "bun run ./scripts/package-smoke.ts",
-    "check": "bun run typecheck && bun run build && bun run test:package && bun run test",
+    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run test:package && bun run test",
     "prepack": "bun run check"
   },
   "dependencies": {
