@@ -11,7 +11,7 @@ Pin an immutable release from GitHub:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.3.1"
+    "@hraness/ui": "github:hraness/ui#v0.4.0"
   }
 }
 ```

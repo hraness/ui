@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 
 const packageName = "@hraness/ui";
 const importSpecifiers = ["@hraness/ui"];
@@ -8,17 +8,64 @@ const binNames = [];
 const verificationPackages = ["@types/bun@^1.3.14","@types/react@^19.2.14","@types/react-dom@^19.2.3","react@19.2.3","react-dom@19.2.3","typescript@^6.0.3"];
 
 async function run(command: string[], cwd: string): Promise<void> {
-  const process = Bun.spawn(command, { cwd, stdout: "inherit", stderr: "inherit" });
+  const process = Bun.spawn(command, {
+    cwd,
+    env: environment,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
   const exitCode = await process.exited;
   if (exitCode !== 0) throw new Error(`Command failed (${String(exitCode)}): ${command.join(" ")}`);
 }
 
+function resolveGenuineNodeExecutable(): string {
+  const executableName = process.platform === "win32" ? "node.exe" : "node";
+  const identityProbe = [
+    "if (typeof Bun !== 'undefined'",
+    "|| process.versions.bun !== undefined",
+    "|| !process.versions.node?.startsWith('24.')) process.exit(1)",
+  ].join(" ");
+  const candidates = [...new Set(
+    (process.env.PATH ?? "")
+      .split(delimiter)
+      .filter((directory) => directory.length > 0)
+      .map((directory) => resolve(directory, executableName)),
+  )];
+  for (const executable of candidates) {
+    try {
+      const probe = Bun.spawnSync([
+        executable,
+        "--input-type=commonjs",
+        "-e",
+        identityProbe,
+      ], {
+        env: environment,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if (probe.exitCode === 0) return executable;
+    } catch {
+      // Continue past absent, inaccessible, or incompatible PATH candidates.
+    }
+  }
+  throw new Error("package smoke requires a genuine Node 24 executable on PATH");
+}
+
 const repository = process.cwd();
 const work = await mkdtemp(join(tmpdir(), "hraness-package-smoke-"));
+const temporary = join(work, "tmp");
+const environment = {
+  ...process.env,
+  BUN_TMPDIR: temporary,
+  TMPDIR: temporary,
+};
 try {
   const archive = join(work, "package.tgz");
   const consumer = join(work, "consumer");
+  await mkdir(temporary, { mode: 0o700 });
   await mkdir(consumer);
+  const nodeExecutable = resolveGenuineNodeExecutable();
   await run([
     process.execPath,
     "pm",
@@ -30,7 +77,7 @@ try {
   ], repository);
   await writeFile(join(consumer, "package.json"), JSON.stringify({ private: true, type: "module" }));
   await run([process.execPath, "add", archive, "--ignore-scripts"], consumer);
-  await run(["node", "--input-type=module", "-e", `await import(${JSON.stringify(packageName)})`], consumer);
+  await run([nodeExecutable, "--input-type=module", "-e", `await import(${JSON.stringify(packageName)})`], consumer);
   for (const binName of binNames) {
     await run([join(consumer, "node_modules", ".bin", binName), "--help"], consumer);
   }
@@ -38,7 +85,7 @@ try {
     await run([process.execPath, "add", ...verificationPackages, "--ignore-scripts"], consumer);
   }
   await run([
-    "node",
+    nodeExecutable,
     "--input-type=module",
     "-e",
     `await Promise.all(${JSON.stringify(importSpecifiers)}.map((specifier) => import(specifier)))`,
