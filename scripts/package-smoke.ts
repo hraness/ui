@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
@@ -84,6 +84,20 @@ try {
   if (verificationPackages.length > 0) {
     await run([process.execPath, "add", ...verificationPackages, "--ignore-scripts"], consumer);
   }
+  // A restored package-manager cache can retain this valid duplicate topology.
+  // Public source types must remain portable when React Aria resolves through it.
+  const nestedReactAriaModules = join(
+    consumer,
+    "node_modules",
+    "react-aria",
+    "node_modules",
+  );
+  await mkdir(nestedReactAriaModules, { recursive: true });
+  await cp(
+    join(consumer, "node_modules", "react-stately"),
+    join(nestedReactAriaModules, "react-stately"),
+    { recursive: true },
+  );
   await run([
     nodeExecutable,
     "--input-type=module",

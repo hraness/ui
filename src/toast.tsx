@@ -14,6 +14,7 @@ import {
   UNSTABLE_ToastRegion as AriaToastRegion,
   Text,
   type ToastOptions as AriaToastOptions,
+  type ToastProps as AriaToastProps,
 } from "react-aria-components";
 
 export type ToastTone = "danger" | "info" | "success" | "warning";
@@ -99,7 +100,11 @@ export function ToastProvider({
             className="hraness-toast"
             data-slot="toast"
             data-tone={toast.content.tone ?? "info"}
-            toast={toast}
+            toast={(
+              // These props describe the same object. A duplicate react-stately
+              // tree makes only their private Timer types nominal.
+              toast as AriaToastProps<ToastMessage>["toast"]
+            )}
           >
             <AriaToastContent
               className="hraness-toast__content"
