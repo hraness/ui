@@ -20,6 +20,7 @@
 - Use Bun 1.3.14 for repository commands. Keep @hraness/ui source-first, ESM-only, and compatible with React and React DOM 18 through 19.
 - Follow `WRITING.md` for internal prose and `STYLE.md` for public prose.
 - Apply unreasonably robust programming when agent work is cheap. Prefer coherent cross-file correctness and focused deterministic evidence to a knowingly weaker design.
+- Deliver changes to `main` through a current-head pull request. Keep the stable `Required` CI job green, resolve every review thread, and serialize merges. Human approval stays optional while one regular maintainer would otherwise self-review. Never force-push or bypass the gate.
 - Preserve native elements and React Aria Components behavior for accessible names, keyboard and pointer interactions, disabled controls, focus visibility, descriptions, and validation errors.
 - Keep Tailwind utility names complete and statically detectable. Preserve the stylesheet's internal `@source` integration, namespaced theme roles, and documented import order.
 - Keep tokens and reset usable as standards-only CSS. Tailwind directives belong only in `tailwind.css`; component styling retains coarse-pointer, forced-color, reduced-motion, and consumer-override behavior.
