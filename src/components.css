@@ -187,6 +187,7 @@
   .hraness-inline-icon-link__control {
     display: inline-grid;
     width: 1.5rem;
+    height: 1.5rem;
     min-width: 1.5rem;
     min-height: 1.5rem;
     padding: 0;
@@ -223,7 +224,10 @@
 
   .hraness-inline-icon-link__content {
     display: inline-grid;
+    width: 100%;
+    height: 100%;
     place-items: center;
+    line-height: 0;
   }
 
   .hraness-toggle-button__control[data-selected] {

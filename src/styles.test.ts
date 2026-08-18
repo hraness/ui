@@ -166,6 +166,10 @@ test("inline icon links keep typographic scale without losing interaction states
     components,
     ".hraness-inline-icon-link__control {",
   );
+  const content = declarationBlock(
+    components,
+    ".hraness-inline-icon-link__content {",
+  );
   const hover = declarationBlock(
     components,
     ".hraness-inline-icon-link__control:where([data-hovered], :hover) {",
@@ -176,12 +180,17 @@ test("inline icon links keep typographic scale without losing interaction states
   );
 
   expect(control).toContain("width: 1.5rem;");
+  expect(control).toContain("height: 1.5rem;");
   expect(control).toContain("min-height: 1.5rem;");
   expect(control).toContain("border: 0;");
   expect(control).toContain("background: transparent;");
   expect(control).toContain("color: var(--ui-primary);");
   expect(hover).toContain("background: var(--ui-accent);");
   expect(focus).toContain("outline: 2px solid var(--ui-ring);");
+  expect(content).toContain("width: 100%;");
+  expect(content).toContain("height: 100%;");
+  expect(content).toContain("place-items: center;");
+  expect(content).toContain("line-height: 0;");
 });
 
 test("knob densities keep a 48px gesture target and distinct dial sizes", async () => {
