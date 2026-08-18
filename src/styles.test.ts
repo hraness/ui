@@ -160,6 +160,30 @@ test("segmented controls center icon labels without inline baseline drift", asyn
   );
 });
 
+test("inline icon links keep typographic scale without losing interaction states", async () => {
+  const components = await stylesheet("./components.css");
+  const control = declarationBlock(
+    components,
+    ".hraness-inline-icon-link__control {",
+  );
+  const hover = declarationBlock(
+    components,
+    ".hraness-inline-icon-link__control:where([data-hovered], :hover) {",
+  );
+  const focus = declarationBlock(
+    components,
+    ".hraness-inline-icon-link__control:where([data-focus-visible], :focus-visible) {",
+  );
+
+  expect(control).toContain("width: 1.5rem;");
+  expect(control).toContain("min-height: 1.5rem;");
+  expect(control).toContain("border: 0;");
+  expect(control).toContain("background: transparent;");
+  expect(control).toContain("color: var(--ui-primary);");
+  expect(hover).toContain("background: var(--ui-accent);");
+  expect(focus).toContain("outline: 2px solid var(--ui-ring);");
+});
+
 test("knob densities keep a 48px gesture target and distinct dial sizes", async () => {
   const components = await stylesheet("./components.css");
   const control = declarationBlock(components, ".hraness-knob__control {");

@@ -52,8 +52,16 @@ const untooledIconLinkProps: IconLinkProps = {
   "aria-labelledby": "activity-label",
   href: "/activity",
 };
+const sizedInlineIconLinkProps: IconLinkProps = {
+  "aria-label": "Activity",
+  href: "/activity",
+  presentation: "inline",
+  // @ts-expect-error Inline icon links own one compact typographic presentation.
+  size: "compact",
+};
 void unnamedIconToggleProps;
 void untooledIconLinkProps;
+void sizedInlineIconLinkProps;
 
 test("action controls retain names, destinations, variants, and pending focusability", () => {
   expect(namedIconButtonProps).toHaveLength(2);
@@ -81,6 +89,7 @@ test("action controls retain names, destinations, variants, and pending focusabi
       <Link href="/docs">Documentation</Link>
       <LinkButton href="/settings" leading="S" variant="quiet">Settings</LinkButton>
       <IconLink aria-label="Activity" href="/activity">↗</IconLink>
+      <IconLink aria-label="Source" href="/source" presentation="inline">S</IconLink>
     </div>,
   );
 
@@ -99,6 +108,10 @@ test("action controls retain names, destinations, variants, and pending focusabi
   expect(html).toContain('href="/settings"');
   expect(html).toContain('href="/activity"');
   expect(html).toContain('data-slot="icon-link"');
+  expect(html).toContain('data-slot="inline-icon-link"');
+  expect(html).toContain('data-slot="inline-icon-link-control"');
+  expect(html).toContain('class="hraness-inline-icon-link__content"');
+  expect(html).not.toContain('class="hraness-inline-icon-link" data-size');
   expect(Button.displayName).toBe("Button");
 });
 

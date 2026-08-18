@@ -467,6 +467,18 @@ export function LinkButton({
   );
 }
 
+type IconLinkPresentation =
+  | Readonly<{
+      presentation?: "control";
+      size?: ActionSize;
+      variant?: ActionVariant;
+    }>
+  | Readonly<{
+      presentation: "inline";
+      size?: never;
+      variant?: never;
+    }>;
+
 export type IconLinkProps = Omit<
   AriaLinkProps,
   "aria-label" | "aria-labelledby" | "className" | "href" | "title"
@@ -477,9 +489,8 @@ export type IconLinkProps = Omit<
     controlClassName?: string;
     href: RequiredHref;
     linkRef?: Ref<HTMLAnchorElement>;
-    size?: ActionSize;
-    variant?: ActionVariant;
-  }>;
+  }> &
+  IconLinkPresentation;
 
 /** An icon-only destination with a required accessible name and visible tooltip. */
 export function IconLink(allProps: IconLinkProps) {
@@ -491,37 +502,47 @@ export function IconLink(allProps: IconLinkProps) {
     href,
     isDisabled = false,
     linkRef,
+    presentation = "control",
     size = "default",
     tooltip,
     variant = "quiet",
     ...props
   } = allProps;
+  const isInline = presentation === "inline";
 
   return (
     <span
-      className={cn("hraness-icon-button", "hraness-icon-link", className)}
+      className={cn(
+        isInline
+          ? "hraness-inline-icon-link"
+          : "hraness-icon-button hraness-icon-link",
+        className,
+      )}
       data-disabled={isDisabled || undefined}
-      data-size={size}
-      data-slot="icon-link"
-      data-variant={variant}
+      data-size={isInline ? undefined : size}
+      data-slot={isInline ? "inline-icon-link" : "icon-link"}
+      data-variant={isInline ? undefined : variant}
     >
       <Tooltip content={tooltip ?? tooltipContent}>
         <PrefetchingLink
           {...props}
           className={cn(
-            "hraness-icon-button__control",
-            "hraness-icon-link__control",
+            isInline
+              ? "hraness-inline-icon-link__control"
+              : "hraness-icon-button__control hraness-icon-link__control",
             controlClassName,
           )}
-          data-slot="icon-link-control"
+          data-slot={isInline ? "inline-icon-link-control" : "icon-link-control"}
           href={href}
           isDisabled={isDisabled}
           ref={linkRef}
         >
           {(values) => (
             <span
-              className="hraness-icon-button__content hraness-icon-link__content"
-              data-slot="icon-link-content"
+              className={isInline
+                ? "hraness-inline-icon-link__content"
+                : "hraness-icon-button__content hraness-icon-link__content"}
+              data-slot={isInline ? "inline-icon-link-content" : "icon-link-content"}
             >
               {resolveLinkChildren(children, values)}
             </span>

@@ -34,5 +34,8 @@ test("quiet-site CSS keeps the footer centered on the page measure", async () =>
   expect(css).toMatch(
     /\.hraness-quiet-site-footer\s*\{[^}]*max-inline-size:\s*var\(--hraness-quiet-site-measure,[^}]*margin-inline:\s*auto;/su,
   );
+  expect(css).toMatch(
+    /\.hraness-quiet-site-page\s*\{[^}]*margin-block:\s*clamp\(2rem, 6vh, 4rem\) clamp\(3\.5rem, 10vh, 6rem\);/su,
+  );
   expect(css).toContain("env(safe-area-inset-bottom)");
 });

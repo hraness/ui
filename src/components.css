@@ -178,6 +178,54 @@
     min-height: var(--control-height-primary);
   }
 
+  .hraness-inline-icon-link {
+    display: inline-flex;
+    max-width: 100%;
+    vertical-align: middle;
+  }
+
+  .hraness-inline-icon-link__control {
+    display: inline-grid;
+    width: 1.5rem;
+    min-width: 1.5rem;
+    min-height: 1.5rem;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: var(--radius-sm);
+    outline: none;
+    background: transparent;
+    color: var(--ui-primary);
+    line-height: 1;
+    text-decoration: none;
+    transition:
+      background-color var(--motion-duration-fast) var(--motion-easing-standard),
+      box-shadow var(--motion-duration-fast) var(--motion-easing-standard),
+      color var(--motion-duration-fast) var(--motion-easing-standard),
+      opacity var(--motion-duration-fast) var(--motion-easing-standard);
+  }
+
+  .hraness-inline-icon-link__control:where([data-hovered], :hover) {
+    background: var(--ui-accent);
+    color: var(--ui-accent-foreground);
+  }
+
+  .hraness-inline-icon-link__control:where([data-focus-visible], :focus-visible) {
+    outline: 2px solid var(--ui-ring);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px color-mix(in oklch, var(--ui-ring) 24%, transparent);
+  }
+
+  .hraness-inline-icon-link__control:where([data-disabled]) {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .hraness-inline-icon-link__content {
+    display: inline-grid;
+    place-items: center;
+  }
+
   .hraness-toggle-button__control[data-selected] {
     border-color: var(--ui-primary);
     background: var(--ui-primary);
@@ -2547,7 +2595,7 @@
     flex: 1 0 auto;
     inline-size: 100%;
     max-inline-size: var(--hraness-quiet-site-measure, 34rem);
-    margin-block: clamp(3.5rem, 12vh, 7rem);
+    margin-block: clamp(2rem, 6vh, 4rem) clamp(3.5rem, 10vh, 6rem);
     margin-inline: auto;
     padding-inline: var(--hraness-quiet-site-gutter, 1.25rem);
   }

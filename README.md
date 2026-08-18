@@ -127,7 +127,7 @@ Substack, Threads, X, and YouTube marks used beside visible profile labels.
 controls that own their accessible names. Icon-only `SegmentedControl` labels
 are centered independently of inline text baselines.
 
-Use React Aria's `onPress` event for actions. Action controls use the semantic `primary`, `secondary`, `quiet`, and `danger` variants and the `compact`, `default`, and `large` sizes. `IconButton` and `IconLink` require an accessible name and own their hover/focus tooltip; `aria-label` supplies the default visible copy, while controls named by `aria-labelledby` must also provide `tooltip`.
+Use React Aria's `onPress` event for actions. Action controls use the semantic `primary`, `secondary`, `quiet`, and `danger` variants and the `compact`, `default`, and `large` sizes. `IconButton` and `IconLink` require an accessible name and own their hover/focus tooltip; `aria-label` supplies the default visible copy, while controls named by `aria-labelledby` must also provide `tooltip`. Set `IconLink` to `presentation="inline"` when an icon-only destination sits beside typographic content. The inline presentation keeps the link semantics, tooltip, and focus treatment without persistent action-control chrome, and it intentionally does not accept action sizes or variants.
 
 `Knob` is a circular, single-value slider for compact numeric controls. It
 requires a visible label and a controlled `value` or uncontrolled
