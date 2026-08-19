@@ -62,6 +62,21 @@ test("tabs and disclosures retain collection ownership and ARIA relationships", 
   expect(html).toContain("Persistent content");
 });
 
+test("collapsed compact disclosures expose a hidden panel without losing its content", () => {
+  const html = renderToStaticMarkup(
+    <Disclosure size="compact" title="Details">
+      Persistent content
+    </Disclosure>,
+  );
+
+  expect(html).toContain('data-size="compact"');
+  expect(html).toContain('aria-expanded="false"');
+  expect(html).toContain('data-slot="disclosure-panel"');
+  expect(html).toContain('aria-hidden="true"');
+  expect(html).toContain('hidden=""');
+  expect(html).toContain("Persistent content");
+});
+
 test("toggle and segmented collections expose controlled selection semantics", () => {
   const html = renderToStaticMarkup(
     <>

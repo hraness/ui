@@ -913,6 +913,11 @@
     color: var(--ui-muted-foreground);
   }
 
+  /* `hidden="until-found"` keeps the box in layout for find-in-page. */
+  .hraness-disclosure__panel[hidden] {
+    padding-block: 0;
+  }
+
   :where(.hraness-toggle-group, .hraness-segmented-control) {
     display: inline-flex;
     width: fit-content;
