@@ -224,6 +224,21 @@ test("breadcrumbs keep the current page on one shrinkable line", async () => {
   expect(current).toContain("white-space: nowrap;");
 });
 
+test("collapsed disclosure panels do not retain their expanded inset", async () => {
+  const components = await stylesheet("./components.css");
+  const panel = declarationBlock(
+    components,
+    ".hraness-disclosure__panel {",
+  );
+  const hiddenPanel = declarationBlock(
+    components,
+    ".hraness-disclosure__panel[hidden] {",
+  );
+
+  expect(panel).toContain("padding-block: 0 var(--space-4);");
+  expect(hiddenPanel).toContain("padding-block: 0;");
+});
+
 test("transport actions and slider thumbs use their shared geometry", async () => {
   const components = await stylesheet("./components.css");
   const transport = declarationBlock(

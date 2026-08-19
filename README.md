@@ -183,6 +183,8 @@ The public barrel includes:
 
 Interactive primitives preserve React Aria state through `data-hovered`, `data-pressed`, `data-selected`, `data-invalid`, `data-focus-visible`, and related attributes. The shared CSS includes pointer-coarse target sizing, reduced-motion fallbacks, forced-color support, and visible focus treatment.
 
+Collapsed disclosure panels remain available to browser find-in-page behavior without retaining the expanded panel inset in the page layout. The `compact` size keeps the same panel-content spacing while the disclosure is open.
+
 ## Customize safely
 
 Override semantic roles after the imports to reskin the whole system without depending on component internals:
