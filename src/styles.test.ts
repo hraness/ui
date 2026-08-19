@@ -224,6 +224,27 @@ test("breadcrumbs keep the current page on one shrinkable line", async () => {
   expect(current).toContain("white-space: nowrap;");
 });
 
+test("transport actions and slider thumbs use their shared geometry", async () => {
+  const components = await stylesheet("./components.css");
+  const transport = declarationBlock(
+    components,
+    '.hraness-icon-button[data-size="transport"] > .hraness-icon-button__control {',
+  );
+  const horizontalThumb = declarationBlock(
+    components,
+    '.hraness-slider[data-orientation="horizontal"] .hraness-slider__thumb {',
+  );
+  const verticalThumb = declarationBlock(
+    components,
+    '.hraness-slider[data-orientation="vertical"] .hraness-slider__thumb {',
+  );
+
+  expect(transport).toContain("width: var(--control-height-transport);");
+  expect(transport).toContain("min-height: var(--control-height-transport);");
+  expect(horizontalThumb).toContain("top: 50%;");
+  expect(verticalThumb).toContain("left: 50%;");
+});
+
 test("knob densities keep a 48px gesture target and distinct dial sizes", async () => {
   const components = await stylesheet("./components.css");
   const control = declarationBlock(components, ".hraness-knob__control {");

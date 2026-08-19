@@ -23,7 +23,7 @@ import { Tooltip } from "./overlays.js";
 import { useLinkPrefetch } from "./router.js";
 
 export type ActionVariant = "danger" | "primary" | "quiet" | "secondary";
-export type ActionSize = "compact" | "default" | "large";
+export type ActionSize = "compact" | "default" | "large" | "transport";
 
 type BusyAriaProps = Readonly<{
   "aria-busy"?: AriaAttributes["aria-busy"];
