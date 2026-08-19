@@ -84,6 +84,7 @@ test("action controls retain names, destinations, variants, and pending focusabi
         Save changes
       </Button>
       <IconButton aria-label="Refresh" isPending size="compact">↻</IconButton>
+      <IconButton aria-label="Play" size="transport">▶</IconButton>
       <ToggleButton defaultSelected>Pin</ToggleButton>
       <ToggleButton aria-label="Pin project" isIconOnly>⌖</ToggleButton>
       <Link href="/docs">Documentation</Link>
@@ -103,6 +104,7 @@ test("action controls retain names, destinations, variants, and pending focusabi
   expect(html).not.toContain('disabled=""');
   expect(html).toContain('aria-label="Refresh"');
   expect(html).toContain('data-slot="icon-button"');
+  expect(html).toContain('data-size="transport"');
   expect(html).toContain('data-selected="true"');
   expect(html).toContain('href="/docs"');
   expect(html).toContain('href="/settings"');

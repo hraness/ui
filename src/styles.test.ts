@@ -193,6 +193,58 @@ test("inline icon links keep typographic scale without losing interaction states
   expect(content).toContain("line-height: 0;");
 });
 
+test("breadcrumbs keep the current page on one shrinkable line", async () => {
+  const components = await stylesheet("./components.css");
+  const breadcrumbs = declarationBlock(
+    components,
+    ".hraness-breadcrumbs ol {",
+  );
+  const item = declarationBlock(components, ".hraness-breadcrumbs li {");
+  const currentItem = declarationBlock(
+    components,
+    ".hraness-breadcrumbs li:last-child {",
+  );
+  const separator = declarationBlock(
+    components,
+    ".hraness-breadcrumbs li + li::before {",
+  );
+  const current = declarationBlock(
+    components,
+    '.hraness-breadcrumbs [aria-current="page"] {',
+  );
+
+  expect(breadcrumbs).toContain("flex-wrap: nowrap;");
+  expect(breadcrumbs).toContain("overflow: hidden;");
+  expect(item).toContain("display: inline-flex;");
+  expect(item).toContain("min-width: 0;");
+  expect(currentItem).toContain("flex: 1 1 auto;");
+  expect(separator).toContain('content: "/";');
+  expect(current).toContain("overflow: hidden;");
+  expect(current).toContain("text-overflow: ellipsis;");
+  expect(current).toContain("white-space: nowrap;");
+});
+
+test("transport actions and slider thumbs use their shared geometry", async () => {
+  const components = await stylesheet("./components.css");
+  const transport = declarationBlock(
+    components,
+    '.hraness-icon-button[data-size="transport"] > .hraness-icon-button__control {',
+  );
+  const horizontalThumb = declarationBlock(
+    components,
+    '.hraness-slider[data-orientation="horizontal"] .hraness-slider__thumb {',
+  );
+  const verticalThumb = declarationBlock(
+    components,
+    '.hraness-slider[data-orientation="vertical"] .hraness-slider__thumb {',
+  );
+
+  expect(transport).toContain("width: var(--control-height-transport);");
+  expect(transport).toContain("min-height: var(--control-height-transport);");
+  expect(horizontalThumb).toContain("top: 50%;");
+  expect(verticalThumb).toContain("left: 50%;");
+});
+
 test("knob densities keep a 48px gesture target and distinct dial sizes", async () => {
   const components = await stylesheet("./components.css");
   const control = declarationBlock(components, ".hraness-knob__control {");
