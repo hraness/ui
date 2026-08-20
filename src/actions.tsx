@@ -5,6 +5,9 @@ import {
   forwardRef,
   type ReactNode,
   type Ref,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
 import {
   Button as AriaButton,
@@ -205,6 +208,133 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 );
 
 Button.displayName = "Button";
+
+const defaultCopyFeedbackDuration = 2_000;
+const maximumCopyFeedbackDuration = 60_000;
+
+function validateCopyFeedbackDuration(value: number): void {
+  if (
+    !Number.isSafeInteger(value)
+    || value <= 0
+    || value > maximumCopyFeedbackDuration
+  ) {
+    throw new Error(
+      `CopyButton feedbackDuration must be a positive safe integer no greater than ${maximumCopyFeedbackDuration}.`,
+    );
+  }
+}
+
+export type CopyButtonProps = Omit<ButtonProps, "children" | "onPress"> &
+  Readonly<{
+    copiedLabel?: string;
+    copyLabel?: string;
+    feedbackDuration?: number;
+    onCopyError?: (error: unknown) => void;
+    onCopySuccess?: () => void;
+    value: string;
+  }>;
+
+/** Copies one string and shows width-stable, temporary success feedback. */
+export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(
+  (
+    {
+      className,
+      copiedLabel = "Copied",
+      copyLabel = "Copy",
+      feedbackDuration = defaultCopyFeedbackDuration,
+      onCopyError,
+      onCopySuccess,
+      value,
+      ...props
+    },
+    ref,
+  ) => {
+    requireNonBlank(copyLabel, "CopyButton", "copyLabel");
+    requireNonBlank(copiedLabel, "CopyButton", "copiedLabel");
+    validateCopyFeedbackDuration(feedbackDuration);
+
+    const [copiedValue, setCopiedValue] = useState<string | null>(null);
+    const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const requestSequence = useRef(0);
+    const isCopied = copiedValue === value;
+
+    useEffect(() => () => {
+      requestSequence.current += 1;
+      if (feedbackTimer.current !== null) clearTimeout(feedbackTimer.current);
+    }, []);
+
+    const copy = async () => {
+      const request = ++requestSequence.current;
+      try {
+        if (
+          typeof navigator === "undefined"
+          || navigator.clipboard === undefined
+          || typeof navigator.clipboard.writeText !== "function"
+        ) {
+          throw new Error("Clipboard writing is unavailable.");
+        }
+        await navigator.clipboard.writeText(value);
+        if (request !== requestSequence.current) return;
+        if (feedbackTimer.current !== null) clearTimeout(feedbackTimer.current);
+        setCopiedValue(value);
+        onCopySuccess?.();
+        feedbackTimer.current = setTimeout(() => {
+          if (request !== requestSequence.current) return;
+          feedbackTimer.current = null;
+          setCopiedValue(null);
+        }, feedbackDuration);
+      } catch (error) {
+        if (request !== requestSequence.current) return;
+        if (feedbackTimer.current !== null) clearTimeout(feedbackTimer.current);
+        feedbackTimer.current = null;
+        setCopiedValue(null);
+        onCopyError?.(error);
+      }
+    };
+
+    return (
+      <>
+        <Button
+          {...props}
+          className={cn("hraness-copy-button", className)}
+          onPress={() => void copy()}
+          ref={ref}
+        >
+          <span
+            className="hraness-copy-button__labels"
+            data-slot="copy-button-labels"
+          >
+            <span
+              aria-hidden={isCopied ? "true" : undefined}
+              className="hraness-copy-button__label"
+              data-slot="copy-button-idle-label"
+            >
+              {copyLabel}
+            </span>
+            <span
+              aria-hidden={isCopied ? undefined : "true"}
+              className="hraness-copy-button__label"
+              data-slot="copy-button-success-label"
+            >
+              {copiedLabel}
+            </span>
+          </span>
+        </Button>
+        <span
+          aria-atomic="true"
+          aria-live="polite"
+          className="hraness-visually-hidden"
+          data-slot="copy-button-status"
+          role="status"
+        >
+          {isCopied ? copiedLabel : ""}
+        </span>
+      </>
+    );
+  },
+);
+
+CopyButton.displayName = "CopyButton";
 
 export type IconButtonProps = Omit<
   AriaButtonProps,

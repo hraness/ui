@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   Button,
+  CopyButton,
   IconButton,
   IconLink,
   Link,
@@ -115,6 +116,41 @@ test("action controls retain names, destinations, variants, and pending focusabi
   expect(html).toContain('class="hraness-inline-icon-link__content"');
   expect(html).not.toContain('class="hraness-inline-icon-link" data-size');
   expect(Button.displayName).toBe("Button");
+});
+
+test("CopyButton reserves both labels and exposes polite success feedback", () => {
+  const html = renderToStaticMarkup(
+    <CopyButton
+      copiedLabel="Token copied"
+      copyLabel="Copy token"
+      value="private-token"
+      variant="primary"
+    />,
+  );
+
+  expect(html).toContain('data-slot="copy-button-labels"');
+  expect(html).toContain(
+    'class="hraness-copy-button__label" data-slot="copy-button-idle-label">Copy token</span>',
+  );
+  expect(html).toContain(
+    'aria-hidden="true" class="hraness-copy-button__label" data-slot="copy-button-success-label">Token copied</span>',
+  );
+  expect(html).toContain('aria-live="polite"');
+  expect(html).toContain('role="status"');
+  expect(html).not.toContain("private-token");
+  expect(CopyButton.displayName).toBe("CopyButton");
+});
+
+test("CopyButton rejects invalid labels and feedback durations", () => {
+  expect(() => renderToStaticMarkup(
+    <CopyButton copyLabel=" " value="private-token" />,
+  )).toThrow("CopyButton copyLabel must not be blank");
+  expect(() => renderToStaticMarkup(
+    <CopyButton feedbackDuration={0} value="private-token" />,
+  )).toThrow("CopyButton feedbackDuration must be a positive safe integer");
+  expect(() => renderToStaticMarkup(
+    <CopyButton feedbackDuration={60_001} value="private-token" />,
+  )).toThrow("CopyButton feedbackDuration must be a positive safe integer");
 });
 
 test("icon-only actions reject blank names and tooltip content at runtime", () => {
