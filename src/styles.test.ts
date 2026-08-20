@@ -193,6 +193,26 @@ test("inline icon links keep typographic scale without losing interaction states
   expect(content).toContain("line-height: 0;");
 });
 
+test("copy buttons reserve both transient labels without layout shift", async () => {
+  const components = await stylesheet("./components.css");
+  const labels = declarationBlock(
+    components,
+    ".hraness-copy-button__labels {",
+  );
+  const label = declarationBlock(
+    components,
+    ".hraness-copy-button__label {",
+  );
+  const hidden = declarationBlock(
+    components,
+    '.hraness-copy-button__label[aria-hidden="true"] {',
+  );
+
+  expect(labels).toContain("display: inline-grid;");
+  expect(label).toContain("grid-area: 1 / 1;");
+  expect(hidden).toContain("visibility: hidden;");
+});
+
 test("breadcrumbs keep the current page on one shrinkable line", async () => {
   const components = await stylesheet("./components.css");
   const breadcrumbs = declarationBlock(

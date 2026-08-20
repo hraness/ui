@@ -263,6 +263,18 @@
     visibility: hidden;
   }
 
+  .hraness-copy-button__labels {
+    display: inline-grid;
+  }
+
+  .hraness-copy-button__label {
+    grid-area: 1 / 1;
+  }
+
+  .hraness-copy-button__label[aria-hidden="true"] {
+    visibility: hidden;
+  }
+
   .hraness-action__spinner {
     width: 1em;
     height: 1em;
