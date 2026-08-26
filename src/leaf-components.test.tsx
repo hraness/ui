@@ -257,7 +257,9 @@ test("surface and skip-link primitives preserve chosen native elements", () => {
   expect(html).toContain('data-slot="skip-link"');
   expect(html).toContain('<main id="content"');
   expect(html).toContain('<nav aria-label="Project actions"');
-  expect(html).toContain('<article class="hraness-themed-surface"');
+  expect(html).toMatch(/<article class="hraness-themed-surface [^"]+"/u);
+  expect(html).toContain('data-shape="rectangular"');
+  expect(html).toContain('data-slot="themed-surface"');
   expect(html).toContain('data-tone="inverse"');
 });
 

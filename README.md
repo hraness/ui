@@ -211,13 +211,13 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 ```
 
 `Icon`, `SocialIcon`, `AppearanceIcon`, `QuietSitePage`, `QuietSiteFooter`,
-`ViewportFrame`, and `WrappingRow` accept a typed StyleX override. Base
-declarations are applied first and the caller recipe is applied last.
-Quiet-site landmarks and structural surfaces also preserve dynamic StyleX
-inline values when merging the native `style` prop, with caller inline
-declarations taking precedence.
+`ViewportFrame`, `WrappingRow`, and `ThemedSurface` accept a typed StyleX
+override. Base declarations are applied first, finite tone and shape recipes
+come next, and the caller recipe is applied last. Quiet-site landmarks and
+these surfaces also preserve dynamic StyleX inline values when merging the
+native `style` prop, with caller inline declarations taking precedence.
 
-For logical-size overrides on those landmarks and structural surfaces, use
+For logical-size overrides on those landmarks and surfaces, use
 StyleX's canonical dashed keys such as `"inline-size"`, `"max-inline-size"`,
 and `"min-inline-size"`. Under the pinned StyleX 0.19
 property-specificity compiler, the camel-case aliases lower to physical
@@ -231,7 +231,7 @@ override is intentional. `ViewportFrame` also retains its ordered `100vh`,
 ```tsx
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
-import { Icon, QuietSitePage, WrappingRow } from "@hraness/ui";
+import { Icon, QuietSitePage, ThemedSurface, WrappingRow } from "@hraness/ui";
 
 const styles = stylex.create({
   quietPage: {
@@ -243,11 +243,17 @@ const styles = stylex.create({
   structuralRow: {
     "inline-size": "16rem",
   },
+  texturedSurface: {
+    backgroundImage:
+      "repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px)",
+    backgroundSize: "4px 4px",
+  },
 });
 
 <Icon icon={Search01Icon} xstyle={styles.searchIcon} />;
 <QuietSitePage xstyle={styles.quietPage}>...</QuietSitePage>;
 <WrappingRow xstyle={styles.structuralRow}>...</WrappingRow>;
+<ThemedSurface tone="accent" xstyle={styles.texturedSurface}>...</ThemedSurface>;
 ```
 
 Keep importing `@hraness/ui/styles.css` while legacy and StyleX recipes

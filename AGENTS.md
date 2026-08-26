@@ -4,7 +4,7 @@
 - `src/actions.tsx`, `src/fields.tsx`, `src/form.tsx`, `src/select-field.tsx`, and `src/checkbox-group.tsx` – accessible actions and complete form controls.
 - `src/collections.tsx`, `src/list-box.tsx`, `src/overlays.tsx`, and `src/toast.tsx` – collection and overlay behavior backed by React Aria Components.
 - `src/badge.tsx`, `src/card.tsx`, `src/content.tsx`, `src/data-display.tsx`, `src/feedback.tsx`, `src/icon.tsx`, `src/icon.stylex.ts`, and `src/indicators.tsx` – status, surface, content, data, feedback, and shared icon primitives, including the first package-compiled StyleX recipe.
-- `src/navigation.tsx`, `src/quiet-site.tsx`, `src/quiet-site.stylex.ts`, `src/router.tsx`, `src/skip-link.tsx`, `src/surfaces.tsx`, `src/surfaces.stylex.ts`, and `src/toolbar.tsx` – navigation, package-compiled quiet-site landmarks and structural surfaces, and framework-neutral router integration.
+- `src/navigation.tsx`, `src/quiet-site.tsx`, `src/quiet-site.stylex.ts`, `src/router.tsx`, `src/skip-link.tsx`, `src/surfaces.tsx`, `src/surfaces.stylex.ts`, and `src/toolbar.tsx` – navigation, package-compiled quiet-site landmarks, structural surfaces, and themed surfaces, plus framework-neutral router integration.
 - `src/lib/stylex.ts` and `src/lib/utils.ts` – the internal StyleX logical-size and inline-style merge contract, plus `cn` class composition and Tailwind conflict resolution.
 - `src/tokens.css`, `src/reset.css`, `src/components.css`, `src/tailwind.css`, and `src/styles.css` – portable tokens, baseline, legacy recipes namespaced below StyleX, the transition Tailwind bridge, and the ordered public stylesheet.
 - `src/*.test.tsx` and `src/lib/*.test.ts` – server-rendered semantics, class recipes, and composition regressions.

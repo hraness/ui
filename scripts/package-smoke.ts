@@ -80,6 +80,7 @@ import {
   QuietSiteFooter,
   QuietSitePage,
   SocialIcon,
+  ThemedSurface,
   ViewportFrame,
   WrappingRow,
 } from "@hraness/ui";
@@ -103,6 +104,12 @@ assert.match(stylexCss, /gap:\s*var\(--space-3\)/u);
 assert.match(stylexCss, /inline-size:\s*100%/u);
 assert.match(stylexCss, /min-inline-size:\s*0/u);
 assert.match(stylexCss, /overflow:\s*hidden/u);
+assert.match(stylexCss, /background-color:\s*var\(--ui-card\)/u);
+assert.match(stylexCss, /background-color:\s*var\(--ui-popover\)/u);
+assert.match(stylexCss, /border-radius:\s*var\(--radius-sharp\)/u);
+assert.match(stylexCss, /box-shadow:\s*var\(--elevation-raised\)/u);
+assert.match(stylexCss, /padding-block:\s*var\(--space-6\)/u);
+assert.match(stylexCss, /padding-inline:\s*var\(--space-6\)/u);
 const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
 const viewportHeightPositions = viewportHeightFallbacks.map((fallback) => stylexCss.indexOf(fallback));
 assert.ok(viewportHeightPositions.every((position) => position >= 0));
@@ -118,6 +125,7 @@ const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
 const componentsCss = await readFile(new URL(componentsCssUrl), "utf8");
 assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u);
+assert.doesNotMatch(componentsCss, /\.hraness-themed-surface(?![A-Za-z0-9_-])/u);
 
 const stylesCssUrl = import.meta.resolve("@hraness/ui/styles.css");
 const stylesCss = await readFile(new URL(stylesCssUrl), "utf8");
@@ -225,6 +233,25 @@ assert.match(rowMarkup, /data-slot="wrapping-row"/u);
 assert.match(rowMarkup, /id="package-row"/u);
 assert.match(rowMarkup, /style="color:rgb\(7, 8, 9\)"/u);
 assert.match(rowMarkup, />Row</u);
+
+const surfaceMarkup = renderToStaticMarkup(React.createElement(ThemedSurface, {
+  "aria-label": "Package preview",
+  as: "article",
+  className: "consumer-surface",
+  id: "package-surface",
+  shape: "rectangular",
+  style: { backgroundPosition: "2px 3px" },
+  tone: "inverse",
+}, "Surface"));
+assert.match(surfaceMarkup, /^<article/u);
+assert.match(surfaceMarkup, /aria-label="Package preview"/u);
+assert.match(surfaceMarkup, /class="hraness-themed-surface [^"]+ consumer-surface"/u);
+assert.match(surfaceMarkup, /data-shape="rectangular"/u);
+assert.match(surfaceMarkup, /data-slot="themed-surface"/u);
+assert.match(surfaceMarkup, /data-tone="inverse"/u);
+assert.match(surfaceMarkup, /id="package-surface"/u);
+assert.match(surfaceMarkup, /style="background-position:2px 3px"/u);
+assert.match(surfaceMarkup, />Surface</u);
 `;
 }
 
@@ -236,6 +263,7 @@ import {
   QuietSiteFooter,
   QuietSitePage,
   SocialIcon,
+  ThemedSurface,
   ViewportFrame,
   WrappingRow,
 } from "@hraness/ui";
@@ -254,6 +282,16 @@ const styles = stylex.create({
     "min-inline-size": 0,
   },
   physicalPage: { maxWidth: "40rem", minWidth: 0, width: "100%" },
+  surfaceTexture: {
+    backgroundColor: "var(--ui-secondary)",
+    backgroundImage: "repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px)",
+    backgroundPosition: "0 0",
+    backgroundRepeat: "repeat",
+    backgroundSize: "4px 4px",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--ui-secondary-foreground)",
+    paddingInline: "var(--space-2)",
+  },
   wrapper: { display: "grid" },
 });
 const markup: string = renderToStaticMarkup(createElement(Icon, {
@@ -315,6 +353,18 @@ const rowMarkup: string = renderToStaticMarkup(createElement(WrappingRow, {
   style: { display: "block" },
   xstyle: [styles.wrapper, styles.physicalPage],
 }));
+const surfaceRef = createRef<HTMLElement>();
+const surfaceMarkup: string = renderToStaticMarkup(createElement(ThemedSurface, {
+  "aria-label": "Package preview",
+  as: "article",
+  children: "Surface",
+  className: "consumer-surface",
+  ref: surfaceRef,
+  shape: "rectangular",
+  style: { backgroundPosition: "2px 3px" },
+  tone: "accent",
+  xstyle: [styles.logicalPage, styles.surfaceTexture],
+}));
 
 // @ts-expect-error QuietSite rejects StyleX 0.19's physical inlineSize alias.
 const camelInlineSizeMarkup = renderToStaticMarkup(createElement(QuietSitePage, { children: "Page", xstyle: styles.camelInlineSize }));
@@ -328,10 +378,18 @@ const frameCamelInlineSizeMarkup = renderToStaticMarkup(createElement(ViewportFr
 const rowCamelMaxInlineSizeMarkup = renderToStaticMarkup(createElement(WrappingRow, { xstyle: styles.camelMaxInlineSize }));
 // @ts-expect-error WrappingRow rejects StyleX 0.19's physical minInlineSize alias.
 const rowCamelMinInlineSizeMarkup = renderToStaticMarkup(createElement(WrappingRow, { xstyle: styles.camelMinInlineSize }));
+// @ts-expect-error ThemedSurface rejects StyleX 0.19's physical inlineSize alias.
+const surfaceCamelInlineSizeMarkup = renderToStaticMarkup(createElement(ThemedSurface, { xstyle: styles.camelInlineSize }));
 // @ts-expect-error ViewportFrame keeps its polymorphic elements finite.
 const invalidFrameElementMarkup = renderToStaticMarkup(createElement(ViewportFrame, { as: "article" }));
 // @ts-expect-error WrappingRow keeps its polymorphic elements finite.
 const invalidRowElementMarkup = renderToStaticMarkup(createElement(WrappingRow, { as: "article" }));
+// @ts-expect-error ThemedSurface keeps its polymorphic elements finite.
+const invalidSurfaceElementMarkup = renderToStaticMarkup(createElement(ThemedSurface, { as: "main" }));
+// @ts-expect-error ThemedSurface keeps its tone set finite.
+const invalidSurfaceToneMarkup = renderToStaticMarkup(createElement(ThemedSurface, { tone: "warning" }));
+// @ts-expect-error ThemedSurface keeps its shape set finite.
+const invalidSurfaceShapeMarkup = renderToStaticMarkup(createElement(ThemedSurface, { shape: "pill" }));
 
 void markup;
 void socialMarkup;
@@ -340,14 +398,19 @@ void pageMarkup;
 void footerMarkup;
 void frameMarkup;
 void rowMarkup;
+void surfaceMarkup;
 void camelInlineSizeMarkup;
 void camelMaxInlineSizeMarkup;
 void camelMinInlineSizeMarkup;
 void frameCamelInlineSizeMarkup;
 void rowCamelMaxInlineSizeMarkup;
 void rowCamelMinInlineSizeMarkup;
+void surfaceCamelInlineSizeMarkup;
 void invalidFrameElementMarkup;
 void invalidRowElementMarkup;
+void invalidSurfaceElementMarkup;
+void invalidSurfaceToneMarkup;
+void invalidSurfaceShapeMarkup;
 `;
 
 function typeScriptConfig(moduleResolution: "Bundler" | "NodeNext") {

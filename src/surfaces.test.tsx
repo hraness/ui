@@ -8,6 +8,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   ThemedSurface,
+  type ThemedSurfaceProps,
+  type ThemedSurfaceTone,
   type ViewportFrameProps,
   ViewportFrame,
   type WrappingRowProps,
@@ -23,6 +25,18 @@ const testStyles = stylex.create({
   rowOverride: {
     display: "grid",
   },
+  surfaceOverride: {
+    backgroundColor: "var(--ui-secondary)",
+    backgroundImage:
+      "repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px)",
+    backgroundPosition: "0 0",
+    backgroundRepeat: "repeat",
+    backgroundSize: "4px 4px",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--ui-secondary-foreground)",
+    paddingInline: "var(--space-2)",
+  },
+  dynamicSurface: (backgroundSize: string) => ({ backgroundSize }),
 });
 
 function openingTagForSlot(html: string, slot: string): string {
@@ -253,21 +267,134 @@ test("structural surfaces forward their chosen native element", () => {
   expect(rowValues).toEqual([rowElement, null]);
 });
 
-test("ThemedSurface retains its legacy semantic contract", () => {
+const themedSurfaceTones = [
+  "accent",
+  "card",
+  "inverse",
+  "popover",
+  "secondary",
+] as const satisfies readonly ThemedSurfaceTone[];
+
+test("ThemedSurface preserves its native element, finite variants, semantic hooks, and caller class", () => {
+  const defaultTag = openingTagForSlot(
+    renderToStaticMarkup(<ThemedSurface />),
+    "themed-surface",
+  );
   const html = renderToStaticMarkup(
     <ThemedSurface
+      {...{ "data-slot": "caller-surface" }}
+      aria-label="Preview surface"
       as="article"
       className="consumer-surface"
+      data-product="writer"
+      id="preview"
       shape="rectangular"
       tone="inverse"
     >
       Content
     </ThemedSurface>,
   );
+  const tag = openingTagForSlot(html, "themed-surface");
+  const classes = classesForSlot(html, "themed-surface");
 
-  expect(html).toStartWith('<article class="hraness-themed-surface consumer-surface"');
-  expect(html).toContain('data-shape="rectangular"');
-  expect(html).toContain('data-slot="themed-surface"');
-  expect(html).toContain('data-tone="inverse"');
+  expect(defaultTag).toStartWith("<div");
+  expect(defaultTag).toContain('data-shape="rounded"');
+  expect(defaultTag).toContain('data-tone="card"');
+  expect(tag).toStartWith("<article");
+  expect(classes[0]).toBe("hraness-themed-surface");
+  expect(classes.at(-1)).toBe("consumer-surface");
+  expect(generatedClasses(classes, "hraness-themed-surface", "consumer-surface"))
+    .not.toHaveLength(0);
+  expect(tag).toContain('aria-label="Preview surface"');
+  expect(tag).toContain('data-product="writer"');
+  expect(tag).toContain('data-shape="rectangular"');
+  expect(tag).toContain('data-slot="themed-surface"');
+  expect(tag).not.toContain('data-slot="caller-surface"');
+  expect(tag).toContain('data-tone="inverse"');
+  expect(tag).toContain('id="preview"');
   expect(html).toContain(">Content</article>");
+});
+
+test("ThemedSurface renders every public tone as a stable semantic variant", () => {
+  for (const tone of themedSurfaceTones) {
+    const html = renderToStaticMarkup(<ThemedSurface tone={tone}>{tone}</ThemedSurface>);
+    const classes = classesForSlot(html, "themed-surface");
+
+    expect(openingTagForSlot(html, "themed-surface")).toContain(`data-tone="${tone}"`);
+    expect(classes[0]).toBe("hraness-themed-surface");
+    expect(generatedClasses(classes, "hraness-themed-surface")).not.toHaveLength(0);
+    expect(html).toContain(`>${tone}</div>`);
+  }
+});
+
+test("ThemedSurface applies its tone and shape before the typed caller StyleX recipe", () => {
+  const baseClasses = classesForSlot(
+    renderToStaticMarkup(<ThemedSurface shape="rectangular" tone="accent" />),
+    "themed-surface",
+  );
+  const overrideClasses = classesForSlot(
+    renderToStaticMarkup(
+      <ThemedSurface
+        className="consumer-surface"
+        shape="rectangular"
+        tone="accent"
+        xstyle={testStyles.surfaceOverride}
+      />,
+    ),
+    "themed-surface",
+  );
+  const baseGenerated = generatedClasses(baseClasses, "hraness-themed-surface");
+  const overrideGenerated = generatedClasses(
+    overrideClasses,
+    "hraness-themed-surface",
+    "consumer-surface",
+  );
+
+  expect(overrideGenerated.length).toBeGreaterThan(baseGenerated.length);
+  expect(
+    baseGenerated.filter((name) => overrideGenerated.includes(name)),
+  ).toHaveLength(baseGenerated.length - 4);
+  expect(overrideClasses[0]).toBe("hraness-themed-surface");
+  expect(overrideClasses.at(-1)).toBe("consumer-surface");
+});
+
+test("ThemedSurface keeps the downstream texture seam while native styles win dynamic values", () => {
+  const tag = openingTagForSlot(
+    renderToStaticMarkup(
+      <ThemedSurface
+        style={{ backgroundPosition: "2px 3px", backgroundSize: "8px 8px" }}
+        xstyle={[
+          testStyles.surfaceOverride,
+          testStyles.dynamicSurface("6px 6px"),
+        ]}
+      />,
+    ),
+    "themed-surface",
+  );
+  const inlineStyle = tag.match(/style="([^"]+)"/u)?.[1] ?? "";
+
+  expect(inlineStyle).toMatch(/--[^:]+:6px 6px/u);
+  expect(inlineStyle).toContain("background-position:2px 3px");
+  expect(inlineStyle).toContain("background-size:8px 8px");
+  expect(inlineStyle.indexOf("--")).toBeLessThan(
+    inlineStyle.indexOf("background-size:8px 8px"),
+  );
+});
+
+test("ThemedSurface forwards its chosen native element", () => {
+  const values: Array<HTMLElement | null> = [];
+  const surface = renderForwardRefForTest<ThemedSurfaceProps>(
+    ThemedSurface,
+    { as: "section" },
+    (element) => {
+      values.push(element);
+    },
+  );
+  const element = { id: "surface" } as HTMLElement;
+
+  surface.props.ref?.(element);
+  surface.props.ref?.(null);
+
+  expect(surface.type).toBe("section");
+  expect(values).toEqual([element, null]);
 });
