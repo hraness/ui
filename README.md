@@ -210,10 +210,11 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 </Button>
 ```
 
-`Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `QuietSitePage`,
-`QuietSiteFooter`, `ViewportFrame`, `WrappingRow`, and `ThemedSurface` accept a typed StyleX
-override. Base declarations are applied first, finite size, tone, and shape recipes
-come next, and the caller recipe is applied last. Quiet-site landmarks and
+`Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
+`QuietSitePage`, `QuietSiteFooter`, `ViewportFrame`, `WrappingRow`, and
+`ThemedSurface` accept a typed StyleX override. Base declarations are applied
+first, finite size, tone, and shape recipes come next, and the caller recipe is
+applied last. Quiet-site landmarks and
 these surfaces also preserve dynamic StyleX inline values when merging the
 native `style` prop, with caller inline declarations taking precedence.
 
@@ -234,10 +235,23 @@ writing mode, equivalent to 32, 40, and 56 pixels at the default root font
 size. Caller StyleX recipes can replace either physical dimension before a
 native `style` override is applied.
 
+`Badge`, `Tag`, and `StatusDot` keep finite tone or variant sets and preserve
+their compact physical geometry. An outline `Tag` continues to read the public
+`--hraness-tag-accent` custom property set by `accentColor` or consumer CSS.
+Forced-colors mode replaces Badge and Tag borders with `CanvasText`.
+
 ```tsx
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
-import { Avatar, Icon, QuietSitePage, ThemedSurface, WrappingRow } from "@hraness/ui";
+import {
+  Avatar,
+  Icon,
+  QuietSitePage,
+  StatusDot,
+  Tag,
+  ThemedSurface,
+  WrappingRow,
+} from "@hraness/ui";
 
 const styles = stylex.create({
   avatar: {
@@ -252,6 +266,10 @@ const styles = stylex.create({
   searchIcon: {
     display: "block",
   },
+  statusPill: {
+    backgroundColor: "var(--ui-accent)",
+    borderColor: "var(--ui-primary)",
+  },
   structuralRow: {
     "inline-size": "16rem",
   },
@@ -264,6 +282,10 @@ const styles = stylex.create({
 
 <Icon icon={Search01Icon} xstyle={styles.searchIcon} />;
 <Avatar name="Ada Lovelace" xstyle={styles.avatar} />;
+<Tag accentColor="#D97706" variant="outline" xstyle={styles.statusPill}>
+  Project
+</Tag>;
+<StatusDot tone="success" />;
 <QuietSitePage xstyle={styles.quietPage}>...</QuietSitePage>;
 <WrappingRow xstyle={styles.structuralRow}>...</WrappingRow>;
 <ThemedSurface tone="accent" xstyle={styles.texturedSurface}>...</ThemedSurface>;

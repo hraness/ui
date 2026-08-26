@@ -61,6 +61,19 @@ const galleryStyles = stylex.create({
   quietSiteFooterOverride: {
     "max-inline-size": "35rem",
   },
+  statusDotOverride: {
+    backgroundColor: "var(--ui-primary)",
+    height: "1rem",
+    width: "1rem",
+  },
+  statusPillOverride: {
+    backgroundColor: "var(--ui-accent)",
+    borderColor: "var(--ui-primary)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--ui-accent-foreground)",
+    minHeight: "2rem",
+    width: "8rem",
+  },
   themedSurfaceTexture: {
     backgroundColor: "var(--ui-secondary)",
     backgroundImage:
@@ -271,6 +284,64 @@ export function PrimitiveGallery() {
               size="small"
               style={{ height: "4rem", width: "4rem" }}
               xstyle={galleryStyles.avatarOverride}
+            />
+          </div>
+        </section>
+
+        <section aria-labelledby="gallery-status-family-heading" data-gallery-section="status-family">
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-status-family-heading">Status family</h2>
+              <p>Finite tones, compact geometry, public accents, and decorative dots share one boundary.</p>
+            </div>
+          </div>
+          <div data-gallery-status-family-row="badges">
+            <Badge className="gallery-badge gallery-badge--neutral" data-gallery-badge-tone="neutral" data-gallery-status-family-layer-conflict="true">Neutral</Badge>
+            <Badge className="gallery-badge gallery-badge--info" data-gallery-badge-tone="info" data-gallery-status-family-layer-conflict="true" tone="info">Info</Badge>
+            <Badge className="gallery-badge gallery-badge--success" data-gallery-badge-tone="success" data-gallery-status-family-layer-conflict="true" isLive tone="success">Success</Badge>
+            <Badge className="gallery-badge gallery-badge--warning" data-gallery-badge-tone="warning" data-gallery-status-family-layer-conflict="true" tone="warning">Warning</Badge>
+            <Badge className="gallery-badge gallery-badge--danger" data-gallery-badge-tone="danger" data-gallery-status-family-layer-conflict="true" tone="danger">Danger</Badge>
+          </div>
+          <div data-gallery-status-family-row="tags">
+            <Tag className="gallery-tag gallery-tag--default" data-gallery-status-family-layer-conflict="true" data-gallery-tag-variant="default" icon="◆">Default</Tag>
+            <Tag className="gallery-tag gallery-tag--muted" data-gallery-status-family-layer-conflict="true" data-gallery-tag-variant="muted" variant="muted">Muted</Tag>
+            <Tag accentColor="#D97706" className="gallery-tag gallery-tag--outline" data-gallery-status-family-layer-conflict="true" data-gallery-tag-variant="outline" variant="outline">Outline</Tag>
+          </div>
+          <div data-gallery-status-family-row="dots">
+            <StatusDot className="gallery-dot gallery-dot--neutral" data-gallery-status-dot-tone="neutral" data-gallery-status-family-layer-conflict="true" />
+            <StatusDot className="gallery-dot gallery-dot--info" data-gallery-status-dot-tone="info" data-gallery-status-family-layer-conflict="true" tone="info" />
+            <StatusDot className="gallery-dot gallery-dot--success" data-gallery-status-dot-tone="success" data-gallery-status-family-layer-conflict="true" tone="success" />
+            <StatusDot className="gallery-dot gallery-dot--warning" data-gallery-status-dot-tone="warning" data-gallery-status-family-layer-conflict="true" tone="warning" />
+            <StatusDot className="gallery-dot gallery-dot--danger" data-gallery-status-dot-tone="danger" data-gallery-status-family-layer-conflict="true" tone="danger" />
+          </div>
+          <div data-gallery-status-family-row="overrides">
+            <Badge
+              className="gallery-badge gallery-badge--override"
+              data-gallery-status-family-layer-conflict="true"
+              data-gallery-status-family-override="badge"
+              style={{ minHeight: "2.5rem", width: "9rem" }}
+              tone="danger"
+              xstyle={galleryStyles.statusPillOverride}
+            >
+              Badge override
+            </Badge>
+            <Tag
+              className="gallery-tag gallery-tag--override"
+              data-gallery-status-family-layer-conflict="true"
+              data-gallery-status-family-override="tag"
+              style={{ minHeight: "2.5rem", width: "9rem" }}
+              variant="muted"
+              xstyle={galleryStyles.statusPillOverride}
+            >
+              Tag override
+            </Tag>
+            <StatusDot
+              className="gallery-dot gallery-dot--override"
+              data-gallery-status-family-layer-conflict="true"
+              data-gallery-status-family-override="dot"
+              style={{ height: "1.25rem", width: "1.25rem" }}
+              tone="danger"
+              xstyle={galleryStyles.statusDotOverride}
             />
           </div>
         </section>
