@@ -11,6 +11,10 @@
     border-radius: var(--radius-lg);
   }
 
+  .x18j2vf1 {
+    border-radius: var(--radius-round);
+  }
+
   .x1u5dnfi {
     border-radius: var(--radius-sharp);
   }
@@ -85,6 +89,10 @@
     background-color: var(--ui-foreground);
   }
 
+  .xukhggj {
+    background-color: var(--ui-muted);
+  }
+
   .xwrrvqk {
     background-color: var(--ui-popover);
   }
@@ -129,6 +137,10 @@
     display: flex;
   }
 
+  .xrvj5dj {
+    display: grid;
+  }
+
   .x1rg5ohu {
     display: inline-block;
   }
@@ -137,8 +149,24 @@
     display: inline-flex;
   }
 
+  .xwz0xwf {
+    display: inline-grid;
+  }
+
   .x1a02dak {
     flex-wrap: wrap;
+  }
+
+  .x1n56hm7 {
+    font-size: var(--text-body);
+  }
+
+  .xaasd0c {
+    font-size: var(--text-caption);
+  }
+
+  .x1e4wzip {
+    font-weight: var(--font-weight-medium);
   }
 
   .xiuoait {
@@ -153,12 +181,20 @@
     justify-content: space-between;
   }
 
+  .x1o2pa38 {
+    justify-items: center;
+  }
+
   .xa8254d {
     max-inline-size: var(--hraness-quiet-site-measure, 34rem);
   }
 
   .xesnm00 {
     min-inline-size: 0;
+  }
+
+  .xl1xv1r {
+    object-fit: cover;
   }
 }
 
@@ -175,8 +211,24 @@
     border-top-width: 1px;
   }
 
+  .x5yr21d {
+    height: 100%;
+  }
+
   .x1dr59a3 {
     height: 100vh;
+  }
+
+  .xwaiz5r {
+    height: 2.5rem;
+  }
+
+  .xettwda {
+    height: 2rem;
+  }
+
+  .xu15cu9 {
+    height: 3.5rem;
   }
 
   .xgk38rq {
@@ -193,6 +245,22 @@
 
   .x1b284x9 {
     padding-top: var(--space-5, 1.25rem);
+  }
+
+  .xh8yej3 {
+    width: 100%;
+  }
+
+  .xvm51jw {
+    width: 2.5rem;
+  }
+
+  .xs5h3dt {
+    width: 2rem;
+  }
+
+  .x154i66o {
+    width: 3.5rem;
   }
 
   @supports (height: 100svh) {

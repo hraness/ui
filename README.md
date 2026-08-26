@@ -210,9 +210,9 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 </Button>
 ```
 
-`Icon`, `SocialIcon`, `AppearanceIcon`, `QuietSitePage`, `QuietSiteFooter`,
-`ViewportFrame`, `WrappingRow`, and `ThemedSurface` accept a typed StyleX
-override. Base declarations are applied first, finite tone and shape recipes
+`Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `QuietSitePage`,
+`QuietSiteFooter`, `ViewportFrame`, `WrappingRow`, and `ThemedSurface` accept a typed StyleX
+override. Base declarations are applied first, finite size, tone, and shape recipes
 come next, and the caller recipe is applied last. Quiet-site landmarks and
 these surfaces also preserve dynamic StyleX inline values when merging the
 native `style` prop, with caller inline declarations taking precedence.
@@ -228,12 +228,24 @@ remains deterministic. Use `width`, `maxWidth`, or `minWidth` when a physical
 override is intentional. `ViewportFrame` also retains its ordered `100vh`,
 `100svh`, and `100dvh` height fallbacks in compiled CSS.
 
+`Avatar` intentionally keeps physical `width` and `height` declarations. Its
+three finite sizes remain `2rem`, `2.5rem`, and `3.5rem` squares in every
+writing mode, equivalent to 32, 40, and 56 pixels at the default root font
+size. Caller StyleX recipes can replace either physical dimension before a
+native `style` override is applied.
+
 ```tsx
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
-import { Icon, QuietSitePage, ThemedSurface, WrappingRow } from "@hraness/ui";
+import { Avatar, Icon, QuietSitePage, ThemedSurface, WrappingRow } from "@hraness/ui";
 
 const styles = stylex.create({
+  avatar: {
+    backgroundColor: "var(--ui-accent)",
+    borderRadius: "var(--radius-sm)",
+    height: "3rem",
+    width: "3rem",
+  },
   quietPage: {
     "max-inline-size": "40rem",
   },
@@ -251,6 +263,7 @@ const styles = stylex.create({
 });
 
 <Icon icon={Search01Icon} xstyle={styles.searchIcon} />;
+<Avatar name="Ada Lovelace" xstyle={styles.avatar} />;
 <QuietSitePage xstyle={styles.quietPage}>...</QuietSitePage>;
 <WrappingRow xstyle={styles.structuralRow}>...</WrappingRow>;
 <ThemedSurface tone="accent" xstyle={styles.texturedSurface}>...</ThemedSurface>;

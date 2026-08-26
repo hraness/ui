@@ -55,6 +55,10 @@
   gap: var(--space-3);
 }
 
+[data-gallery-avatar-row="true"] {
+  display: block;
+}
+
 [data-gallery-icon-canary="true"] {
   color: var(--ui-primary);
   font-size: 0;
@@ -110,6 +114,41 @@
     background-size: 99px 99px;
     color: rgb(4 5 6);
     box-shadow: none;
+  }
+
+  html body [data-gallery-avatar-layer-conflict="true"][data-slot="avatar"] {
+    --gallery-avatar-layer-conflict: legacy;
+    width: 13rem;
+    height: 17rem;
+    align-items: stretch;
+    justify-items: stretch;
+    overflow: visible;
+    border-radius: 0;
+    background-color: rgb(1 2 3);
+    color: rgb(4 5 6);
+    display: block;
+    flex: 1 1 auto;
+    font-weight: 100;
+  }
+
+  html body [data-gallery-avatar-layer-conflict="true"][data-slot="avatar"][data-size="small"],
+  html body [data-gallery-avatar-layer-conflict="true"][data-slot="avatar"][data-size="large"] {
+    font-size: 6rem;
+  }
+
+  html body [data-gallery-avatar-layer-conflict="true"] :where([data-slot="avatar-image"], [data-slot="avatar-fallback"]) {
+    width: 20%;
+    height: 30%;
+  }
+
+  html body [data-gallery-avatar-layer-conflict="true"] [data-slot="avatar-image"] {
+    object-fit: contain;
+  }
+
+  html body [data-gallery-avatar-layer-conflict="true"] [data-slot="avatar-fallback"] {
+    align-items: start;
+    display: block;
+    justify-items: start;
   }
 }
 
