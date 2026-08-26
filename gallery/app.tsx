@@ -1,6 +1,7 @@
 "use client";
 
 import { Search01Icon } from "@hugeicons/core-free-icons";
+import * as stylex from "@stylexjs/stylex";
 import { useEffect, useState } from "react";
 
 import {
@@ -43,6 +44,12 @@ const galleryTabs = [
 
 type GalleryTheme = "dark" | "light";
 
+const galleryStyles = stylex.create({
+  quietSiteFooterOverride: {
+    "max-inline-size": "35rem",
+  },
+});
+
 export function PrimitiveGallery() {
   const [pressCount, setPressCount] = useState(0);
   const [theme, setTheme] = useState<GalleryTheme>("light");
@@ -63,13 +70,19 @@ export function PrimitiveGallery() {
   return (
     <div data-gallery-root="true">
       <SkipLink href="#primitive-gallery-main" />
-      <QuietSitePage id="primitive-gallery-main">
+      <QuietSitePage
+        className="gallery-quiet-site-page"
+        data-gallery-quiet-site-layer-conflict="true"
+        data-gallery-quiet-site-page="true"
+        id="primitive-gallery-main"
+      >
         <header data-gallery-intro="true">
           <p data-gallery-eyebrow="true">@hraness/ui primitive harness</p>
           <h1>Portable component behavior and presentation</h1>
           <p>
             The executable gallery verifies the packed default stylesheet,
-            semantic hooks, browser interaction, and the current StyleX icon recipes.
+            semantic hooks, browser interaction, and the current StyleX icon and
+            quiet-site recipes.
           </p>
         </header>
 
@@ -175,13 +188,19 @@ export function PrimitiveGallery() {
             <Spinner label="Checking primitives" size="small" />
           </div>
           <InlineAlert title="Migration boundary" tone="info">
-            Component recipes are unchanged. This harness establishes evidence for later families.
+            Quiet-site landmarks now use package-compiled StyleX while later families
+            remain on their legacy recipes.
           </InlineAlert>
-          <Progress label="Harness coverage" showValue value={72} />
+          <Progress label="Harness coverage" showValue value={78} />
           <Skeleton height="1rem" isText width="68%" />
         </section>
       </QuietSitePage>
-      <QuietSiteFooter>
+      <QuietSiteFooter
+        className="gallery-quiet-site-footer"
+        data-gallery-quiet-site-priority3-conflict="true"
+        data-gallery-quiet-site-footer="true"
+        xstyle={galleryStyles.quietSiteFooterOverride}
+      >
         Packed archive consumer · default stylesheet · React hydration
       </QuietSiteFooter>
     </div>

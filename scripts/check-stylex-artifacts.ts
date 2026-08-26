@@ -3,18 +3,23 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const COMPONENTS_IMPORT = '@import "./components.css";';
-const GALLERY_LAYER_CONFLICT_SENTINEL = "data-gallery-stylex-layer-conflict";
+const GALLERY_LAYER_CONFLICT_SENTINELS = [
+  "data-gallery-stylex-layer-conflict",
+  "data-gallery-quiet-site-layer-conflict",
+  "data-gallery-quiet-site-priority3-conflict",
+] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
   "components.hraness-ui.legacy.base",
   LEGACY_LAYER,
 ] as const;
 const LAYER_PRELUDE =
-  "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2;";
+  "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3;";
 const STYLEX_IMPORT = '@import "../dist/stylex.css";';
 const STYLEX_LAYERS = [
   "components.hraness-ui.priority1",
   "components.hraness-ui.priority2",
+  "components.hraness-ui.priority3",
 ] as const;
 const TOP_LEVEL_LAYER_PRELUDE = "@layer base, components;";
 
@@ -165,6 +170,16 @@ function requirePublicLayerContract(
     new Set(STYLEX_LAYERS),
     "dist/stylex.css",
   );
+  if (
+    generatedLayers.length !== STYLEX_LAYERS.length
+    || generatedLayers.some(
+      (layer, index) => layer !== STYLEX_LAYERS[index],
+    )
+  ) {
+    throw new Error(
+      "dist/stylex.css must contain the exact priority1 < priority2 < priority3 layer sequence",
+    );
+  }
   for (const expectedLayer of STYLEX_LAYERS) {
     if (!generatedLayers.includes(expectedLayer)) {
       throw new Error(`dist/stylex.css must declare ${expectedLayer}`);
@@ -189,7 +204,7 @@ function requirePublicLayerContract(
     || lines.some((line, index) => line !== expectedLines[index])
   ) {
     throw new Error(
-      "src/styles.css must contain the exact base < components and legacy < priority1 < priority2 preludes and ordered public imports",
+      "src/styles.css must contain the exact base < components and legacy < priority1 < priority2 < priority3 preludes and ordered public imports",
     );
   }
 }
@@ -217,6 +232,11 @@ requireMatch(
   /@layer components\.hraness-ui\.priority2\s*\{/u,
   "the package-owned priority2 layer",
 );
+requireMatch(
+  compiledCss,
+  /@layer components\.hraness-ui\.priority3\s*\{/u,
+  "the package-owned priority3 layer",
+);
 requireMatch(compiledCss, /flex:\s*none;/u, "the icon flex declaration");
 requireMatch(
   compiledCss,
@@ -238,17 +258,56 @@ requireMatch(
   /justify-content:\s*center;/u,
   "the icon-wrapper justification declaration",
 );
+const quietSiteDeclarations = [
+  [/align-items:\s*center;/u, "quiet-site footer alignment"],
+  [/border-top-color:\s*var\(--ui-border\);/u, "quiet-site footer border color"],
+  [/border-top-style:\s*solid;/u, "quiet-site footer border style"],
+  [/border-top-width:\s*1px;/u, "quiet-site footer border width"],
+  [/box-sizing:\s*border-box;/u, "quiet-site border-box sizing"],
+  [/color:\s*var\(--ui-muted-foreground\);/u, "quiet-site footer color"],
+  [/display:\s*flex;/u, "quiet-site footer display"],
+  [/flex:\s*1 0 auto;/u, "quiet-site page flex"],
+  [/flex-wrap:\s*wrap;/u, "quiet-site footer wrapping"],
+  [/gap:\s*var\(--space-4,\s*1rem\);/u, "quiet-site footer gap"],
+  [/justify-content:\s*space-between;/u, "quiet-site footer distribution"],
+  [/margin-block:\s*clamp\(2rem,\s*6vh,\s*4rem\) clamp\(3\.5rem,\s*10vh,\s*6rem\);/u, "quiet-site page block margins"],
+  [/margin-inline:\s*auto;/u, "quiet-site inline centering"],
+  [/max-inline-size:\s*var\(--hraness-quiet-site-measure,\s*34rem\);/u, "quiet-site shared logical measure"],
+  [/min-inline-size:\s*0;/u, "quiet-site footer minimum logical size"],
+  [/overflow:\s*clip;/u, "quiet-site footer clipping"],
+  [/padding-bottom:\s*max\(var\(--space-5,\s*1\.25rem\),\s*env\(safe-area-inset-bottom\)\);/u, "quiet-site footer safe-area bottom padding"],
+  [/padding-inline:\s*var\(--hraness-quiet-site-gutter,\s*1\.25rem\);/u, "quiet-site page gutter"],
+  [/padding-left:\s*max\(var\(--hraness-quiet-site-gutter,\s*1\.25rem\),\s*env\(safe-area-inset-left\)\);/u, "quiet-site footer safe-area left padding"],
+  [/padding-right:\s*max\(var\(--hraness-quiet-site-gutter,\s*1\.25rem\),\s*env\(safe-area-inset-right\)\);/u, "quiet-site footer safe-area right padding"],
+  [/padding-top:\s*var\(--space-5,\s*1\.25rem\);/u, "quiet-site footer top padding"],
+  [/inline-size:\s*100%;/u, "quiet-site full logical inline size"],
+] as const;
+for (const [pattern, description] of quietSiteDeclarations) {
+  requireMatch(compiledCss, pattern, description);
+}
 forbid(
   legacyComponents,
   /\.hraness-(?:appearance|social)-icon(?![A-Za-z0-9_-])/u,
   "a legacy social- or appearance-icon recipe",
 );
+forbid(
+  legacyComponents,
+  /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u,
+  "a legacy quiet-site landmark recipe",
+);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
-  `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}`,
-  new RegExp(GALLERY_LAYER_CONFLICT_SENTINEL, "u"),
-  "the gallery-only layer-conflict sentinel in package output",
+  compiledCss,
+  /max-width:\s*var\(--hraness-quiet-site-measure,\s*34rem\);/u,
+  "a physical quiet-site measure produced from its logical source contract",
 );
+for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
+  forbid(
+    `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}`,
+    new RegExp(sentinel, "u"),
+    `the gallery-only ${sentinel} sentinel in package output`,
+  );
+}
 
 requireMatch(
   compiledJavaScript,
@@ -259,6 +318,16 @@ requireMatch(
   compiledJavaScript,
   /from["']@stylexjs\/stylex["']/u,
   "the typed xstyle merge runtime",
+);
+requireMatch(
+  compiledJavaScript,
+  /hraness-quiet-site-page/u,
+  "the quiet-site page semantic hook",
+);
+requireMatch(
+  compiledJavaScript,
+  /hraness-quiet-site-footer/u,
+  "the quiet-site footer semantic hook",
 );
 forbid(
   compiledJavaScript,
@@ -295,12 +364,38 @@ assert.throws(
       legacyComponents,
       orderedStylesheet.replace(
         LAYER_PRELUDE,
-        "@layer components.hraness-ui.priority2, components.hraness-ui.priority1, components.hraness-ui.legacy;",
+        "@layer components.hraness-ui.priority3, components.hraness-ui.priority2, components.hraness-ui.priority1, components.hraness-ui.legacy;",
       ),
       compiledCss,
     ),
-  /exact base < components and legacy < priority1 < priority2 preludes/u,
+  /exact base < components and legacy < priority1 < priority2 < priority3 preludes/u,
   "the layer guard must reject a priority inversion",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents,
+      orderedStylesheet.replace(
+        ", components.hraness-ui.priority3",
+        "",
+      ),
+      compiledCss,
+    ),
+  /exact base < components and legacy < priority1 < priority2 < priority3 preludes/u,
+  "the layer guard must reject an omitted generated priority3 declaration",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents,
+      orderedStylesheet,
+      compiledCss.replace(
+        "components.hraness-ui.priority3",
+        "components.hraness-ui.priority4",
+      ),
+    ),
+  /top-level content outside its allowed named layers/u,
+  "the layer guard must reject an undeclared generated priority layer",
 );
 assert.throws(
   () =>
@@ -312,7 +407,7 @@ assert.throws(
       ),
       compiledCss,
     ),
-  /exact base < components and legacy < priority1 < priority2 preludes/u,
+  /exact base < components and legacy < priority1 < priority2 < priority3 preludes/u,
   "the layer guard must reject a top-level reset/component priority inversion",
 );
 assert.throws(

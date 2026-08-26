@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import stylex from "@stylexjs/unplugin/esbuild";
 import {
   access,
   cp,
@@ -18,8 +19,12 @@ import {
   type Page,
 } from "playwright-core";
 
+import { stylexCompilerOptions } from "./stylex-config.js";
+
 const BUN_VERSION = "1.3.14";
 const HUGEICONS_VERSION = "4.2.2";
+const PACKAGE_LAYER_PRELUDE =
+  /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3/u;
 const REACT_VERSION = "19.2.3";
 
 interface BrowserEvidence {
@@ -41,7 +46,29 @@ interface BrowserEvidence {
   readonly clientWidth: number;
   readonly colorScheme: string;
   readonly documentScrollWidth: number;
+  readonly footerAlignItems: string;
+  readonly footerBorderTopStyle: string;
+  readonly footerBorderTopWidth: number;
+  readonly footerBoxSizing: string;
+  readonly footerCallerClassLast: boolean;
+  readonly footerClassIsSemantic: boolean;
+  readonly footerDisplay: string;
+  readonly footerFlex: string;
+  readonly footerFlexWrap: string;
+  readonly footerGap: number;
+  readonly footerHasGeneratedClass: boolean;
+  readonly footerJustifyContent: string;
+  readonly footerMarginInlineEnd: number;
+  readonly footerMarginInlineStart: number;
+  readonly footerMaxInlineSize: number;
+  readonly footerMinInlineSize: number;
+  readonly footerOverflow: string;
+  readonly footerPaddingBottom: number;
+  readonly footerPaddingLeft: number;
+  readonly footerPaddingRight: number;
+  readonly footerPaddingTop: number;
   readonly footerPresent: boolean;
+  readonly footerWidth: number;
   readonly heading: string;
   readonly hydrationStarted: boolean;
   readonly iconAriaHidden: string;
@@ -53,6 +80,20 @@ interface BrowserEvidence {
   readonly iconHeight: number;
   readonly iconWidth: number;
   readonly mainPresent: boolean;
+  readonly pageBoxSizing: string;
+  readonly pageCallerClassLast: boolean;
+  readonly pageClassIsSemantic: boolean;
+  readonly pageFlex: string;
+  readonly pageHasGeneratedClass: boolean;
+  readonly pageMarginBlockEnd: number;
+  readonly pageMarginBlockStart: number;
+  readonly pageMarginInlineEnd: number;
+  readonly pageMarginInlineStart: number;
+  readonly pageLegacyLayerSentinel: string;
+  readonly pageMaxInlineSize: number;
+  readonly pagePaddingLeft: number;
+  readonly pagePaddingRight: number;
+  readonly pageWidth: number;
   readonly recoverableErrors: readonly string[];
   readonly rootHydrated: boolean;
   readonly skeletonAnimationName: string;
@@ -78,6 +119,18 @@ interface BrowserEvidence {
   readonly substackIconWidth: number;
   readonly theme: string;
   readonly transitionDuration: string;
+  readonly quietSitePriority3LayerSentinel: string;
+}
+
+interface VerticalWritingEvidence {
+  readonly footerInlineSize: number;
+  readonly footerMaxInlineSize: number;
+  readonly footerMaxWidth: string;
+  readonly footerWritingMode: string;
+  readonly pageInlineSize: number;
+  readonly pageMaxInlineSize: number;
+  readonly pageMaxWidth: string;
+  readonly pageWritingMode: string;
 }
 
 interface ForcedColorsEvidence {
@@ -202,6 +255,7 @@ async function buildBrowserEntry(
     format: "esm",
     minify: true,
     outdir,
+    plugins: [stylex(stylexCompilerOptions(consumer))],
     root: consumer,
     splitting: false,
     target: "browser",
@@ -212,12 +266,57 @@ async function buildBrowserEntry(
 
   const files = await filesBelow(outdir);
   const javaScriptPath = requireExactlyOne(files, ".js", entrypoint);
-  const cssPath = requireExactlyOne(files, ".css", entrypoint);
-  const [javaScript, css] = await Promise.all([
+  const cssPaths = files.filter((file) => file.endsWith(".css"));
+  const entryCssName = `${basename(entrypoint).replace(/\.[^.]+$/u, "")}.css`;
+  const cssPath = cssPaths.find((file) => basename(file) === entryCssName);
+  assert.ok(
+    cssPath !== undefined,
+    `${entrypoint} must emit its imported ${entryCssName} artifact; got ${cssPaths.map((file) => relative(process.cwd(), file)).join(", ")}`,
+  );
+  const extractedCssPaths = cssPaths
+    .filter((file) => file !== cssPath)
+    .sort((left, right) => left.localeCompare(right));
+  const [javaScript, importedCss, extractedCss] = await Promise.all([
     readFile(javaScriptPath, "utf8"),
     readFile(cssPath, "utf8"),
+    Promise.all(extractedCssPaths.map((file) => readFile(file, "utf8"))),
   ]);
+  const css = [importedCss, ...extractedCss].join("\n");
+  await writeFile(cssPath, css);
+  await Promise.all(
+    extractedCssPaths.map((file) => rm(file, { force: true })),
+  );
   return { css, cssPath, javaScript, javaScriptPath };
+}
+
+async function buildServerRenderer(
+  consumer: string,
+  outdir: string,
+): Promise<string> {
+  const result = await Bun.build({
+    conditions: ["production", "module"],
+    define: {
+      "process.env.NODE_ENV": JSON.stringify("production"),
+    },
+    entrypoints: [resolve(consumer, "gallery/render.tsx")],
+    format: "esm",
+    minify: true,
+    outdir,
+    packages: "external",
+    plugins: [stylex(stylexCompilerOptions(consumer))],
+    root: consumer,
+    splitting: false,
+    target: "bun",
+  });
+  if (!result.success) {
+    throw new Error(result.logs.map((log) => log.message).join("\n"));
+  }
+
+  return requireExactlyOne(
+    await filesBelow(outdir),
+    ".js",
+    "gallery server renderer",
+  );
 }
 
 function requirePackedDefaultStylesheet(css: string): void {
@@ -233,7 +332,7 @@ function requirePackedDefaultStylesheet(css: string): void {
   );
   assert.match(
     css,
-    /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2/u,
+    PACKAGE_LAYER_PRELUDE,
     "the packed default stylesheet must freeze the package layer order",
   );
   assert.match(
@@ -243,8 +342,23 @@ function requirePackedDefaultStylesheet(css: string): void {
   );
   assert.match(
     css,
-    /\.hraness-quiet-site-page(?=[\s,{:.])/u,
-    "the packed default stylesheet must include quiet-site recipes",
+    /max-inline-size:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u,
+    "the packed default stylesheet must include the compiled quiet-site measure",
+  );
+  assert.match(
+    css,
+    /max-inline-size:\s*35rem/u,
+    "the harness bundle must include its canonical logical xstyle override",
+  );
+  assert.match(
+    css,
+    /padding-bottom:\s*max\(var\(--space-5,\s*1\.25rem\),\s*env\(safe-area-inset-bottom\)\)/u,
+    "the packed default stylesheet must include the compiled safe-area footer padding",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain legacy quiet-site selectors",
   );
   assert.match(
     css,
@@ -261,6 +375,44 @@ function requirePackedDefaultStylesheet(css: string): void {
     /\[data-gallery-stylex-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"icon"|icon)\]\{(?=[^}]*--gallery-stylex-layer-conflict:\s*legacy)(?=[^}]*display:\s*block)(?=[^}]*flex:\s*(?:auto|1\s+1\s+auto))[^}]*\}/u,
     "the gallery conflict must independently carry its sentinel, display, and flex declarations",
   );
+  assert.match(
+    css,
+    /\[data-gallery-quiet-site-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"quiet-site-page"|quiet-site-page)\]\{(?=[^}]*--gallery-quiet-site-layer-conflict:\s*legacy)(?=[^}]*max-inline-size:\s*12rem)[^}]*\}/u,
+    "the gallery quiet-site measure conflict must carry its sentinel and max-inline-size declaration",
+  );
+  assert.match(
+    css,
+    /\[data-gallery-quiet-site-priority3-conflict=(?:"true"|true)\]\[data-slot=(?:"quiet-site-footer"|quiet-site-footer)\]\{(?=[^}]*--gallery-quiet-site-priority3-conflict:\s*legacy)(?=[^}]*padding-top:\s*9rem)[^}]*\}/u,
+    "the gallery quiet-site priority3 conflict must carry its sentinel and padding declaration",
+  );
+}
+
+function placePriority3BeforeLegacy(css: string): string {
+  const prelude = css.match(PACKAGE_LAYER_PRELUDE)?.[0];
+  assert.ok(prelude !== undefined, "the packed stylesheet layer prelude is missing");
+  const counterfactualPrelude = [
+    "@layer components.hraness-ui.priority3",
+    "components.hraness-ui.legacy",
+    "components.hraness-ui.priority1",
+    "components.hraness-ui.priority2",
+  ].join(", ");
+  const counterfactual = [
+    "@layer base, components;",
+    `${counterfactualPrelude};`,
+    css,
+  ].join("\n");
+  assert.notEqual(counterfactual, css);
+  assert.equal(
+    counterfactual.match(PACKAGE_LAYER_PRELUDE)?.[0],
+    prelude,
+    "the browser counterfactual must retain the valid package layer statement",
+  );
+  assert.match(
+    counterfactual,
+    /@layer\s+components\.hraness-ui\.priority3\s*,\s*components\.hraness-ui\.legacy/u,
+    "the browser counterfactual must create legacy after priority3",
+  );
+  return counterfactual;
 }
 
 function attachDiagnostics(page: Page): string[] {
@@ -344,6 +496,8 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || !(skeleton instanceof HTMLElement)
       || !(root instanceof HTMLElement)
       || !(heading instanceof HTMLElement)
+      || !(footer instanceof HTMLElement)
+      || !(main instanceof HTMLElement)
     ) {
       throw new Error("The primitive gallery structure is incomplete.");
     }
@@ -357,7 +511,13 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const appearanceBox = appearanceIcon.getBoundingClientRect();
     const appearanceClasses = [...appearance.classList];
     const buttonStyle = getComputedStyle(button);
+    const footerBox = footer.getBoundingClientRect();
+    const footerClasses = [...footer.classList];
+    const footerStyle = getComputedStyle(footer);
     const iconBox = icon.getBoundingClientRect();
+    const pageBox = main.getBoundingClientRect();
+    const pageClasses = [...main.classList];
+    const pageStyle = getComputedStyle(main);
 
     return {
       appearanceAlignItems: appearanceStyle.alignItems,
@@ -384,7 +544,35 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       clientWidth: document.documentElement.clientWidth,
       colorScheme: getComputedStyle(document.documentElement).colorScheme,
       documentScrollWidth: document.documentElement.scrollWidth,
-      footerPresent: footer instanceof HTMLElement,
+      footerAlignItems: footerStyle.alignItems,
+      footerBorderTopStyle: footerStyle.borderTopStyle,
+      footerBorderTopWidth: Number.parseFloat(footerStyle.borderTopWidth),
+      footerBoxSizing: footerStyle.boxSizing,
+      footerCallerClassLast:
+        footerClasses.at(-1) === "gallery-quiet-site-footer",
+      footerClassIsSemantic:
+        footerClasses[0] === "hraness-quiet-site-footer",
+      footerDisplay: footerStyle.display,
+      footerFlex: footerStyle.flex,
+      footerFlexWrap: footerStyle.flexWrap,
+      footerGap: Number.parseFloat(footerStyle.gap),
+      footerHasGeneratedClass: footerClasses.some(
+        (name) =>
+          name !== "hraness-quiet-site-footer"
+          && name !== "gallery-quiet-site-footer",
+      ),
+      footerJustifyContent: footerStyle.justifyContent,
+      footerMarginInlineEnd: Number.parseFloat(footerStyle.marginInlineEnd),
+      footerMarginInlineStart: Number.parseFloat(footerStyle.marginInlineStart),
+      footerMaxInlineSize: Number.parseFloat(footerStyle.maxInlineSize),
+      footerMinInlineSize: Number.parseFloat(footerStyle.minInlineSize),
+      footerOverflow: footerStyle.overflow,
+      footerPaddingBottom: Number.parseFloat(footerStyle.paddingBottom),
+      footerPaddingLeft: Number.parseFloat(footerStyle.paddingLeft),
+      footerPaddingRight: Number.parseFloat(footerStyle.paddingRight),
+      footerPaddingTop: Number.parseFloat(footerStyle.paddingTop),
+      footerPresent: footer.tagName === "FOOTER",
+      footerWidth: footerBox.width,
       heading: heading.textContent?.trim() ?? "",
       hydrationStarted: window.__HRANESS_UI_GALLERY_HYDRATION_STARTED__ === true,
       iconAriaHidden: icon.getAttribute("aria-hidden") ?? "",
@@ -397,7 +585,28 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         .getPropertyValue("--gallery-stylex-layer-conflict")
         .trim(),
       iconWidth: iconBox.width,
-      mainPresent: main instanceof HTMLElement && main.tagName === "MAIN",
+      mainPresent: main.tagName === "MAIN",
+      pageBoxSizing: pageStyle.boxSizing,
+      pageCallerClassLast:
+        pageClasses.at(-1) === "gallery-quiet-site-page",
+      pageClassIsSemantic: pageClasses[0] === "hraness-quiet-site-page",
+      pageFlex: pageStyle.flex,
+      pageHasGeneratedClass: pageClasses.some(
+        (name) =>
+          name !== "hraness-quiet-site-page"
+          && name !== "gallery-quiet-site-page",
+      ),
+      pageMarginBlockEnd: Number.parseFloat(pageStyle.marginBlockEnd),
+      pageMarginBlockStart: Number.parseFloat(pageStyle.marginBlockStart),
+      pageMarginInlineEnd: Number.parseFloat(pageStyle.marginInlineEnd),
+      pageMarginInlineStart: Number.parseFloat(pageStyle.marginInlineStart),
+      pageLegacyLayerSentinel: pageStyle
+        .getPropertyValue("--gallery-quiet-site-layer-conflict")
+        .trim(),
+      pageMaxInlineSize: Number.parseFloat(pageStyle.maxInlineSize),
+      pagePaddingLeft: Number.parseFloat(pageStyle.paddingLeft),
+      pagePaddingRight: Number.parseFloat(pageStyle.paddingRight),
+      pageWidth: pageBox.width,
       recoverableErrors: window.__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__ ?? [],
       rootHydrated: root.dataset.hydrated === "true",
       skeletonAnimationName: getComputedStyle(skeleton).animationName,
@@ -428,7 +637,42 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       substackIconWidth: substackBox.width,
       theme: document.documentElement.dataset.theme ?? "",
       transitionDuration: buttonStyle.transitionDuration,
+      quietSitePriority3LayerSentinel: footerStyle
+        .getPropertyValue("--gallery-quiet-site-priority3-conflict")
+        .trim(),
     };
+  });
+}
+
+async function verticalWritingEvidence(
+  page: Page,
+): Promise<VerticalWritingEvidence> {
+  return page.evaluate(() => {
+    const footer = document.querySelector('[data-gallery-quiet-site-footer="true"]');
+    const main = document.querySelector('[data-gallery-quiet-site-page="true"]');
+    if (!(footer instanceof HTMLElement) || !(main instanceof HTMLElement)) {
+      throw new Error("The quiet-site writing-mode canaries are missing.");
+    }
+
+    const previousFooterWritingMode = footer.style.writingMode;
+    const previousPageWritingMode = main.style.writingMode;
+    footer.style.writingMode = "vertical-rl";
+    main.style.writingMode = "vertical-rl";
+    const footerStyle = getComputedStyle(footer);
+    const pageStyle = getComputedStyle(main);
+    const evidence = {
+      footerInlineSize: Number.parseFloat(footerStyle.inlineSize),
+      footerMaxInlineSize: Number.parseFloat(footerStyle.maxInlineSize),
+      footerMaxWidth: footerStyle.maxWidth,
+      footerWritingMode: footerStyle.writingMode,
+      pageInlineSize: Number.parseFloat(pageStyle.inlineSize),
+      pageMaxInlineSize: Number.parseFloat(pageStyle.maxInlineSize),
+      pageMaxWidth: pageStyle.maxWidth,
+      pageWritingMode: pageStyle.writingMode,
+    };
+    footer.style.writingMode = previousFooterWritingMode;
+    main.style.writingMode = previousPageWritingMode;
+    return evidence;
   });
 }
 
@@ -439,6 +683,10 @@ function seconds(durationList: string): readonly number[] {
     if (value.endsWith("s")) return Number.parseFloat(value);
     return Number.NaN;
   });
+}
+
+function nearlyEqual(actual: number, expected: number): boolean {
+  return Number.isFinite(actual) && Math.abs(actual - expected) <= 0.5;
 }
 
 async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
@@ -702,28 +950,35 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-stylex-layer-conflict/u,
-    "the gallery conflict sentinel must not enter package CSS",
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict)/u,
+    "gallery conflict sentinels must not enter package CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate quiet-site declarations in legacy CSS",
   );
 
   const productionDirectory = resolve(consumer, "dist/browser");
   const negativeDirectory = resolve(consumer, "dist/unstyled-negative-control");
-  const [production, negativeControl] = await Promise.all([
+  const serverRendererDirectory = resolve(consumer, "dist/server-renderer");
+  const [production, negativeControl, serverRenderer] = await Promise.all([
     buildBrowserEntry(consumer, "gallery/client.tsx", productionDirectory),
     buildBrowserEntry(consumer, "gallery/unstyled-client.tsx", negativeDirectory),
+    buildServerRenderer(consumer, serverRendererDirectory),
   ]);
   requirePackedDefaultStylesheet(production.css);
   assert.throws(
     () => requirePackedDefaultStylesheet(negativeControl.css),
-    /must include the package StyleX layer/u,
+    /must keep reset styles below components/u,
     "the stylesheet delivery oracle must reject the unstyled negative-control consumer",
   );
   assert.match(production.javaScript, /__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__/u);
   assert.match(production.javaScript, /hydrateRoot/u);
   assert.doesNotMatch(
     negativeControl.css,
-    /@layer components\.hraness-ui\.priority[12]/u,
-    "the unstyled negative control must not accidentally receive package StyleX CSS",
+    /@layer components\.hraness-ui\.priority3/u,
+    "the unstyled negative control must not accidentally receive package priority3 CSS",
   );
   await rm(negativeDirectory, { force: true, recursive: true });
   assert.equal(await Bun.file(negativeControl.cssPath).exists(), false);
@@ -743,7 +998,7 @@ try {
   ]);
   await run([
     process.execPath,
-    "./gallery/render.tsx",
+    serverRenderer,
     stylesheetName,
     clientName,
   ], consumer, environment);
@@ -756,10 +1011,38 @@ try {
   assert.match(html, /data-social-icon="github"/u);
   assert.match(html, /data-social-icon="substack"/u);
   assert.match(html, /data-appearance-icon="system"/u);
+  assert.match(html, /data-gallery-quiet-site-layer-conflict="true"/u);
+  assert.match(html, /data-gallery-quiet-site-page="true"/u);
+  assert.match(html, /data-gallery-quiet-site-priority3-conflict="true"/u);
+  assert.match(html, /data-gallery-quiet-site-footer="true"/u);
   assert.match(html, /data-slot="quiet-site-page"/u);
+  assert.match(html, /data-slot="quiet-site-footer"/u);
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
+
+  const counterfactualDocumentName = "priority3-before-legacy.html";
+  const counterfactualStylesheetName = "priority3-before-legacy.css";
+  const counterfactualDocumentPath = resolve(
+    productionDirectory,
+    counterfactualDocumentName,
+  );
+  const counterfactualStylesheetPath = resolve(
+    productionDirectory,
+    counterfactualStylesheetName,
+  );
+  const counterfactualHtml = html.replace(
+    `href="/${stylesheetName}"`,
+    `href="/${counterfactualStylesheetName}"`,
+  );
+  assert.notEqual(counterfactualHtml, html);
+  await Promise.all([
+    writeFile(counterfactualDocumentPath, counterfactualHtml),
+    writeFile(
+      counterfactualStylesheetPath,
+      placePriority3BeforeLegacy(production.css),
+    ),
+  ]);
 
   const requestedPaths = new Set<string>();
   const server = startGalleryServer(productionDirectory, requestedPaths);
@@ -783,6 +1066,7 @@ try {
     });
     try {
       const origin = `http://${server.hostname}:${String(server.port)}`;
+      let productionPriority3PaddingTop: number | undefined;
       for (const layout of layouts) {
         const context = await browser.newContext(layout.context);
         try {
@@ -796,6 +1080,110 @@ try {
           invariant(light.hydrationStarted && light.rootHydrated, `${layout.id}: hydration did not settle`);
           invariant(light.recoverableErrors.length === 0, `${layout.id}: hydration recovered from ${light.recoverableErrors.join("; ")}`);
           invariant(light.mainPresent && light.footerPresent, `${layout.id}: landmark structure changed`);
+          invariant(
+            light.pageClassIsSemantic
+            && light.pageHasGeneratedClass
+            && light.pageCallerClassLast
+            && light.footerClassIsSemantic
+            && light.footerHasGeneratedClass
+            && light.footerCallerClassLast,
+            `${layout.id}: quiet-site semantic or generated class ordering changed`,
+          );
+          const expectedPageWidth = Math.min(light.clientWidth, 36 * 16);
+          const expectedFooterWidth = Math.min(light.clientWidth, 35 * 16);
+          const expectedPageInlineMargin = (light.clientWidth - expectedPageWidth) / 2;
+          const expectedFooterInlineMargin = (light.clientWidth - expectedFooterWidth) / 2;
+          const viewportHeight = layout.context.viewport.height;
+          const expectedPageMarginStart = Math.min(
+            4 * 16,
+            Math.max(2 * 16, viewportHeight * 0.06),
+          );
+          const expectedPageMarginEnd = Math.min(
+            6 * 16,
+            Math.max(3.5 * 16, viewportHeight * 0.1),
+          );
+          invariant(
+            nearlyEqual(light.pageWidth, expectedPageWidth)
+            && nearlyEqual(light.footerWidth, expectedFooterWidth)
+            && nearlyEqual(light.pageMaxInlineSize, 36 * 16)
+            && nearlyEqual(light.footerMaxInlineSize, 35 * 16),
+            `${layout.id}: quiet-site measure is page ${String(light.pageWidth)}/${String(light.pageMaxInlineSize)}, footer ${String(light.footerWidth)}/${String(light.footerMaxInlineSize)}`,
+          );
+          invariant(
+            nearlyEqual(light.pageMarginInlineStart, expectedPageInlineMargin)
+            && nearlyEqual(light.pageMarginInlineEnd, expectedPageInlineMargin)
+            && nearlyEqual(light.footerMarginInlineStart, expectedFooterInlineMargin)
+            && nearlyEqual(light.footerMarginInlineEnd, expectedFooterInlineMargin),
+            `${layout.id}: quiet-site centering is page ${String(light.pageMarginInlineStart)}/${String(light.pageMarginInlineEnd)}, footer ${String(light.footerMarginInlineStart)}/${String(light.footerMarginInlineEnd)}`,
+          );
+          invariant(
+            nearlyEqual(light.pageMarginBlockStart, expectedPageMarginStart)
+            && nearlyEqual(light.pageMarginBlockEnd, expectedPageMarginEnd),
+            `${layout.id}: quiet-site page margins are ${String(light.pageMarginBlockStart)}/${String(light.pageMarginBlockEnd)}`,
+          );
+          invariant(
+            light.pageBoxSizing === "border-box"
+            && light.pageFlex === "1 0 auto"
+            && nearlyEqual(light.pagePaddingLeft, 1.5 * 16)
+            && nearlyEqual(light.pagePaddingRight, 1.5 * 16),
+            `${layout.id}: quiet-site page recipe is ${light.pageBoxSizing}; ${light.pageFlex}; ${String(light.pagePaddingLeft)}/${String(light.pagePaddingRight)}`,
+          );
+          invariant(
+            light.footerBoxSizing === "border-box"
+            && light.footerDisplay === "flex"
+            && light.footerFlex === "0 0 auto"
+            && light.footerFlexWrap === "wrap"
+            && light.footerAlignItems === "center"
+            && light.footerJustifyContent === "space-between"
+            && nearlyEqual(light.footerGap, 16),
+            `${layout.id}: quiet-site footer flex recipe is ${light.footerBoxSizing}; ${light.footerDisplay}; ${light.footerFlex}; ${light.footerFlexWrap}; ${light.footerAlignItems}; ${light.footerJustifyContent}; ${String(light.footerGap)}`,
+          );
+          invariant(
+            light.footerOverflow === "clip"
+            && nearlyEqual(light.footerMinInlineSize, 0)
+            && light.footerBorderTopStyle === "solid"
+            && nearlyEqual(light.footerBorderTopWidth, 1)
+            && nearlyEqual(light.footerPaddingTop, 1.25 * 16)
+            && light.footerPaddingBottom >= 1.25 * 16
+            && nearlyEqual(light.footerPaddingLeft, 1.5 * 16)
+            && nearlyEqual(light.footerPaddingRight, 1.5 * 16),
+            `${layout.id}: quiet-site footer boundary recipe is ${light.footerOverflow}; ${String(light.footerMinInlineSize)}; ${light.footerBorderTopStyle} ${String(light.footerBorderTopWidth)}; padding ${String(light.footerPaddingTop)}/${String(light.footerPaddingRight)}/${String(light.footerPaddingBottom)}/${String(light.footerPaddingLeft)}`,
+          );
+          invariant(
+            light.pageLegacyLayerSentinel === "legacy"
+            && nearlyEqual(light.pageMaxInlineSize, 36 * 16),
+            `${layout.id}: the matched quiet-site measure conflict resolved to ${String(light.pageMaxInlineSize)}`,
+          );
+          invariant(
+            light.quietSitePriority3LayerSentinel === "legacy"
+            && nearlyEqual(light.footerPaddingTop, 1.25 * 16),
+            `${layout.id}: the matched quiet-site priority3 conflict resolved to ${String(light.footerPaddingTop)}`,
+          );
+          if (productionPriority3PaddingTop === undefined) {
+            productionPriority3PaddingTop = light.footerPaddingTop;
+          } else {
+            invariant(
+              nearlyEqual(light.footerPaddingTop, productionPriority3PaddingTop),
+              `${layout.id}: production priority3 padding changed across layouts`,
+            );
+          }
+          const vertical = await verticalWritingEvidence(page);
+          invariant(
+            vertical.pageWritingMode === "vertical-rl"
+            && nearlyEqual(vertical.pageMaxInlineSize, 36 * 16)
+            && vertical.pageMaxWidth === "none"
+            && Number.isFinite(vertical.pageInlineSize)
+            && vertical.pageInlineSize <= 36 * 16 + 0.5,
+            `${layout.id}: vertical base logical sizing is ${vertical.pageWritingMode}; inline ${String(vertical.pageInlineSize)}/${String(vertical.pageMaxInlineSize)}; max-width ${vertical.pageMaxWidth}`,
+          );
+          invariant(
+            vertical.footerWritingMode === "vertical-rl"
+            && nearlyEqual(vertical.footerMaxInlineSize, 35 * 16)
+            && vertical.footerMaxWidth === "none"
+            && Number.isFinite(vertical.footerInlineSize)
+            && vertical.footerInlineSize <= 35 * 16 + 0.5,
+            `${layout.id}: vertical canonical xstyle sizing is ${vertical.footerWritingMode}; inline ${String(vertical.footerInlineSize)}/${String(vertical.footerMaxInlineSize)}; max-width ${vertical.footerMaxWidth}`,
+          );
           invariant(light.theme === "light" && light.colorScheme === "light", `${layout.id}: initial light theme did not apply`);
           invariant(light.documentScrollWidth <= light.clientWidth + 1, `${layout.id}: gallery overflows horizontally`);
           invariant(light.stylesheetCount === 1 && light.stylesheetMarked, `${layout.id}: default stylesheet delivery is ambiguous`);
@@ -885,6 +1273,57 @@ try {
         }
       }
 
+      const counterfactualContext = await browser.newContext({
+        colorScheme: "light",
+        reducedMotion: "no-preference",
+        viewport: { height: 360, width: 960 },
+      });
+      try {
+        const page = await counterfactualContext.newPage();
+        const failures = attachDiagnostics(page);
+        await page.goto(`${origin}/${counterfactualDocumentName}`, {
+          waitUntil: "networkidle",
+        });
+        await waitForHydration(
+          page,
+          failures,
+          requestedPaths,
+          "priority3-before-legacy counterfactual",
+        );
+        const counterfactual = await browserEvidence(page);
+        invariant(
+          counterfactual.hydrationStarted
+          && counterfactual.rootHydrated
+          && counterfactual.recoverableErrors.length === 0,
+          "priority3-before-legacy counterfactual: hydration did not settle cleanly",
+        );
+        invariant(
+          productionPriority3PaddingTop !== undefined
+          && nearlyEqual(productionPriority3PaddingTop, 1.25 * 16)
+          && counterfactual.quietSitePriority3LayerSentinel === "legacy"
+          && nearlyEqual(counterfactual.footerPaddingTop, 9 * 16),
+          `priority3-before-legacy counterfactual: production ${String(productionPriority3PaddingTop)}, counterfactual ${String(counterfactual.footerPaddingTop)}, sentinel ${counterfactual.quietSitePriority3LayerSentinel}`,
+        );
+        invariant(
+          counterfactual.stylesheetCount === 1
+          && counterfactual.stylesheetMarked
+          && counterfactual.stylexRuntimeStyleCount === 0,
+          "priority3-before-legacy counterfactual: stylesheet delivery is ambiguous",
+        );
+        invariant(
+          failures.length === 0,
+          `priority3-before-legacy counterfactual: ${failures.join("; ")}`,
+        );
+      } finally {
+        await Promise.all([
+          counterfactualContext.close(),
+          rm(counterfactualDocumentPath, { force: true }),
+          rm(counterfactualStylesheetPath, { force: true }),
+        ]);
+      }
+      assert.equal(await Bun.file(counterfactualDocumentPath).exists(), false);
+      assert.equal(await Bun.file(counterfactualStylesheetPath).exists(), false);
+
       const forcedContext = await browser.newContext({
         colorScheme: "light",
         forcedColors: "active",
@@ -955,6 +1394,14 @@ try {
       invariant(requestedPaths.has("/"), "the browser never requested the gallery document");
       invariant(requestedPaths.has(`/${clientName}`), "the browser never requested the packed client");
       invariant(requestedPaths.has(`/${stylesheetName}`), "the browser never requested the packed default stylesheet");
+      invariant(
+        requestedPaths.has(`/${counterfactualDocumentName}`),
+        "the browser never requested the priority3 counterfactual document",
+      );
+      invariant(
+        requestedPaths.has(`/${counterfactualStylesheetName}`),
+        "the browser never requested the priority3 counterfactual stylesheet",
+      );
     } finally {
       await browser.close();
       browserClosed = true;
@@ -964,7 +1411,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and layer order, a matched gallery-only legacy conflict losing to StyleX, SSR/hydration, semantic StyleX glyph and wrapper behavior, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, horizontal and vertical quiet-site layout behavior, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

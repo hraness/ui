@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
@@ -70,11 +70,17 @@ function resolveGenuineNodeExecutable(): string {
 }
 
 function ssrProbe(release: ReactRelease): string {
-  return `import assert from "node:assert/strict";
+  return String.raw`import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import { Search01Icon } from "@hugeicons/core-free-icons";
-import { AppearanceIcon, Icon, SocialIcon } from "@hraness/ui";
+import {
+  AppearanceIcon,
+  Icon,
+  QuietSiteFooter,
+  QuietSitePage,
+  SocialIcon,
+} from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -88,6 +94,25 @@ const stylexCssUrl = import.meta.resolve("@hraness/ui/stylex.css");
 assert.equal(new URL(stylexCssUrl).protocol, "file:");
 const stylexCss = await readFile(new URL(stylexCssUrl), "utf8");
 assert.ok(stylexCss.trim().length > 0, "@hraness/ui/stylex.css must not be empty");
+assert.match(stylexCss, /@layer components\.hraness-ui\.priority3/u);
+assert.match(stylexCss, /max-inline-size:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
+assert.doesNotMatch(stylexCss, /max-width:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
+
+const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
+const componentsCss = await readFile(new URL(componentsCssUrl), "utf8");
+assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
+
+const stylesCssUrl = import.meta.resolve("@hraness/ui/styles.css");
+const stylesCss = await readFile(new URL(stylesCssUrl), "utf8");
+assert.equal(
+  stylesCss.match(/@import "\.\.\/dist\/stylex\.css";/gu)?.length,
+  1,
+  "the complete stylesheet must deliver generated StyleX CSS exactly once",
+);
+assert.match(
+  stylesCss,
+  /@layer components\.hraness-ui\.legacy, components\.hraness-ui\.priority1, components\.hraness-ui\.priority2, components\.hraness-ui\.priority3;/u,
+);
 
 const markup = renderToStaticMarkup(React.createElement(Icon, {
   className: "consumer-icon",
@@ -127,17 +152,59 @@ assert.match(appearanceMarkup, /class="hraness-appearance-icon [^"]+ consumer-ap
 assert.match(appearanceMarkup, /data-appearance-icon="system"/u);
 assert.match(appearanceMarkup, /data-slot="appearance-icon"/u);
 assert.match(appearanceMarkup, /width="18"/u);
+
+const pageMarkup = renderToStaticMarkup(React.createElement(QuietSitePage, {
+  "aria-label": "Package page",
+  className: "consumer-page",
+  id: "package-page",
+  style: { backgroundColor: "rgb(1, 2, 3)" },
+}, "Page"));
+assert.match(pageMarkup, /^<main/u);
+assert.match(pageMarkup, /aria-label="Package page"/u);
+assert.match(pageMarkup, /class="hraness-quiet-site-page [^"]+ consumer-page"/u);
+assert.match(pageMarkup, /data-slot="quiet-site-page"/u);
+assert.match(pageMarkup, /id="package-page"/u);
+assert.match(pageMarkup, /style="background-color:rgb\(1, 2, 3\)"/u);
+
+const footerMarkup = renderToStaticMarkup(React.createElement(QuietSiteFooter, {
+  "aria-label": "Package footer",
+  className: "consumer-footer",
+  id: "package-footer",
+  style: { paddingTop: "3rem" },
+}, "Footer"));
+assert.match(footerMarkup, /^<footer/u);
+assert.match(footerMarkup, /aria-label="Package footer"/u);
+assert.match(footerMarkup, /class="hraness-quiet-site-footer [^"]+ consumer-footer"/u);
+assert.match(footerMarkup, /data-slot="quiet-site-footer"/u);
+assert.match(footerMarkup, /id="package-footer"/u);
+assert.match(footerMarkup, /style="padding-top:3rem"/u);
 `;
 }
 
 const typeScriptProbe = `import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
-import { AppearanceIcon, Icon, SocialIcon } from "@hraness/ui";
-import { createElement } from "react";
+import {
+  AppearanceIcon,
+  Icon,
+  QuietSiteFooter,
+  QuietSitePage,
+  SocialIcon,
+} from "@hraness/ui";
+import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const styles = stylex.create({
+  camelInlineSize: { inlineSize: "100%" },
+  camelMaxInlineSize: { maxInlineSize: "40rem" },
+  camelMinInlineSize: { minInlineSize: 0 },
   icon: { display: "block" },
+  dynamicPage: (inlineSize: string) => ({ "inline-size": inlineSize }),
+  logicalPage: {
+    "inline-size": "100%",
+    "max-inline-size": "40rem",
+    "min-inline-size": 0,
+  },
+  physicalPage: { maxWidth: "40rem", minWidth: 0, width: "100%" },
   wrapper: { display: "grid" },
 });
 const markup: string = renderToStaticMarkup(createElement(Icon, {
@@ -159,10 +226,42 @@ const appearanceMarkup: string = renderToStaticMarkup(createElement(AppearanceIc
   size: 26,
   xstyle: styles.wrapper,
 }));
+const pageRef = createRef<HTMLElement>();
+const pageMarkup: string = renderToStaticMarkup(createElement(QuietSitePage, {
+  "aria-label": "Package page",
+  className: "consumer-page",
+  children: "Page",
+  id: "package-page",
+  ref: pageRef,
+  style: { inlineSize: "38rem" },
+  xstyle: [styles.logicalPage, styles.dynamicPage("40rem")],
+}));
+const footerRef = createRef<HTMLElement>();
+const footerMarkup: string = renderToStaticMarkup(createElement(QuietSiteFooter, {
+  "aria-label": "Package footer",
+  className: "consumer-footer",
+  children: "Footer",
+  id: "package-footer",
+  ref: footerRef,
+  style: { display: "block" },
+  xstyle: [styles.wrapper, styles.physicalPage],
+}));
+
+// @ts-expect-error QuietSite rejects StyleX 0.19's physical inlineSize alias.
+const camelInlineSizeMarkup = renderToStaticMarkup(createElement(QuietSitePage, { children: "Page", xstyle: styles.camelInlineSize }));
+// @ts-expect-error QuietSite rejects StyleX 0.19's physical maxInlineSize alias.
+const camelMaxInlineSizeMarkup = renderToStaticMarkup(createElement(QuietSitePage, { children: "Page", xstyle: styles.camelMaxInlineSize }));
+// @ts-expect-error QuietSite rejects StyleX 0.19's physical minInlineSize alias.
+const camelMinInlineSizeMarkup = renderToStaticMarkup(createElement(QuietSitePage, { children: "Page", xstyle: styles.camelMinInlineSize }));
 
 void markup;
 void socialMarkup;
 void appearanceMarkup;
+void pageMarkup;
+void footerMarkup;
+void camelInlineSizeMarkup;
+void camelMaxInlineSizeMarkup;
+void camelMinInlineSizeMarkup;
 `;
 
 function typeScriptConfig(moduleResolution: "Bundler" | "NodeNext") {
@@ -206,6 +305,9 @@ async function verifyConsumer(
     "typescript@^6.0.3",
     "--ignore-scripts",
   ], consumer);
+  await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "quiet-site.stylex.ts"),
+  );
 
   // A restored package-manager cache can retain this valid duplicate topology.
   // Public source types must remain portable when React Aria resolves through it.

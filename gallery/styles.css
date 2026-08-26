@@ -1,4 +1,6 @@
 [data-gallery-root="true"] {
+  --hraness-quiet-site-gutter: 1.5rem;
+  --hraness-quiet-site-measure: 36rem;
   min-block-size: 100svh;
 }
 
@@ -63,6 +65,16 @@
     --gallery-stylex-layer-conflict: legacy;
     display: block;
     flex: 1 1 auto;
+  }
+
+  html body [data-gallery-quiet-site-layer-conflict="true"][data-slot="quiet-site-page"] {
+    --gallery-quiet-site-layer-conflict: legacy;
+    max-inline-size: 12rem;
+  }
+
+  html body [data-gallery-quiet-site-priority3-conflict="true"][data-slot="quiet-site-footer"] {
+    --gallery-quiet-site-priority3-conflict: legacy;
+    padding-top: 9rem;
   }
 }
 
