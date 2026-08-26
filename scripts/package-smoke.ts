@@ -80,6 +80,8 @@ import {
   QuietSiteFooter,
   QuietSitePage,
   SocialIcon,
+  ViewportFrame,
+  WrappingRow,
 } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -97,10 +99,25 @@ assert.ok(stylexCss.trim().length > 0, "@hraness/ui/stylex.css must not be empty
 assert.match(stylexCss, /@layer components\.hraness-ui\.priority3/u);
 assert.match(stylexCss, /max-inline-size:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
 assert.doesNotMatch(stylexCss, /max-width:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
+assert.match(stylexCss, /gap:\s*var\(--space-3\)/u);
+assert.match(stylexCss, /inline-size:\s*100%/u);
+assert.match(stylexCss, /min-inline-size:\s*0/u);
+assert.match(stylexCss, /overflow:\s*hidden/u);
+const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
+const viewportHeightPositions = viewportHeightFallbacks.map((fallback) => stylexCss.indexOf(fallback));
+assert.ok(viewportHeightPositions.every((position) => position >= 0));
+assert.ok(
+  viewportHeightPositions[0] < viewportHeightPositions[1]
+  && viewportHeightPositions[1] < viewportHeightPositions[2],
+  "the packed StyleX CSS must preserve the vh, svh, then dvh fallback order",
+);
+assert.doesNotMatch(stylexCss, /(?:^|[\s{;])width:\s*100%/u);
+assert.doesNotMatch(stylexCss, /(?:^|[\s{;])min-width:\s*0/u);
 
 const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
 const componentsCss = await readFile(new URL(componentsCssUrl), "utf8");
 assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
+assert.doesNotMatch(componentsCss, /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u);
 
 const stylesCssUrl = import.meta.resolve("@hraness/ui/styles.css");
 const stylesCss = await readFile(new URL(stylesCssUrl), "utf8");
@@ -178,6 +195,36 @@ assert.match(footerMarkup, /class="hraness-quiet-site-footer [^"]+ consumer-foot
 assert.match(footerMarkup, /data-slot="quiet-site-footer"/u);
 assert.match(footerMarkup, /id="package-footer"/u);
 assert.match(footerMarkup, /style="padding-top:3rem"/u);
+
+const frameMarkup = renderToStaticMarkup(React.createElement(ViewportFrame, {
+  "aria-label": "Package viewport",
+  as: "main",
+  className: "consumer-frame",
+  id: "package-frame",
+  style: { backgroundColor: "rgb(4, 5, 6)" },
+}, React.createElement("p", null, "Frame")));
+assert.match(frameMarkup, /^<main/u);
+assert.match(frameMarkup, /aria-label="Package viewport"/u);
+assert.match(frameMarkup, /class="hraness-viewport-frame [^"]+ consumer-frame"/u);
+assert.match(frameMarkup, /data-slot="viewport-frame"/u);
+assert.match(frameMarkup, /id="package-frame"/u);
+assert.match(frameMarkup, /style="background-color:rgb\(4, 5, 6\)"/u);
+assert.match(frameMarkup, />Frame</u);
+
+const rowMarkup = renderToStaticMarkup(React.createElement(WrappingRow, {
+  "aria-label": "Package actions",
+  as: "nav",
+  className: "consumer-row",
+  id: "package-row",
+  style: { color: "rgb(7, 8, 9)" },
+}, React.createElement("span", null, "Row")));
+assert.match(rowMarkup, /^<nav/u);
+assert.match(rowMarkup, /aria-label="Package actions"/u);
+assert.match(rowMarkup, /class="hraness-wrapping-row [^"]+ consumer-row"/u);
+assert.match(rowMarkup, /data-slot="wrapping-row"/u);
+assert.match(rowMarkup, /id="package-row"/u);
+assert.match(rowMarkup, /style="color:rgb\(7, 8, 9\)"/u);
+assert.match(rowMarkup, />Row</u);
 `;
 }
 
@@ -189,6 +236,8 @@ import {
   QuietSiteFooter,
   QuietSitePage,
   SocialIcon,
+  ViewportFrame,
+  WrappingRow,
 } from "@hraness/ui";
 import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -246,6 +295,26 @@ const footerMarkup: string = renderToStaticMarkup(createElement(QuietSiteFooter,
   style: { display: "block" },
   xstyle: [styles.wrapper, styles.physicalPage],
 }));
+const frameRef = createRef<HTMLElement>();
+const frameMarkup: string = renderToStaticMarkup(createElement(ViewportFrame, {
+  "aria-label": "Package viewport",
+  as: "section",
+  children: "Frame",
+  className: "consumer-frame",
+  ref: frameRef,
+  style: { inlineSize: "38rem" },
+  xstyle: [styles.logicalPage, styles.dynamicPage("40rem")],
+}));
+const rowRef = createRef<HTMLElement>();
+const rowMarkup: string = renderToStaticMarkup(createElement(WrappingRow, {
+  "aria-label": "Package actions",
+  as: "nav",
+  children: "Row",
+  className: "consumer-row",
+  ref: rowRef,
+  style: { display: "block" },
+  xstyle: [styles.wrapper, styles.physicalPage],
+}));
 
 // @ts-expect-error QuietSite rejects StyleX 0.19's physical inlineSize alias.
 const camelInlineSizeMarkup = renderToStaticMarkup(createElement(QuietSitePage, { children: "Page", xstyle: styles.camelInlineSize }));
@@ -253,15 +322,32 @@ const camelInlineSizeMarkup = renderToStaticMarkup(createElement(QuietSitePage, 
 const camelMaxInlineSizeMarkup = renderToStaticMarkup(createElement(QuietSitePage, { children: "Page", xstyle: styles.camelMaxInlineSize }));
 // @ts-expect-error QuietSite rejects StyleX 0.19's physical minInlineSize alias.
 const camelMinInlineSizeMarkup = renderToStaticMarkup(createElement(QuietSitePage, { children: "Page", xstyle: styles.camelMinInlineSize }));
+// @ts-expect-error ViewportFrame rejects StyleX 0.19's physical inlineSize alias.
+const frameCamelInlineSizeMarkup = renderToStaticMarkup(createElement(ViewportFrame, { xstyle: styles.camelInlineSize }));
+// @ts-expect-error WrappingRow rejects StyleX 0.19's physical maxInlineSize alias.
+const rowCamelMaxInlineSizeMarkup = renderToStaticMarkup(createElement(WrappingRow, { xstyle: styles.camelMaxInlineSize }));
+// @ts-expect-error WrappingRow rejects StyleX 0.19's physical minInlineSize alias.
+const rowCamelMinInlineSizeMarkup = renderToStaticMarkup(createElement(WrappingRow, { xstyle: styles.camelMinInlineSize }));
+// @ts-expect-error ViewportFrame keeps its polymorphic elements finite.
+const invalidFrameElementMarkup = renderToStaticMarkup(createElement(ViewportFrame, { as: "article" }));
+// @ts-expect-error WrappingRow keeps its polymorphic elements finite.
+const invalidRowElementMarkup = renderToStaticMarkup(createElement(WrappingRow, { as: "article" }));
 
 void markup;
 void socialMarkup;
 void appearanceMarkup;
 void pageMarkup;
 void footerMarkup;
+void frameMarkup;
+void rowMarkup;
 void camelInlineSizeMarkup;
 void camelMaxInlineSizeMarkup;
 void camelMinInlineSizeMarkup;
+void frameCamelInlineSizeMarkup;
+void rowCamelMaxInlineSizeMarkup;
+void rowCamelMinInlineSizeMarkup;
+void invalidFrameElementMarkup;
+void invalidRowElementMarkup;
 `;
 
 function typeScriptConfig(moduleResolution: "Bundler" | "NodeNext") {
@@ -307,6 +393,12 @@ async function verifyConsumer(
   ], consumer);
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "quiet-site.stylex.ts"),
+  );
+  await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "surfaces.stylex.ts"),
+  );
+  await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "lib", "stylex.ts"),
   );
 
   // A restored package-manager cache can retain this valid duplicate topology.

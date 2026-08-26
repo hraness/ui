@@ -1640,23 +1640,6 @@
     color: var(--ui-primary-foreground);
   }
 
-  .hraness-wrapping-row {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .hraness-viewport-frame {
-    width: 100%;
-    min-width: 0;
-    height: 100vh;
-    height: 100svh;
-    height: 100dvh;
-    overflow: hidden;
-  }
-
   /* Canonical substructure shared by the complete component set. */
   .hraness-tabs__bar {
     display: flex;

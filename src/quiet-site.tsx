@@ -1,26 +1,17 @@
 import {
   forwardRef,
-  type CSSProperties,
   type HTMLAttributes,
   type ReactNode,
 } from "react";
 import * as stylex from "@stylexjs/stylex";
-import type {
-  CSSProperties as StyleXCSSProperties,
-  StyleXStyles,
-} from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 
+import {
+  type LogicalSizeStyleProperties,
+  mergeStylexInlineStyles,
+} from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 import { quietSiteStyles } from "./quiet-site.stylex.js";
-
-type QuietSiteStyleProperties = Omit<
-  StyleXCSSProperties,
-  "inlineSize" | "maxInlineSize" | "minInlineSize"
-> & Readonly<{
-  "inline-size"?: StyleXCSSProperties["inlineSize"];
-  "max-inline-size"?: StyleXCSSProperties["maxInlineSize"];
-  "min-inline-size"?: StyleXCSSProperties["minInlineSize"];
-}>;
 
 type QuietSiteLandmarkProps = Omit<
   HTMLAttributes<HTMLElement>,
@@ -28,16 +19,8 @@ type QuietSiteLandmarkProps = Omit<
 > & Readonly<{
   children: ReactNode;
   /** Typed StyleX presentation applied after the shared landmark recipe. */
-  xstyle?: StyleXStyles<QuietSiteStyleProperties>;
+  xstyle?: StyleXStyles<LogicalSizeStyleProperties>;
 }>;
-
-function mergeInlineStyles(
-  stylexStyle: Readonly<Record<string, number | string>> | undefined,
-  callerStyle: CSSProperties | undefined,
-): CSSProperties | undefined {
-  if (stylexStyle === undefined) return callerStyle;
-  return { ...stylexStyle, ...callerStyle };
-}
 
 export type QuietSitePageProps = QuietSiteLandmarkProps;
 
@@ -57,7 +40,7 @@ export const QuietSitePage = forwardRef<HTMLElement, QuietSitePageProps>(
         )}
         data-slot="quiet-site-page"
         ref={ref}
-        style={mergeInlineStyles(presentation.style, style)}
+        style={mergeStylexInlineStyles(presentation.style, style)}
       >
         {children}
       </main>
@@ -85,7 +68,7 @@ export const QuietSiteFooter = forwardRef<HTMLElement, QuietSiteFooterProps>(
         )}
         data-slot="quiet-site-footer"
         ref={ref}
-        style={mergeInlineStyles(presentation.style, style)}
+        style={mergeStylexInlineStyles(presentation.style, style)}
       >
         {children}
       </footer>

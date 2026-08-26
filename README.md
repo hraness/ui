@@ -210,25 +210,28 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 </Button>
 ```
 
-`Icon`, `SocialIcon`, `AppearanceIcon`, `QuietSitePage`, and `QuietSiteFooter`
-accept a typed StyleX override. Base declarations are applied first and the
-caller recipe is applied last. Quiet-site landmarks also preserve dynamic
-StyleX inline values when merging the native `style` prop, with caller inline
-declarations taking precedence:
+`Icon`, `SocialIcon`, `AppearanceIcon`, `QuietSitePage`, `QuietSiteFooter`,
+`ViewportFrame`, and `WrappingRow` accept a typed StyleX override. Base
+declarations are applied first and the caller recipe is applied last.
+Quiet-site landmarks and structural surfaces also preserve dynamic StyleX
+inline values when merging the native `style` prop, with caller inline
+declarations taking precedence.
 
-For logical-size overrides on quiet-site landmarks, use StyleX's canonical
-dashed keys such as `"inline-size"`, `"max-inline-size"`, and
-`"min-inline-size"`. Under the pinned StyleX 0.19 property-specificity
-compiler, the camel-case aliases lower to physical `width`, `max-width`, and
-`min-width`. The quiet-site `xstyle` type rejects those three camel-case aliases.
-The canonical keys retain vertical-writing behavior and share the base recipe's
-conflict key, so caller-last replacement remains deterministic. Use `width`,
-`maxWidth`, or `minWidth` when a physical override is intentional.
+For logical-size overrides on those landmarks and structural surfaces, use
+StyleX's canonical dashed keys such as `"inline-size"`, `"max-inline-size"`,
+and `"min-inline-size"`. Under the pinned StyleX 0.19
+property-specificity compiler, the camel-case aliases lower to physical
+`width`, `max-width`, and `min-width`. These component `xstyle` types reject
+the three camel-case aliases. The canonical keys retain vertical-writing
+behavior and share the base recipe's conflict key, so caller-last replacement
+remains deterministic. Use `width`, `maxWidth`, or `minWidth` when a physical
+override is intentional. `ViewportFrame` also retains its ordered `100vh`,
+`100svh`, and `100dvh` height fallbacks in compiled CSS.
 
 ```tsx
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
-import { Icon, QuietSitePage } from "@hraness/ui";
+import { Icon, QuietSitePage, WrappingRow } from "@hraness/ui";
 
 const styles = stylex.create({
   quietPage: {
@@ -237,10 +240,14 @@ const styles = stylex.create({
   searchIcon: {
     display: "block",
   },
+  structuralRow: {
+    "inline-size": "16rem",
+  },
 });
 
 <Icon icon={Search01Icon} xstyle={styles.searchIcon} />;
 <QuietSitePage xstyle={styles.quietPage}>...</QuietSitePage>;
+<WrappingRow xstyle={styles.structuralRow}>...</WrappingRow>;
 ```
 
 Keep importing `@hraness/ui/styles.css` while legacy and StyleX recipes

@@ -7,6 +7,10 @@
     flex: 1 0 auto;
   }
 
+  .x96y02u {
+    gap: var(--space-3);
+  }
+
   .x1adtp44 {
     gap: var(--space-4, 1rem);
   }
@@ -21,6 +25,10 @@
 
   .x7giv3 {
     overflow: clip;
+  }
+
+  .xb3r6kr {
+    overflow: hidden;
   }
 
   .x60vcjr {
@@ -91,6 +99,10 @@
     border-top-width: 1px;
   }
 
+  .x1dr59a3 {
+    height: 100vh;
+  }
+
   .xgk38rq {
     padding-bottom: max(var(--space-5, 1.25rem),env(safe-area-inset-bottom));
   }
@@ -105,5 +117,17 @@
 
   .x1b284x9 {
     padding-top: var(--space-5, 1.25rem);
+  }
+
+  @supports (height: 100svh) {
+    .x5yh38q.x5yh38q {
+      height: 100svh;
+    }
+
+    @supports (height: 100dvh) {
+      .x1uqklc0.x1uqklc0.x1uqklc0 {
+        height: 100dvh;
+      }
+    }
   }
 }

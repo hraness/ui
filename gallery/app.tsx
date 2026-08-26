@@ -27,6 +27,8 @@ import {
   StatusDot,
   Tabs,
   Tag,
+  ViewportFrame,
+  WrappingRow,
 } from "@hraness/ui";
 
 const galleryTabs = [
@@ -47,6 +49,9 @@ type GalleryTheme = "dark" | "light";
 const galleryStyles = stylex.create({
   quietSiteFooterOverride: {
     "max-inline-size": "35rem",
+  },
+  wrappingRowConstraint: {
+    "inline-size": "11rem",
   },
 });
 
@@ -193,6 +198,41 @@ export function PrimitiveGallery() {
           </InlineAlert>
           <Progress label="Harness coverage" showValue value={78} />
           <Skeleton height="1rem" isText width="68%" />
+        </section>
+
+        <section aria-labelledby="gallery-structure-heading" data-gallery-section="structure">
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-structure-heading">Structural surfaces</h2>
+              <p>Logical sizing keeps wrapping and viewport ownership writing-mode aware.</p>
+            </div>
+          </div>
+          <WrappingRow
+            aria-label="Constrained structural row"
+            className="gallery-wrapping-row"
+            data-gallery-wrapping-row-layer-conflict="true"
+            data-gallery-wrapping-row="true"
+            xstyle={galleryStyles.wrappingRowConstraint}
+          >
+            <span data-gallery-wrapping-row-item="one">First item</span>
+            <span data-gallery-wrapping-row-item="two">Second item</span>
+          </WrappingRow>
+          <ViewportFrame
+            aria-hidden="true"
+            as="section"
+            className="gallery-viewport-frame"
+            data-gallery-viewport-frame="true"
+            data-gallery-viewport-frame-layer-conflict="true"
+            style={{
+              left: "-200vw",
+              pointerEvents: "none",
+              position: "fixed",
+              top: 0,
+              zIndex: -1,
+            }}
+          >
+            <span>Off-canvas viewport canary</span>
+          </ViewportFrame>
         </section>
       </QuietSitePage>
       <QuietSiteFooter
