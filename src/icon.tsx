@@ -13,7 +13,10 @@ import {
   YoutubeIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 
+import { iconStyles } from "./icon.stylex.js";
 import { cn } from "./lib/utils.js";
 
 export type IconProps = Readonly<{
@@ -25,6 +28,8 @@ export type IconProps = Readonly<{
   size?: number;
   /** Stroke weight in CSS pixels. */
   strokeWidth?: number;
+  /** Typed StyleX presentation applied after the shared icon recipe. */
+  xstyle?: StyleXStyles;
 }>;
 
 /**
@@ -36,11 +41,15 @@ export function Icon({
   icon,
   size = 20,
   strokeWidth = 1.5,
+  xstyle,
 }: IconProps) {
+  const presentation = stylex.props(iconStyles.root, xstyle);
+
   return (
     <HugeiconsIcon
+      {...presentation}
       aria-hidden="true"
-      className={cn("hraness-icon", className)}
+      className={cn("hraness-icon", presentation.className, className)}
       color="currentColor"
       data-slot="icon"
       icon={icon}
@@ -81,10 +90,13 @@ export function isSocialIconName(input: unknown): input is SocialIconName {
 }
 
 function SubstackIcon({ size }: Readonly<{ size: number }>) {
+  const presentation = stylex.props(iconStyles.root);
+
   return (
     <svg
+      {...presentation}
       aria-hidden="true"
-      className="hraness-icon"
+      className={cn("hraness-icon", presentation.className)}
       fill="currentColor"
       height={size}
       viewBox="0 0 24 24"
