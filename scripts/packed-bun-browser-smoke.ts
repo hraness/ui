@@ -111,6 +111,10 @@ const document = [
 await writeFile("./dist/index.html", document);
 `;
 
+const negativeRenderSource = `import "./app.css";
+
+${renderSource}`;
+
 function buildSource(consumer: string): string {
   const compilerOptions = stylexCompilerOptions(consumer);
   return `import stylex from "@stylexjs/unplugin";
@@ -198,6 +202,22 @@ const server = await Bun.build({
   target: "bun",
 });
 await requireBuild(server, "SSR");
+
+const negativeControlSsr = await Bun.build({
+  conditions: ["production", "module"],
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+  },
+  entrypoints: [resolve(root, "negative-render.tsx")],
+  format: "esm",
+  metafile: true,
+  minify: true,
+  outdir: resolve(root, "dist/negative-control-ssr"),
+  root,
+  splitting: true,
+  target: "bun",
+});
+await requireBuild(negativeControlSsr, "Plugin-free SSR negative control");
 await rm(resolve(root, "dist/extracted"), { force: true, recursive: true });
 `;
 }
@@ -389,16 +409,27 @@ try {
     writeFile(resolve(consumer, "client.tsx"), clientSource),
     writeFile(resolve(consumer, "app.css"), callerCss),
     writeFile(resolve(consumer, "render.tsx"), renderSource),
+    writeFile(resolve(consumer, "negative-render.tsx"), negativeRenderSource),
     writeFile(resolve(consumer, "build.ts"), buildSource(consumer)),
   ]);
   await run([process.execPath, "./build.ts"], consumer);
 
   const browserDirectory = resolve(consumer, "dist/browser");
   const negativeControlDirectory = resolve(consumer, "dist/negative-control");
+  const negativeControlSsrDirectory = resolve(
+    consumer,
+    "dist/negative-control-ssr",
+  );
   const serverDirectory = resolve(consumer, "dist/server");
-  const [browserFiles, negativeControlFiles, serverFiles] = await Promise.all([
+  const [
+    browserFiles,
+    negativeControlFiles,
+    negativeControlSsrFiles,
+    serverFiles,
+  ] = await Promise.all([
     filesBelow(browserDirectory),
     filesBelow(negativeControlDirectory),
+    filesBelow(negativeControlSsrDirectory),
     filesBelow(serverDirectory),
   ]);
   const browserJavaScriptPath = requireExactlyOne(
@@ -431,6 +462,16 @@ try {
     ".css",
     "plugin-free negative-control build",
   );
+  const negativeControlSsrJavaScriptPath = requireExactlyOne(
+    negativeControlSsrFiles,
+    ".js",
+    "plugin-free SSR negative-control build",
+  );
+  const negativeControlSsrCssPath = requireExactlyOne(
+    negativeControlSsrFiles,
+    ".css",
+    "plugin-free SSR negative-control build",
+  );
 
   const [
     negativeControlJavaScript,
@@ -462,11 +503,48 @@ try {
     /must not retain the local StyleX source property/u,
     "the transform oracle must reject a browser build without the StyleX plugin",
   );
+
+  const [
+    negativeControlSsrJavaScript,
+    negativeControlSsrCss,
+  ] = await Promise.all([
+    readFile(negativeControlSsrJavaScriptPath, "utf8"),
+    readFile(negativeControlSsrCssPath, "utf8"),
+  ]);
+  assert.match(
+    negativeControlSsrJavaScript,
+    localStylexSourcePropertyPattern,
+    "the plugin-free SSR negative control must retain the local StyleX source property",
+  );
+  assert.ok(
+    negativeControlSsrJavaScript.includes(LOCAL_STYLEX_VALUE),
+    "the plugin-free SSR negative control must retain the local StyleX source value",
+  );
+  assert.equal(
+    countMatches(negativeControlSsrCss, localStylexCssPattern),
+    1,
+    "the plugin-free SSR negative control must retain the masking extracted CSS sentinel",
+  );
+  assert.throws(
+    () => requireLocalStylexTransform(
+      negativeControlSsrJavaScript,
+      negativeControlSsrCss,
+      "plugin-free SSR negative control",
+    ),
+    /must not retain the local StyleX source property/u,
+    "the transform oracle must reject a Bun-target SSR build without the StyleX plugin even when extracted CSS masks the missing transform",
+  );
   await rm(negativeControlDirectory, { force: true, recursive: true });
+  await rm(negativeControlSsrDirectory, { force: true, recursive: true });
   assert.equal(
     await Bun.file(negativeControlJavaScriptPath).exists(),
     false,
     "negative-control artifacts must be removed after the oracle check",
+  );
+  assert.equal(
+    await Bun.file(negativeControlSsrJavaScriptPath).exists(),
+    false,
+    "SSR negative-control artifacts must be removed after the oracle check",
   );
 
   await run([process.execPath, serverJavaScriptPath], consumer);
@@ -608,7 +686,7 @@ try {
     `Fetched SSR HTML (${String(html.length)} bytes), browser JS (${String(browserJavaScript.length)} bytes), and browser CSS (${String(browserCss.length)} bytes) with explicit production MIME types.`,
   );
   console.log(
-    "Verified the plugin-free negative control, SSR icon hooks, bundled dependencies, extracted UI and caller CSS, duplicate-free UI declarations, and all browser/SSR artifact exclusions.",
+    "Verified browser and Bun-target SSR plugin-free negative controls, SSR icon hooks, bundled dependencies, extracted UI and caller CSS, duplicate-free UI declarations, and all browser/SSR artifact exclusions.",
   );
   console.log(
     "Hydration boundary: hydrateRoot and onRecoverableError instrumentation were compiled and served, but no browser executed them; this smoke does not claim real hydration.",
