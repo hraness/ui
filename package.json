@@ -69,6 +69,7 @@
     "src/list-box.tsx",
     "src/navigation.tsx",
     "src/overlays.tsx",
+    "src/quiet-site.stylex.ts",
     "src/quiet-site.tsx",
     "src/reset.css",
     "src/router.tsx",
