@@ -210,7 +210,7 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 </Button>
 ```
 
-`Icon` is the first primitive with a typed StyleX override. Base declarations are applied first and the caller recipe is applied last:
+`Icon`, `SocialIcon`, and `AppearanceIcon` accept a typed StyleX override. Base declarations are applied first and the caller recipe is applied last:
 
 ```tsx
 import { Search01Icon } from "@hugeicons/core-free-icons";

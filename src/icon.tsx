@@ -111,6 +111,8 @@ export type SocialIconProps = Readonly<{
   className?: string;
   name: SocialIconName;
   size?: number;
+  /** Typed StyleX presentation applied after the shared wrapper recipe. */
+  xstyle?: StyleXStyles;
 }>;
 
 /** A decorative, current-color brand mark for a visible social-profile label. */
@@ -118,11 +120,19 @@ export function SocialIcon({
   className,
   name,
   size = 16,
+  xstyle,
 }: SocialIconProps) {
+  const presentation = stylex.props(iconStyles.wrapper, xstyle);
+
   return (
     <span
+      {...presentation}
       aria-hidden="true"
-      className={cn("hraness-social-icon", className)}
+      className={cn(
+        "hraness-social-icon",
+        presentation.className,
+        className,
+      )}
       data-slot="social-icon"
       data-social-icon={name}
     >
@@ -146,6 +156,8 @@ export type AppearanceIconProps = Readonly<{
   className?: string;
   name: AppearanceIconName;
   size?: number;
+  /** Typed StyleX presentation applied after the shared wrapper recipe. */
+  xstyle?: StyleXStyles;
 }>;
 
 /** The shared Light, Dark, or System glyph used inside a named control. */
@@ -153,11 +165,19 @@ export function AppearanceIcon({
   className,
   name,
   size = 18,
+  xstyle,
 }: AppearanceIconProps) {
+  const presentation = stylex.props(iconStyles.wrapper, xstyle);
+
   return (
     <span
+      {...presentation}
       aria-hidden="true"
-      className={cn("hraness-appearance-icon", className)}
+      className={cn(
+        "hraness-appearance-icon",
+        presentation.className,
+        className,
+      )}
       data-appearance-icon={name}
       data-slot="appearance-icon"
     >

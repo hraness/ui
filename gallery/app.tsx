@@ -69,7 +69,7 @@ export function PrimitiveGallery() {
           <h1>Portable component behavior and presentation</h1>
           <p>
             The executable gallery verifies the packed default stylesheet,
-            semantic hooks, browser interaction, and the current StyleX icon recipe.
+            semantic hooks, browser interaction, and the current StyleX icon recipes.
           </p>
         </header>
 
@@ -124,14 +124,20 @@ export function PrimitiveGallery() {
               </div>
               <CardTitle>Package-compiled StyleX</CardTitle>
               <CardDescription>
-                The packed stylesheet supplies the icon display and flex declarations.
+                The packed stylesheet supplies the glyph and wrapper declarations.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div data-gallery-icon-family="true">
-                <span><SocialIcon name="github" /> GitHub</span>
-                <span><SocialIcon name="substack" /> Substack</span>
-                <span><AppearanceIcon name="system" /> System</span>
+                <p data-gallery-icon-wrapper-canary="true">
+                  <SocialIcon className="gallery-social-icon" name="github" /> GitHub
+                  {" · "}<SocialIcon name="substack" /> Substack
+                  {" · "}
+                  <AppearanceIcon
+                    className="gallery-appearance-icon"
+                    name="system"
+                  /> System
+                </p>
               </div>
             </CardContent>
             <CardFooter>

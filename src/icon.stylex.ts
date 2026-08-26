@@ -5,4 +5,10 @@ export const iconStyles = stylex.create({
     display: "inline-block",
     flex: "0 0 auto",
   },
+  wrapper: {
+    alignItems: "center",
+    display: "inline-flex",
+    flex: "0 0 auto",
+    justifyContent: "center",
+  },
 });

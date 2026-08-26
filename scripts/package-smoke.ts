@@ -74,7 +74,7 @@ function ssrProbe(release: ReactRelease): string {
 import { readFile } from "node:fs/promises";
 
 import { Search01Icon } from "@hugeicons/core-free-icons";
-import { Icon } from "@hraness/ui";
+import { AppearanceIcon, Icon, SocialIcon } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -97,16 +97,49 @@ assert.match(markup, /<svg/u);
 assert.match(markup, /aria-hidden="true"/u);
 assert.match(markup, /class="[^"]*hraness-icon[^"]*consumer-icon[^"]*"/u);
 assert.match(markup, /data-slot="icon"/u);
+
+const socialMarkup = renderToStaticMarkup(React.createElement(SocialIcon, {
+  className: "consumer-social-icon",
+  name: "github",
+}));
+assert.match(socialMarkup, /<span/u);
+assert.match(socialMarkup, /aria-hidden="true"/u);
+assert.match(socialMarkup, /class="hraness-social-icon [^"]+ consumer-social-icon"/u);
+assert.match(socialMarkup, /data-slot="social-icon"/u);
+assert.match(socialMarkup, /data-social-icon="github"/u);
+assert.match(socialMarkup, /width="16"/u);
+
+const substackMarkup = renderToStaticMarkup(React.createElement(SocialIcon, {
+  name: "substack",
+  size: 21,
+}));
+assert.match(substackMarkup, /fill="currentColor"/u);
+assert.match(substackMarkup, /height="21"/u);
+assert.match(substackMarkup, /M22\.539 8\.242H1\.46V5\.406/u);
+
+const appearanceMarkup = renderToStaticMarkup(React.createElement(AppearanceIcon, {
+  className: "consumer-appearance-icon",
+  name: "system",
+}));
+assert.match(appearanceMarkup, /<span/u);
+assert.match(appearanceMarkup, /aria-hidden="true"/u);
+assert.match(appearanceMarkup, /class="hraness-appearance-icon [^"]+ consumer-appearance-icon"/u);
+assert.match(appearanceMarkup, /data-appearance-icon="system"/u);
+assert.match(appearanceMarkup, /data-slot="appearance-icon"/u);
+assert.match(appearanceMarkup, /width="18"/u);
 `;
 }
 
 const typeScriptProbe = `import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
-import { Icon } from "@hraness/ui";
+import { AppearanceIcon, Icon, SocialIcon } from "@hraness/ui";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-const styles = stylex.create({ icon: { display: "block" } });
+const styles = stylex.create({
+  icon: { display: "block" },
+  wrapper: { display: "grid" },
+});
 const markup: string = renderToStaticMarkup(createElement(Icon, {
   className: "consumer-icon",
   icon: Search01Icon,
@@ -114,8 +147,22 @@ const markup: string = renderToStaticMarkup(createElement(Icon, {
   strokeWidth: 2,
   xstyle: styles.icon,
 }));
+const socialMarkup: string = renderToStaticMarkup(createElement(SocialIcon, {
+  className: "consumer-social-icon",
+  name: "github",
+  size: 24,
+  xstyle: styles.wrapper,
+}));
+const appearanceMarkup: string = renderToStaticMarkup(createElement(AppearanceIcon, {
+  className: "consumer-appearance-icon",
+  name: "system",
+  size: 26,
+  xstyle: styles.wrapper,
+}));
 
 void markup;
+void socialMarkup;
+void appearanceMarkup;
 `;
 
 function typeScriptConfig(moduleResolution: "Bundler" | "NodeNext") {

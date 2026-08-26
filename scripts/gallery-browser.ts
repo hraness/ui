@@ -23,6 +23,17 @@ const HUGEICONS_VERSION = "4.2.2";
 const REACT_VERSION = "19.2.3";
 
 interface BrowserEvidence {
+  readonly appearanceAlignItems: string;
+  readonly appearanceAriaHidden: string;
+  readonly appearanceCallerClassLast: boolean;
+  readonly appearanceChildSlot: string;
+  readonly appearanceClassIsSemantic: boolean;
+  readonly appearanceDisplay: string;
+  readonly appearanceFlex: string;
+  readonly appearanceHasGeneratedClass: boolean;
+  readonly appearanceIconHeight: number;
+  readonly appearanceIconWidth: number;
+  readonly appearanceJustifyContent: string;
   readonly bodyBackground: string;
   readonly buttonBackground: string;
   readonly buttonMinHeight: number;
@@ -44,10 +55,26 @@ interface BrowserEvidence {
   readonly recoverableErrors: readonly string[];
   readonly rootHydrated: boolean;
   readonly skeletonAnimationName: string;
+  readonly socialAlignItems: string;
+  readonly socialAriaHidden: string;
+  readonly socialCallerClassLast: boolean;
+  readonly socialChildSlot: string;
+  readonly socialClassIsSemantic: boolean;
+  readonly socialDisplay: string;
+  readonly socialFlex: string;
+  readonly socialHasGeneratedClass: boolean;
+  readonly socialIconHeight: number;
+  readonly socialIconWidth: number;
+  readonly socialJustifyContent: string;
   readonly spinnerAnimationName: string;
   readonly stylexRuntimeStyleCount: number;
   readonly stylesheetCount: number;
   readonly stylesheetMarked: boolean;
+  readonly substackAriaHidden: string;
+  readonly substackFill: string;
+  readonly substackHasPath: boolean;
+  readonly substackIconHeight: number;
+  readonly substackIconWidth: number;
   readonly theme: string;
   readonly transitionDuration: string;
 }
@@ -267,6 +294,12 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
   return page.evaluate(() => {
     const icon = document.querySelector('[data-gallery-icon-canary="true"] [data-slot="icon"]');
     const iconCanary = document.querySelector('[data-gallery-icon-canary="true"]');
+    const social = document.querySelector('[data-gallery-icon-wrapper-canary="true"] [data-social-icon="github"]');
+    const socialIcon = social?.querySelector(':scope > [data-slot="icon"]');
+    const substack = document.querySelector('[data-gallery-icon-wrapper-canary="true"] [data-social-icon="substack"]');
+    const substackIcon = substack?.querySelector(":scope > svg");
+    const appearance = document.querySelector('[data-gallery-icon-wrapper-canary="true"] [data-appearance-icon="system"]');
+    const appearanceIcon = appearance?.querySelector(':scope > [data-slot="icon"]');
     const button = document.querySelector('[data-gallery-primary-action="true"][data-slot="button-control"]');
     const card = document.querySelector('[data-gallery-icon-card="true"]');
     const spinner = document.querySelector('[data-slot="spinner"]');
@@ -278,6 +311,12 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     if (
       !(icon instanceof SVGElement)
       || !(iconCanary instanceof HTMLElement)
+      || !(social instanceof HTMLSpanElement)
+      || !(socialIcon instanceof SVGElement)
+      || !(substack instanceof HTMLSpanElement)
+      || !(substackIcon instanceof SVGElement)
+      || !(appearance instanceof HTMLSpanElement)
+      || !(appearanceIcon instanceof SVGElement)
       || !(button instanceof HTMLElement)
       || !(card instanceof HTMLElement)
       || !(spinner instanceof HTMLElement)
@@ -288,10 +327,34 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       throw new Error("The primitive gallery structure is incomplete.");
     }
     const iconStyle = getComputedStyle(icon);
+    const socialStyle = getComputedStyle(social);
+    const socialBox = socialIcon.getBoundingClientRect();
+    const socialClasses = [...social.classList];
+    const substackBox = substackIcon.getBoundingClientRect();
+    const appearanceStyle = getComputedStyle(appearance);
+    const appearanceBox = appearanceIcon.getBoundingClientRect();
+    const appearanceClasses = [...appearance.classList];
     const buttonStyle = getComputedStyle(button);
     const iconBox = icon.getBoundingClientRect();
 
     return {
+      appearanceAlignItems: appearanceStyle.alignItems,
+      appearanceAriaHidden: appearance.getAttribute("aria-hidden") ?? "",
+      appearanceCallerClassLast:
+        appearanceClasses.at(-1) === "gallery-appearance-icon",
+      appearanceChildSlot: appearanceIcon.getAttribute("data-slot") ?? "",
+      appearanceClassIsSemantic:
+        appearanceClasses[0] === "hraness-appearance-icon",
+      appearanceDisplay: appearanceStyle.display,
+      appearanceFlex: appearanceStyle.flex,
+      appearanceHasGeneratedClass: appearanceClasses.some(
+        (name) =>
+          name !== "hraness-appearance-icon"
+          && name !== "gallery-appearance-icon",
+      ),
+      appearanceIconHeight: appearanceBox.height,
+      appearanceIconWidth: appearanceBox.width,
+      appearanceJustifyContent: appearanceStyle.justifyContent,
       bodyBackground: getComputedStyle(document.body).backgroundColor,
       buttonBackground: buttonStyle.backgroundColor,
       buttonMinHeight: Number.parseFloat(buttonStyle.minHeight),
@@ -313,12 +376,31 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       recoverableErrors: window.__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__ ?? [],
       rootHydrated: root.dataset.hydrated === "true",
       skeletonAnimationName: getComputedStyle(skeleton).animationName,
+      socialAlignItems: socialStyle.alignItems,
+      socialAriaHidden: social.getAttribute("aria-hidden") ?? "",
+      socialCallerClassLast: socialClasses.at(-1) === "gallery-social-icon",
+      socialChildSlot: socialIcon.getAttribute("data-slot") ?? "",
+      socialClassIsSemantic: socialClasses[0] === "hraness-social-icon",
+      socialDisplay: socialStyle.display,
+      socialFlex: socialStyle.flex,
+      socialHasGeneratedClass: socialClasses.some(
+        (name) => name !== "hraness-social-icon" && name !== "gallery-social-icon",
+      ),
+      socialIconHeight: socialBox.height,
+      socialIconWidth: socialBox.width,
+      socialJustifyContent: socialStyle.justifyContent,
       spinnerAnimationName: getComputedStyle(spinner).animationName,
       stylexRuntimeStyleCount: document.querySelectorAll("style[data-stylex]").length,
       stylesheetCount: document.querySelectorAll('link[rel="stylesheet"]').length,
       stylesheetMarked:
         document.querySelector('link[data-gallery-default-stylesheet="true"]')
         instanceof HTMLLinkElement,
+      substackAriaHidden: substackIcon.getAttribute("aria-hidden") ?? "",
+      substackFill: substackIcon.getAttribute("fill") ?? "",
+      substackHasPath:
+        substackIcon.querySelector('path[d^="M22.539 8.242H1.46V5.406"]') !== null,
+      substackIconHeight: substackBox.height,
+      substackIconWidth: substackBox.width,
       theme: document.documentElement.dataset.theme ?? "",
       transitionDuration: buttonStyle.transitionDuration,
     };
@@ -627,7 +709,11 @@ try {
   const html = await readFile(htmlPath, "utf8");
   assert.match(html, /data-gallery-hydration-root="true"/u);
   assert.match(html, /data-gallery-icon-canary="true"/u);
+  assert.match(html, /data-gallery-icon-wrapper-canary="true"/u);
   assert.match(html, /data-slot="icon"/u);
+  assert.match(html, /data-social-icon="github"/u);
+  assert.match(html, /data-social-icon="substack"/u);
+  assert.match(html, /data-appearance-icon="system"/u);
   assert.match(html, /data-slot="quiet-site-page"/u);
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
@@ -677,6 +763,54 @@ try {
           invariant(light.iconFlex === "0 0 auto", `${layout.id}: StyleX icon flex is ${light.iconFlex}`);
           invariant(light.iconWidth === 28 && light.iconHeight === 28, `${layout.id}: icon box is ${String(light.iconWidth)}×${String(light.iconHeight)}`);
           invariant(light.iconInheritsCanaryColor, `${layout.id}: icon current color did not inherit`);
+          invariant(
+            light.socialAriaHidden === "true"
+            && light.socialClassIsSemantic
+            && light.socialHasGeneratedClass
+            && light.socialCallerClassLast,
+            `${layout.id}: social wrapper semantics or class ordering changed`,
+          );
+          invariant(
+            light.socialDisplay === "inline-flex"
+            && light.socialFlex === "0 0 auto"
+            && light.socialAlignItems === "center"
+            && light.socialJustifyContent === "center",
+            `${layout.id}: social wrapper recipe is ${light.socialDisplay}; ${light.socialFlex}; ${light.socialAlignItems}; ${light.socialJustifyContent}`,
+          );
+          invariant(
+            light.socialChildSlot === "icon"
+            && light.socialIconWidth === 16
+            && light.socialIconHeight === 16,
+            `${layout.id}: social glyph nesting or default size changed`,
+          );
+          invariant(
+            light.appearanceAriaHidden === "true"
+            && light.appearanceClassIsSemantic
+            && light.appearanceHasGeneratedClass
+            && light.appearanceCallerClassLast,
+            `${layout.id}: appearance wrapper semantics or class ordering changed`,
+          );
+          invariant(
+            light.appearanceDisplay === "inline-flex"
+            && light.appearanceFlex === "0 0 auto"
+            && light.appearanceAlignItems === "center"
+            && light.appearanceJustifyContent === "center",
+            `${layout.id}: appearance wrapper recipe is ${light.appearanceDisplay}; ${light.appearanceFlex}; ${light.appearanceAlignItems}; ${light.appearanceJustifyContent}`,
+          );
+          invariant(
+            light.appearanceChildSlot === "icon"
+            && light.appearanceIconWidth === 18
+            && light.appearanceIconHeight === 18,
+            `${layout.id}: appearance glyph nesting or default size changed`,
+          );
+          invariant(
+            light.substackAriaHidden === "true"
+            && light.substackFill === "currentColor"
+            && light.substackHasPath
+            && light.substackIconWidth === 16
+            && light.substackIconHeight === 16,
+            `${layout.id}: Substack fallback contract changed`,
+          );
           invariant(light.buttonMinHeight >= 40, `${layout.id}: action target is only ${String(light.buttonMinHeight)}px high`);
           invariant(light.cardBorderStyle !== "none", `${layout.id}: card recipe did not load`);
 
@@ -784,7 +918,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS, SSR/hydration, semantic StyleX icon behavior, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS, SSR/hydration, semantic StyleX glyph and wrapper behavior, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });
