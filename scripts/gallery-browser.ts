@@ -849,10 +849,36 @@ function nearlyEqual(actual: number, expected: number): boolean {
 async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
   await page.keyboard.press("Tab");
   const skipLink = page.locator('[data-slot="skip-link"]');
+  await page.waitForFunction(() => {
+    const element = document.querySelector('[data-slot="skip-link"]');
+    if (!(element instanceof HTMLElement)) return false;
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return document.activeElement === element
+      && element.matches(":focus-visible")
+      && box.bottom > 0
+      && box.right > 0
+      && box.left < document.documentElement.clientWidth
+      && box.top < document.documentElement.clientHeight
+      && Number.parseFloat(style.opacity) > 0
+      && style.visibility === "visible";
+  }, undefined, { timeout: 1_000 }).catch(() => undefined);
   const skipLinkFocus = await skipLink.evaluate((element) => {
     const box = element.getBoundingClientRect();
     const style = getComputedStyle(element);
+    const activeElement = document.activeElement;
     return {
+      activeElement:
+        activeElement instanceof Element
+          ? `${activeElement.tagName.toLowerCase()}#${activeElement.id}[data-slot=${activeElement.getAttribute("data-slot") ?? ""}]`
+          : "none",
+      box: {
+        bottom: box.bottom,
+        left: box.left,
+        right: box.right,
+        top: box.top,
+      },
+      documentHasFocus: document.hasFocus(),
       focusVisible:
         document.activeElement === element && element.matches(":focus-visible"),
       intersectsViewport:
@@ -861,6 +887,9 @@ async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
         && box.left < document.documentElement.clientWidth
         && box.top < document.documentElement.clientHeight,
       opacity: Number.parseFloat(style.opacity),
+      transform: style.transform,
+      transitionDuration: style.transitionDuration,
+      transitionProperty: style.transitionProperty,
       visibility: style.visibility,
     };
   });
@@ -869,7 +898,7 @@ async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
     && skipLinkFocus.intersectsViewport
     && skipLinkFocus.opacity > 0
     && skipLinkFocus.visibility === "visible",
-    `${id}: the first keyboard stop is not the visible skip link`,
+    `${id}: the first keyboard stop is not the visible skip link: ${JSON.stringify(skipLinkFocus)}`,
   );
   await page.keyboard.press("Enter");
   invariant(
