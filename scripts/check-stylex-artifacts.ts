@@ -1,5 +1,22 @@
+import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+
+const COMPONENTS_IMPORT = '@import "./components.css";';
+const GALLERY_LAYER_CONFLICT_SENTINEL = "data-gallery-stylex-layer-conflict";
+const LEGACY_LAYER = "components.hraness-ui.legacy";
+const LEGACY_LAYERS = [
+  "components.hraness-ui.legacy.base",
+  LEGACY_LAYER,
+] as const;
+const LAYER_PRELUDE =
+  "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2;";
+const STYLEX_IMPORT = '@import "../dist/stylex.css";';
+const STYLEX_LAYERS = [
+  "components.hraness-ui.priority1",
+  "components.hraness-ui.priority2",
+] as const;
+const TOP_LEVEL_LAYER_PRELUDE = "@layer base, components;";
 
 function requireMatch(
   source: string,
@@ -18,6 +35,162 @@ function forbid(
 ): void {
   if (pattern.test(source)) {
     throw new Error(`StyleX artifact unexpectedly contains ${description}`);
+  }
+}
+
+function topLevelStatements(source: string, description: string): string[] {
+  const statements: string[] = [];
+  let blockDepth = 0;
+  let escaped = false;
+  let start = -1;
+  let stringQuote: '"' | "'" | undefined;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    const nextCharacter = source[index + 1];
+    if (character === undefined) continue;
+
+    if (stringQuote !== undefined) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === stringQuote) {
+        stringQuote = undefined;
+      }
+      continue;
+    }
+
+    if (character === "/" && nextCharacter === "*") {
+      const commentEnd = source.indexOf("*/", index + 2);
+      if (commentEnd < 0) {
+        throw new Error(`${description} contains an unterminated comment`);
+      }
+      index = commentEnd + 1;
+      continue;
+    }
+
+    if (start < 0) {
+      if (/\s/u.test(character)) continue;
+      start = index;
+    }
+
+    if (character === '"' || character === "'") {
+      stringQuote = character;
+      continue;
+    }
+
+    if (character === "{") {
+      blockDepth += 1;
+      continue;
+    }
+    if (character === "}") {
+      blockDepth -= 1;
+      if (blockDepth < 0) {
+        throw new Error(`${description} contains an unmatched closing brace`);
+      }
+      if (blockDepth === 0 && start >= 0) {
+        statements.push(source.slice(start, index + 1).trim());
+        start = -1;
+      }
+      continue;
+    }
+    if (character === ";" && blockDepth === 0 && start >= 0) {
+      statements.push(source.slice(start, index + 1).trim());
+      start = -1;
+    }
+  }
+
+  if (stringQuote !== undefined || blockDepth !== 0) {
+    throw new Error(`${description} contains an unterminated CSS construct`);
+  }
+  if (start >= 0 && source.slice(start).trim().length > 0) {
+    throw new Error(`${description} contains an unterminated top-level statement`);
+  }
+  return statements;
+}
+
+function requireOnlyLayerBlocks(
+  source: string,
+  allowedLayers: ReadonlySet<string>,
+  description: string,
+): string[] {
+  const statements = topLevelStatements(source, description);
+  if (statements.length === 0) {
+    throw new Error(`${description} must contain a named layer block`);
+  }
+
+  return statements.map((statement) => {
+    const layer = statement.match(
+      /^@layer\s+([A-Za-z0-9_.-]+)\s*\{/u,
+    )?.[1];
+    if (layer === undefined || !allowedLayers.has(layer)) {
+      throw new Error(
+        `${description} contains top-level content outside its allowed named layers`,
+      );
+    }
+    return layer;
+  });
+}
+
+function requirePublicLayerContract(
+  legacyComponents: string,
+  orderedStylesheet: string,
+  compiledCss: string,
+): void {
+  const bareComponentsLayer = /@layer\s+components(?=\s*[,;{])/u;
+  forbid(
+    legacyComponents,
+    bareComponentsLayer,
+    "a bare direct components layer",
+  );
+  forbid(
+    compiledCss,
+    bareComponentsLayer,
+    "a generated bare direct components layer",
+  );
+
+  const legacyLayers = requireOnlyLayerBlocks(
+    legacyComponents,
+    new Set(LEGACY_LAYERS),
+    "src/components.css",
+  );
+  for (const expectedLayer of LEGACY_LAYERS) {
+    if (!legacyLayers.includes(expectedLayer)) {
+      throw new Error(`src/components.css must declare ${expectedLayer}`);
+    }
+  }
+  const generatedLayers = requireOnlyLayerBlocks(
+    compiledCss,
+    new Set(STYLEX_LAYERS),
+    "dist/stylex.css",
+  );
+  for (const expectedLayer of STYLEX_LAYERS) {
+    if (!generatedLayers.includes(expectedLayer)) {
+      throw new Error(`dist/stylex.css must declare ${expectedLayer}`);
+    }
+  }
+
+  const lines = orderedStylesheet
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const expectedLines = [
+    TOP_LEVEL_LAYER_PRELUDE,
+    LAYER_PRELUDE,
+    '@import "./tokens.css";',
+    '@import "./reset.css";',
+    COMPONENTS_IMPORT,
+    STYLEX_IMPORT,
+    '@import "./tailwind.css";',
+  ];
+  if (
+    lines.length !== expectedLines.length
+    || lines.some((line, index) => line !== expectedLines[index])
+  ) {
+    throw new Error(
+      "src/styles.css must contain the exact base < components and legacy < priority1 < priority2 preludes and ordered public imports",
+    );
   }
 }
 
@@ -70,6 +243,12 @@ forbid(
   /\.hraness-(?:appearance|social)-icon(?![A-Za-z0-9_-])/u,
   "a legacy social- or appearance-icon recipe",
 );
+requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
+forbid(
+  `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}`,
+  new RegExp(GALLERY_LAYER_CONFLICT_SENTINEL, "u"),
+  "the gallery-only layer-conflict sentinel in package output",
+);
 
 requireMatch(
   compiledJavaScript,
@@ -97,21 +276,64 @@ forbid(
   "runtime CSS injection",
 );
 
-const stylexImport = '@import "../dist/stylex.css";';
-const imports = orderedStylesheet
-  .split("\n")
-  .filter((line) => line.trim() === stylexImport);
-if (imports.length !== 1) {
-  throw new Error("src/styles.css must import dist/stylex.css exactly once");
-}
-
-const componentsIndex = orderedStylesheet.indexOf('@import "./components.css";');
-const stylexIndex = orderedStylesheet.indexOf(stylexImport);
-const tailwindIndex = orderedStylesheet.indexOf('@import "./tailwind.css";');
-if (!(componentsIndex < stylexIndex && stylexIndex < tailwindIndex)) {
-  throw new Error(
-    "src/styles.css must place package StyleX after components and before Tailwind utilities",
-  );
-}
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents.replace(
+        `@layer ${LEGACY_LAYER} {`,
+        "@layer components {",
+      ),
+      orderedStylesheet,
+      compiledCss,
+    ),
+  /bare direct components layer/u,
+  "the layer guard must reject a legacy recipe restored to the direct parent",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents,
+      orderedStylesheet.replace(
+        LAYER_PRELUDE,
+        "@layer components.hraness-ui.priority2, components.hraness-ui.priority1, components.hraness-ui.legacy;",
+      ),
+      compiledCss,
+    ),
+  /exact base < components and legacy < priority1 < priority2 preludes/u,
+  "the layer guard must reject a priority inversion",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents,
+      orderedStylesheet.replace(
+        TOP_LEVEL_LAYER_PRELUDE,
+        "@layer components, base;",
+      ),
+      compiledCss,
+    ),
+  /exact base < components and legacy < priority1 < priority2 preludes/u,
+  "the layer guard must reject a top-level reset/component priority inversion",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      `${legacyComponents}\n.hraness-unlayered-negative-control { display: block; }`,
+      orderedStylesheet,
+      compiledCss,
+    ),
+  /top-level content outside its allowed named layers/u,
+  "the layer guard must reject an unlayered legacy recipe",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents,
+      orderedStylesheet,
+      `${compiledCss}\n.x-unlayered-negative-control { display: block; }`,
+    ),
+  /top-level content outside its allowed named layers/u,
+  "the layer guard must reject an unlayered generated recipe",
+);
 
 console.log("StyleX package artifacts match the compiler contract");

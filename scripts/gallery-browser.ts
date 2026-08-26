@@ -47,6 +47,7 @@ interface BrowserEvidence {
   readonly iconAriaHidden: string;
   readonly iconClassIsSemantic: boolean;
   readonly iconInheritsCanaryColor: boolean;
+  readonly iconLegacyLayerSentinel: string;
   readonly iconDisplay: string;
   readonly iconFlex: string;
   readonly iconHeight: number;
@@ -227,6 +228,16 @@ function requirePackedDefaultStylesheet(css: string): void {
   );
   assert.match(
     css,
+    /@layer\s+base\s*,\s*components/u,
+    "the packed default stylesheet must keep reset styles below components",
+  );
+  assert.match(
+    css,
+    /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2/u,
+    "the packed default stylesheet must freeze the package layer order",
+  );
+  assert.match(
+    css,
     /\.hraness-button(?:__control)?(?=[\s,{:.])/u,
     "the packed default stylesheet must include legacy action recipes",
   );
@@ -239,6 +250,16 @@ function requirePackedDefaultStylesheet(css: string): void {
     css,
     /--ui-background:/u,
     "the packed default stylesheet must include public theme tokens",
+  );
+  assert.match(
+    css,
+    /data-gallery-stylex-layer-conflict/u,
+    "the harness bundle must include its gallery-only legacy conflict",
+  );
+  assert.match(
+    css,
+    /\[data-gallery-stylex-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"icon"|icon)\]\{(?=[^}]*--gallery-stylex-layer-conflict:\s*legacy)(?=[^}]*display:\s*block)(?=[^}]*flex:\s*(?:auto|1\s+1\s+auto))[^}]*\}/u,
+    "the gallery conflict must independently carry its sentinel, display, and flex declarations",
   );
 }
 
@@ -326,6 +347,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     ) {
       throw new Error("The primitive gallery structure is incomplete.");
     }
+    icon.setAttribute("data-gallery-stylex-layer-conflict", "true");
     const iconStyle = getComputedStyle(icon);
     const socialStyle = getComputedStyle(social);
     const socialBox = socialIcon.getBoundingClientRect();
@@ -371,6 +393,9 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       iconFlex: iconStyle.flex,
       iconHeight: iconBox.height,
       iconInheritsCanaryColor: iconStyle.color === getComputedStyle(iconCanary).color,
+      iconLegacyLayerSentinel: iconStyle
+        .getPropertyValue("--gallery-stylex-layer-conflict")
+        .trim(),
       iconWidth: iconBox.width,
       mainPresent: main instanceof HTMLElement && main.tagName === "MAIN",
       recoverableErrors: window.__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__ ?? [],
@@ -663,6 +688,23 @@ try {
     access(resolve(installedRoot, "src/styles.css")),
     access(resolve(installedRoot, "dist/stylex.css")),
   ]);
+  await assert.rejects(
+    access(resolve(installedRoot, "gallery/styles.css")),
+    /ENOENT/u,
+    "the gallery conflict sentinel must stay outside the packed package",
+  );
+  const installedPackageCss = (
+    await Promise.all([
+      readFile(resolve(installedRoot, "src/components.css"), "utf8"),
+      readFile(resolve(installedRoot, "src/styles.css"), "utf8"),
+      readFile(resolve(installedRoot, "dist/stylex.css"), "utf8"),
+    ])
+  ).join("\n");
+  assert.doesNotMatch(
+    installedPackageCss,
+    /data-gallery-stylex-layer-conflict/u,
+    "the gallery conflict sentinel must not enter package CSS",
+  );
 
   const productionDirectory = resolve(consumer, "dist/browser");
   const negativeDirectory = resolve(consumer, "dist/unstyled-negative-control");
@@ -759,6 +801,10 @@ try {
           invariant(light.stylesheetCount === 1 && light.stylesheetMarked, `${layout.id}: default stylesheet delivery is ambiguous`);
           invariant(light.stylexRuntimeStyleCount === 0, `${layout.id}: StyleX runtime injection returned`);
           invariant(light.iconAriaHidden === "true" && light.iconClassIsSemantic, `${layout.id}: icon semantics changed`);
+          invariant(
+            light.iconLegacyLayerSentinel === "legacy",
+            `${layout.id}: the gallery legacy conflict did not match the StyleX icon canary`,
+          );
           invariant(light.iconDisplay === "inline-block", `${layout.id}: StyleX icon display is ${light.iconDisplay}`);
           invariant(light.iconFlex === "0 0 auto", `${layout.id}: StyleX icon flex is ${light.iconFlex}`);
           invariant(light.iconWidth === 28 && light.iconHeight === 28, `${layout.id}: icon box is ${String(light.iconWidth)}×${String(light.iconHeight)}`);
@@ -918,7 +964,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS, SSR/hydration, semantic StyleX glyph and wrapper behavior, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and layer order, a matched gallery-only legacy conflict losing to StyleX, SSR/hydration, semantic StyleX glyph and wrapper behavior, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });
