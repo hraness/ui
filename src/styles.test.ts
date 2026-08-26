@@ -108,7 +108,6 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
     ".hraness-select-field__popover",
     ".hraness-dialog-overlay",
     ".hraness-toast-region",
-    ".hraness-tag",
     '[data-tone="success"]',
     "@media (pointer: coarse)",
     "@media (prefers-reduced-motion: reduce)",
@@ -315,31 +314,23 @@ test("knob densities keep a 48px gesture target and distinct dial sizes", async 
   expect(components).not.toContain(".hraness-knob__gesture:hover");
 });
 
-test("tags keep one border geometry across their visual variants", async () => {
+test("status pills keep one compiled border geometry across their visual variants", async () => {
   const components = await stylesheet("./components.css");
-  const base = declarationBlock(components, ":where(.hraness-badge, .hraness-tag) {");
-  const defaultTag = declarationBlock(components, ".hraness-tag {");
-  const outlineTag = declarationBlock(
-    components,
-    '.hraness-tag[data-variant="outline"] {',
-  );
-  const mutedTag = declarationBlock(
-    components,
-    '.hraness-tag[data-variant="muted"] {',
-  );
-  const forcedColors = components.slice(components.indexOf("@media (forced-colors: active)"));
+  const compiled = await stylesheet("../dist/stylex.css");
 
-  expect(base).toContain("border: 1px solid var(--ui-border);");
-  expect(base).toContain("border-radius: var(--radius-round);");
-  expect(defaultTag).toContain("border-color: transparent;");
-  expect(outlineTag).toContain(
+  expect(components).not.toMatch(
+    /\.hraness-(?:badge|tag|status-dot)(?![A-Za-z0-9_-])/u,
+  );
+  expect(compiled).toContain("border-style: solid;");
+  expect(compiled).toContain("border-width: 1px;");
+  expect(compiled).toContain("border-radius: var(--radius-round);");
+  expect(compiled).toContain(
     "border-color: var(--hraness-tag-accent, var(--ui-border));",
   );
-  expect(outlineTag).toContain("background: transparent;");
-  expect(mutedTag).toContain("background: var(--ui-muted);");
-  expect(mutedTag).toContain("color: var(--ui-muted-foreground);");
-  expect(forcedColors).toContain(".hraness-tag,");
-  expect(forcedColors).toContain("border-color: CanvasText;");
+  expect(compiled).toContain("background-color: var(--ui-muted);");
+  expect(compiled).toContain("color: var(--ui-muted-foreground);");
+  expect(compiled).toContain("@media (forced-colors: active)");
+  expect(compiled).toContain("border-color: canvastext;");
 });
 
 test("control curves stay bounded while pills and circles remain explicit", async () => {

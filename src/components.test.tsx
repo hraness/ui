@@ -77,16 +77,16 @@ test("Tag exposes stable variants and an optional decorative icon", () => {
     </>,
   );
 
-  expect(html).toContain('class="hraness-tag project-tag"');
+  expect(html).toMatch(/class="hraness-tag [^"]+ project-tag"/u);
   expect(html).toContain('data-slot="tag"');
   expect(html).toContain('data-variant="outline"');
   expect(html).toContain('--hraness-tag-accent:#D97706');
   expect(html).toContain('margin-inline-start:1rem');
-  expect(html).toContain(
-    '<span aria-hidden="true" class="hraness-tag__icon" data-slot="tag-icon">🧭</span>',
+  expect(html).toMatch(
+    /<span(?=[^>]*aria-hidden="true")(?=[^>]*class="hraness-tag__icon [^"]+")(?=[^>]*data-slot="tag-icon")[^>]*>🧭<\/span>/u,
   );
-  expect(html).toContain(
-    '<span class="hraness-tag__label" data-slot="tag-label">linked project</span>',
+  expect(html).toMatch(
+    /<span class="hraness-tag__label [^"]+" data-slot="tag-label">linked project<\/span>/u,
   );
   expect(html.match(/data-slot="tag-icon"/gu)).toHaveLength(1);
   expect(html.match(/data-variant="outline"/gu)).toHaveLength(2);

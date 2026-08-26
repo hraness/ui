@@ -1400,56 +1400,6 @@
     gap: var(--space-2);
   }
 
-  :where(.hraness-badge, .hraness-tag) {
-    display: inline-flex;
-    width: fit-content;
-    min-height: 1.5rem;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-1);
-    padding-inline: var(--space-2);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-round);
-    font-size: var(--text-caption);
-    font-weight: var(--font-weight-medium);
-    line-height: 1;
-    white-space: nowrap;
-  }
-
-  .hraness-badge {
-    background: var(--ui-secondary);
-    color: var(--ui-secondary-foreground);
-  }
-
-  .hraness-tag {
-    border-color: transparent;
-    background: var(--ui-secondary);
-    color: var(--ui-secondary-foreground);
-  }
-
-  .hraness-tag[data-variant="outline"] {
-    border-color: var(--hraness-tag-accent, var(--ui-border));
-    background: transparent;
-    color: var(--ui-foreground);
-  }
-
-  .hraness-tag[data-variant="muted"] {
-    background: var(--ui-muted);
-    color: var(--ui-muted-foreground);
-  }
-
-  .hraness-tag__icon {
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-  }
-
-  .hraness-tag__label {
-    min-width: 0;
-  }
-
   .hraness-spinner {
     display: inline-block;
     width: 1em;
@@ -1951,56 +1901,6 @@
   .hraness-pressable-card:where([data-focus-visible], :focus-visible) {
     outline: 2px solid var(--ui-ring);
     outline-offset: 3px;
-  }
-
-  :where(.hraness-badge[data-tone="info"], .hraness-badge--info) {
-    border-color: color-mix(in oklch, var(--ui-info) 45%, var(--ui-border));
-    background: var(--ui-info-soft);
-    color: var(--ui-info);
-  }
-
-  :where(.hraness-badge[data-tone="success"], .hraness-badge--success) {
-    border-color: color-mix(in oklch, var(--ui-success) 45%, var(--ui-border));
-    background: var(--ui-success-soft);
-    color: var(--ui-success);
-  }
-
-  :where(.hraness-badge[data-tone="warning"], .hraness-badge--warning) {
-    border-color: color-mix(in oklch, var(--ui-warning) 45%, var(--ui-border));
-    background: var(--ui-warning-soft);
-    color: var(--ui-warning);
-  }
-
-  :where(.hraness-badge[data-tone="danger"], .hraness-badge--danger) {
-    border-color: color-mix(in oklch, var(--ui-destructive) 45%, var(--ui-border));
-    background: color-mix(in oklch, var(--ui-destructive) 12%, var(--ui-card));
-    color: var(--ui-destructive);
-  }
-
-  .hraness-status-dot {
-    display: inline-block;
-    width: 0.625rem;
-    height: 0.625rem;
-    flex: 0 0 auto;
-    border: 1px solid color-mix(in oklch, currentColor 35%, transparent);
-    border-radius: var(--radius-round);
-    background: var(--ui-muted-foreground);
-  }
-
-  .hraness-status-dot[data-tone="info"] {
-    background: var(--ui-info);
-  }
-
-  .hraness-status-dot[data-tone="success"] {
-    background: var(--ui-success);
-  }
-
-  .hraness-status-dot[data-tone="warning"] {
-    background: var(--ui-warning);
-  }
-
-  .hraness-status-dot[data-tone="danger"] {
-    background: var(--ui-destructive);
   }
 
   .hraness-spinner[data-size="small"] {
@@ -2525,8 +2425,6 @@
     .hraness-dialog,
     .hraness-card,
     .hraness-pressable-card,
-    .hraness-badge,
-    .hraness-tag,
     .hraness-inline-alert,
     .hraness-toast
   ) {

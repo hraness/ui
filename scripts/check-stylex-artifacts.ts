@@ -11,6 +11,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-wrapping-row-layer-conflict",
   "data-gallery-themed-surface-layer-conflict",
   "data-gallery-avatar-layer-conflict",
+  "data-gallery-status-family-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -333,6 +334,84 @@ function requireAvatarContract(
   );
 }
 
+function requireStatusFamilyContract(
+  legacyComponents: string,
+  compiledCss: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-(?:badge(?:--[A-Za-z0-9_-]+)?|status-dot|tag(?:__(?:icon|label))?)(?![A-Za-z0-9_-])/u,
+    "a legacy Badge, Badge tone alias, Tag, or StatusDot recipe",
+  );
+  const declarations = [
+    [/align-items:\s*center;/u, "status-family alignment"],
+    [/background-color:\s*#0000;/u, "the transparent outline Tag background"],
+    [/background-color:\s*color-mix\(in oklch,var\(--ui-destructive\) 12%,var\(--ui-card\)\);/u, "the danger Badge background"],
+    [/background-color:\s*var\(--ui-destructive\);/u, "the danger StatusDot background"],
+    [/background-color:\s*var\(--ui-info-soft\);/u, "the info Badge background"],
+    [/background-color:\s*var\(--ui-info\);/u, "the info StatusDot background"],
+    [/background-color:\s*var\(--ui-muted-foreground\);/u, "the neutral StatusDot background"],
+    [/background-color:\s*var\(--ui-muted\);/u, "the muted Tag background"],
+    [/background-color:\s*var\(--ui-secondary\);/u, "the neutral status-pill background"],
+    [/background-color:\s*var\(--ui-success-soft\);/u, "the success Badge background"],
+    [/background-color:\s*var\(--ui-success\);/u, "the success StatusDot background"],
+    [/background-color:\s*var\(--ui-warning-soft\);/u, "the warning Badge background"],
+    [/background-color:\s*var\(--ui-warning\);/u, "the warning StatusDot background"],
+    [/border-color:\s*#0000;/u, "the transparent default Tag border"],
+    [/border-color:\s*canvastext;/u, "the forced-colors status-pill border"],
+    [/border-color:\s*color-mix\(in oklch,currentColor 35%,transparent\);/u, "the StatusDot border"],
+    [/border-color:\s*color-mix\(in oklch,var\(--ui-destructive\) 45%,var\(--ui-border\)\);/u, "the danger Badge border"],
+    [/border-color:\s*color-mix\(in oklch,var\(--ui-info\) 45%,var\(--ui-border\)\);/u, "the info Badge border"],
+    [/border-color:\s*color-mix\(in oklch,var\(--ui-success\) 45%,var\(--ui-border\)\);/u, "the success Badge border"],
+    [/border-color:\s*color-mix\(in oklch,var\(--ui-warning\) 45%,var\(--ui-border\)\);/u, "the warning Badge border"],
+    [/border-color:\s*var\(--hraness-tag-accent,\s*var\(--ui-border\)\);/u, "the public Tag accent variable"],
+    [/border-radius:\s*var\(--radius-round\);/u, "the status-family round geometry"],
+    [/border-style:\s*solid;/u, "the status-family border style"],
+    [/border-width:\s*1px;/u, "the status-family border width"],
+    [/color:\s*var\(--ui-destructive\);/u, "the danger Badge foreground"],
+    [/color:\s*var\(--ui-foreground\);/u, "the outline Tag foreground"],
+    [/color:\s*var\(--ui-info\);/u, "the info Badge foreground"],
+    [/color:\s*var\(--ui-muted-foreground\);/u, "the muted Tag foreground"],
+    [/color:\s*var\(--ui-secondary-foreground\);/u, "the neutral status-pill foreground"],
+    [/color:\s*var\(--ui-success\);/u, "the success Badge foreground"],
+    [/color:\s*var\(--ui-warning\);/u, "the warning Badge foreground"],
+    [/display:\s*inline-block;/u, "the StatusDot display"],
+    [/display:\s*inline-flex;/u, "the status-pill display"],
+    [/flex:\s*none;/u, "the fixed status-child flex normalization"],
+    [/font-size:\s*var\(--text-caption\);/u, "the status-pill text size"],
+    [/font-weight:\s*var\(--font-weight-medium\);/u, "the status-pill text weight"],
+    [/forced-color-adjust:\s*auto;/u, "the forced-colors status-pill adjustment"],
+    [/gap:\s*var\(--space-1\);/u, "the status-pill gap"],
+    [/height:\s*\.625rem;/u, "the StatusDot height"],
+    [/justify-content:\s*center;/u, "the status-family centering"],
+    [/line-height:\s*1;/u, "the status-family line height"],
+    [/min-height:\s*1\.5rem;/u, "the status-pill minimum height"],
+    [/min-width:\s*0;/u, "the Tag label shrink boundary"],
+    [/padding-inline:\s*var\(--space-2\);/u, "the status-pill inline padding"],
+    [/white-space:\s*nowrap;/u, "the status-pill wrapping contract"],
+    [/width:\s*\.625rem;/u, "the StatusDot width"],
+    [/width:\s*fit-content;/u, "the status-pill intrinsic width"],
+  ] as const;
+  for (const [pattern, description] of declarations) {
+    requireMatch(compiledCss, pattern, description);
+  }
+  requireMatch(
+    compiledCss,
+    /@media\s*\(forced-colors:\s*active\)\s*\{[\s\S]*border-color:\s*canvastext;[\s\S]*forced-color-adjust:\s*auto;/u,
+    "the forced-colors Badge and Tag override",
+  );
+  forbid(
+    compiledCss,
+    /background:\s*(?:transparent|var\(--ui-(?:destructive|info|muted|secondary|success|warning))/u,
+    "a status-family background shorthand",
+  );
+  forbid(
+    compiledCss,
+    /border:\s*1px\s+solid/u,
+    "a status-family border shorthand",
+  );
+}
+
 function requireNoGallerySentinels(source: string): void {
   for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
     forbid(
@@ -449,6 +528,7 @@ forbid(
 );
 requireThemedSurfaceContract(legacyComponents, compiledCss);
 requireAvatarContract(legacyComponents, compiledCss);
+requireStatusFamilyContract(legacyComponents, compiledCss);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,
@@ -463,11 +543,14 @@ if (physicalHundredPercentWidths.length !== 1) {
     "dist/stylex.css must contain exactly one physical 100% width for Avatar children without lowering ViewportFrame's logical inline size",
   );
 }
-forbid(
-  compiledCss,
-  /(?:^|[\s{;])min-width:\s*0;/u,
-  "a physical structural-surface minimum produced from its logical source contract",
-);
+const physicalZeroMinimumWidths = [
+  ...compiledCss.matchAll(/(?:^|[\s{;])min-width:\s*0;/gu),
+];
+if (physicalZeroMinimumWidths.length !== 1) {
+  throw new Error(
+    "dist/stylex.css must contain exactly one physical min-width zero for the Tag label without lowering a structural surface's logical minimum",
+  );
+}
 requireNoGallerySentinels(
   `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}`,
 );
@@ -522,6 +605,16 @@ requireMatch(
   /hraness-avatar__fallback/u,
   "the avatar fallback semantic hook",
 );
+for (const [pattern, description] of [
+  [/hraness-badge/u, "the Badge semantic hook"],
+  [/hraness-badge--/u, "the Badge tone alias hook"],
+  [/hraness-tag/u, "the Tag semantic hook"],
+  [/hraness-tag__icon/u, "the Tag icon semantic hook"],
+  [/hraness-tag__label/u, "the Tag label semantic hook"],
+  [/hraness-status-dot/u, "the StatusDot semantic hook"],
+] as const) {
+  requireMatch(compiledJavaScript, pattern, description);
+}
 forbid(
   compiledJavaScript,
   /react\/jsx-dev-runtime/u,
@@ -709,6 +802,53 @@ assert.throws(
     ),
   /gallery-only data-gallery-avatar-layer-conflict sentinel/u,
   "the avatar guard must reject gallery sentinel leakage",
+);
+assert.throws(
+  () =>
+    requireStatusFamilyContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-badge--success { color: green; } }`,
+      compiledCss,
+    ),
+  /legacy Badge, Badge tone alias, Tag, or StatusDot recipe/u,
+  "the status-family guard must reject a restored legacy Badge alias",
+);
+assert.throws(
+  () =>
+    requireStatusFamilyContract(
+      legacyComponents,
+      compiledCss.replace(
+        "border-color: var(--hraness-tag-accent, var(--ui-border));",
+        "border-color: var(--ui-border);",
+      ),
+    ),
+  /public Tag accent variable/u,
+  "the status-family guard must reject a missing public Tag variable",
+);
+assert.throws(
+  () =>
+    requireStatusFamilyContract(
+      legacyComponents,
+      compiledCss.replace("border-color: canvastext;", "border-color: currentcolor;"),
+    ),
+  /forced-colors status-pill border/u,
+  "the status-family guard must reject a missing forced-colors border",
+);
+assert.throws(
+  () =>
+    requireStatusFamilyContract(
+      legacyComponents,
+      compiledCss.replace("height: .625rem;", "height: 1rem;"),
+    ),
+  /StatusDot height/u,
+  "the status-family guard must reject missing StatusDot geometry",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-status-family-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-status-family-layer-conflict sentinel/u,
+  "the status-family guard must reject gallery sentinel leakage",
 );
 
 console.log("StyleX package artifacts match the compiler contract");

@@ -77,10 +77,13 @@ import { Search01Icon } from "@hugeicons/core-free-icons";
 import {
   AppearanceIcon,
   Avatar,
+  Badge,
   Icon,
   QuietSiteFooter,
   QuietSitePage,
   SocialIcon,
+  StatusDot,
+  Tag,
   ThemedSurface,
   ViewportFrame,
   WrappingRow,
@@ -116,6 +119,13 @@ assert.match(stylexCss, /border-radius:\s*var\(--radius-round\)/u);
 assert.match(stylexCss, /height:\s*3\.5rem/u);
 assert.match(stylexCss, /object-fit:\s*cover/u);
 assert.match(stylexCss, /width:\s*3\.5rem/u);
+assert.match(stylexCss, /border-color:\s*var\(--hraness-tag-accent,\s*var\(--ui-border\)\)/u);
+assert.match(stylexCss, /border-color:\s*canvastext/u);
+assert.match(stylexCss, /forced-color-adjust:\s*auto/u);
+assert.match(stylexCss, /height:\s*\.625rem/u);
+assert.match(stylexCss, /min-height:\s*1\.5rem/u);
+assert.match(stylexCss, /width:\s*\.625rem/u);
+assert.match(stylexCss, /width:\s*fit-content/u);
 const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
 const viewportHeightPositions = viewportHeightFallbacks.map((fallback) => stylexCss.indexOf(fallback));
 assert.ok(viewportHeightPositions.every((position) => position >= 0));
@@ -129,7 +139,11 @@ assert.equal(
   1,
   "the packed CSS must contain exactly one physical 100% width for Avatar children",
 );
-assert.doesNotMatch(stylexCss, /(?:^|[\s{;])min-width:\s*0/u);
+assert.equal(
+  stylexCss.match(/(?:^|[\s{;])min-width:\s*0/gu)?.length,
+  1,
+  "the packed CSS must contain exactly one physical zero min-width for the Tag label",
+);
 
 const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
 const componentsCss = await readFile(new URL(componentsCssUrl), "utf8");
@@ -137,6 +151,10 @@ assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za
 assert.doesNotMatch(componentsCss, /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-themed-surface(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-avatar(?:__image|__fallback)?(?![A-Za-z0-9_-])/u);
+assert.doesNotMatch(
+  componentsCss,
+  /\.hraness-(?:badge(?:--[A-Za-z0-9_-]+)?|status-dot|tag(?:__(?:icon|label))?)(?![A-Za-z0-9_-])/u,
+);
 
 const stylesCssUrl = import.meta.resolve("@hraness/ui/styles.css");
 const stylesCss = await readFile(new URL(stylesCssUrl), "utf8");
@@ -221,6 +239,51 @@ assert.match(avatarImageMarkup, /data-slot="avatar-image"/u);
 assert.match(avatarImageMarkup, /alt="Grace Hopper"/u);
 assert.match(avatarImageMarkup, /src="data:image\/svg\+xml/u);
 
+const badgeMarkup = renderToStaticMarkup(React.createElement(Badge, {
+  className: "consumer-badge",
+  isLive: true,
+  style: { minHeight: "2rem" },
+  tone: "success",
+}, "Ready"));
+assert.match(badgeMarkup, /^<span/u);
+assert.match(badgeMarkup, /aria-live="polite"/u);
+assert.match(badgeMarkup, /class="hraness-badge hraness-badge--success [^"]+ consumer-badge"/u);
+assert.match(badgeMarkup, /data-slot="badge"/u);
+assert.match(badgeMarkup, /data-tone="success"/u);
+assert.match(badgeMarkup, /role="status"/u);
+assert.match(badgeMarkup, /style="min-height:2rem"/u);
+assert.match(badgeMarkup, />Ready<\/span>/u);
+
+const tagMarkup = renderToStaticMarkup(React.createElement(Tag, {
+  accentColor: "#D97706",
+  className: "consumer-tag",
+  icon: "◆",
+  style: { marginInlineStart: "1rem" },
+  variant: "outline",
+}, "Project"));
+assert.match(tagMarkup, /^<span/u);
+assert.match(tagMarkup, /class="hraness-tag [^"]+ consumer-tag"/u);
+assert.match(tagMarkup, /data-slot="tag"/u);
+assert.match(tagMarkup, /data-variant="outline"/u);
+assert.match(tagMarkup, /--hraness-tag-accent:#D97706/u);
+assert.match(tagMarkup, /margin-inline-start:1rem/u);
+assert.match(tagMarkup, /class="hraness-tag__icon [^"]+"/u);
+assert.match(tagMarkup, /data-slot="tag-icon"/u);
+assert.match(tagMarkup, /class="hraness-tag__label [^"]+"/u);
+assert.match(tagMarkup, /data-slot="tag-label"/u);
+
+const dotMarkup = renderToStaticMarkup(React.createElement(StatusDot, {
+  className: "consumer-dot",
+  style: { height: "1rem", width: "1rem" },
+  tone: "danger",
+}));
+assert.match(dotMarkup, /^<span/u);
+assert.match(dotMarkup, /aria-hidden="true"/u);
+assert.match(dotMarkup, /class="hraness-status-dot [^"]+ consumer-dot"/u);
+assert.match(dotMarkup, /data-slot="status-dot"/u);
+assert.match(dotMarkup, /data-tone="danger"/u);
+assert.match(dotMarkup, /style="height:1rem;width:1rem"/u);
+
 const pageMarkup = renderToStaticMarkup(React.createElement(QuietSitePage, {
   "aria-label": "Package page",
   className: "consumer-page",
@@ -303,10 +366,13 @@ import * as stylex from "@stylexjs/stylex";
 import {
   AppearanceIcon,
   Avatar,
+  Badge,
   Icon,
   QuietSiteFooter,
   QuietSitePage,
   SocialIcon,
+  StatusDot,
+  Tag,
   ThemedSurface,
   ViewportFrame,
   WrappingRow,
@@ -333,6 +399,16 @@ const styles = stylex.create({
     "min-inline-size": 0,
   },
   physicalPage: { maxWidth: "40rem", minWidth: 0, width: "100%" },
+  statusDot: {
+    backgroundColor: "var(--ui-primary)",
+    height: "1rem",
+    width: "1rem",
+  },
+  statusPill: {
+    backgroundColor: "var(--ui-accent)",
+    borderColor: "var(--ui-primary)",
+    minHeight: "2rem",
+  },
   surfaceTexture: {
     backgroundColor: "var(--ui-secondary)",
     backgroundImage: "repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px)",
@@ -373,6 +449,35 @@ const avatarMarkup: string = renderToStaticMarkup(createElement(Avatar, {
   size: "large",
   style: { height: "4rem", width: "4rem" },
   xstyle: [styles.avatar, styles.avatarDynamic("3.25rem")],
+}));
+const badgeRef = createRef<HTMLSpanElement>();
+const badgeMarkup: string = renderToStaticMarkup(createElement(Badge, {
+  children: "Ready",
+  className: "consumer-badge",
+  isLive: true,
+  ref: badgeRef,
+  style: { minHeight: "2.5rem" },
+  tone: "success",
+  xstyle: styles.statusPill,
+}));
+const tagRef = createRef<HTMLSpanElement>();
+const tagMarkup: string = renderToStaticMarkup(createElement(Tag, {
+  accentColor: "#D97706",
+  children: "Project",
+  className: "consumer-tag",
+  icon: "◆",
+  ref: tagRef,
+  style: { minHeight: "2.5rem" },
+  variant: "outline",
+  xstyle: styles.statusPill,
+}));
+const dotRef = createRef<HTMLSpanElement>();
+const dotMarkup: string = renderToStaticMarkup(createElement(StatusDot, {
+  className: "consumer-dot",
+  ref: dotRef,
+  style: { height: "1.25rem", width: "1.25rem" },
+  tone: "danger",
+  xstyle: styles.statusDot,
 }));
 const pageRef = createRef<HTMLElement>();
 const pageMarkup: string = renderToStaticMarkup(createElement(QuietSitePage, {
@@ -453,11 +558,22 @@ const invalidSurfaceToneMarkup = renderToStaticMarkup(createElement(ThemedSurfac
 const invalidSurfaceShapeMarkup = renderToStaticMarkup(createElement(ThemedSurface, { shape: "pill" }));
 // @ts-expect-error Avatar keeps its size set finite.
 const invalidAvatarSizeMarkup = renderToStaticMarkup(createElement(Avatar, { name: "Ada", size: "medium" }));
+// @ts-expect-error Badge keeps its tone set finite.
+const invalidBadgeToneMarkup = renderToStaticMarkup(createElement(Badge, { children: "Badge", tone: "primary" }));
+// @ts-expect-error StatusDot keeps its tone set finite.
+const invalidDotToneMarkup = renderToStaticMarkup(createElement(StatusDot, { tone: "primary" }));
+// @ts-expect-error Tag keeps its variant set finite.
+const invalidTagVariantMarkup = renderToStaticMarkup(createElement(Tag, { children: "Tag", variant: "primary" }));
+// @ts-expect-error accentColor is available only for outline Tags.
+const invalidTagAccentMarkup = renderToStaticMarkup(createElement(Tag, { accentColor: "red", children: "Tag", variant: "muted" }));
 
 void markup;
 void socialMarkup;
 void appearanceMarkup;
 void avatarMarkup;
+void badgeMarkup;
+void tagMarkup;
+void dotMarkup;
 void pageMarkup;
 void footerMarkup;
 void frameMarkup;
@@ -476,6 +592,10 @@ void invalidSurfaceElementMarkup;
 void invalidSurfaceToneMarkup;
 void invalidSurfaceShapeMarkup;
 void invalidAvatarSizeMarkup;
+void invalidBadgeToneMarkup;
+void invalidDotToneMarkup;
+void invalidTagVariantMarkup;
+void invalidTagAccentMarkup;
 `;
 
 function typeScriptConfig(moduleResolution: "Bundler" | "NodeNext") {
@@ -524,6 +644,9 @@ async function verifyConsumer(
   );
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "avatar.stylex.ts"),
+  );
+  await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "status.stylex.ts"),
   );
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "surfaces.stylex.ts"),

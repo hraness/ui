@@ -118,6 +118,14 @@ interface BrowserEvidence {
   readonly socialIconWidth: number;
   readonly socialJustifyContent: string;
   readonly spinnerAnimationName: string;
+  readonly statusFamilyClassContracts: boolean;
+  readonly statusFamilyDefaultBackground: string;
+  readonly statusFamilyDiagnostics: string;
+  readonly statusFamilyGeometryContracts: boolean;
+  readonly statusFamilyLayerSentinels: boolean;
+  readonly statusFamilyOverrideContracts: boolean;
+  readonly statusFamilyToneContracts: boolean;
+  readonly statusFamilyVariableContract: boolean;
   readonly stylexRuntimeStyleCount: number;
   readonly stylesheetCount: number;
   readonly stylesheetMarked: boolean;
@@ -196,6 +204,8 @@ interface ForcedColorsEvidence {
   readonly selectedTabBackground: string;
   readonly selectedTabColor: string;
   readonly spinnerAnimationName: string;
+  readonly statusFamilyContracts: boolean;
+  readonly statusFamilyDiagnostics: string;
 }
 
 interface ArtifactSet {
@@ -463,6 +473,31 @@ function requirePackedDefaultStylesheet(css: string): void {
   );
   assert.match(
     css,
+    /border-color:\s*var\(--hraness-tag-accent,\s*var\(--ui-border\)\)/u,
+    "the packed default stylesheet must preserve the public Tag accent variable",
+  );
+  assert.match(
+    css,
+    /min-height:\s*1\.5rem/u,
+    "the packed default stylesheet must include the status-pill finite geometry",
+  );
+  assert.match(
+    css,
+    /height:\s*\.625rem/u,
+    "the packed default stylesheet must include the StatusDot height",
+  );
+  assert.match(
+    css,
+    /width:\s*\.625rem/u,
+    "the packed default stylesheet must include the StatusDot width",
+  );
+  assert.match(
+    css,
+    /@media\s*\(forced-colors:\s*active\)[^{]*\{[^}]*border-color:\s*canvastext/isu,
+    "the packed default stylesheet must include the status-family forced-color border",
+  );
+  assert.match(
+    css,
     /background-image:\s*repeating-linear-gradient\(/u,
     "the harness bundle must include the downstream texture xstyle seam",
   );
@@ -494,6 +529,11 @@ function requirePackedDefaultStylesheet(css: string): void {
     css,
     /\.hraness-avatar(?:__image|__fallback)?(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain legacy Avatar selectors",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-(?:badge(?:--(?:info|success|warning|danger|accent|positive|caution|critical))?|tag(?:__icon|__label)?|status-dot(?:--(?:info|success|warning|danger))?)(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain legacy status-family selectors",
   );
   assert.match(
     css,
@@ -625,6 +665,68 @@ function requirePackedDefaultStylesheet(css: string): void {
     ),
     "the gallery Avatar fallback conflict must carry every centering declaration",
   );
+  const statusPillConflict = css.match(
+    /\[data-gallery-status-family-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"badge"|badge)\][^{]*\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    statusPillConflict !== undefined,
+    "the packed stylesheet must include the gallery status-pill conflict",
+  );
+  const statusPillConflictDeclarations = [
+    /--gallery-status-family-layer-conflict:\s*legacy/u,
+    /width:\s*17rem/u,
+    /min-height:\s*7rem/u,
+    /align-items:\s*stretch/u,
+    /justify-content:\s*flex-start/u,
+    /gap:\s*5rem/u,
+    /padding-inline-start:\s*4rem/u,
+    /padding-inline-end:\s*4rem/u,
+    /border:\s*7px dashed/u,
+    /border-radius:\s*0/u,
+    /background-color:/u,
+    /color:/u,
+    /display:\s*block/u,
+    /font-size:\s*3rem/u,
+    /font-weight:\s*100/u,
+    /line-height:\s*3/u,
+    /white-space:\s*normal/u,
+  ] as const;
+  for (const declaration of statusPillConflictDeclarations) {
+    assert.match(
+      statusPillConflict,
+      declaration,
+      "the gallery status-pill conflict must carry every root declaration",
+    );
+  }
+  assert.match(
+    css,
+    /\[data-gallery-status-family-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"tag"|tag)\]\{[^}]*--hraness-tag-accent:\s*(?:#010203|rgb\(1 2 3\))[^}]*\}/u,
+    "the gallery Tag conflict must carry the public custom-property counterexample",
+  );
+  assert.match(
+    css,
+    /\[data-gallery-status-family-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"tag-icon"|tag-icon)\]\{(?=[^}]*display:\s*block)(?=[^}]*flex:\s*(?:auto|1\s+1\s+auto))[^}]*\}/u,
+    "the gallery Tag icon conflict must carry child layout counterexamples",
+  );
+  assert.match(
+    css,
+    /\[data-gallery-status-family-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"tag-label"|tag-label)\]\{[^}]*min-width:\s*9rem[^}]*\}/u,
+    "the gallery Tag label conflict must carry its shrink counterexample",
+  );
+  const statusDotConflict = css.match(
+    /\[data-gallery-status-family-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"status-dot"|status-dot)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    statusDotConflict !== undefined
+    && /--gallery-status-family-layer-conflict:\s*legacy/u.test(statusDotConflict)
+    && /width:\s*3rem/u.test(statusDotConflict)
+    && /height:\s*4rem/u.test(statusDotConflict)
+    && /border:\s*7px dashed/u.test(statusDotConflict)
+    && /background-color:/u.test(statusDotConflict)
+    && /display:\s*block/u.test(statusDotConflict)
+    && /flex:\s*(?:auto|1\s+1\s+auto)/u.test(statusDotConflict),
+    "the gallery StatusDot conflict must carry every finite-geometry counterexample",
+  );
 }
 
 function placePriority3BeforeLegacy(css: string): string {
@@ -736,6 +838,24 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     ];
     const avatarImage = document.querySelector('[data-gallery-avatar-image="true"]');
     const avatarOverride = document.querySelector('[data-gallery-avatar-override="true"]');
+    const statusBadges = [
+      ...document.querySelectorAll<HTMLElement>('[data-gallery-badge-tone]'),
+    ];
+    const statusTags = [
+      ...document.querySelectorAll<HTMLElement>('[data-gallery-tag-variant]'),
+    ];
+    const statusDots = [
+      ...document.querySelectorAll<HTMLElement>('[data-gallery-status-dot-tone]'),
+    ];
+    const statusBadgeOverride = document.querySelector(
+      '[data-gallery-status-family-override="badge"]',
+    );
+    const statusTagOverride = document.querySelector(
+      '[data-gallery-status-family-override="tag"]',
+    );
+    const statusDotOverride = document.querySelector(
+      '[data-gallery-status-family-override="dot"]',
+    );
     if (
       !(icon instanceof SVGElement)
       || !(iconCanary instanceof HTMLElement)
@@ -762,6 +882,12 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || avatarFallbacks.length !== 3
       || !(avatarImage instanceof HTMLSpanElement)
       || !(avatarOverride instanceof HTMLSpanElement)
+      || statusBadges.length !== 5
+      || statusTags.length !== 3
+      || statusDots.length !== 5
+      || !(statusBadgeOverride instanceof HTMLSpanElement)
+      || !(statusTagOverride instanceof HTMLSpanElement)
+      || !(statusDotOverride instanceof HTMLSpanElement)
     ) {
       throw new Error("The primitive gallery structure is incomplete.");
     }
@@ -798,6 +924,21 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       probe.remove();
       return resolved;
     };
+    const equivalentColor = (actual: string, expected: string): boolean => {
+      const normalize = (value: string): readonly number[] => (
+        resolveStyle(
+          "color",
+          `color-mix(in srgb, ${value} 100%, transparent)`,
+        ).match(/-?\d+(?:\.\d+)?/gu) ?? []
+      ).map(Number);
+      const actualChannels = normalize(actual);
+      const expectedChannels = normalize(expected);
+      return actualChannels.length === expectedChannels.length
+        && actualChannels.every(
+          (channel, index) =>
+            Math.abs(channel - (expectedChannels[index] ?? Number.NaN)) < 0.000_01,
+        );
+    };
     const resolvedTokens = {
       accentBackground: resolveStyle("background-color", "var(--ui-accent)"),
       accentForeground: resolveStyle("color", "var(--ui-accent-foreground)"),
@@ -824,6 +965,45 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       avatarMutedBackground: resolveStyle("background-color", "var(--ui-muted)"),
       avatarMutedForeground: resolveStyle("color", "var(--ui-muted-foreground)"),
       avatarRoundRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-round)")),
+      badgeDangerBackground: resolveStyle(
+        "background-color",
+        "color-mix(in oklch, var(--ui-destructive) 12%, var(--ui-card))",
+      ),
+      badgeDangerBorder: resolveStyle(
+        "border-color",
+        "color-mix(in oklch, var(--ui-destructive) 45%, var(--ui-border))",
+      ),
+      badgeInfoBorder: resolveStyle(
+        "border-color",
+        "color-mix(in oklch, var(--ui-info) 45%, var(--ui-border))",
+      ),
+      badgeSuccessBorder: resolveStyle(
+        "border-color",
+        "color-mix(in oklch, var(--ui-success) 45%, var(--ui-border))",
+      ),
+      badgeWarningBorder: resolveStyle(
+        "border-color",
+        "color-mix(in oklch, var(--ui-warning) 45%, var(--ui-border))",
+      ),
+      captionSize: Number.parseFloat(resolveStyle("font-size", "var(--text-caption)")),
+      destructive: resolveStyle("background-color", "var(--ui-destructive)"),
+      destructiveForeground: resolveStyle("color", "var(--ui-destructive)"),
+      info: resolveStyle("background-color", "var(--ui-info)"),
+      infoForeground: resolveStyle("color", "var(--ui-info)"),
+      infoSoft: resolveStyle("background-color", "var(--ui-info-soft)"),
+      mediumWeight: resolveStyle("font-weight", "var(--font-weight-medium)"),
+      mutedBackground: resolveStyle("background-color", "var(--ui-muted)"),
+      mutedForeground: resolveStyle("color", "var(--ui-muted-foreground)"),
+      outlineAccent: resolveStyle("border-color", "#D97706"),
+      roundRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-round)")),
+      space1: Number.parseFloat(resolveStyle("padding-left", "var(--space-1)")),
+      success: resolveStyle("background-color", "var(--ui-success)"),
+      successForeground: resolveStyle("color", "var(--ui-success)"),
+      successSoft: resolveStyle("background-color", "var(--ui-success-soft)"),
+      transparent: resolveStyle("background-color", "transparent"),
+      warning: resolveStyle("background-color", "var(--ui-warning)"),
+      warningForeground: resolveStyle("color", "var(--ui-warning)"),
+      warningSoft: resolveStyle("background-color", "var(--ui-warning-soft)"),
     };
     const expectedTones = {
       accent: [resolvedTokens.accentBackground, resolvedTokens.accentForeground],
@@ -857,6 +1037,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
               && name !== `gallery-themed-surface--${tone}`,
           ),
         color: style.color,
+        colorEquivalent: equivalentColor(style.color, expected[1]),
         expectedBackground: expected[0],
         expectedColor: expected[1],
         layerSentinel: style
@@ -892,6 +1073,10 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
             && name !== "gallery-themed-surface-texture",
         ),
       color: textureStyle.color,
+      colorEquivalent: equivalentColor(
+        textureStyle.color,
+        resolvedTokens.secondaryForeground,
+      ),
       layerSentinel: textureStyle
         .getPropertyValue("--gallery-themed-surface-layer-conflict")
         .trim(),
@@ -1043,6 +1228,270 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       overflow: avatarOverrideStyle.overflow,
       width: avatarOverrideBox.width,
     };
+    const expectedBadgeTones = {
+      danger: [
+        resolvedTokens.badgeDangerBackground,
+        resolvedTokens.badgeDangerBorder,
+        resolvedTokens.destructiveForeground,
+      ],
+      info: [
+        resolvedTokens.infoSoft,
+        resolvedTokens.badgeInfoBorder,
+        resolvedTokens.infoForeground,
+      ],
+      neutral: [
+        resolvedTokens.secondaryBackground,
+        resolvedTokens.border,
+        resolvedTokens.secondaryForeground,
+      ],
+      success: [
+        resolvedTokens.successSoft,
+        resolvedTokens.badgeSuccessBorder,
+        resolvedTokens.successForeground,
+      ],
+      warning: [
+        resolvedTokens.warningSoft,
+        resolvedTokens.badgeWarningBorder,
+        resolvedTokens.warningForeground,
+      ],
+    } as const;
+    const badgeEvidence = statusBadges.map((badge) => {
+      const tone = badge.dataset.galleryBadgeTone;
+      if (tone === undefined || !(tone in expectedBadgeTones)) {
+        throw new Error(`Unexpected Badge tone fixture: ${String(tone)}`);
+      }
+      const finiteTone = tone as keyof typeof expectedBadgeTones;
+      const style = getComputedStyle(badge);
+      const classes = [...badge.classList];
+      const expected = expectedBadgeTones[finiteTone];
+      return {
+        alignItems: style.alignItems,
+        ariaLive: badge.getAttribute("aria-live") ?? "",
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        borderRadius: Number.parseFloat(style.borderRadius),
+        borderStyle: style.borderStyle,
+        borderWidth: Number.parseFloat(style.borderWidth),
+        classContract:
+          classes[0] === "hraness-badge"
+          && classes[1] === `hraness-badge--${tone}`
+          && classes.at(-1) === `gallery-badge--${tone}`
+          && classes.some(
+            (name) =>
+              name !== "hraness-badge"
+              && name !== `hraness-badge--${tone}`
+              && name !== "gallery-badge"
+              && name !== `gallery-badge--${tone}`,
+          ),
+        color: style.color,
+        display: style.display,
+        expectedBackground: expected[0],
+        expectedBorder: expected[1],
+        expectedColor: expected[2],
+        fontSize: Number.parseFloat(style.fontSize),
+        fontWeight: style.fontWeight,
+        forcedColorAdjust: style.forcedColorAdjust,
+        gap: Number.parseFloat(style.gap),
+        justifyContent: style.justifyContent,
+        layerSentinel: style
+          .getPropertyValue("--gallery-status-family-layer-conflict")
+          .trim(),
+        lineHeight: Number.parseFloat(style.lineHeight),
+        minHeight: Number.parseFloat(style.minHeight),
+        paddingLeft: Number.parseFloat(style.paddingLeft),
+        paddingRight: Number.parseFloat(style.paddingRight),
+        role: badge.getAttribute("role") ?? "",
+        slot: badge.dataset.slot ?? "",
+        tone: finiteTone,
+        whiteSpace: style.whiteSpace,
+      };
+    });
+    const expectedTagVariants = {
+      default: [
+        resolvedTokens.secondaryBackground,
+        resolvedTokens.transparent,
+        resolvedTokens.secondaryForeground,
+      ],
+      muted: [
+        resolvedTokens.mutedBackground,
+        resolvedTokens.transparent,
+        resolvedTokens.mutedForeground,
+      ],
+      outline: [
+        resolvedTokens.transparent,
+        resolvedTokens.outlineAccent,
+        resolvedTokens.inverseBackground,
+      ],
+    } as const;
+    const tagEvidence = statusTags.map((tag) => {
+      const variant = tag.dataset.galleryTagVariant;
+      const label = tag.querySelector(':scope > [data-slot="tag-label"]');
+      const iconElement = tag.querySelector(':scope > [data-slot="tag-icon"]');
+      if (
+        variant === undefined
+        || !(variant in expectedTagVariants)
+        || !(label instanceof HTMLSpanElement)
+        || (variant === "default" && !(iconElement instanceof HTMLSpanElement))
+      ) {
+        throw new Error(`Unexpected Tag variant fixture: ${String(variant)}`);
+      }
+      const finiteVariant = variant as keyof typeof expectedTagVariants;
+      const style = getComputedStyle(tag);
+      const labelStyle = getComputedStyle(label);
+      const classes = [...tag.classList];
+      const expected = expectedTagVariants[finiteVariant];
+      const iconStyle = iconElement instanceof HTMLSpanElement
+        ? getComputedStyle(iconElement)
+        : null;
+      return {
+        alignItems: style.alignItems,
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        borderRadius: Number.parseFloat(style.borderRadius),
+        borderStyle: style.borderStyle,
+        borderWidth: Number.parseFloat(style.borderWidth),
+        classContract:
+          classes[0] === "hraness-tag"
+          && classes.at(-1) === `gallery-tag--${variant}`
+          && classes.some(
+            (name) =>
+              name !== "hraness-tag"
+              && name !== "gallery-tag"
+              && name !== `gallery-tag--${variant}`,
+          ),
+        color: style.color,
+        display: style.display,
+        expectedBackground: expected[0],
+        expectedBorder: expected[1],
+        expectedColor: expected[2],
+        fontSize: Number.parseFloat(style.fontSize),
+        fontWeight: style.fontWeight,
+        forcedColorAdjust: style.forcedColorAdjust,
+        gap: Number.parseFloat(style.gap),
+        iconContract: iconStyle === null
+          ? finiteVariant !== "default"
+          : iconElement instanceof HTMLSpanElement
+            && iconElement.getAttribute("aria-hidden") === "true"
+            && iconElement.dataset.slot === "tag-icon"
+            && iconElement.classList.contains("hraness-tag__icon")
+            && iconStyle.alignItems === "center"
+            && iconStyle.display === "flex"
+            && iconStyle.flex === "0 0 auto"
+            && iconStyle.justifyContent === "center"
+            && Number.parseFloat(iconStyle.lineHeight) === resolvedTokens.captionSize,
+        iconDiagnostics: iconStyle === null
+          ? null
+          : {
+              alignItems: iconStyle.alignItems,
+              ariaHidden: iconElement?.getAttribute("aria-hidden") ?? "",
+              classes: iconElement === null ? [] : [...iconElement.classList],
+              display: iconStyle.display,
+              flex: iconStyle.flex,
+              justifyContent: iconStyle.justifyContent,
+              lineHeight: iconStyle.lineHeight,
+              slot: iconElement instanceof HTMLElement
+                ? iconElement.dataset.slot ?? ""
+                : "",
+            },
+        justifyContent: style.justifyContent,
+        labelContract:
+          label.dataset.slot === "tag-label"
+          && label.classList.contains("hraness-tag__label")
+          && Number.parseFloat(labelStyle.minWidth) === 0,
+        layerSentinel: style
+          .getPropertyValue("--gallery-status-family-layer-conflict")
+          .trim(),
+        lineHeight: Number.parseFloat(style.lineHeight),
+        minHeight: Number.parseFloat(style.minHeight),
+        paddingLeft: Number.parseFloat(style.paddingLeft),
+        paddingRight: Number.parseFloat(style.paddingRight),
+        publicAccent: style.getPropertyValue("--hraness-tag-accent").trim(),
+        role: tag.getAttribute("role") ?? "",
+        slot: tag.dataset.slot ?? "",
+        variant: finiteVariant,
+        whiteSpace: style.whiteSpace,
+      };
+    });
+    const expectedDotTones = {
+      danger: resolvedTokens.destructive,
+      info: resolvedTokens.info,
+      neutral: resolvedTokens.mutedForeground,
+      success: resolvedTokens.success,
+      warning: resolvedTokens.warning,
+    } as const;
+    const dotEvidence = statusDots.map((dot) => {
+      const tone = dot.dataset.galleryStatusDotTone;
+      if (tone === undefined || !(tone in expectedDotTones)) {
+        throw new Error(`Unexpected StatusDot tone fixture: ${String(tone)}`);
+      }
+      const finiteTone = tone as keyof typeof expectedDotTones;
+      const style = getComputedStyle(dot);
+      const box = dot.getBoundingClientRect();
+      const classes = [...dot.classList];
+      return {
+        ariaHidden: dot.getAttribute("aria-hidden") ?? "",
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        borderColorEquivalent: equivalentColor(
+          style.borderColor,
+          resolveStyle(
+            "border-color",
+            `color-mix(in oklch, ${style.color} 35%, transparent)`,
+          ),
+        ),
+        borderRadius: Number.parseFloat(style.borderRadius),
+        borderStyle: style.borderStyle,
+        borderWidth: Number.parseFloat(style.borderWidth),
+        classContract:
+          classes[0] === "hraness-status-dot"
+          && classes.at(-1) === `gallery-dot--${tone}`
+          && classes.some(
+            (name) =>
+              name !== "hraness-status-dot"
+              && name !== "gallery-dot"
+              && name !== `gallery-dot--${tone}`,
+          ),
+        display: style.display,
+        expectedBackground: expectedDotTones[finiteTone],
+        flex: style.flex,
+        height: box.height,
+        layerSentinel: style
+          .getPropertyValue("--gallery-status-family-layer-conflict")
+          .trim(),
+        slot: dot.dataset.slot ?? "",
+        tone: finiteTone,
+        width: box.width,
+      };
+    });
+    const statusOverrides = [
+      statusBadgeOverride,
+      statusTagOverride,
+      statusDotOverride,
+    ].map((element) => {
+      const style = getComputedStyle(element);
+      const box = element.getBoundingClientRect();
+      const kind = element.dataset.galleryStatusFamilyOverride ?? "";
+      const classes = [...element.classList];
+      return {
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        borderRadius: Number.parseFloat(style.borderRadius),
+        classContract:
+          classes.at(-1) === `gallery-${kind === "dot" ? "dot" : kind}--override`
+          && classes.some((name) => name.startsWith("x")),
+        color: style.color,
+        height: box.height,
+        inlineHeight: element.style.height,
+        inlineMinHeight: element.style.minHeight,
+        inlineWidth: element.style.width,
+        kind,
+        layerSentinel: style
+          .getPropertyValue("--gallery-status-family-layer-conflict")
+          .trim(),
+        minHeight: Number.parseFloat(style.minHeight),
+        width: box.width,
+      };
+    });
 
     return {
       appearanceAlignItems: appearanceStyle.alignItems,
@@ -1127,7 +1576,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       avatarTokenContracts: avatarFallbackEvidence.every((avatar) =>
         avatar.backgroundColor === resolvedTokens.avatarMutedBackground
         && avatar.borderRadius === resolvedTokens.avatarRoundRadius
-        && avatar.color === resolvedTokens.avatarMutedForeground
+        && equivalentColor(avatar.color, resolvedTokens.avatarMutedForeground)
         && avatar.fontWeight === resolvedTokens.avatarMediumWeight
         && (avatar.size !== "small"
           || avatar.fontSize === resolvedTokens.avatarCaptionSize)
@@ -1223,6 +1672,109 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       socialIconWidth: socialBox.width,
       socialJustifyContent: socialStyle.justifyContent,
       spinnerAnimationName: getComputedStyle(spinner).animationName,
+      statusFamilyClassContracts:
+        badgeEvidence.every((badge) => badge.classContract)
+        && tagEvidence.every(
+          (tag) => tag.classContract && tag.iconContract && tag.labelContract,
+        )
+        && dotEvidence.every((dot) => dot.classContract)
+        && statusOverrides.every((item) => item.classContract),
+      statusFamilyDefaultBackground:
+        badgeEvidence.find((badge) => badge.tone === "neutral")
+          ?.backgroundColor ?? "",
+      statusFamilyDiagnostics: JSON.stringify({
+        badges: badgeEvidence,
+        dots: dotEvidence,
+        overrides: statusOverrides,
+        tags: tagEvidence,
+        tokens: resolvedTokens,
+      }),
+      statusFamilyGeometryContracts:
+        [...badgeEvidence, ...tagEvidence].every(
+          (pill) =>
+            pill.alignItems === "center"
+            && pill.borderRadius === resolvedTokens.roundRadius
+            && pill.borderStyle === "solid"
+            && pill.borderWidth === 1
+            && pill.display === "inline-flex"
+            && pill.fontSize === resolvedTokens.captionSize
+            && pill.fontWeight === resolvedTokens.mediumWeight
+            && pill.forcedColorAdjust === "auto"
+            && pill.gap === resolvedTokens.space1
+            && pill.justifyContent === "center"
+            && pill.lineHeight === resolvedTokens.captionSize
+            && pill.minHeight === 24
+            && pill.paddingLeft === resolvedTokens.space2
+            && pill.paddingRight === resolvedTokens.space2
+            && pill.slot.length > 0
+            && pill.whiteSpace === "nowrap",
+        )
+        && dotEvidence.every(
+          (dot) =>
+            dot.ariaHidden === "true"
+            && dot.borderColorEquivalent
+            && dot.borderRadius === resolvedTokens.roundRadius
+            && dot.borderStyle === "solid"
+            && dot.borderWidth === 1
+            && dot.display === "inline-block"
+            && dot.flex === "0 0 auto"
+            && dot.height === 10
+            && dot.slot === "status-dot"
+            && dot.width === 10,
+        ),
+      statusFamilyLayerSentinels:
+        badgeEvidence.every((badge) => badge.layerSentinel === "legacy")
+        && tagEvidence.every((tag) => tag.layerSentinel === "legacy")
+        && dotEvidence.every((dot) => dot.layerSentinel === "legacy")
+        && statusOverrides.every((item) => item.layerSentinel === "legacy"),
+      statusFamilyOverrideContracts:
+        statusOverrides.every((item) => {
+          if (item.kind === "dot") {
+            return item.backgroundColor === resolvedTokens.primary
+              && item.borderRadius === resolvedTokens.roundRadius
+              && item.height === 20
+              && item.inlineHeight === "1.25rem"
+              && item.inlineWidth === "1.25rem"
+              && item.width === 20;
+          }
+          return item.backgroundColor === resolvedTokens.accentBackground
+            && item.borderColor === resolvedTokens.primary
+            && item.borderRadius === resolvedTokens.smallRadius
+            && item.color === resolvedTokens.accentForeground
+            && item.inlineMinHeight === "2.5rem"
+            && item.inlineWidth === "9rem"
+            && item.minHeight === 40
+            && item.width === 144;
+        }),
+      statusFamilyToneContracts:
+        badgeEvidence.every(
+          (badge) =>
+            badge.backgroundColor === badge.expectedBackground
+            && badge.borderColor === badge.expectedBorder
+            && badge.color === badge.expectedColor
+            && badge.slot === "badge"
+            && (badge.tone === "success"
+              ? badge.ariaLive === "polite" && badge.role === "status"
+              : badge.ariaLive === "" && badge.role === ""),
+        )
+        && tagEvidence.every(
+          (tag) =>
+            tag.backgroundColor === tag.expectedBackground
+            && tag.borderColor === tag.expectedBorder
+            && tag.color === tag.expectedColor
+            && tag.role === ""
+            && tag.slot === "tag",
+        )
+        && dotEvidence.every(
+          (dot) => dot.backgroundColor === dot.expectedBackground,
+        ),
+      statusFamilyVariableContract:
+        tagEvidence.some(
+          (tag) =>
+            tag.variant === "outline"
+            && tag.publicAccent.toLowerCase() === "#d97706"
+            && tag.borderColor === resolvedTokens.outlineAccent,
+        ),
       stylexRuntimeStyleCount: document.querySelectorAll("style[data-stylex]").length,
       stylesheetCount: document.querySelectorAll('link[rel="stylesheet"]').length,
       stylesheetMarked:
@@ -1284,7 +1836,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         && textureEvidence.borderRadius === resolvedTokens.smallRadius
         && textureEvidence.borderStyle === "solid"
         && textureEvidence.borderWidth === 1
-        && textureEvidence.color === resolvedTokens.secondaryForeground
+        && textureEvidence.colorEquivalent
         && textureEvidence.minInlineSize === 0
         && textureEvidence.paddingBottom === resolvedTokens.space6
         && textureEvidence.paddingLeft === resolvedTokens.space2
@@ -1295,7 +1847,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       themedSurfaceToneContracts: themedSurfaceEvidence.every(
         (surface) =>
           surface.backgroundColor === surface.expectedBackground
-          && surface.color === surface.expectedColor
+          && surface.colorEquivalent
           && surface.borderColor === (
             surface.tone === "inverse"
               ? resolvedTokens.inverseBackground
@@ -1563,11 +2115,23 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     const card = document.querySelector('[data-gallery-icon-card="true"]');
     const selectedTab = document.querySelector('[data-slot="tab"][data-selected]');
     const spinner = document.querySelector('[data-slot="spinner"]');
+    const statusPills = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-gallery-badge-tone], [data-gallery-tag-variant], [data-gallery-status-family-override="badge"], [data-gallery-status-family-override="tag"]',
+      ),
+    ];
+    const statusDots = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-gallery-status-dot-tone], [data-gallery-status-family-override="dot"]',
+      ),
+    ];
     if (
       !(button instanceof HTMLElement)
       || !(card instanceof HTMLElement)
       || !(selectedTab instanceof HTMLElement)
       || !(spinner instanceof HTMLElement)
+      || statusPills.length !== 10
+      || statusDots.length !== 6
     ) {
       throw new Error("The forced-colors gallery structure is incomplete.");
     }
@@ -1583,18 +2147,69 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     const buttonStyle = getComputedStyle(button);
     const cardStyle = getComputedStyle(card);
     const tabStyle = getComputedStyle(selectedTab);
+    const canvas = normalize("backgroundColor", "Canvas");
+    const canvasText = normalize("color", "CanvasText");
+    const statusPillEvidence = statusPills.map((pill) => {
+      const style = getComputedStyle(pill);
+      return {
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        forcedColorAdjust: style.forcedColorAdjust,
+        layerSentinel: style
+          .getPropertyValue("--gallery-status-family-layer-conflict")
+          .trim(),
+        slot: pill.dataset.slot ?? "",
+      };
+    });
+    const statusDotEvidence = statusDots.map((dot) => {
+      const style = getComputedStyle(dot);
+      const box = dot.getBoundingClientRect();
+      return {
+        ariaHidden: dot.getAttribute("aria-hidden") ?? "",
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        height: box.height,
+        layerSentinel: style
+          .getPropertyValue("--gallery-status-family-layer-conflict")
+          .trim(),
+        width: box.width,
+      };
+    });
     return {
       buttonBackground: buttonStyle.backgroundColor,
       buttonFace: normalize("backgroundColor", "ButtonFace"),
       buttonText: normalize("color", "ButtonText"),
       buttonTextColor: buttonStyle.color,
-      canvasText: normalize("color", "CanvasText"),
+      canvasText,
       cardBorderColor: cardStyle.borderColor,
       cardForcedColorAdjust: cardStyle.forcedColorAdjust,
       forcedColorsActive: matchMedia("(forced-colors: active)").matches,
       selectedTabBackground: tabStyle.backgroundColor,
       selectedTabColor: tabStyle.color,
       spinnerAnimationName: getComputedStyle(spinner).animationName,
+      statusFamilyContracts:
+        statusPillEvidence.every(
+          (pill) =>
+            pill.borderColor === canvasText
+            && pill.forcedColorAdjust === "auto"
+            && pill.layerSentinel === "legacy"
+            && (pill.slot === "badge" || pill.slot === "tag"),
+        )
+        && statusDotEvidence.every(
+          (dot) =>
+            dot.ariaHidden === "true"
+            && dot.backgroundColor === canvas
+            && dot.borderColor === canvasText
+            && dot.height >= 10
+            && dot.layerSentinel === "legacy"
+            && dot.width >= 10,
+        ),
+      statusFamilyDiagnostics: JSON.stringify({
+        canvas,
+        canvasText,
+        dots: statusDotEvidence,
+        pills: statusPillEvidence,
+      }),
     };
   });
 }
@@ -1716,7 +2331,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|themed-surface|viewport-frame|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|status-family|themed-surface|viewport-frame|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -1733,6 +2348,11 @@ try {
     installedPackageCss,
     /\.hraness-avatar(?:__image|__fallback)?(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate Avatar declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-(?:badge(?:--(?:info|success|warning|danger|accent|positive|caution|critical))?|tag(?:__icon|__label)?|status-dot(?:--(?:info|success|warning|danger))?)(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate status-family declarations in legacy CSS",
   );
 
   const productionDirectory = resolve(consumer, "dist/browser");
@@ -1817,6 +2437,24 @@ try {
   assert.match(html, /data-slot="avatar-fallback"/u);
   assert.match(html, /data-slot="avatar-image"/u);
   assert.match(html, /src="data:image\/svg\+xml/u);
+  assert.match(html, /data-gallery-badge-tone="neutral"/u);
+  assert.match(html, /data-gallery-badge-tone="danger"/u);
+  assert.match(html, /class="hraness-badge hraness-badge--success [^"]+gallery-badge gallery-badge--success"/u);
+  assert.match(html, /aria-live="polite"/u);
+  assert.match(html, /role="status"/u);
+  assert.match(html, /data-gallery-tag-variant="default"/u);
+  assert.match(html, /data-gallery-tag-variant="muted"/u);
+  assert.match(html, /data-gallery-tag-variant="outline"/u);
+  assert.match(html, /--hraness-tag-accent:#D97706/u);
+  assert.match(html, /data-slot="tag-icon"/u);
+  assert.match(html, /data-slot="tag-label"/u);
+  assert.match(html, /data-gallery-status-dot-tone="neutral"/u);
+  assert.match(html, /data-gallery-status-dot-tone="danger"/u);
+  assert.match(html, /data-slot="status-dot"/u);
+  assert.match(html, /data-gallery-status-family-layer-conflict="true"/u);
+  assert.match(html, /data-gallery-status-family-override="badge"/u);
+  assert.match(html, /data-gallery-status-family-override="tag"/u);
+  assert.match(html, /data-gallery-status-family-override="dot"/u);
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
@@ -2022,6 +2660,15 @@ try {
             && light.avatarTokenContracts,
             `${layout.id}: Avatar parity failed: ${light.avatarDiagnostics}`,
           );
+          invariant(
+            light.statusFamilyClassContracts
+            && light.statusFamilyGeometryContracts
+            && light.statusFamilyLayerSentinels
+            && light.statusFamilyOverrideContracts
+            && light.statusFamilyToneContracts
+            && light.statusFamilyVariableContract,
+            `${layout.id}: status-family parity failed: ${light.statusFamilyDiagnostics}`,
+          );
           if (productionPriority3PaddingTop === undefined) {
             productionPriority3PaddingTop = light.footerPaddingTop;
           } else {
@@ -2166,6 +2813,17 @@ try {
             && dark.avatarDefaultBackground !== light.avatarDefaultBackground,
             `${layout.id}: dark Avatar parity failed: ${dark.avatarDiagnostics}`,
           );
+          invariant(
+            dark.statusFamilyClassContracts
+            && dark.statusFamilyGeometryContracts
+            && dark.statusFamilyLayerSentinels
+            && dark.statusFamilyOverrideContracts
+            && dark.statusFamilyToneContracts
+            && dark.statusFamilyVariableContract
+            && dark.statusFamilyDefaultBackground
+              !== light.statusFamilyDefaultBackground,
+            `${layout.id}: dark status-family parity failed: ${dark.statusFamilyDiagnostics}`,
+          );
           invariant(dark.recoverableErrors.length === 0, `${layout.id}: interaction introduced hydration recovery`);
           invariant(failures.length === 0, `${layout.id}: ${failures.join("; ")}`);
         } finally {
@@ -2246,6 +2904,10 @@ try {
         invariant(forced.selectedTabBackground === forced.buttonFace, "forced colors: selected tab does not use ButtonFace");
         invariant(forced.selectedTabColor === forced.buttonText, "forced colors: selected tab does not use ButtonText");
         invariant(forced.spinnerAnimationName === "none", "forced colors: reduced-motion spinner still animates");
+        invariant(
+          forced.statusFamilyContracts,
+          `forced colors: status-family parity failed: ${forced.statusFamilyDiagnostics}`,
+        );
 
         await page.keyboard.press("Tab");
         await page.keyboard.press("Enter");
@@ -2311,7 +2973,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, Avatar fallback sizes, data-URI image cropping, caller and native precedence, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, Avatar fallback sizes, data-URI image cropping, Badge, Tag, and StatusDot finite recipes, public Tag accent, caller and native precedence, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });
