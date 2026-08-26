@@ -119,7 +119,11 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   expect(declarationBlock(reset, ":where(h1, h2, h3, h4, h5, h6) {")).toContain(
     "font-family: var(--ui-font-heading);",
   );
-  expect(components.trimStart().startsWith("@layer components {")).toBe(true);
+  expect(
+    components
+      .trimStart()
+      .startsWith("@layer components.hraness-ui.legacy.base {"),
+  ).toBe(true);
   expect(components).not.toContain('[data-slot="');
   expect(
     declarationBlock(components, ".hraness-select-field__trigger {"),

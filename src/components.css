@@ -1,4 +1,4 @@
-@layer components {
+@layer components.hraness-ui.legacy.base {
   :where(
     .hraness-button,
     .hraness-icon-button,
@@ -2480,6 +2480,7 @@
   }
 }
 
+@layer components.hraness-ui.legacy {
 @media (pointer: coarse) {
   :where(
     .hraness-button__control,
@@ -2665,7 +2666,9 @@
     background: Canvas;
   }
 }
-@layer components {
+}
+
+@layer components.hraness-ui.legacy.base {
   /* Quiet personal and project sites share one page measure and footer gutter. */
   .hraness-quiet-site-page {
     box-sizing: border-box;

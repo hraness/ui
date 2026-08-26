@@ -58,6 +58,14 @@
   font-size: 0;
 }
 
+@layer components.hraness-ui.legacy {
+  html body [data-gallery-stylex-layer-conflict="true"][data-slot="icon"] {
+    --gallery-stylex-layer-conflict: legacy;
+    display: block;
+    flex: 1 1 auto;
+  }
+}
+
 [data-gallery-icon-family="true"] > span {
   display: inline-flex;
   align-items: center;
