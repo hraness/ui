@@ -22,11 +22,13 @@ function forbid(
 }
 
 const repository = process.cwd();
-const [compiledJavaScript, compiledCss, orderedStylesheet] = await Promise.all([
-  readFile(resolve(repository, "dist/index.js"), "utf8"),
-  readFile(resolve(repository, "dist/stylex.css"), "utf8"),
-  readFile(resolve(repository, "src/styles.css"), "utf8"),
-]);
+const [compiledJavaScript, compiledCss, legacyComponents, orderedStylesheet] =
+  await Promise.all([
+    readFile(resolve(repository, "dist/index.js"), "utf8"),
+    readFile(resolve(repository, "dist/stylex.css"), "utf8"),
+    readFile(resolve(repository, "src/components.css"), "utf8"),
+    readFile(resolve(repository, "src/styles.css"), "utf8"),
+  ]);
 
 if (compiledCss.trim().length === 0) {
   throw new Error("dist/stylex.css is empty");
@@ -47,6 +49,26 @@ requireMatch(
   compiledCss,
   /display:\s*inline-block;/u,
   "the icon display declaration",
+);
+requireMatch(
+  compiledCss,
+  /align-items:\s*center;/u,
+  "the icon-wrapper alignment declaration",
+);
+requireMatch(
+  compiledCss,
+  /display:\s*inline-flex;/u,
+  "the icon-wrapper display declaration",
+);
+requireMatch(
+  compiledCss,
+  /justify-content:\s*center;/u,
+  "the icon-wrapper justification declaration",
+);
+forbid(
+  legacyComponents,
+  /\.hraness-(?:appearance|social)-icon(?![A-Za-z0-9_-])/u,
+  "a legacy social- or appearance-icon recipe",
 );
 
 requireMatch(
