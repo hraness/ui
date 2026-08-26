@@ -8,7 +8,11 @@ import {
   type RefAttributes,
   type TableHTMLAttributes,
 } from "react";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 
+import { avatarStyles } from "./avatar.stylex.js";
+import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 
 /** Returns one or two Unicode-aware initials, or a stable unknown marker. */
@@ -33,7 +37,17 @@ export interface AvatarProps extends Omit<
   readonly name: string;
   readonly size?: "default" | "large" | "small";
   readonly src?: string;
+  /** Typed StyleX presentation applied after the finite size recipe. */
+  readonly xstyle?: StyleXStyles;
 }
+
+const avatarSizeStyles = {
+  default: undefined,
+  large: avatarStyles.large,
+  small: avatarStyles.small,
+} as const satisfies Readonly<
+  Record<NonNullable<AvatarProps["size"]>, StyleXStyles | undefined>
+>;
 
 /** An image avatar with a deterministic initials fallback. */
 export const Avatar = forwardRef<HTMLSpanElement, AvatarProps>(
@@ -46,31 +60,52 @@ export const Avatar = forwardRef<HTMLSpanElement, AvatarProps>(
       role,
       size = "default",
       src,
+      style,
       title,
+      xstyle,
       ...props
     },
     ref,
   ) => {
     const fallbackLabel = ariaLabel ?? (alt === "" ? undefined : alt);
     const imageProps: ImgHTMLAttributes<HTMLImageElement> = { alt, src };
+    const presentation = stylex.props(
+      avatarStyles.root,
+      avatarSizeStyles[size],
+      xstyle,
+    );
+    const fallbackPresentation = stylex.props(
+      avatarStyles.child,
+      avatarStyles.fallback,
+    );
+    const imagePresentation = stylex.props(
+      avatarStyles.child,
+      avatarStyles.image,
+    );
 
     return (
       <span
         {...props}
+        {...presentation}
         aria-label={src === undefined ? fallbackLabel : ariaLabel}
-        className={cn("hraness-avatar", className)}
+        className={cn("hraness-avatar", presentation.className, className)}
         data-size={size}
         data-slot="avatar"
         ref={ref}
         role={role ?? (src === undefined && fallbackLabel !== undefined
           ? "img"
           : undefined)}
+        style={mergeStylexInlineStyles(presentation.style, style)}
         title={title ?? name}
       >
         {src === undefined ? (
           <span
+            {...fallbackPresentation}
             aria-hidden="true"
-            className="hraness-avatar__fallback"
+            className={cn(
+              "hraness-avatar__fallback",
+              fallbackPresentation.className,
+            )}
             data-slot="avatar-fallback"
           >
             {avatarInitials(name)}
@@ -78,7 +113,11 @@ export const Avatar = forwardRef<HTMLSpanElement, AvatarProps>(
         ) : (
           <img
             {...imageProps}
-            className="hraness-avatar__image"
+            {...imagePresentation}
+            className={cn(
+              "hraness-avatar__image",
+              imagePresentation.className,
+            )}
             data-slot="avatar-image"
           />
         )}

@@ -10,6 +10,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-viewport-frame-layer-conflict",
   "data-gallery-wrapping-row-layer-conflict",
   "data-gallery-themed-surface-layer-conflict",
+  "data-gallery-avatar-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -285,6 +286,63 @@ function requireThemedSurfaceContract(
   );
 }
 
+function requireAvatarContract(
+  legacyComponents: string,
+  compiledCss: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-avatar(?:__image|__fallback)?(?![A-Za-z0-9_-])/u,
+    "a legacy avatar recipe",
+  );
+  const declarations = [
+    [/align-items:\s*center;/u, "avatar alignment"],
+    [/background-color:\s*var\(--ui-muted\);/u, "avatar background token"],
+    [/border-radius:\s*var\(--radius-round\);/u, "avatar circular clipping radius"],
+    [/color:\s*var\(--ui-muted-foreground\);/u, "avatar foreground token"],
+    [/display:\s*inline-grid;/u, "avatar root display"],
+    [/display:\s*grid;/u, "avatar fallback display"],
+    [/flex:\s*none;/u, "avatar fixed flex normalization"],
+    [/font-size:\s*var\(--text-caption\);/u, "avatar small text size"],
+    [/font-size:\s*var\(--text-body\);/u, "avatar large text size"],
+    [/font-weight:\s*var\(--font-weight-medium\);/u, "avatar fallback weight"],
+    [/height:\s*100%;/u, "avatar child fill height"],
+    [/height:\s*2rem;/u, "avatar small height"],
+    [/height:\s*2\.5rem;/u, "avatar default height"],
+    [/height:\s*3\.5rem;/u, "avatar large height"],
+    [/justify-items:\s*center;/u, "avatar fallback centering"],
+    [/object-fit:\s*cover;/u, "avatar image crop"],
+    [/overflow:\s*hidden;/u, "avatar circular clipping"],
+    [/width:\s*100%;/u, "avatar child fill width"],
+    [/width:\s*2rem;/u, "avatar small width"],
+    [/width:\s*2\.5rem;/u, "avatar default width"],
+    [/width:\s*3\.5rem;/u, "avatar large width"],
+  ] as const;
+  for (const [pattern, description] of declarations) {
+    requireMatch(compiledCss, pattern, description);
+  }
+  forbid(
+    compiledCss,
+    /background:\s*var\(--ui-muted\);/u,
+    "an avatar background shorthand",
+  );
+  forbid(
+    compiledCss,
+    /place-items:\s*center;/u,
+    "an unsupported avatar place-items shorthand",
+  );
+}
+
+function requireNoGallerySentinels(source: string): void {
+  for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
+    forbid(
+      source,
+      new RegExp(sentinel, "u"),
+      `the gallery-only ${sentinel} sentinel in package output`,
+    );
+  }
+}
+
 const repository = process.cwd();
 const [compiledJavaScript, compiledCss, legacyComponents, orderedStylesheet] =
   await Promise.all([
@@ -390,29 +448,29 @@ forbid(
   "a legacy structural-surface recipe",
 );
 requireThemedSurfaceContract(legacyComponents, compiledCss);
+requireAvatarContract(legacyComponents, compiledCss);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,
   /max-width:\s*var\(--hraness-quiet-site-measure,\s*34rem\);/u,
   "a physical quiet-site measure produced from its logical source contract",
 );
-forbid(
-  compiledCss,
-  /(?:^|[\s{;])width:\s*100%;/u,
-  "a physical 100% viewport-frame width produced from its logical source contract",
-);
+const physicalHundredPercentWidths = [
+  ...compiledCss.matchAll(/(?:^|[\s{;])width:\s*100%;/gu),
+];
+if (physicalHundredPercentWidths.length !== 1) {
+  throw new Error(
+    "dist/stylex.css must contain exactly one physical 100% width for Avatar children without lowering ViewportFrame's logical inline size",
+  );
+}
 forbid(
   compiledCss,
   /(?:^|[\s{;])min-width:\s*0;/u,
   "a physical structural-surface minimum produced from its logical source contract",
 );
-for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
-  forbid(
-    `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}`,
-    new RegExp(sentinel, "u"),
-    `the gallery-only ${sentinel} sentinel in package output`,
-  );
-}
+requireNoGallerySentinels(
+  `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}`,
+);
 
 requireMatch(
   compiledJavaScript,
@@ -448,6 +506,21 @@ requireMatch(
   compiledJavaScript,
   /hraness-themed-surface/u,
   "the themed-surface semantic hook",
+);
+requireMatch(
+  compiledJavaScript,
+  /hraness-avatar/u,
+  "the avatar semantic hook",
+);
+requireMatch(
+  compiledJavaScript,
+  /hraness-avatar__image/u,
+  "the avatar image semantic hook",
+);
+requireMatch(
+  compiledJavaScript,
+  /hraness-avatar__fallback/u,
+  "the avatar fallback semantic hook",
 );
 forbid(
   compiledJavaScript,
@@ -601,6 +674,41 @@ assert.throws(
     ),
   /surface block padding/u,
   "the themed-surface guard must reject a physical padding regression",
+);
+assert.throws(
+  () =>
+    requireAvatarContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-avatar { display: inline-grid; } }`,
+      compiledCss,
+    ),
+  /legacy avatar recipe/u,
+  "the avatar guard must reject a restored legacy selector",
+);
+assert.throws(
+  () =>
+    requireAvatarContract(
+      legacyComponents,
+      compiledCss.replace("height: 3.5rem;", "height: 2.5rem;"),
+    ),
+  /avatar large height/u,
+  "the avatar guard must reject a missing large size",
+);
+assert.throws(
+  () =>
+    requireAvatarContract(
+      legacyComponents,
+      compiledCss.replace("object-fit: cover;", "object-fit: contain;"),
+    ),
+  /avatar image crop/u,
+  "the avatar guard must reject a missing image crop",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-avatar-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-avatar-layer-conflict sentinel/u,
+  "the avatar guard must reject gallery sentinel leakage",
 );
 
 console.log("StyleX package artifacts match the compiler contract");

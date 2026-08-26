@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import {
   AppearanceIcon,
+  Avatar,
   Badge,
   Button,
   Card,
@@ -47,7 +48,16 @@ const galleryTabs = [
 
 type GalleryTheme = "dark" | "light";
 
+const avatarImageSource =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%236366f1'/%3E%3Cpath d='M0 16 16 0v16Z' fill='%23f8fafc'/%3E%3C/svg%3E";
+
 const galleryStyles = stylex.create({
+  avatarOverride: {
+    backgroundColor: "var(--ui-accent)",
+    borderRadius: "var(--radius-sm)",
+    height: "3rem",
+    width: "3rem",
+  },
   quietSiteFooterOverride: {
     "max-inline-size": "35rem",
   },
@@ -211,6 +221,58 @@ export function PrimitiveGallery() {
           </InlineAlert>
           <Progress label="Harness coverage" showValue value={78} />
           <Skeleton height="1rem" isText width="68%" />
+        </section>
+
+        <section aria-labelledby="gallery-avatar-heading" data-gallery-section="avatars">
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-avatar-heading">Avatars</h2>
+              <p>Finite squares preserve deterministic fallbacks, image cropping, and caller overrides.</p>
+            </div>
+          </div>
+          <div data-gallery-avatar-row="true">
+            <Avatar
+              alt="Small Ada profile"
+              className="gallery-avatar gallery-avatar--small"
+              data-gallery-avatar-layer-conflict="true"
+              data-gallery-avatar-size="small"
+              name="Ada Lovelace"
+              size="small"
+            />
+            <Avatar
+              alt="Default Grace profile"
+              className="gallery-avatar gallery-avatar--default"
+              data-gallery-avatar-layer-conflict="true"
+              data-gallery-avatar-size="default"
+              name="Grace Hopper"
+            />
+            <Avatar
+              alt="Large Katherine profile"
+              className="gallery-avatar gallery-avatar--large"
+              data-gallery-avatar-layer-conflict="true"
+              data-gallery-avatar-size="large"
+              name="Katherine Johnson"
+              size="large"
+            />
+            <Avatar
+              alt="Geometric profile"
+              className="gallery-avatar gallery-avatar--image"
+              data-gallery-avatar-image="true"
+              data-gallery-avatar-layer-conflict="true"
+              name="Geometric profile"
+              src={avatarImageSource}
+            />
+            <Avatar
+              alt="Override profile"
+              className="gallery-avatar gallery-avatar--override"
+              data-gallery-avatar-layer-conflict="true"
+              data-gallery-avatar-override="true"
+              name="Override Profile"
+              size="small"
+              style={{ height: "4rem", width: "4rem" }}
+              xstyle={galleryStyles.avatarOverride}
+            />
+          </div>
         </section>
 
         <section aria-labelledby="gallery-structure-heading" data-gallery-section="structure">

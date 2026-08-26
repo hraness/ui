@@ -39,6 +39,14 @@ interface BrowserEvidence {
   readonly appearanceIconHeight: number;
   readonly appearanceIconWidth: number;
   readonly appearanceJustifyContent: string;
+  readonly avatarClassContracts: boolean;
+  readonly avatarDefaultBackground: string;
+  readonly avatarDiagnostics: string;
+  readonly avatarFallbackContracts: boolean;
+  readonly avatarImageContract: boolean;
+  readonly avatarLayerSentinels: boolean;
+  readonly avatarOverrideContract: boolean;
+  readonly avatarTokenContracts: boolean;
   readonly bodyBackground: string;
   readonly buttonBackground: string;
   readonly buttonMinHeight: number;
@@ -425,6 +433,36 @@ function requirePackedDefaultStylesheet(css: string): void {
   );
   assert.match(
     css,
+    /background-color:\s*var\(--ui-muted\)/u,
+    "the packed default stylesheet must include the compiled avatar background token",
+  );
+  assert.match(
+    css,
+    /border-radius:\s*var\(--radius-round\)/u,
+    "the packed default stylesheet must include circular Avatar clipping",
+  );
+  assert.match(
+    css,
+    /display:\s*inline-grid/u,
+    "the packed default stylesheet must include the Avatar root display",
+  );
+  assert.match(
+    css,
+    /height:\s*3\.5rem/u,
+    "the packed default stylesheet must include the Avatar large height",
+  );
+  assert.match(
+    css,
+    /object-fit:\s*cover/u,
+    "the packed default stylesheet must include Avatar image cropping",
+  );
+  assert.match(
+    css,
+    /width:\s*3\.5rem/u,
+    "the packed default stylesheet must include the Avatar large width",
+  );
+  assert.match(
+    css,
     /background-image:\s*repeating-linear-gradient\(/u,
     "the harness bundle must include the downstream texture xstyle seam",
   );
@@ -451,6 +489,11 @@ function requirePackedDefaultStylesheet(css: string): void {
     css,
     /\.hraness-themed-surface(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain a legacy themed-surface selector",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-avatar(?:__image|__fallback)?(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain legacy Avatar selectors",
   );
   assert.match(
     css,
@@ -518,6 +561,70 @@ function requirePackedDefaultStylesheet(css: string): void {
       "the gallery themed-surface conflict must independently carry every boundary declaration",
     );
   }
+  const avatarConflict = css.match(
+    /\[data-gallery-avatar-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"avatar"|avatar)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    avatarConflict !== undefined,
+    "the packed stylesheet must include the gallery Avatar root conflict",
+  );
+  const avatarConflictDeclarations = [
+    /--gallery-avatar-layer-conflict:\s*legacy/u,
+    /width:\s*13rem/u,
+    /height:\s*17rem/u,
+    /overflow:\s*visible/u,
+    /border-radius:\s*0/u,
+    /background-color:/u,
+    /color:/u,
+    /display:\s*block/u,
+    /flex:\s*(?:auto|1\s+1\s+auto)/u,
+    /font-weight:\s*100/u,
+  ] as const;
+  for (const declaration of avatarConflictDeclarations) {
+    assert.match(
+      avatarConflict,
+      declaration,
+      "the gallery Avatar root conflict must independently carry every recipe declaration",
+    );
+  }
+  assert.ok(
+    /place-items:\s*stretch/u.test(avatarConflict)
+    || (
+      /align-items:\s*stretch/u.test(avatarConflict)
+      && /justify-items:\s*stretch/u.test(avatarConflict)
+    ),
+    "the gallery Avatar root conflict must independently carry both alignment declarations",
+  );
+  assert.match(
+    css,
+    /\[data-gallery-avatar-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"avatar"|avatar)\]\[data-size=(?:"small"|small)\][^{]*\{[^}]*font-size:\s*6rem[^}]*\}/u,
+    "the gallery Avatar finite-size conflict must carry the small and large font declaration",
+  );
+  assert.match(
+    css,
+    /\[data-gallery-avatar-layer-conflict=(?:"true"|true)\]\s+:where\([^}]+\)\{(?=[^}]*width:\s*20%)(?=[^}]*height:\s*30%)[^}]*\}/u,
+    "the gallery Avatar child conflict must carry both fill declarations",
+  );
+  assert.match(
+    css,
+    /\[data-gallery-avatar-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"avatar-image"|avatar-image)\]\{[^}]*object-fit:\s*contain[^}]*\}/u,
+    "the gallery Avatar image conflict must carry the crop declaration",
+  );
+  const avatarFallbackConflict = css.match(
+    /\[data-gallery-avatar-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"avatar-fallback"|avatar-fallback)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    avatarFallbackConflict !== undefined
+    && /display:\s*block/u.test(avatarFallbackConflict)
+    && (
+      /place-items:\s*start/u.test(avatarFallbackConflict)
+      || (
+        /align-items:\s*start/u.test(avatarFallbackConflict)
+        && /justify-items:\s*start/u.test(avatarFallbackConflict)
+      )
+    ),
+    "the gallery Avatar fallback conflict must carry every centering declaration",
+  );
 }
 
 function placePriority3BeforeLegacy(css: string): string {
@@ -624,6 +731,11 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const themedSurfaceTexture = document.querySelector(
       '[data-gallery-themed-surface-texture="true"]',
     );
+    const avatarFallbacks = [
+      ...document.querySelectorAll<HTMLElement>('[data-gallery-avatar-size]'),
+    ];
+    const avatarImage = document.querySelector('[data-gallery-avatar-image="true"]');
+    const avatarOverride = document.querySelector('[data-gallery-avatar-override="true"]');
     if (
       !(icon instanceof SVGElement)
       || !(iconCanary instanceof HTMLElement)
@@ -647,6 +759,9 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || !(wrappingRowSecondItem instanceof HTMLElement)
       || themedSurfaces.length !== 5
       || !(themedSurfaceTexture instanceof HTMLElement)
+      || avatarFallbacks.length !== 3
+      || !(avatarImage instanceof HTMLSpanElement)
+      || !(avatarOverride instanceof HTMLSpanElement)
     ) {
       throw new Error("The primitive gallery structure is incomplete.");
     }
@@ -702,6 +817,13 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       smallRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-sm)")),
       space2: Number.parseFloat(resolveStyle("padding-left", "var(--space-2)")),
       space6: Number.parseFloat(resolveStyle("padding-left", "var(--space-6)")),
+      avatarAccentBackground: resolveStyle("background-color", "var(--ui-accent)"),
+      avatarBodySize: Number.parseFloat(resolveStyle("font-size", "var(--text-body)")),
+      avatarCaptionSize: Number.parseFloat(resolveStyle("font-size", "var(--text-caption)")),
+      avatarMediumWeight: resolveStyle("font-weight", "var(--font-weight-medium)"),
+      avatarMutedBackground: resolveStyle("background-color", "var(--ui-muted)"),
+      avatarMutedForeground: resolveStyle("color", "var(--ui-muted-foreground)"),
+      avatarRoundRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-round)")),
     };
     const expectedTones = {
       accent: [resolvedTokens.accentBackground, resolvedTokens.accentForeground],
@@ -781,6 +903,146 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       shape: themedSurfaceTexture.dataset.shape ?? "",
       tone: themedSurfaceTexture.dataset.tone ?? "",
     };
+    const expectedAvatarSizes = {
+      default: 40,
+      large: 56,
+      small: 32,
+    } as const;
+    const expectedAvatarInitials = {
+      default: "GH",
+      large: "KJ",
+      small: "AL",
+    } as const;
+    const avatarFallbackEvidence = avatarFallbacks.map((avatar) => {
+      const size = avatar.dataset.galleryAvatarSize;
+      const fallback = avatar.querySelector(':scope > [data-slot="avatar-fallback"]');
+      if (
+        size === undefined
+        || !(size in expectedAvatarSizes)
+        || !(fallback instanceof HTMLSpanElement)
+      ) {
+        throw new Error(`Unexpected Avatar fallback fixture: ${String(size)}`);
+      }
+      const finiteSize = size as keyof typeof expectedAvatarSizes;
+      const style = getComputedStyle(avatar);
+      const fallbackStyle = getComputedStyle(fallback);
+      const box = avatar.getBoundingClientRect();
+      const fallbackBox = fallback.getBoundingClientRect();
+      const classes = [...avatar.classList];
+      return {
+        accessible:
+          avatar.getAttribute("role") === "img"
+          && (avatar.getAttribute("aria-label")?.length ?? 0) > 0
+          && fallback.getAttribute("aria-hidden") === "true",
+        alignItems: style.alignItems,
+        backgroundColor: style.backgroundColor,
+        borderRadius: Number.parseFloat(style.borderRadius),
+        childAlignItems: fallbackStyle.alignItems,
+        childDisplay: fallbackStyle.display,
+        childHeight: fallbackBox.height,
+        childJustifyItems: fallbackStyle.justifyItems,
+        childWidth: fallbackBox.width,
+        classContract:
+          classes[0] === "hraness-avatar"
+          && classes.at(-1) === `gallery-avatar--${size}`
+          && classes.some(
+            (name) =>
+              name !== "hraness-avatar"
+              && name !== "gallery-avatar"
+              && name !== `gallery-avatar--${size}`,
+          ),
+        color: style.color,
+        display: style.display,
+        flex: style.flex,
+        fontSize: Number.parseFloat(style.fontSize),
+        fontWeight: style.fontWeight,
+        height: box.height,
+        initials: fallback.textContent?.trim() ?? "",
+        justifyItems: style.justifyItems,
+        layerSentinel: style
+          .getPropertyValue("--gallery-avatar-layer-conflict")
+          .trim(),
+        overflow: style.overflow,
+        size: finiteSize,
+        slot: avatar.dataset.slot ?? "",
+        title: avatar.title,
+        width: box.width,
+      };
+    });
+    const avatarImageChild = avatarImage.querySelector(':scope > [data-slot="avatar-image"]');
+    const avatarOverrideChild = avatarOverride.querySelector(
+      ':scope > [data-slot="avatar-fallback"]',
+    );
+    if (
+      !(avatarImageChild instanceof HTMLImageElement)
+      || !(avatarOverrideChild instanceof HTMLSpanElement)
+    ) {
+      throw new Error("The Avatar image or override child is missing.");
+    }
+    const avatarImageStyle = getComputedStyle(avatarImage);
+    const avatarImageChildStyle = getComputedStyle(avatarImageChild);
+    const avatarImageBox = avatarImage.getBoundingClientRect();
+    const avatarImageChildBox = avatarImageChild.getBoundingClientRect();
+    const avatarImageClasses = [...avatarImage.classList];
+    const avatarImageEvidence = {
+      alt: avatarImageChild.alt,
+      backgroundColor: avatarImageStyle.backgroundColor,
+      borderRadius: Number.parseFloat(avatarImageStyle.borderRadius),
+      childHeight: avatarImageChildBox.height,
+      childWidth: avatarImageChildBox.width,
+      classContract:
+        avatarImageClasses[0] === "hraness-avatar"
+        && avatarImageClasses.at(-1) === "gallery-avatar--image"
+        && avatarImageClasses.some(
+          (name) =>
+            name !== "hraness-avatar"
+            && name !== "gallery-avatar"
+            && name !== "gallery-avatar--image",
+        ),
+      complete: avatarImageChild.complete,
+      height: avatarImageBox.height,
+      layerSentinel: avatarImageStyle
+        .getPropertyValue("--gallery-avatar-layer-conflict")
+        .trim(),
+      naturalHeight: avatarImageChild.naturalHeight,
+      naturalWidth: avatarImageChild.naturalWidth,
+      objectFit: avatarImageChildStyle.objectFit,
+      overflow: avatarImageStyle.overflow,
+      role: avatarImage.getAttribute("role") ?? "",
+      source: avatarImageChild.currentSrc || avatarImageChild.src,
+      width: avatarImageBox.width,
+    };
+    const avatarOverrideStyle = getComputedStyle(avatarOverride);
+    const avatarOverrideChildStyle = getComputedStyle(avatarOverrideChild);
+    const avatarOverrideBox = avatarOverride.getBoundingClientRect();
+    const avatarOverrideChildBox = avatarOverrideChild.getBoundingClientRect();
+    const avatarOverrideClasses = [...avatarOverride.classList];
+    const avatarOverrideEvidence = {
+      backgroundColor: avatarOverrideStyle.backgroundColor,
+      borderRadius: Number.parseFloat(avatarOverrideStyle.borderRadius),
+      childAlignItems: avatarOverrideChildStyle.alignItems,
+      childDisplay: avatarOverrideChildStyle.display,
+      childHeight: avatarOverrideChildBox.height,
+      childJustifyItems: avatarOverrideChildStyle.justifyItems,
+      childWidth: avatarOverrideChildBox.width,
+      classContract:
+        avatarOverrideClasses[0] === "hraness-avatar"
+        && avatarOverrideClasses.at(-1) === "gallery-avatar--override"
+        && avatarOverrideClasses.some(
+          (name) =>
+            name !== "hraness-avatar"
+            && name !== "gallery-avatar"
+            && name !== "gallery-avatar--override",
+        ),
+      height: avatarOverrideBox.height,
+      inlineHeight: avatarOverride.style.height,
+      inlineWidth: avatarOverride.style.width,
+      layerSentinel: avatarOverrideStyle
+        .getPropertyValue("--gallery-avatar-layer-conflict")
+        .trim(),
+      overflow: avatarOverrideStyle.overflow,
+      width: avatarOverrideBox.width,
+    };
 
     return {
       appearanceAlignItems: appearanceStyle.alignItems,
@@ -800,6 +1062,79 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       appearanceIconHeight: appearanceBox.height,
       appearanceIconWidth: appearanceBox.width,
       appearanceJustifyContent: appearanceStyle.justifyContent,
+      avatarClassContracts:
+        avatarFallbackEvidence.every((avatar) => avatar.classContract)
+        && avatarImageEvidence.classContract
+        && avatarOverrideEvidence.classContract,
+      avatarDefaultBackground:
+        avatarFallbackEvidence.find((avatar) => avatar.size === "default")
+          ?.backgroundColor ?? "",
+      avatarDiagnostics: JSON.stringify({
+        fallbacks: avatarFallbackEvidence,
+        image: avatarImageEvidence,
+        override: avatarOverrideEvidence,
+        tokens: resolvedTokens,
+      }),
+      avatarFallbackContracts: avatarFallbackEvidence.every((avatar) => {
+        const expectedSize = expectedAvatarSizes[avatar.size];
+        return avatar.accessible
+          && avatar.alignItems === "center"
+          && avatar.childAlignItems === "center"
+          && avatar.childDisplay === "grid"
+          && avatar.childHeight === expectedSize
+          && avatar.childJustifyItems === "center"
+          && avatar.childWidth === expectedSize
+          && avatar.display === "inline-grid"
+          && avatar.flex === "0 0 auto"
+          && avatar.height === expectedSize
+          && avatar.initials === expectedAvatarInitials[avatar.size]
+          && avatar.justifyItems === "center"
+          && avatar.overflow === "hidden"
+          && avatar.slot === "avatar"
+          && avatar.title.length > 0
+          && avatar.width === expectedSize;
+      }),
+      avatarImageContract:
+        avatarImageEvidence.alt === "Geometric profile"
+        && avatarImageEvidence.childHeight === 40
+        && avatarImageEvidence.childWidth === 40
+        && avatarImageEvidence.complete
+        && avatarImageEvidence.height === 40
+        && avatarImageEvidence.naturalHeight === 16
+        && avatarImageEvidence.naturalWidth === 16
+        && avatarImageEvidence.objectFit === "cover"
+        && avatarImageEvidence.overflow === "hidden"
+        && avatarImageEvidence.role === ""
+        && avatarImageEvidence.source.startsWith("data:image/svg+xml")
+        && avatarImageEvidence.width === 40,
+      avatarLayerSentinels:
+        avatarFallbackEvidence.every((avatar) => avatar.layerSentinel === "legacy")
+        && avatarImageEvidence.layerSentinel === "legacy"
+        && avatarOverrideEvidence.layerSentinel === "legacy",
+      avatarOverrideContract:
+        avatarOverrideEvidence.backgroundColor === resolvedTokens.avatarAccentBackground
+        && avatarOverrideEvidence.borderRadius === resolvedTokens.smallRadius
+        && avatarOverrideEvidence.childAlignItems === "center"
+        && avatarOverrideEvidence.childDisplay === "grid"
+        && avatarOverrideEvidence.childHeight === 64
+        && avatarOverrideEvidence.childJustifyItems === "center"
+        && avatarOverrideEvidence.childWidth === 64
+        && avatarOverrideEvidence.height === 64
+        && avatarOverrideEvidence.inlineHeight === "4rem"
+        && avatarOverrideEvidence.inlineWidth === "4rem"
+        && avatarOverrideEvidence.overflow === "hidden"
+        && avatarOverrideEvidence.width === 64,
+      avatarTokenContracts: avatarFallbackEvidence.every((avatar) =>
+        avatar.backgroundColor === resolvedTokens.avatarMutedBackground
+        && avatar.borderRadius === resolvedTokens.avatarRoundRadius
+        && avatar.color === resolvedTokens.avatarMutedForeground
+        && avatar.fontWeight === resolvedTokens.avatarMediumWeight
+        && (avatar.size !== "small"
+          || avatar.fontSize === resolvedTokens.avatarCaptionSize)
+        && (avatar.size !== "large"
+          || avatar.fontSize === resolvedTokens.avatarBodySize))
+        && avatarImageEvidence.backgroundColor === resolvedTokens.avatarMutedBackground
+        && avatarImageEvidence.borderRadius === resolvedTokens.avatarRoundRadius,
       bodyBackground: getComputedStyle(document.body).backgroundColor,
       buttonBackground: buttonStyle.backgroundColor,
       buttonMinHeight: Number.parseFloat(buttonStyle.minHeight),
@@ -1381,7 +1716,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:viewport-frame|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|themed-surface|viewport-frame|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -1393,6 +1728,11 @@ try {
     installedPackageCss,
     /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate structural-surface declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-avatar(?:__image|__fallback)?(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate Avatar declarations in legacy CSS",
   );
 
   const productionDirectory = resolve(consumer, "dist/browser");
@@ -1413,8 +1753,8 @@ try {
   assert.match(production.javaScript, /hydrateRoot/u);
   assert.doesNotMatch(
     negativeControl.css,
-    /@layer components\.hraness-ui\.priority3/u,
-    "the unstyled negative control must not accidentally receive package priority3 CSS",
+    /(?:height|width):\s*(?:100%|2\.5rem|3\.5rem)/u,
+    "the unstyled negative control must not accidentally receive package Avatar priority3 CSS",
   );
   await rm(negativeDirectory, { force: true, recursive: true });
   assert.equal(await Bun.file(negativeControl.cssPath).exists(), false);
@@ -1467,6 +1807,16 @@ try {
   assert.match(html, /data-gallery-themed-surface-texture="true"/u);
   assert.match(html, /data-gallery-themed-surface-layer-conflict="true"/u);
   assert.match(html, /data-slot="themed-surface"/u);
+  assert.match(html, /data-gallery-avatar-size="small"/u);
+  assert.match(html, /data-gallery-avatar-size="default"/u);
+  assert.match(html, /data-gallery-avatar-size="large"/u);
+  assert.match(html, /data-gallery-avatar-image="true"/u);
+  assert.match(html, /data-gallery-avatar-override="true"/u);
+  assert.match(html, /data-gallery-avatar-layer-conflict="true"/u);
+  assert.match(html, /data-slot="avatar"/u);
+  assert.match(html, /data-slot="avatar-fallback"/u);
+  assert.match(html, /data-slot="avatar-image"/u);
+  assert.match(html, /src="data:image\/svg\+xml/u);
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
@@ -1663,6 +2013,15 @@ try {
             && light.themedSurfaceToneContracts,
             `${layout.id}: themed-surface parity failed: ${light.themedSurfaceDiagnostics}`,
           );
+          invariant(
+            light.avatarClassContracts
+            && light.avatarFallbackContracts
+            && light.avatarImageContract
+            && light.avatarLayerSentinels
+            && light.avatarOverrideContract
+            && light.avatarTokenContracts,
+            `${layout.id}: Avatar parity failed: ${light.avatarDiagnostics}`,
+          );
           if (productionPriority3PaddingTop === undefined) {
             productionPriority3PaddingTop = light.footerPaddingTop;
           } else {
@@ -1796,6 +2155,16 @@ try {
             && dark.themedSurfaceTextureContract
             && dark.themedSurfaceToneContracts,
             `${layout.id}: dark themed-surface parity failed: ${dark.themedSurfaceDiagnostics}`,
+          );
+          invariant(
+            dark.avatarClassContracts
+            && dark.avatarFallbackContracts
+            && dark.avatarImageContract
+            && dark.avatarLayerSentinels
+            && dark.avatarOverrideContract
+            && dark.avatarTokenContracts
+            && dark.avatarDefaultBackground !== light.avatarDefaultBackground,
+            `${layout.id}: dark Avatar parity failed: ${dark.avatarDiagnostics}`,
           );
           invariant(dark.recoverableErrors.length === 0, `${layout.id}: interaction introduced hydration recovery`);
           invariant(failures.length === 0, `${layout.id}: ${failures.join("; ")}`);
@@ -1942,7 +2311,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, Avatar fallback sizes, data-URI image cropping, caller and native precedence, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

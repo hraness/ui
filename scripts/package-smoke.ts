@@ -76,6 +76,7 @@ import { readFile } from "node:fs/promises";
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import {
   AppearanceIcon,
+  Avatar,
   Icon,
   QuietSiteFooter,
   QuietSitePage,
@@ -110,6 +111,11 @@ assert.match(stylexCss, /border-radius:\s*var\(--radius-sharp\)/u);
 assert.match(stylexCss, /box-shadow:\s*var\(--elevation-raised\)/u);
 assert.match(stylexCss, /padding-block:\s*var\(--space-6\)/u);
 assert.match(stylexCss, /padding-inline:\s*var\(--space-6\)/u);
+assert.match(stylexCss, /background-color:\s*var\(--ui-muted\)/u);
+assert.match(stylexCss, /border-radius:\s*var\(--radius-round\)/u);
+assert.match(stylexCss, /height:\s*3\.5rem/u);
+assert.match(stylexCss, /object-fit:\s*cover/u);
+assert.match(stylexCss, /width:\s*3\.5rem/u);
 const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
 const viewportHeightPositions = viewportHeightFallbacks.map((fallback) => stylexCss.indexOf(fallback));
 assert.ok(viewportHeightPositions.every((position) => position >= 0));
@@ -118,7 +124,11 @@ assert.ok(
   && viewportHeightPositions[1] < viewportHeightPositions[2],
   "the packed StyleX CSS must preserve the vh, svh, then dvh fallback order",
 );
-assert.doesNotMatch(stylexCss, /(?:^|[\s{;])width:\s*100%/u);
+assert.equal(
+  stylexCss.match(/(?:^|[\s{;])width:\s*100%/gu)?.length,
+  1,
+  "the packed CSS must contain exactly one physical 100% width for Avatar children",
+);
 assert.doesNotMatch(stylexCss, /(?:^|[\s{;])min-width:\s*0/u);
 
 const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
@@ -126,6 +136,7 @@ const componentsCss = await readFile(new URL(componentsCssUrl), "utf8");
 assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-themed-surface(?![A-Za-z0-9_-])/u);
+assert.doesNotMatch(componentsCss, /\.hraness-avatar(?:__image|__fallback)?(?![A-Za-z0-9_-])/u);
 
 const stylesCssUrl = import.meta.resolve("@hraness/ui/styles.css");
 const stylesCss = await readFile(new URL(stylesCssUrl), "utf8");
@@ -177,6 +188,38 @@ assert.match(appearanceMarkup, /class="hraness-appearance-icon [^"]+ consumer-ap
 assert.match(appearanceMarkup, /data-appearance-icon="system"/u);
 assert.match(appearanceMarkup, /data-slot="appearance-icon"/u);
 assert.match(appearanceMarkup, /width="18"/u);
+
+const avatarMarkup = renderToStaticMarkup(React.createElement(Avatar, {
+  alt: "Ada Lovelace avatar",
+  className: "consumer-avatar",
+  name: "Ada Lovelace",
+  size: "large",
+  style: { height: "4rem", width: "4rem" },
+}));
+assert.match(avatarMarkup, /^<span/u);
+assert.match(avatarMarkup, /aria-label="Ada Lovelace avatar"/u);
+assert.match(avatarMarkup, /class="hraness-avatar [^"]+ consumer-avatar"/u);
+assert.match(avatarMarkup, /data-size="large"/u);
+assert.match(avatarMarkup, /data-slot="avatar"/u);
+assert.match(avatarMarkup, /role="img"/u);
+assert.match(avatarMarkup, /style="height:4rem;width:4rem"/u);
+assert.match(avatarMarkup, /title="Ada Lovelace"/u);
+assert.match(avatarMarkup, /class="hraness-avatar__fallback [^"]+"/u);
+assert.match(avatarMarkup, /data-slot="avatar-fallback"/u);
+assert.match(avatarMarkup, />AL<\/span>/u);
+
+const avatarImageMarkup = renderToStaticMarkup(React.createElement(Avatar, {
+  "aria-label": "Grace profile",
+  alt: "Grace Hopper",
+  name: "Grace Hopper",
+  src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E",
+}));
+assert.match(avatarImageMarkup, /aria-label="Grace profile"/u);
+assert.doesNotMatch(avatarImageMarkup, /role="img"/u);
+assert.match(avatarImageMarkup, /class="hraness-avatar__image [^"]+"/u);
+assert.match(avatarImageMarkup, /data-slot="avatar-image"/u);
+assert.match(avatarImageMarkup, /alt="Grace Hopper"/u);
+assert.match(avatarImageMarkup, /src="data:image\/svg\+xml/u);
 
 const pageMarkup = renderToStaticMarkup(React.createElement(QuietSitePage, {
   "aria-label": "Package page",
@@ -259,6 +302,7 @@ const typeScriptProbe = `import { Search01Icon } from "@hugeicons/core-free-icon
 import * as stylex from "@stylexjs/stylex";
 import {
   AppearanceIcon,
+  Avatar,
   Icon,
   QuietSiteFooter,
   QuietSitePage,
@@ -271,6 +315,13 @@ import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const styles = stylex.create({
+  avatar: {
+    backgroundColor: "var(--ui-accent)",
+    borderRadius: "var(--radius-sm)",
+    height: "3rem",
+    width: "3rem",
+  },
+  avatarDynamic: (size: string) => ({ height: size, width: size }),
   camelInlineSize: { inlineSize: "100%" },
   camelMaxInlineSize: { maxInlineSize: "40rem" },
   camelMinInlineSize: { minInlineSize: 0 },
@@ -312,6 +363,16 @@ const appearanceMarkup: string = renderToStaticMarkup(createElement(AppearanceIc
   name: "system",
   size: 26,
   xstyle: styles.wrapper,
+}));
+const avatarRef = createRef<HTMLSpanElement>();
+const avatarMarkup: string = renderToStaticMarkup(createElement(Avatar, {
+  alt: "Ada Lovelace avatar",
+  className: "consumer-avatar",
+  name: "Ada Lovelace",
+  ref: avatarRef,
+  size: "large",
+  style: { height: "4rem", width: "4rem" },
+  xstyle: [styles.avatar, styles.avatarDynamic("3.25rem")],
 }));
 const pageRef = createRef<HTMLElement>();
 const pageMarkup: string = renderToStaticMarkup(createElement(QuietSitePage, {
@@ -390,10 +451,13 @@ const invalidSurfaceElementMarkup = renderToStaticMarkup(createElement(ThemedSur
 const invalidSurfaceToneMarkup = renderToStaticMarkup(createElement(ThemedSurface, { tone: "warning" }));
 // @ts-expect-error ThemedSurface keeps its shape set finite.
 const invalidSurfaceShapeMarkup = renderToStaticMarkup(createElement(ThemedSurface, { shape: "pill" }));
+// @ts-expect-error Avatar keeps its size set finite.
+const invalidAvatarSizeMarkup = renderToStaticMarkup(createElement(Avatar, { name: "Ada", size: "medium" }));
 
 void markup;
 void socialMarkup;
 void appearanceMarkup;
+void avatarMarkup;
 void pageMarkup;
 void footerMarkup;
 void frameMarkup;
@@ -411,6 +475,7 @@ void invalidRowElementMarkup;
 void invalidSurfaceElementMarkup;
 void invalidSurfaceToneMarkup;
 void invalidSurfaceShapeMarkup;
+void invalidAvatarSizeMarkup;
 `;
 
 function typeScriptConfig(moduleResolution: "Bundler" | "NodeNext") {
@@ -456,6 +521,9 @@ async function verifyConsumer(
   ], consumer);
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "quiet-site.stylex.ts"),
+  );
+  await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "avatar.stylex.ts"),
   );
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "surfaces.stylex.ts"),

@@ -49,6 +49,7 @@
     "dist",
     "src/actions.tsx",
     "src/autocomplete.tsx",
+    "src/avatar.stylex.ts",
     "src/badge.tsx",
     "src/card.tsx",
     "src/checkbox-group.tsx",
