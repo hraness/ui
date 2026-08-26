@@ -119,6 +119,14 @@ interface BrowserEvidence {
   readonly substackIconHeight: number;
   readonly substackIconWidth: number;
   readonly theme: string;
+  readonly themedSurfaceBoundaryContracts: boolean;
+  readonly themedSurfaceClassContracts: boolean;
+  readonly themedSurfaceDiagnostics: string;
+  readonly themedSurfaceLayerSentinels: boolean;
+  readonly themedSurfacePopoverElevation: boolean;
+  readonly themedSurfaceShapeContracts: boolean;
+  readonly themedSurfaceTextureContract: boolean;
+  readonly themedSurfaceToneContracts: boolean;
   readonly transitionDuration: string;
   readonly quietSitePriority3LayerSentinel: string;
   readonly viewportFrameCallerClassLast: boolean;
@@ -400,6 +408,26 @@ function requirePackedDefaultStylesheet(css: string): void {
     /overflow:\s*hidden/u,
     "the packed default stylesheet must include the compiled viewport overflow",
   );
+  assert.match(
+    css,
+    /background-color:\s*var\(--ui-popover\)/u,
+    "the packed default stylesheet must include the compiled popover surface tone",
+  );
+  assert.match(
+    css,
+    /border-radius:\s*var\(--radius-sharp\)/u,
+    "the packed default stylesheet must include the compiled rectangular surface shape",
+  );
+  assert.match(
+    css,
+    /padding-block:\s*var\(--space-6\)/u,
+    "the packed default stylesheet must include the compiled themed-surface block padding",
+  );
+  assert.match(
+    css,
+    /background-image:\s*repeating-linear-gradient\(/u,
+    "the harness bundle must include the downstream texture xstyle seam",
+  );
   const viewportHeightPositions = ["100vh", "100svh", "100dvh"].map(
     (height) => css.search(new RegExp(`height:\\s*${height}(?:[;}])`, "u")),
   );
@@ -418,6 +446,11 @@ function requirePackedDefaultStylesheet(css: string): void {
     css,
     /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain legacy structural-surface selectors",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-themed-surface(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain a legacy themed-surface selector",
   );
   assert.match(
     css,
@@ -454,6 +487,37 @@ function requirePackedDefaultStylesheet(css: string): void {
     /\[data-gallery-viewport-frame-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"viewport-frame"|viewport-frame)\]\{(?=[^}]*--gallery-viewport-frame-layer-conflict:\s*legacy)(?=[^}]*inline-size:\s*12rem)(?=[^}]*min-inline-size:\s*8rem)(?=[^}]*height:\s*5rem)(?=[^}]*overflow:\s*visible)[^}]*\}/u,
     "the gallery viewport-frame conflict must independently carry its sentinel and viewport declarations",
   );
+  const themedSurfaceConflict = css.match(
+    /\[data-gallery-themed-surface-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"themed-surface"|themed-surface)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    themedSurfaceConflict !== undefined,
+    "the packed stylesheet must include the gallery themed-surface conflict",
+  );
+  const themedSurfaceConflictDeclarations = [
+    /--gallery-themed-surface-layer-conflict:\s*legacy/u,
+    /min-inline-size:\s*9rem/u,
+    /padding-block-start:\s*5rem/u,
+    /padding-block-end:\s*5rem/u,
+    /padding-inline-start:\s*5rem/u,
+    /padding-inline-end:\s*5rem/u,
+    /border:\s*7px dashed/u,
+    /border-radius:\s*99px/u,
+    /background-color:/u,
+    /background-image:\s*none/u,
+    /background-position:\s*99px 99px/u,
+    /background-repeat:\s*no-repeat/u,
+    /background-size:\s*99px 99px/u,
+    /color:/u,
+    /box-shadow:\s*none/u,
+  ] as const;
+  for (const declaration of themedSurfaceConflictDeclarations) {
+    assert.match(
+      themedSurfaceConflict,
+      declaration,
+      "the gallery themed-surface conflict must independently carry every boundary declaration",
+    );
+  }
 }
 
 function placePriority3BeforeLegacy(css: string): string {
@@ -554,6 +618,12 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const wrappingRow = document.querySelector('[data-gallery-wrapping-row="true"]');
     const wrappingRowFirstItem = document.querySelector('[data-gallery-wrapping-row-item="one"]');
     const wrappingRowSecondItem = document.querySelector('[data-gallery-wrapping-row-item="two"]');
+    const themedSurfaces = [
+      ...document.querySelectorAll<HTMLElement>('[data-gallery-themed-surface-tone]'),
+    ];
+    const themedSurfaceTexture = document.querySelector(
+      '[data-gallery-themed-surface-texture="true"]',
+    );
     if (
       !(icon instanceof SVGElement)
       || !(iconCanary instanceof HTMLElement)
@@ -575,6 +645,8 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || !(wrappingRow instanceof HTMLElement)
       || !(wrappingRowFirstItem instanceof HTMLElement)
       || !(wrappingRowSecondItem instanceof HTMLElement)
+      || themedSurfaces.length !== 5
+      || !(themedSurfaceTexture instanceof HTMLElement)
     ) {
       throw new Error("The primitive gallery structure is incomplete.");
     }
@@ -603,6 +675,112 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const wrappingRowFirstItemBox = wrappingRowFirstItem.getBoundingClientRect();
     const wrappingRowSecondItemBox = wrappingRowSecondItem.getBoundingClientRect();
     const wrappingRowStyle = getComputedStyle(wrappingRow);
+    const resolveStyle = (property: string, value: string): string => {
+      const probe = document.createElement("div");
+      probe.style.setProperty(property, value);
+      document.body.append(probe);
+      const resolved = getComputedStyle(probe).getPropertyValue(property).trim();
+      probe.remove();
+      return resolved;
+    };
+    const resolvedTokens = {
+      accentBackground: resolveStyle("background-color", "var(--ui-accent)"),
+      accentForeground: resolveStyle("color", "var(--ui-accent-foreground)"),
+      border: resolveStyle("border-color", "var(--ui-border)"),
+      cardBackground: resolveStyle("background-color", "var(--ui-card)"),
+      cardForeground: resolveStyle("color", "var(--ui-card-foreground)"),
+      inverseBackground: resolveStyle("background-color", "var(--ui-foreground)"),
+      inverseForeground: resolveStyle("color", "var(--ui-background)"),
+      largeRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-lg)")),
+      popoverBackground: resolveStyle("background-color", "var(--ui-popover)"),
+      popoverForeground: resolveStyle("color", "var(--ui-popover-foreground)"),
+      primary: resolveStyle("border-color", "var(--ui-primary)"),
+      raisedShadow: resolveStyle("box-shadow", "var(--elevation-raised)"),
+      secondaryBackground: resolveStyle("background-color", "var(--ui-secondary)"),
+      secondaryForeground: resolveStyle("color", "var(--ui-secondary-foreground)"),
+      sharpRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-sharp)")),
+      smallRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-sm)")),
+      space2: Number.parseFloat(resolveStyle("padding-left", "var(--space-2)")),
+      space6: Number.parseFloat(resolveStyle("padding-left", "var(--space-6)")),
+    };
+    const expectedTones = {
+      accent: [resolvedTokens.accentBackground, resolvedTokens.accentForeground],
+      card: [resolvedTokens.cardBackground, resolvedTokens.cardForeground],
+      inverse: [resolvedTokens.inverseBackground, resolvedTokens.inverseForeground],
+      popover: [resolvedTokens.popoverBackground, resolvedTokens.popoverForeground],
+      secondary: [resolvedTokens.secondaryBackground, resolvedTokens.secondaryForeground],
+    } as const;
+    const themedSurfaceEvidence = themedSurfaces.map((surface) => {
+      const tone = surface.dataset.galleryThemedSurfaceTone;
+      if (tone === undefined || !(tone in expectedTones)) {
+        throw new Error(`Unexpected themed-surface tone: ${String(tone)}`);
+      }
+      const expected = expectedTones[tone as keyof typeof expectedTones];
+      const style = getComputedStyle(surface);
+      const classes = [...surface.classList];
+      return {
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        borderRadius: Number.parseFloat(style.borderRadius),
+        borderStyle: style.borderStyle,
+        borderWidth: Number.parseFloat(style.borderWidth),
+        boxShadow: style.boxShadow,
+        classContract:
+          classes[0] === "hraness-themed-surface"
+          && classes.at(-1) === `gallery-themed-surface--${tone}`
+          && classes.some(
+            (name) =>
+              name !== "hraness-themed-surface"
+              && name !== "gallery-themed-surface"
+              && name !== `gallery-themed-surface--${tone}`,
+          ),
+        color: style.color,
+        expectedBackground: expected[0],
+        expectedColor: expected[1],
+        layerSentinel: style
+          .getPropertyValue("--gallery-themed-surface-layer-conflict")
+          .trim(),
+        minInlineSize: Number.parseFloat(style.minInlineSize),
+        paddingBottom: Number.parseFloat(style.paddingBottom),
+        paddingLeft: Number.parseFloat(style.paddingLeft),
+        paddingRight: Number.parseFloat(style.paddingRight),
+        paddingTop: Number.parseFloat(style.paddingTop),
+        shape: surface.dataset.shape ?? "",
+        tone,
+      };
+    });
+    const textureStyle = getComputedStyle(themedSurfaceTexture);
+    const textureClasses = [...themedSurfaceTexture.classList];
+    const textureEvidence = {
+      backgroundColor: textureStyle.backgroundColor,
+      backgroundImage: textureStyle.backgroundImage,
+      backgroundPosition: textureStyle.backgroundPosition,
+      backgroundRepeat: textureStyle.backgroundRepeat,
+      backgroundSize: textureStyle.backgroundSize,
+      borderColor: textureStyle.borderColor,
+      borderRadius: Number.parseFloat(textureStyle.borderRadius),
+      borderStyle: textureStyle.borderStyle,
+      borderWidth: Number.parseFloat(textureStyle.borderWidth),
+      classContract:
+        textureClasses[0] === "hraness-themed-surface"
+        && textureClasses.at(-1) === "gallery-themed-surface-texture"
+        && textureClasses.some(
+          (name) =>
+            name !== "hraness-themed-surface"
+            && name !== "gallery-themed-surface-texture",
+        ),
+      color: textureStyle.color,
+      layerSentinel: textureStyle
+        .getPropertyValue("--gallery-themed-surface-layer-conflict")
+        .trim(),
+      minInlineSize: Number.parseFloat(textureStyle.minInlineSize),
+      paddingBottom: Number.parseFloat(textureStyle.paddingBottom),
+      paddingLeft: Number.parseFloat(textureStyle.paddingLeft),
+      paddingRight: Number.parseFloat(textureStyle.paddingRight),
+      paddingTop: Number.parseFloat(textureStyle.paddingTop),
+      shape: themedSurfaceTexture.dataset.shape ?? "",
+      tone: themedSurfaceTexture.dataset.tone ?? "",
+    };
 
     return {
       appearanceAlignItems: appearanceStyle.alignItems,
@@ -722,6 +900,73 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       substackIconHeight: substackBox.height,
       substackIconWidth: substackBox.width,
       theme: document.documentElement.dataset.theme ?? "",
+      themedSurfaceBoundaryContracts: themedSurfaceEvidence.every(
+        (surface) =>
+          surface.borderStyle === "solid"
+          && surface.borderWidth === 1
+          && surface.minInlineSize === 0
+          && surface.paddingBottom === resolvedTokens.space6
+          && surface.paddingLeft === resolvedTokens.space6
+          && surface.paddingRight === resolvedTokens.space6
+          && surface.paddingTop === resolvedTokens.space6,
+      ),
+      themedSurfaceClassContracts:
+        themedSurfaceEvidence.every((surface) => surface.classContract)
+        && textureEvidence.classContract,
+      themedSurfaceDiagnostics: JSON.stringify({
+        resolvedTokens,
+        surfaces: themedSurfaceEvidence,
+        texture: textureEvidence,
+      }),
+      themedSurfaceLayerSentinels:
+        themedSurfaceEvidence.every((surface) => surface.layerSentinel === "legacy")
+        && textureEvidence.layerSentinel === "legacy",
+      themedSurfacePopoverElevation:
+        themedSurfaceEvidence.some(
+          (surface) =>
+            surface.tone === "popover"
+            && surface.boxShadow === resolvedTokens.raisedShadow
+            && surface.boxShadow !== "none",
+        ),
+      themedSurfaceShapeContracts:
+        themedSurfaceEvidence.some(
+          (surface) =>
+            surface.shape === "rounded"
+            && surface.borderRadius === resolvedTokens.largeRadius,
+        )
+        && themedSurfaceEvidence.some(
+          (surface) =>
+            surface.shape === "rectangular"
+            && surface.borderRadius === resolvedTokens.sharpRadius,
+        ),
+      themedSurfaceTextureContract:
+        textureEvidence.backgroundColor === resolvedTokens.secondaryBackground
+        && textureEvidence.backgroundImage !== "none"
+        && textureEvidence.backgroundPosition === "2px 3px"
+        && textureEvidence.backgroundRepeat === "repeat"
+        && textureEvidence.backgroundSize === "4px 4px"
+        && textureEvidence.borderColor === resolvedTokens.primary
+        && textureEvidence.borderRadius === resolvedTokens.smallRadius
+        && textureEvidence.borderStyle === "solid"
+        && textureEvidence.borderWidth === 1
+        && textureEvidence.color === resolvedTokens.secondaryForeground
+        && textureEvidence.minInlineSize === 0
+        && textureEvidence.paddingBottom === resolvedTokens.space6
+        && textureEvidence.paddingLeft === resolvedTokens.space2
+        && textureEvidence.paddingRight === resolvedTokens.space2
+        && textureEvidence.paddingTop === resolvedTokens.space6
+        && textureEvidence.shape === "rounded"
+        && textureEvidence.tone === "accent",
+      themedSurfaceToneContracts: themedSurfaceEvidence.every(
+        (surface) =>
+          surface.backgroundColor === surface.expectedBackground
+          && surface.color === surface.expectedColor
+          && surface.borderColor === (
+            surface.tone === "inverse"
+              ? resolvedTokens.inverseBackground
+              : resolvedTokens.border
+          ),
+      ),
       transitionDuration: buttonStyle.transitionDuration,
       quietSitePriority3LayerSentinel: footerStyle
         .getPropertyValue("--gallery-quiet-site-priority3-conflict")
@@ -1214,6 +1459,14 @@ try {
   assert.match(html, /data-gallery-viewport-frame-layer-conflict="true"/u);
   assert.match(html, /data-gallery-viewport-frame="true"/u);
   assert.match(html, /data-slot="viewport-frame"/u);
+  assert.match(html, /data-gallery-themed-surface-tone="card"/u);
+  assert.match(html, /data-gallery-themed-surface-tone="accent"/u);
+  assert.match(html, /data-gallery-themed-surface-tone="secondary"/u);
+  assert.match(html, /data-gallery-themed-surface-tone="popover"/u);
+  assert.match(html, /data-gallery-themed-surface-tone="inverse"/u);
+  assert.match(html, /data-gallery-themed-surface-texture="true"/u);
+  assert.match(html, /data-gallery-themed-surface-layer-conflict="true"/u);
+  assert.match(html, /data-slot="themed-surface"/u);
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
@@ -1400,6 +1653,16 @@ try {
             light.viewportFrameLayerSentinel === "legacy",
             `${layout.id}: the matched viewport-frame legacy conflict did not reach the canary`,
           );
+          invariant(
+            light.themedSurfaceBoundaryContracts
+            && light.themedSurfaceClassContracts
+            && light.themedSurfaceLayerSentinels
+            && light.themedSurfacePopoverElevation
+            && light.themedSurfaceShapeContracts
+            && light.themedSurfaceTextureContract
+            && light.themedSurfaceToneContracts,
+            `${layout.id}: themed-surface parity failed: ${light.themedSurfaceDiagnostics}`,
+          );
           if (productionPriority3PaddingTop === undefined) {
             productionPriority3PaddingTop = light.footerPaddingTop;
           } else {
@@ -1524,6 +1787,16 @@ try {
           invariant(dark.theme === "dark" && dark.colorScheme === "dark", `${layout.id}: explicit dark theme did not apply`);
           invariant(dark.bodyBackground !== light.bodyBackground, `${layout.id}: theme did not change the page background`);
           invariant(dark.buttonBackground !== light.buttonBackground, `${layout.id}: theme did not change the action recipe`);
+          invariant(
+            dark.themedSurfaceBoundaryContracts
+            && dark.themedSurfaceClassContracts
+            && dark.themedSurfaceLayerSentinels
+            && dark.themedSurfacePopoverElevation
+            && dark.themedSurfaceShapeContracts
+            && dark.themedSurfaceTextureContract
+            && dark.themedSurfaceToneContracts,
+            `${layout.id}: dark themed-surface parity failed: ${dark.themedSurfaceDiagnostics}`,
+          );
           invariant(dark.recoverableErrors.length === 0, `${layout.id}: interaction introduced hydration recovery`);
           invariant(failures.length === 0, `${layout.id}: ${failures.join("; ")}`);
         } finally {
@@ -1669,7 +1942,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

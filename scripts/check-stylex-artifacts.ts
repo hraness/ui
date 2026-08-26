@@ -9,6 +9,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-quiet-site-priority3-conflict",
   "data-gallery-viewport-frame-layer-conflict",
   "data-gallery-wrapping-row-layer-conflict",
+  "data-gallery-themed-surface-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -238,6 +239,52 @@ function requireViewportHeightFallbacks(compiledCss: string): void {
   );
 }
 
+function requireThemedSurfaceContract(
+  legacyComponents: string,
+  compiledCss: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-themed-surface(?![A-Za-z0-9_-])/u,
+    "a legacy themed-surface recipe",
+  );
+  const declarations = [
+    [/background-color:\s*var\(--ui-accent\);/u, "the accent surface background"],
+    [/background-color:\s*var\(--ui-card\);/u, "the card surface background"],
+    [/background-color:\s*var\(--ui-foreground\);/u, "the inverse surface background"],
+    [/background-color:\s*var\(--ui-popover\);/u, "the popover surface background"],
+    [/background-color:\s*var\(--ui-secondary\);/u, "the secondary surface background"],
+    [/border-color:\s*var\(--ui-border\);/u, "the surface border color"],
+    [/border-color:\s*var\(--ui-foreground\);/u, "the inverse surface border color"],
+    [/border-radius:\s*var\(--radius-lg\);/u, "the rounded surface shape"],
+    [/border-radius:\s*var\(--radius-sharp\);/u, "the rectangular surface shape"],
+    [/border-style:\s*solid;/u, "the surface border style"],
+    [/border-width:\s*1px;/u, "the surface border width"],
+    [/box-shadow:\s*var\(--elevation-raised\);/u, "the popover surface elevation"],
+    [/color:\s*var\(--ui-accent-foreground\);/u, "the accent surface foreground"],
+    [/color:\s*var\(--ui-background\);/u, "the inverse surface foreground"],
+    [/color:\s*var\(--ui-card-foreground\);/u, "the card surface foreground"],
+    [/color:\s*var\(--ui-popover-foreground\);/u, "the popover surface foreground"],
+    [/color:\s*var\(--ui-secondary-foreground\);/u, "the secondary surface foreground"],
+    [/min-inline-size:\s*0;/u, "the surface logical minimum"],
+    [/padding-block:\s*var\(--space-6\);/u, "the surface block padding"],
+    [/padding-inline:\s*var\(--space-6\);/u, "the surface inline padding"],
+  ] as const;
+  for (const [pattern, description] of declarations) {
+    requireMatch(compiledCss, pattern, description);
+  }
+  forbid(
+    compiledCss,
+    /background:\s*var\(--ui-(?:accent|card|foreground|popover|secondary)\);/u,
+    "a themed-surface background shorthand",
+  );
+  forbid(
+    compiledCss,
+    /border:\s*1px\s+solid\s+var\(--ui-border\);/u,
+    "a themed-surface border shorthand",
+  );
+}
+
 const repository = process.cwd();
 const [compiledJavaScript, compiledCss, legacyComponents, orderedStylesheet] =
   await Promise.all([
@@ -342,6 +389,7 @@ forbid(
   /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u,
   "a legacy structural-surface recipe",
 );
+requireThemedSurfaceContract(legacyComponents, compiledCss);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,
@@ -395,6 +443,11 @@ requireMatch(
   compiledJavaScript,
   /hraness-wrapping-row/u,
   "the wrapping-row semantic hook",
+);
+requireMatch(
+  compiledJavaScript,
+  /hraness-themed-surface/u,
+  "the themed-surface semantic hook",
 );
 forbid(
   compiledJavaScript,
@@ -515,6 +568,39 @@ assert.throws(
     ),
   /exactly one 100vh, 100svh, and 100dvh/u,
   "the viewport fallback guard must reject a missing small-viewport fallback",
+);
+assert.throws(
+  () =>
+    requireThemedSurfaceContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-themed-surface { display: block; } }`,
+      compiledCss,
+    ),
+  /legacy themed-surface recipe/u,
+  "the themed-surface guard must reject a restored legacy selector",
+);
+assert.throws(
+  () =>
+    requireThemedSurfaceContract(
+      legacyComponents,
+      compiledCss.replace(
+        "background-color: var(--ui-popover);",
+        "background-color: var(--ui-card);",
+      ),
+    ),
+  /popover surface background/u,
+  "the themed-surface guard must reject a missing popover background",
+);
+assert.throws(
+  () =>
+    requireThemedSurfaceContract(
+      legacyComponents,
+      compiledCss.replace(
+        "padding-block: var(--space-6);",
+        "padding-top: var(--space-6);",
+      ),
+    ),
+  /surface block padding/u,
+  "the themed-surface guard must reject a physical padding regression",
 );
 
 console.log("StyleX package artifacts match the compiler contract");

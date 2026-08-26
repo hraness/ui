@@ -93,6 +93,30 @@
     height: 5rem;
     overflow: visible;
   }
+
+  html body [data-gallery-themed-surface-layer-conflict="true"][data-slot="themed-surface"] {
+    --gallery-themed-surface-layer-conflict: legacy;
+    min-inline-size: 9rem;
+    padding-block: 5rem;
+    padding-inline: 5rem;
+    border-color: rgb(255 0 255);
+    border-style: dashed;
+    border-width: 7px;
+    border-radius: 99px;
+    background-color: rgb(1 2 3);
+    background-image: none;
+    background-position: 99px 99px;
+    background-repeat: no-repeat;
+    background-size: 99px 99px;
+    color: rgb(4 5 6);
+    box-shadow: none;
+  }
+}
+
+[data-gallery-themed-surface-grid="true"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: var(--space-3);
 }
 
 [data-gallery-wrapping-row-item] {

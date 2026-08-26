@@ -2240,41 +2240,6 @@
     padding: var(--space-6);
   }
 
-  .hraness-themed-surface {
-    min-width: 0;
-    padding: var(--space-6);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    background: var(--ui-card);
-    color: var(--ui-card-foreground);
-  }
-
-  .hraness-themed-surface[data-shape="rectangular"] {
-    border-radius: var(--radius-sharp);
-  }
-
-  .hraness-themed-surface[data-tone="accent"] {
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  .hraness-themed-surface[data-tone="secondary"] {
-    background: var(--ui-secondary);
-    color: var(--ui-secondary-foreground);
-  }
-
-  .hraness-themed-surface[data-tone="popover"] {
-    background: var(--ui-popover);
-    color: var(--ui-popover-foreground);
-    box-shadow: var(--elevation-raised);
-  }
-
-  .hraness-themed-surface[data-tone="inverse"] {
-    border-color: var(--ui-foreground);
-    background: var(--ui-foreground);
-    color: var(--ui-background);
-  }
-
   .hraness-toast-region {
     position: fixed;
     z-index: var(--z-modal);

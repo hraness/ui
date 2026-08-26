@@ -23,3 +23,38 @@ export const structuralSurfaceStyles = stylex.create({
     "min-inline-size": 0,
   },
 });
+
+export const themedSurfaceStyles = stylex.create({
+  accent: {
+    backgroundColor: "var(--ui-accent)",
+    color: "var(--ui-accent-foreground)",
+  },
+  base: {
+    backgroundColor: "var(--ui-card)",
+    borderColor: "var(--ui-border)",
+    borderRadius: "var(--radius-lg)",
+    borderStyle: "solid",
+    borderWidth: "1px",
+    color: "var(--ui-card-foreground)",
+    "min-inline-size": 0,
+    paddingBlock: "var(--space-6)",
+    paddingInline: "var(--space-6)",
+  },
+  inverse: {
+    backgroundColor: "var(--ui-foreground)",
+    borderColor: "var(--ui-foreground)",
+    color: "var(--ui-background)",
+  },
+  popover: {
+    backgroundColor: "var(--ui-popover)",
+    boxShadow: "var(--elevation-raised)",
+    color: "var(--ui-popover-foreground)",
+  },
+  rectangular: {
+    borderRadius: "var(--radius-sharp)",
+  },
+  secondary: {
+    backgroundColor: "var(--ui-secondary)",
+    color: "var(--ui-secondary-foreground)",
+  },
+});

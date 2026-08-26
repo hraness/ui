@@ -27,6 +27,7 @@ import {
   StatusDot,
   Tabs,
   Tag,
+  ThemedSurface,
   ViewportFrame,
   WrappingRow,
 } from "@hraness/ui";
@@ -49,6 +50,18 @@ type GalleryTheme = "dark" | "light";
 const galleryStyles = stylex.create({
   quietSiteFooterOverride: {
     "max-inline-size": "35rem",
+  },
+  themedSurfaceTexture: {
+    backgroundColor: "var(--ui-secondary)",
+    backgroundImage:
+      "repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px)",
+    backgroundPosition: "0 0",
+    backgroundRepeat: "repeat",
+    backgroundSize: "4px 4px",
+    borderColor: "var(--ui-primary)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--ui-secondary-foreground)",
+    paddingInline: "var(--space-2)",
   },
   wrappingRowConstraint: {
     "inline-size": "11rem",
@@ -233,6 +246,68 @@ export function PrimitiveGallery() {
           >
             <span>Off-canvas viewport canary</span>
           </ViewportFrame>
+        </section>
+
+        <section aria-labelledby="gallery-themed-surface-heading" data-gallery-section="themed-surfaces">
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-themed-surface-heading">Themed surfaces</h2>
+              <p>Finite tone and shape recipes remain composable by downstream presentation packages.</p>
+            </div>
+          </div>
+          <div data-gallery-themed-surface-grid="true">
+            <ThemedSurface
+              className="gallery-themed-surface gallery-themed-surface--card"
+              data-gallery-themed-surface-layer-conflict="true"
+              data-gallery-themed-surface-tone="card"
+              tone="card"
+            >
+              Card
+            </ThemedSurface>
+            <ThemedSurface
+              className="gallery-themed-surface gallery-themed-surface--accent"
+              data-gallery-themed-surface-layer-conflict="true"
+              data-gallery-themed-surface-tone="accent"
+              tone="accent"
+            >
+              Accent
+            </ThemedSurface>
+            <ThemedSurface
+              className="gallery-themed-surface gallery-themed-surface--secondary"
+              data-gallery-themed-surface-layer-conflict="true"
+              data-gallery-themed-surface-tone="secondary"
+              shape="rectangular"
+              tone="secondary"
+            >
+              Secondary rectangular
+            </ThemedSurface>
+            <ThemedSurface
+              className="gallery-themed-surface gallery-themed-surface--popover"
+              data-gallery-themed-surface-layer-conflict="true"
+              data-gallery-themed-surface-tone="popover"
+              tone="popover"
+            >
+              Popover
+            </ThemedSurface>
+            <ThemedSurface
+              className="gallery-themed-surface gallery-themed-surface--inverse"
+              data-gallery-themed-surface-layer-conflict="true"
+              data-gallery-themed-surface-tone="inverse"
+              tone="inverse"
+            >
+              Inverse
+            </ThemedSurface>
+          </div>
+          <ThemedSurface
+            className="gallery-themed-surface-texture"
+            data-gallery-themed-surface-layer-conflict="true"
+            data-gallery-themed-surface-texture="true"
+            style={{ backgroundPosition: "2px 3px" }}
+            tone="accent"
+            xstyle={galleryStyles.themedSurfaceTexture}
+          >
+            Downstream texture override
+          </ThemedSurface>
         </section>
       </QuietSitePage>
       <QuietSiteFooter

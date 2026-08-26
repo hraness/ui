@@ -11,7 +11,10 @@ import {
   mergeStylexInlineStyles,
 } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
-import { structuralSurfaceStyles } from "./surfaces.stylex.js";
+import {
+  structuralSurfaceStyles,
+  themedSurfaceStyles,
+} from "./surfaces.stylex.js";
 
 function setForwardedRef<T>(ref: ForwardedRef<T>, value: T | null): void {
   if (typeof ref === "function") {
@@ -106,7 +109,17 @@ export interface ThemedSurfaceProps extends HTMLAttributes<HTMLElement> {
   readonly as?: "article" | "div" | "section";
   readonly shape?: SurfaceShape;
   readonly tone?: ThemedSurfaceTone;
+  /** Typed StyleX presentation applied after the tone and shape recipes. */
+  readonly xstyle?: StyleXStyles<LogicalSizeStyleProperties>;
 }
+
+const themedSurfaceToneStyles = {
+  accent: themedSurfaceStyles.accent,
+  card: undefined,
+  inverse: themedSurfaceStyles.inverse,
+  popover: themedSurfaceStyles.popover,
+  secondary: themedSurfaceStyles.secondary,
+} as const satisfies Readonly<Record<ThemedSurfaceTone, StyleXStyles | undefined>>;
 
 /** A semantic surface whose appearance is selected entirely by public tokens. */
 export const ThemedSurface = forwardRef<HTMLElement, ThemedSurfaceProps>(
@@ -115,23 +128,37 @@ export const ThemedSurface = forwardRef<HTMLElement, ThemedSurfaceProps>(
       as = "div",
       className,
       shape = "rounded",
+      style,
       tone = "card",
+      xstyle,
       ...props
     },
     ref,
   ) => {
     const Element = as;
+    const presentation = stylex.props(
+      themedSurfaceStyles.base,
+      themedSurfaceToneStyles[tone],
+      shape === "rectangular" && themedSurfaceStyles.rectangular,
+      xstyle,
+    );
 
     return (
       <Element
         {...props}
-        className={cn("hraness-themed-surface", className)}
+        {...presentation}
+        className={cn(
+          "hraness-themed-surface",
+          presentation.className,
+          className,
+        )}
         data-shape={shape}
         data-slot="themed-surface"
         data-tone={tone}
         ref={(element) => {
           setForwardedRef(ref, element);
         }}
+        style={mergeStylexInlineStyles(presentation.style, style)}
       />
     );
   },
