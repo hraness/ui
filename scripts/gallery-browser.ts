@@ -44,6 +44,7 @@ interface BrowserEvidence {
   readonly buttonMinHeight: number;
   readonly cardBorderStyle: string;
   readonly clientWidth: number;
+  readonly clientHeight: number;
   readonly colorScheme: string;
   readonly documentScrollWidth: number;
   readonly footerAlignItems: string;
@@ -120,6 +121,30 @@ interface BrowserEvidence {
   readonly theme: string;
   readonly transitionDuration: string;
   readonly quietSitePriority3LayerSentinel: string;
+  readonly viewportFrameCallerClassLast: boolean;
+  readonly viewportFrameClassIsSemantic: boolean;
+  readonly viewportFrameHasGeneratedClass: boolean;
+  readonly viewportFrameHeight: number;
+  readonly viewportFrameInlineSize: number;
+  readonly viewportFrameLayerSentinel: string;
+  readonly viewportFrameMinInlineSize: number;
+  readonly viewportFrameOverflow: string;
+  readonly viewportFramePosition: string;
+  readonly viewportFramePresent: boolean;
+  readonly viewportFrameWidth: number;
+  readonly wrappingRowAlignItems: string;
+  readonly wrappingRowCallerClassLast: boolean;
+  readonly wrappingRowClassIsSemantic: boolean;
+  readonly wrappingRowDisplay: string;
+  readonly wrappingRowFirstItemTop: number;
+  readonly wrappingRowFlexWrap: string;
+  readonly wrappingRowGap: number;
+  readonly wrappingRowHasGeneratedClass: boolean;
+  readonly wrappingRowInlineSize: number;
+  readonly wrappingRowLayerSentinel: string;
+  readonly wrappingRowMinInlineSize: number;
+  readonly wrappingRowSecondItemTop: number;
+  readonly wrappingRowWidth: number;
 }
 
 interface VerticalWritingEvidence {
@@ -131,6 +156,16 @@ interface VerticalWritingEvidence {
   readonly pageMaxInlineSize: number;
   readonly pageMaxWidth: string;
   readonly pageWritingMode: string;
+  readonly viewportFrameHeight: number;
+  readonly viewportFrameInlineSize: number;
+  readonly viewportFrameMinInlineSize: number;
+  readonly viewportFrameWidth: number;
+  readonly viewportFrameWritingMode: string;
+  readonly wrappingRowHeight: number;
+  readonly wrappingRowInlineSize: number;
+  readonly wrappingRowMinInlineSize: number;
+  readonly wrappingRowWidth: number;
+  readonly wrappingRowWritingMode: string;
 }
 
 interface ForcedColorsEvidence {
@@ -355,10 +390,34 @@ function requirePackedDefaultStylesheet(css: string): void {
     /padding-bottom:\s*max\(var\(--space-5,\s*1\.25rem\),\s*env\(safe-area-inset-bottom\)\)/u,
     "the packed default stylesheet must include the compiled safe-area footer padding",
   );
+  assert.match(
+    css,
+    /gap:\s*var\(--space-3\)/u,
+    "the packed default stylesheet must include the compiled wrapping-row gap",
+  );
+  assert.match(
+    css,
+    /overflow:\s*hidden/u,
+    "the packed default stylesheet must include the compiled viewport overflow",
+  );
+  const viewportHeightPositions = ["100vh", "100svh", "100dvh"].map(
+    (height) => css.search(new RegExp(`height:\\s*${height}(?:[;}])`, "u")),
+  );
+  assert.ok(
+    viewportHeightPositions.every((position) => position >= 0)
+    && viewportHeightPositions[0]! < viewportHeightPositions[1]!
+    && viewportHeightPositions[1]! < viewportHeightPositions[2]!,
+    "the packed default stylesheet must preserve the vh, svh, then dvh viewport fallback order",
+  );
   assert.doesNotMatch(
     css,
     /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain legacy quiet-site selectors",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain legacy structural-surface selectors",
   );
   assert.match(
     css,
@@ -384,6 +443,16 @@ function requirePackedDefaultStylesheet(css: string): void {
     css,
     /\[data-gallery-quiet-site-priority3-conflict=(?:"true"|true)\]\[data-slot=(?:"quiet-site-footer"|quiet-site-footer)\]\{(?=[^}]*--gallery-quiet-site-priority3-conflict:\s*legacy)(?=[^}]*padding-top:\s*9rem)[^}]*\}/u,
     "the gallery quiet-site priority3 conflict must carry its sentinel and padding declaration",
+  );
+  assert.match(
+    css,
+    /\[data-gallery-wrapping-row-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"wrapping-row"|wrapping-row)\]\{(?=[^}]*--gallery-wrapping-row-layer-conflict:\s*legacy)(?=[^}]*display:\s*grid)(?=[^}]*min-inline-size:\s*8rem)(?=[^}]*flex-wrap:\s*nowrap)(?=[^}]*align-items:\s*stretch)(?=[^}]*gap:\s*5rem)[^}]*\}/u,
+    "the gallery wrapping-row conflict must independently carry its sentinel and structural declarations",
+  );
+  assert.match(
+    css,
+    /\[data-gallery-viewport-frame-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"viewport-frame"|viewport-frame)\]\{(?=[^}]*--gallery-viewport-frame-layer-conflict:\s*legacy)(?=[^}]*inline-size:\s*12rem)(?=[^}]*min-inline-size:\s*8rem)(?=[^}]*height:\s*5rem)(?=[^}]*overflow:\s*visible)[^}]*\}/u,
+    "the gallery viewport-frame conflict must independently carry its sentinel and viewport declarations",
   );
 }
 
@@ -481,6 +550,10 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const heading = document.querySelector("h1");
     const footer = document.querySelector('[data-slot="quiet-site-footer"]');
     const main = document.querySelector('[data-slot="quiet-site-page"]');
+    const viewportFrame = document.querySelector('[data-gallery-viewport-frame="true"]');
+    const wrappingRow = document.querySelector('[data-gallery-wrapping-row="true"]');
+    const wrappingRowFirstItem = document.querySelector('[data-gallery-wrapping-row-item="one"]');
+    const wrappingRowSecondItem = document.querySelector('[data-gallery-wrapping-row-item="two"]');
     if (
       !(icon instanceof SVGElement)
       || !(iconCanary instanceof HTMLElement)
@@ -498,6 +571,10 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || !(heading instanceof HTMLElement)
       || !(footer instanceof HTMLElement)
       || !(main instanceof HTMLElement)
+      || !(viewportFrame instanceof HTMLElement)
+      || !(wrappingRow instanceof HTMLElement)
+      || !(wrappingRowFirstItem instanceof HTMLElement)
+      || !(wrappingRowSecondItem instanceof HTMLElement)
     ) {
       throw new Error("The primitive gallery structure is incomplete.");
     }
@@ -518,6 +595,14 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const pageBox = main.getBoundingClientRect();
     const pageClasses = [...main.classList];
     const pageStyle = getComputedStyle(main);
+    const viewportFrameBox = viewportFrame.getBoundingClientRect();
+    const viewportFrameClasses = [...viewportFrame.classList];
+    const viewportFrameStyle = getComputedStyle(viewportFrame);
+    const wrappingRowBox = wrappingRow.getBoundingClientRect();
+    const wrappingRowClasses = [...wrappingRow.classList];
+    const wrappingRowFirstItemBox = wrappingRowFirstItem.getBoundingClientRect();
+    const wrappingRowSecondItemBox = wrappingRowSecondItem.getBoundingClientRect();
+    const wrappingRowStyle = getComputedStyle(wrappingRow);
 
     return {
       appearanceAlignItems: appearanceStyle.alignItems,
@@ -542,6 +627,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       buttonMinHeight: Number.parseFloat(buttonStyle.minHeight),
       cardBorderStyle: getComputedStyle(card).borderStyle,
       clientWidth: document.documentElement.clientWidth,
+      clientHeight: document.documentElement.clientHeight,
       colorScheme: getComputedStyle(document.documentElement).colorScheme,
       documentScrollWidth: document.documentElement.scrollWidth,
       footerAlignItems: footerStyle.alignItems,
@@ -640,6 +726,48 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       quietSitePriority3LayerSentinel: footerStyle
         .getPropertyValue("--gallery-quiet-site-priority3-conflict")
         .trim(),
+      viewportFrameCallerClassLast:
+        viewportFrameClasses.at(-1) === "gallery-viewport-frame",
+      viewportFrameClassIsSemantic:
+        viewportFrameClasses[0] === "hraness-viewport-frame",
+      viewportFrameHasGeneratedClass: viewportFrameClasses.some(
+        (name) =>
+          name !== "hraness-viewport-frame"
+          && name !== "gallery-viewport-frame",
+      ),
+      viewportFrameHeight: viewportFrameBox.height,
+      viewportFrameInlineSize: Number.parseFloat(viewportFrameStyle.inlineSize),
+      viewportFrameLayerSentinel: viewportFrameStyle
+        .getPropertyValue("--gallery-viewport-frame-layer-conflict")
+        .trim(),
+      viewportFrameMinInlineSize: Number.parseFloat(
+        viewportFrameStyle.minInlineSize,
+      ),
+      viewportFrameOverflow: viewportFrameStyle.overflow,
+      viewportFramePosition: viewportFrameStyle.position,
+      viewportFramePresent: viewportFrame.tagName === "SECTION",
+      viewportFrameWidth: viewportFrameBox.width,
+      wrappingRowAlignItems: wrappingRowStyle.alignItems,
+      wrappingRowCallerClassLast:
+        wrappingRowClasses.at(-1) === "gallery-wrapping-row",
+      wrappingRowClassIsSemantic:
+        wrappingRowClasses[0] === "hraness-wrapping-row",
+      wrappingRowDisplay: wrappingRowStyle.display,
+      wrappingRowFirstItemTop: wrappingRowFirstItemBox.top,
+      wrappingRowFlexWrap: wrappingRowStyle.flexWrap,
+      wrappingRowGap: Number.parseFloat(wrappingRowStyle.gap),
+      wrappingRowHasGeneratedClass: wrappingRowClasses.some(
+        (name) =>
+          name !== "hraness-wrapping-row"
+          && name !== "gallery-wrapping-row",
+      ),
+      wrappingRowInlineSize: Number.parseFloat(wrappingRowStyle.inlineSize),
+      wrappingRowLayerSentinel: wrappingRowStyle
+        .getPropertyValue("--gallery-wrapping-row-layer-conflict")
+        .trim(),
+      wrappingRowMinInlineSize: Number.parseFloat(wrappingRowStyle.minInlineSize),
+      wrappingRowSecondItemTop: wrappingRowSecondItemBox.top,
+      wrappingRowWidth: wrappingRowBox.width,
     };
   });
 }
@@ -650,16 +778,31 @@ async function verticalWritingEvidence(
   return page.evaluate(() => {
     const footer = document.querySelector('[data-gallery-quiet-site-footer="true"]');
     const main = document.querySelector('[data-gallery-quiet-site-page="true"]');
-    if (!(footer instanceof HTMLElement) || !(main instanceof HTMLElement)) {
-      throw new Error("The quiet-site writing-mode canaries are missing.");
+    const viewportFrame = document.querySelector('[data-gallery-viewport-frame="true"]');
+    const wrappingRow = document.querySelector('[data-gallery-wrapping-row="true"]');
+    if (
+      !(footer instanceof HTMLElement)
+      || !(main instanceof HTMLElement)
+      || !(viewportFrame instanceof HTMLElement)
+      || !(wrappingRow instanceof HTMLElement)
+    ) {
+      throw new Error("The logical-size writing-mode canaries are missing.");
     }
 
     const previousFooterWritingMode = footer.style.writingMode;
     const previousPageWritingMode = main.style.writingMode;
+    const previousViewportFrameWritingMode = viewportFrame.style.writingMode;
+    const previousWrappingRowWritingMode = wrappingRow.style.writingMode;
     footer.style.writingMode = "vertical-rl";
     main.style.writingMode = "vertical-rl";
+    viewportFrame.style.writingMode = "vertical-rl";
+    wrappingRow.style.writingMode = "vertical-rl";
     const footerStyle = getComputedStyle(footer);
     const pageStyle = getComputedStyle(main);
+    const viewportFrameBox = viewportFrame.getBoundingClientRect();
+    const viewportFrameStyle = getComputedStyle(viewportFrame);
+    const wrappingRowBox = wrappingRow.getBoundingClientRect();
+    const wrappingRowStyle = getComputedStyle(wrappingRow);
     const evidence = {
       footerInlineSize: Number.parseFloat(footerStyle.inlineSize),
       footerMaxInlineSize: Number.parseFloat(footerStyle.maxInlineSize),
@@ -669,9 +812,23 @@ async function verticalWritingEvidence(
       pageMaxInlineSize: Number.parseFloat(pageStyle.maxInlineSize),
       pageMaxWidth: pageStyle.maxWidth,
       pageWritingMode: pageStyle.writingMode,
+      viewportFrameHeight: viewportFrameBox.height,
+      viewportFrameInlineSize: Number.parseFloat(viewportFrameStyle.inlineSize),
+      viewportFrameMinInlineSize: Number.parseFloat(
+        viewportFrameStyle.minInlineSize,
+      ),
+      viewportFrameWidth: viewportFrameBox.width,
+      viewportFrameWritingMode: viewportFrameStyle.writingMode,
+      wrappingRowHeight: wrappingRowBox.height,
+      wrappingRowInlineSize: Number.parseFloat(wrappingRowStyle.inlineSize),
+      wrappingRowMinInlineSize: Number.parseFloat(wrappingRowStyle.minInlineSize),
+      wrappingRowWidth: wrappingRowBox.width,
+      wrappingRowWritingMode: wrappingRowStyle.writingMode,
     };
     footer.style.writingMode = previousFooterWritingMode;
     main.style.writingMode = previousPageWritingMode;
+    viewportFrame.style.writingMode = previousViewportFrameWritingMode;
+    wrappingRow.style.writingMode = previousWrappingRowWritingMode;
     return evidence;
   });
 }
@@ -950,13 +1107,18 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:viewport-frame|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
     installedPackageCss,
     /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate quiet-site declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate structural-surface declarations in legacy CSS",
   );
 
   const productionDirectory = resolve(consumer, "dist/browser");
@@ -1017,6 +1179,12 @@ try {
   assert.match(html, /data-gallery-quiet-site-footer="true"/u);
   assert.match(html, /data-slot="quiet-site-page"/u);
   assert.match(html, /data-slot="quiet-site-footer"/u);
+  assert.match(html, /data-gallery-wrapping-row-layer-conflict="true"/u);
+  assert.match(html, /data-gallery-wrapping-row="true"/u);
+  assert.match(html, /data-slot="wrapping-row"/u);
+  assert.match(html, /data-gallery-viewport-frame-layer-conflict="true"/u);
+  assert.match(html, /data-gallery-viewport-frame="true"/u);
+  assert.match(html, /data-slot="viewport-frame"/u);
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
@@ -1159,6 +1327,50 @@ try {
             && nearlyEqual(light.footerPaddingTop, 1.25 * 16),
             `${layout.id}: the matched quiet-site priority3 conflict resolved to ${String(light.footerPaddingTop)}`,
           );
+          invariant(
+            light.wrappingRowClassIsSemantic
+            && light.wrappingRowHasGeneratedClass
+            && light.wrappingRowCallerClassLast,
+            `${layout.id}: wrapping-row semantic or generated class ordering changed`,
+          );
+          invariant(
+            light.wrappingRowDisplay === "flex"
+            && light.wrappingRowFlexWrap === "wrap"
+            && light.wrappingRowAlignItems === "center"
+            && nearlyEqual(light.wrappingRowGap, 0.75 * 16)
+            && nearlyEqual(light.wrappingRowMinInlineSize, 0),
+            `${layout.id}: wrapping-row recipe is ${light.wrappingRowDisplay}; ${light.wrappingRowFlexWrap}; ${light.wrappingRowAlignItems}; gap ${String(light.wrappingRowGap)}; min-inline ${String(light.wrappingRowMinInlineSize)}`,
+          );
+          invariant(
+            nearlyEqual(light.wrappingRowInlineSize, 11 * 16)
+            && nearlyEqual(light.wrappingRowWidth, 11 * 16)
+            && light.wrappingRowSecondItemTop > light.wrappingRowFirstItemTop + 1,
+            `${layout.id}: constrained wrapping row is ${String(light.wrappingRowInlineSize)}/${String(light.wrappingRowWidth)} with item tops ${String(light.wrappingRowFirstItemTop)}/${String(light.wrappingRowSecondItemTop)}`,
+          );
+          invariant(
+            light.wrappingRowLayerSentinel === "legacy",
+            `${layout.id}: the matched wrapping-row legacy conflict did not reach the canary`,
+          );
+          invariant(
+            light.viewportFramePresent
+            && light.viewportFrameClassIsSemantic
+            && light.viewportFrameHasGeneratedClass
+            && light.viewportFrameCallerClassLast,
+            `${layout.id}: viewport-frame semantics or class ordering changed`,
+          );
+          invariant(
+            light.viewportFramePosition === "fixed"
+            && light.viewportFrameOverflow === "hidden"
+            && nearlyEqual(light.viewportFrameMinInlineSize, 0)
+            && nearlyEqual(light.viewportFrameInlineSize, light.clientWidth)
+            && nearlyEqual(light.viewportFrameWidth, light.clientWidth)
+            && nearlyEqual(light.viewportFrameHeight, light.clientHeight),
+            `${layout.id}: viewport-frame recipe is ${light.viewportFramePosition}; ${light.viewportFrameOverflow}; min-inline ${String(light.viewportFrameMinInlineSize)}; size ${String(light.viewportFrameWidth)}×${String(light.viewportFrameHeight)} for ${String(light.clientWidth)}×${String(light.clientHeight)}`,
+          );
+          invariant(
+            light.viewportFrameLayerSentinel === "legacy",
+            `${layout.id}: the matched viewport-frame legacy conflict did not reach the canary`,
+          );
           if (productionPriority3PaddingTop === undefined) {
             productionPriority3PaddingTop = light.footerPaddingTop;
           } else {
@@ -1183,6 +1395,23 @@ try {
             && Number.isFinite(vertical.footerInlineSize)
             && vertical.footerInlineSize <= 35 * 16 + 0.5,
             `${layout.id}: vertical canonical xstyle sizing is ${vertical.footerWritingMode}; inline ${String(vertical.footerInlineSize)}/${String(vertical.footerMaxInlineSize)}; max-width ${vertical.footerMaxWidth}`,
+          );
+          invariant(
+            vertical.wrappingRowWritingMode === "vertical-rl"
+            && nearlyEqual(vertical.wrappingRowInlineSize, 11 * 16)
+            && nearlyEqual(vertical.wrappingRowHeight, 11 * 16)
+            && nearlyEqual(vertical.wrappingRowMinInlineSize, 0)
+            && Number.isFinite(vertical.wrappingRowWidth),
+            `${layout.id}: vertical wrapping-row logical sizing is ${vertical.wrappingRowWritingMode}; inline/height ${String(vertical.wrappingRowInlineSize)}/${String(vertical.wrappingRowHeight)}; width ${String(vertical.wrappingRowWidth)}; min-inline ${String(vertical.wrappingRowMinInlineSize)}`,
+          );
+          invariant(
+            vertical.viewportFrameWritingMode === "vertical-rl"
+            && nearlyEqual(vertical.viewportFrameInlineSize, light.clientHeight)
+            && nearlyEqual(vertical.viewportFrameHeight, light.clientHeight)
+            && nearlyEqual(vertical.viewportFrameMinInlineSize, 0)
+            && Number.isFinite(vertical.viewportFrameWidth)
+            && vertical.viewportFrameWidth < light.clientWidth,
+            `${layout.id}: vertical viewport-frame logical sizing is ${vertical.viewportFrameWritingMode}; inline/height ${String(vertical.viewportFrameInlineSize)}/${String(vertical.viewportFrameHeight)}; width ${String(vertical.viewportFrameWidth)}; min-inline ${String(vertical.viewportFrameMinInlineSize)}`,
           );
           invariant(light.theme === "light" && light.colorScheme === "light", `${layout.id}: initial light theme did not apply`);
           invariant(light.documentScrollWidth <= light.clientWidth + 1, `${layout.id}: gallery overflows horizontally`);
@@ -1411,7 +1640,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, horizontal and vertical quiet-site layout behavior, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

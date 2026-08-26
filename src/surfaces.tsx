@@ -3,8 +3,15 @@ import {
   forwardRef,
   type HTMLAttributes,
 } from "react";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 
+import {
+  type LogicalSizeStyleProperties,
+  mergeStylexInlineStyles,
+} from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
+import { structuralSurfaceStyles } from "./surfaces.stylex.js";
 
 function setForwardedRef<T>(ref: ForwardedRef<T>, value: T | null): void {
   if (typeof ref === "function") {
@@ -22,23 +29,38 @@ export type ThemedSurfaceTone =
   | "popover"
   | "secondary";
 
-export interface ViewportFrameProps extends HTMLAttributes<HTMLElement> {
+type StructuralSurfaceProps = HTMLAttributes<HTMLElement> & Readonly<{
+  /** Typed StyleX presentation applied after the shared structural recipe. */
+  xstyle?: StyleXStyles<LogicalSizeStyleProperties>;
+}>;
+
+export interface ViewportFrameProps extends StructuralSurfaceProps {
   readonly as?: "div" | "main" | "section";
 }
 
 /** Owns exactly one visual viewport; descendants own intentional scrolling. */
 export const ViewportFrame = forwardRef<HTMLElement, ViewportFrameProps>(
-  ({ as = "div", className, ...props }, ref) => {
+  ({ as = "div", className, style, xstyle, ...props }, ref) => {
     const Element = as;
+    const presentation = stylex.props(
+      structuralSurfaceStyles.viewportFrame,
+      xstyle,
+    );
 
     return (
       <Element
         {...props}
-        className={cn("hraness-viewport-frame", className)}
+        {...presentation}
+        className={cn(
+          "hraness-viewport-frame",
+          presentation.className,
+          className,
+        )}
         data-slot="viewport-frame"
         ref={(element) => {
           setForwardedRef(ref, element);
         }}
+        style={mergeStylexInlineStyles(presentation.style, style)}
       />
     );
   },
@@ -46,23 +68,33 @@ export const ViewportFrame = forwardRef<HTMLElement, ViewportFrameProps>(
 
 ViewportFrame.displayName = "ViewportFrame";
 
-export interface WrappingRowProps extends HTMLAttributes<HTMLElement> {
+export interface WrappingRowProps extends StructuralSurfaceProps {
   readonly as?: "div" | "footer" | "header" | "nav" | "section" | "span";
 }
 
 /** Wraps inline content before it can clip or force a wider viewport. */
 export const WrappingRow = forwardRef<HTMLElement, WrappingRowProps>(
-  ({ as = "div", className, ...props }, ref) => {
+  ({ as = "div", className, style, xstyle, ...props }, ref) => {
     const Element = as;
+    const presentation = stylex.props(
+      structuralSurfaceStyles.wrappingRow,
+      xstyle,
+    );
 
     return (
       <Element
         {...props}
-        className={cn("hraness-wrapping-row", className)}
+        {...presentation}
+        className={cn(
+          "hraness-wrapping-row",
+          presentation.className,
+          className,
+        )}
         data-slot="wrapping-row"
         ref={(element) => {
           setForwardedRef(ref, element);
         }}
+        style={mergeStylexInlineStyles(presentation.style, style)}
       />
     );
   },

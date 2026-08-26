@@ -76,6 +76,30 @@
     --gallery-quiet-site-priority3-conflict: legacy;
     padding-top: 9rem;
   }
+
+  html body [data-gallery-wrapping-row-layer-conflict="true"][data-slot="wrapping-row"] {
+    --gallery-wrapping-row-layer-conflict: legacy;
+    display: grid;
+    min-inline-size: 8rem;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 5rem;
+  }
+
+  html body [data-gallery-viewport-frame-layer-conflict="true"][data-slot="viewport-frame"] {
+    --gallery-viewport-frame-layer-conflict: legacy;
+    inline-size: 12rem;
+    min-inline-size: 8rem;
+    height: 5rem;
+    overflow: visible;
+  }
+}
+
+[data-gallery-wrapping-row-item] {
+  box-sizing: border-box;
+  flex: 0 0 6rem;
+  padding: var(--space-1);
+  border: 1px solid var(--ui-border);
 }
 
 [data-gallery-icon-family="true"] > span {

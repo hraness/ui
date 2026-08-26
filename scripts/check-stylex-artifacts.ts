@@ -7,6 +7,8 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-stylex-layer-conflict",
   "data-gallery-quiet-site-layer-conflict",
   "data-gallery-quiet-site-priority3-conflict",
+  "data-gallery-viewport-frame-layer-conflict",
+  "data-gallery-wrapping-row-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -209,6 +211,33 @@ function requirePublicLayerContract(
   }
 }
 
+function requireViewportHeightFallbacks(compiledCss: string): void {
+  const fallbacks = [
+    /height:\s*100vh;/gu,
+    /height:\s*100svh;/gu,
+    /height:\s*100dvh;/gu,
+  ] as const;
+  const positions = fallbacks.map((pattern) => {
+    const matches = [...compiledCss.matchAll(pattern)];
+    if (matches.length !== 1 || matches[0]?.index === undefined) {
+      throw new Error(
+        "dist/stylex.css must contain exactly one 100vh, 100svh, and 100dvh viewport height fallback",
+      );
+    }
+    return matches[0].index;
+  });
+  if (!(positions[0]! < positions[1]! && positions[1]! < positions[2]!)) {
+    throw new Error(
+      "dist/stylex.css must preserve the 100vh < 100svh < 100dvh viewport height fallback order",
+    );
+  }
+  requireMatch(
+    compiledCss,
+    /@supports\s*\(height:\s*100svh\)\s*\{[\s\S]*height:\s*100svh;[\s\S]*@supports\s*\(height:\s*100dvh\)\s*\{[\s\S]*height:\s*100dvh;/u,
+    "the nested svh then dvh viewport height capability fallbacks",
+  );
+}
+
 const repository = process.cwd();
 const [compiledJavaScript, compiledCss, legacyComponents, orderedStylesheet] =
   await Promise.all([
@@ -285,6 +314,19 @@ const quietSiteDeclarations = [
 for (const [pattern, description] of quietSiteDeclarations) {
   requireMatch(compiledCss, pattern, description);
 }
+const structuralSurfaceDeclarations = [
+  [/align-items:\s*center;/u, "wrapping-row alignment"],
+  [/display:\s*flex;/u, "wrapping-row display"],
+  [/flex-wrap:\s*wrap;/u, "wrapping-row wrapping"],
+  [/gap:\s*var\(--space-3\);/u, "wrapping-row gap"],
+  [/inline-size:\s*100%;/u, "viewport-frame logical inline size"],
+  [/min-inline-size:\s*0;/u, "structural-surface logical minimum"],
+  [/overflow:\s*hidden;/u, "viewport-frame overflow"],
+] as const;
+for (const [pattern, description] of structuralSurfaceDeclarations) {
+  requireMatch(compiledCss, pattern, description);
+}
+requireViewportHeightFallbacks(compiledCss);
 forbid(
   legacyComponents,
   /\.hraness-(?:appearance|social)-icon(?![A-Za-z0-9_-])/u,
@@ -295,11 +337,26 @@ forbid(
   /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u,
   "a legacy quiet-site landmark recipe",
 );
+forbid(
+  legacyComponents,
+  /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u,
+  "a legacy structural-surface recipe",
+);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,
   /max-width:\s*var\(--hraness-quiet-site-measure,\s*34rem\);/u,
   "a physical quiet-site measure produced from its logical source contract",
+);
+forbid(
+  compiledCss,
+  /(?:^|[\s{;])width:\s*100%;/u,
+  "a physical 100% viewport-frame width produced from its logical source contract",
+);
+forbid(
+  compiledCss,
+  /(?:^|[\s{;])min-width:\s*0;/u,
+  "a physical structural-surface minimum produced from its logical source contract",
 );
 for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
   forbid(
@@ -328,6 +385,16 @@ requireMatch(
   compiledJavaScript,
   /hraness-quiet-site-footer/u,
   "the quiet-site footer semantic hook",
+);
+requireMatch(
+  compiledJavaScript,
+  /hraness-viewport-frame/u,
+  "the viewport-frame semantic hook",
+);
+requireMatch(
+  compiledJavaScript,
+  /hraness-wrapping-row/u,
+  "the wrapping-row semantic hook",
 );
 forbid(
   compiledJavaScript,
@@ -429,6 +496,25 @@ assert.throws(
     ),
   /top-level content outside its allowed named layers/u,
   "the layer guard must reject an unlayered generated recipe",
+);
+assert.throws(
+  () =>
+    requireViewportHeightFallbacks(
+      compiledCss
+        .replace("height: 100vh;", "height: __viewport-vh__;")
+        .replace("height: 100dvh;", "height: 100vh;")
+        .replace("height: __viewport-vh__;", "height: 100dvh;"),
+    ),
+  /100vh < 100svh < 100dvh viewport height fallback order/u,
+  "the viewport fallback guard must reject a reversed dynamic-height preference",
+);
+assert.throws(
+  () =>
+    requireViewportHeightFallbacks(
+      compiledCss.replace("height: 100svh;", "height: 100vh;"),
+    ),
+  /exactly one 100vh, 100svh, and 100dvh/u,
+  "the viewport fallback guard must reject a missing small-viewport fallback",
 );
 
 console.log("StyleX package artifacts match the compiler contract");
