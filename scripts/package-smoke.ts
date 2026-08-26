@@ -2,10 +2,27 @@ import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
-const packageName = "@hraness/ui";
-const importSpecifiers = ["@hraness/ui"];
-const binNames = [];
-const verificationPackages = ["@types/bun@^1.3.14","@types/react@^19.2.14","@types/react-dom@^19.2.3","react@19.2.3","react-dom@19.2.3","typescript@^6.0.3"];
+type ReactRelease = Readonly<{
+  label: string;
+  reactTypes: string;
+  reactDomTypes: string;
+  version: string;
+}>;
+
+const reactReleases: readonly ReactRelease[] = [
+  {
+    label: "react-18",
+    reactTypes: "^18.3.0",
+    reactDomTypes: "^18.3.0",
+    version: "18.3.1",
+  },
+  {
+    label: "react-19",
+    reactTypes: "^19.2.0",
+    reactDomTypes: "^19.2.0",
+    version: "19.2.3",
+  },
+];
 
 async function run(command: string[], cwd: string): Promise<void> {
   const process = Bun.spawn(command, {
@@ -52,38 +69,97 @@ function resolveGenuineNodeExecutable(): string {
   throw new Error("package smoke requires a genuine Node 24 executable on PATH");
 }
 
-const repository = process.cwd();
-const work = await mkdtemp(join(tmpdir(), "hraness-package-smoke-"));
-const temporary = join(work, "tmp");
-const environment = {
-  ...process.env,
-  BUN_TMPDIR: temporary,
-  TMPDIR: temporary,
-};
-try {
-  const archive = join(work, "package.tgz");
-  const consumer = join(work, "consumer");
-  await mkdir(temporary, { mode: 0o700 });
+function ssrProbe(release: ReactRelease): string {
+  return `import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+import { Search01Icon } from "@hugeicons/core-free-icons";
+import { Icon } from "@hraness/ui";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+assert.equal(React.version, ${JSON.stringify(release.version)});
+
+const reactDomPackageUrl = import.meta.resolve("react-dom/package.json");
+const reactDomPackage = JSON.parse(await readFile(new URL(reactDomPackageUrl), "utf8"));
+assert.equal(reactDomPackage.version, ${JSON.stringify(release.version)});
+
+const stylexCssUrl = import.meta.resolve("@hraness/ui/stylex.css");
+assert.equal(new URL(stylexCssUrl).protocol, "file:");
+const stylexCss = await readFile(new URL(stylexCssUrl), "utf8");
+assert.ok(stylexCss.trim().length > 0, "@hraness/ui/stylex.css must not be empty");
+
+const markup = renderToStaticMarkup(React.createElement(Icon, {
+  className: "consumer-icon",
+  icon: Search01Icon,
+}));
+assert.match(markup, /<svg/u);
+assert.match(markup, /aria-hidden="true"/u);
+assert.match(markup, /class="[^"]*hraness-icon[^"]*consumer-icon[^"]*"/u);
+assert.match(markup, /data-slot="icon"/u);
+`;
+}
+
+const typeScriptProbe = `import { Search01Icon } from "@hugeicons/core-free-icons";
+import * as stylex from "@stylexjs/stylex";
+import { Icon } from "@hraness/ui";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+const styles = stylex.create({ icon: { display: "block" } });
+const markup: string = renderToStaticMarkup(createElement(Icon, {
+  className: "consumer-icon",
+  icon: Search01Icon,
+  size: 24,
+  strokeWidth: 2,
+  xstyle: styles.icon,
+}));
+
+void markup;
+`;
+
+function typeScriptConfig(moduleResolution: "Bundler" | "NodeNext") {
+  return {
+    compilerOptions: {
+      target: "ES2023",
+      lib: ["ES2023", "DOM", "DOM.Iterable"],
+      jsx: "react-jsx",
+      strict: true,
+      noEmit: true,
+      skipLibCheck: false,
+      module: moduleResolution === "Bundler" ? "Preserve" : "NodeNext",
+      moduleResolution,
+    },
+    include: ["index.ts"],
+  };
+}
+
+async function verifyConsumer(
+  archive: string,
+  consumer: string,
+  nodeExecutable: string,
+  release: ReactRelease,
+): Promise<void> {
   await mkdir(consumer);
-  const nodeExecutable = resolveGenuineNodeExecutable();
+  await writeFile(join(consumer, "package.json"), `${JSON.stringify({
+    name: `hraness-package-smoke-${release.label}`,
+    private: true,
+    type: "module",
+  }, null, 2)}\n`);
   await run([
     process.execPath,
-    "pm",
-    "pack",
-    "--filename",
+    "add",
     archive,
+    "@hugeicons/core-free-icons@^4.2.2",
+    "@stylexjs/stylex@0.19.0",
+    `@types/react@${release.reactTypes}`,
+    `@types/react-dom@${release.reactDomTypes}`,
+    `react@${release.version}`,
+    `react-dom@${release.version}`,
+    "typescript@^6.0.3",
     "--ignore-scripts",
-    "--quiet",
-  ], repository);
-  await writeFile(join(consumer, "package.json"), JSON.stringify({ private: true, type: "module" }));
-  await run([process.execPath, "add", archive, "--ignore-scripts"], consumer);
-  await run([nodeExecutable, "--input-type=module", "-e", `await import(${JSON.stringify(packageName)})`], consumer);
-  for (const binName of binNames) {
-    await run([join(consumer, "node_modules", ".bin", binName), "--help"], consumer);
-  }
-  if (verificationPackages.length > 0) {
-    await run([process.execPath, "add", ...verificationPackages, "--ignore-scripts"], consumer);
-  }
+  ], consumer);
+
   // A restored package-manager cache can retain this valid duplicate topology.
   // Public source types must remain portable when React Aria resolves through it.
   const nestedReactAriaModules = join(
@@ -98,17 +174,51 @@ try {
     join(nestedReactAriaModules, "react-stately"),
     { recursive: true },
   );
+
+  await writeFile(join(consumer, "ssr.mjs"), ssrProbe(release));
+  await run([nodeExecutable, "./ssr.mjs"], consumer);
+
+  await writeFile(join(consumer, "index.ts"), typeScriptProbe);
+  for (const moduleResolution of ["Bundler", "NodeNext"] as const) {
+    const configName = `tsconfig.${moduleResolution.toLowerCase()}.json`;
+    await writeFile(
+      join(consumer, configName),
+      `${JSON.stringify(typeScriptConfig(moduleResolution), null, 2)}\n`,
+    );
+    await run([process.execPath, "x", "tsc", "-p", `./${configName}`], consumer);
+  }
+}
+
+const repository = process.cwd();
+const work = await mkdtemp(join(tmpdir(), "hraness-package-smoke-"));
+const temporary = join(work, "tmp");
+const environment = {
+  ...process.env,
+  BUN_TMPDIR: temporary,
+  TMPDIR: temporary,
+};
+try {
+  const archive = join(work, "package.tgz");
+  await mkdir(temporary, { mode: 0o700 });
+  const nodeExecutable = resolveGenuineNodeExecutable();
   await run([
-    nodeExecutable,
-    "--input-type=module",
-    "-e",
-    `await Promise.all(${JSON.stringify(importSpecifiers)}.map((specifier) => import(specifier)))`,
-  ], consumer);
-  await writeFile(join(consumer, "index.ts"), "import * as surface0 from \"@hraness/ui\";\nvoid [surface0];\n");
-  await writeFile(join(consumer, "tsconfig.bundler.json"), "{\n  \"compilerOptions\": {\n    \"target\": \"ES2023\",\n    \"lib\": [\n      \"ES2023\",\n      \"DOM\",\n      \"DOM.Iterable\"\n    ],\n    \"jsx\": \"react-jsx\",\n    \"strict\": true,\n    \"noEmit\": true,\n    \"skipLibCheck\": false,\n    \"module\": \"Preserve\",\n    \"moduleResolution\": \"Bundler\"\n  },\n  \"include\": [\n    \"index.ts\"\n  ]\n}");
-  await run([process.execPath, "x", "tsc", "-p", "./tsconfig.bundler.json"], consumer);
-  await writeFile(join(consumer, "tsconfig.nodenext.json"), "{\n  \"compilerOptions\": {\n    \"target\": \"ES2023\",\n    \"lib\": [\n      \"ES2023\",\n      \"DOM\",\n      \"DOM.Iterable\"\n    ],\n    \"jsx\": \"react-jsx\",\n    \"strict\": true,\n    \"noEmit\": true,\n    \"skipLibCheck\": false,\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\"\n  },\n  \"include\": [\n    \"index.ts\"\n  ]\n}");
-  await run([process.execPath, "x", "tsc", "-p", "./tsconfig.nodenext.json"], consumer);
+    process.execPath,
+    "pm",
+    "pack",
+    "--filename",
+    archive,
+    "--ignore-scripts",
+    "--quiet",
+  ], repository);
+
+  for (const release of reactReleases) {
+    await verifyConsumer(
+      archive,
+      join(work, release.label),
+      nodeExecutable,
+      release,
+    );
+  }
 } finally {
   await rm(work, { recursive: true, force: true });
 }

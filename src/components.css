@@ -2704,11 +2704,6 @@
     );
   }
 
-  .hraness-icon {
-    display: inline-block;
-    flex: 0 0 auto;
-  }
-
   .hraness-social-icon,
   .hraness-appearance-icon {
     display: inline-flex;

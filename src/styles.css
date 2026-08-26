@@ -1,4 +1,5 @@
 @import "./tokens.css";
 @import "./reset.css";
 @import "./components.css";
+@import "../dist/stylex.css";
 @import "./tailwind.css";

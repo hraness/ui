@@ -72,6 +72,7 @@ test("the complete stylesheet composes its public layers in a stable order", asy
     '@import "./tokens.css";',
     '@import "./reset.css";',
     '@import "./components.css";',
+    '@import "../dist/stylex.css";',
     '@import "./tailwind.css";',
   ];
 
