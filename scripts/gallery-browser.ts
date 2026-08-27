@@ -2553,6 +2553,26 @@ function nearlyEqual(actual: number, expected: number): boolean {
   return Number.isFinite(actual) && Math.abs(actual - expected) <= 0.5;
 }
 
+async function settleCardFamilyTransitions(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const cardFamily = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-gallery-pressable-card-tone], [data-gallery-card-family-override="pressable"]',
+      ),
+    ];
+    const transitions = cardFamily.flatMap((element) =>
+      element.getAnimations());
+    await Promise.allSettled(
+      transitions.map(async (transition) => transition.finished),
+    );
+    await new Promise<void>((resolveFrame) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolveFrame());
+      });
+    });
+  });
+}
+
 async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
   await page.keyboard.press("Tab");
   const skipLink = page.locator('[data-slot="skip-link"]');
@@ -3536,6 +3556,7 @@ try {
           }
 
           await verifyKeyboardPath(page, layout.id);
+          await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
           invariant(dark.theme === "dark" && dark.colorScheme === "dark", `${layout.id}: explicit dark theme did not apply`);
           invariant(dark.bodyBackground !== light.bodyBackground, `${layout.id}: theme did not change the page background`);
