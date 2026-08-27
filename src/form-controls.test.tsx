@@ -38,6 +38,11 @@ test("form, select, and checkbox composition keeps native submission semantics",
   expect(html).toContain('action="/preferences"');
   expect(html).toContain('method="post"');
   expect(html).toContain('class="hraness-select-field"');
+  expect(html).toContain(
+    'class="hraness-select-field__indicator" data-slot="select-field-indicator" fill="none" focusable="false" viewBox="0 0 12 12"',
+  );
+  expect(html).toContain('d="M2.25 4.25 6 7.75 9.75 4.25"');
+  expect(html).not.toContain("⌄");
   expect(html).toContain('name="cadence"');
   expect(html).toContain("Digest cadence");
   expect(html).toContain('role="group"');
