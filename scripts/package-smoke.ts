@@ -102,6 +102,7 @@ import {
   StatusDot,
   Tag,
   ThemedSurface,
+  Toolbar,
   ViewportFrame,
   WrappingRow,
 } from "@hraness/ui";
@@ -155,6 +156,9 @@ assert.match(stylexCss, /transform:\s*translateY\(1px\)/u);
 assert.match(stylexCss, /:hover\s*\{/u);
 assert.match(stylexCss, /:active\s*\{/u);
 assert.match(stylexCss, /:focus-visible\s*\{/u);
+assert.match(stylexCss, /outline-offset:\s*2px/u);
+assert.match(stylexCss, /padding-block:\s*var\(--space-1\)/u);
+assert.match(stylexCss, /padding-inline:\s*var\(--space-1\)/u);
 const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
 const viewportHeightPositions = viewportHeightFallbacks.map((fallback) => stylexCss.indexOf(fallback));
 assert.ok(viewportHeightPositions.every((position) => position >= 0));
@@ -171,7 +175,7 @@ assert.equal(
 assert.equal(
   stylexCss.match(/(?:^|[\s{;])min-width:\s*0/gu)?.length,
   1,
-  "the packed CSS must contain exactly one shared physical zero min-width declaration for the Tag label and PressableCard",
+  "the packed CSS must contain exactly one shared physical zero min-width declaration for the Tag label, PressableCard, and Toolbar",
 );
 
 const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
@@ -191,6 +195,7 @@ assert.doesNotMatch(
   ),
   /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
 );
+assert.doesNotMatch(componentsCss, /\.hraness-toolbar(?![A-Za-z0-9_-])/u);
 assert.equal(
   componentsCss.match(
     /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu,
@@ -379,6 +384,25 @@ assert.doesNotMatch(pressableMarkup, /--hraness-card-description:/u);
 assert.match(pressableMarkup, /opacity:0\.75/u);
 assert.match(pressableMarkup, /width:8rem/u);
 
+const toolbarMarkup = renderToStaticMarkup(React.createElement(Toolbar, {
+  "aria-label": "Package editor actions",
+  className: "consumer-toolbar",
+  orientation: "vertical",
+  style: (state) => ({
+    backgroundColor: state.orientation === "vertical" ? "rgb(1, 2, 3)" : undefined,
+    width: "8rem",
+  }),
+}, React.createElement("button", { type: "button" }, "Save")));
+assert.match(toolbarMarkup, /^<div/u);
+assert.match(toolbarMarkup, /role="toolbar"/u);
+assert.match(toolbarMarkup, /aria-label="Package editor actions"/u);
+assert.match(toolbarMarkup, /aria-orientation="vertical"/u);
+assert.match(toolbarMarkup, /class="hraness-toolbar [^"]+ consumer-toolbar"/u);
+assert.match(toolbarMarkup, /data-orientation="vertical"/u);
+assert.match(toolbarMarkup, /data-slot="toolbar"/u);
+assert.match(toolbarMarkup, /background-color:rgb\(1, 2, 3\)/u);
+assert.match(toolbarMarkup, /width:8rem/u);
+
 const pageMarkup = renderToStaticMarkup(React.createElement(QuietSitePage, {
   "aria-label": "Package page",
   className: "consumer-page",
@@ -476,6 +500,7 @@ import {
   StatusDot,
   Tag,
   ThemedSurface,
+  Toolbar,
   ViewportFrame,
   WrappingRow,
 } from "@hraness/ui";
@@ -530,6 +555,17 @@ const styles = stylex.create({
     color: "var(--ui-secondary-foreground)",
     paddingInline: "var(--space-2)",
   },
+  toolbar: {
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+    ":focus-visible": {
+      outlineColor: "var(--ui-warning)",
+      outlineOffset: "7px",
+      outlineStyle: "dashed",
+      outlineWidth: "4px",
+    },
+  },
+  toolbarDynamic: (width: string) => ({ width }),
   wrapper: { display: "grid" },
 });
 const markup: string = renderToStaticMarkup(createElement(Icon, {
@@ -639,6 +675,16 @@ const pressableMarkup: string = renderToStaticMarkup(createElement(PressableCard
   tone: "inverse",
   xstyle: styles.card,
 }));
+const toolbarRef = createRef<HTMLDivElement>();
+const toolbarMarkup: string = renderToStaticMarkup(createElement(Toolbar, {
+  "aria-label": "Package editor actions",
+  children: createElement("button", { type: "button" }, "Save"),
+  className: "consumer-toolbar",
+  orientation: "vertical",
+  ref: toolbarRef,
+  style: ({ orientation }) => ({ width: orientation === "vertical" ? "15rem" : "13rem" }),
+  xstyle: [styles.toolbar, styles.toolbarDynamic("14rem")],
+}));
 const pageRef = createRef<HTMLElement>();
 const pageMarkup: string = renderToStaticMarkup(createElement(QuietSitePage, {
   "aria-label": "Package page",
@@ -732,6 +778,12 @@ const invalidCardToneMarkup = renderToStaticMarkup(createElement(Card, { tone: "
 const invalidCardShapeMarkup = renderToStaticMarkup(createElement(Card, { shape: "pill" }));
 // @ts-expect-error PressableCard keeps className static for stable semantic composition.
 const invalidPressableClassMarkup = renderToStaticMarkup(createElement(PressableCard, { children: "Open", className: () => "dynamic" }));
+// @ts-expect-error Toolbar requires exactly one accessible naming method.
+const unnamedToolbarMarkup = renderToStaticMarkup(createElement(Toolbar, { children: "Commands" }));
+// @ts-expect-error Toolbar rejects competing accessible naming methods.
+const multiplyNamedToolbarMarkup = renderToStaticMarkup(createElement(Toolbar, { "aria-label": "Commands", "aria-labelledby": "commands", children: "Commands" }));
+// @ts-expect-error Toolbar keeps className static for stable semantic composition.
+const invalidToolbarClassMarkup = renderToStaticMarkup(createElement(Toolbar, { "aria-label": "Commands", className: () => "dynamic" }));
 
 void markup;
 void socialMarkup;
@@ -742,6 +794,7 @@ void tagMarkup;
 void dotMarkup;
 void cardMarkup;
 void pressableMarkup;
+void toolbarMarkup;
 void pageMarkup;
 void footerMarkup;
 void frameMarkup;
@@ -767,10 +820,13 @@ void invalidTagAccentMarkup;
 void invalidCardToneMarkup;
 void invalidCardShapeMarkup;
 void invalidPressableClassMarkup;
+void unnamedToolbarMarkup;
+void multiplyNamedToolbarMarkup;
+void invalidToolbarClassMarkup;
 `;
 
 const viteClient = `import "@hraness/ui/styles.css";
-import { Card, CardDescription, PressableCard } from "@hraness/ui";
+import { Card, CardDescription, PressableCard, Toolbar } from "@hraness/ui";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 
@@ -784,6 +840,10 @@ createRoot(root).render(React.createElement(React.Fragment, null,
     onPress: () => undefined,
     tone: "inverse",
   }, "Vite pressable card"),
+  React.createElement(Toolbar, {
+    "aria-label": "Vite editor actions",
+    orientation: "vertical",
+  }, React.createElement("button", { type: "button" }, "Save")),
 ));
 `;
 
@@ -862,6 +922,9 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "surfaces.stylex.ts"),
   );
   await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "toolbar.stylex.ts"),
+  );
+  await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "lib", "stylex.ts"),
   );
 
@@ -916,9 +979,11 @@ async function verifyConsumer(
     readFile(join(consumer, "vite-dist", "assets", viteCssPath), "utf8"),
   ]);
   assert.match(viteJavaScript, /hraness-pressable-card/u);
+  assert.match(viteJavaScript, /hraness-toolbar/u);
   assert.match(viteJavaScript, /--_hraness-card-description/u);
   assert.match(viteCss, /color:var\(--hraness-card-description\)/u);
   assert.match(viteCss, /:hover\{/u);
+  assert.match(viteCss, /outline-offset:2px/u);
   const viteCssWithoutCardBridge = viteCss.replace(
     /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu,
     "",
@@ -934,6 +999,7 @@ async function verifyConsumer(
     viteCssWithoutCardBridge,
     /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
   );
+  assert.doesNotMatch(viteCss, /\.hraness-toolbar(?![A-Za-z0-9_-])/u);
 }
 
 const repository = process.cwd();

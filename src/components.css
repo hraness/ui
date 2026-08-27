@@ -1423,30 +1423,6 @@
     font-size: var(--text-caption);
   }
 
-  .hraness-toolbar {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-1);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    background: var(--ui-card);
-  }
-
-  .hraness-toolbar[data-orientation="vertical"] {
-    width: fit-content;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    align-items: stretch;
-  }
-
-  .hraness-toolbar:where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 2px;
-  }
-
   .hraness-skip-link {
     position: fixed;
     z-index: var(--z-skip-link);

@@ -153,6 +153,13 @@ interface BrowserEvidence {
   readonly themedSurfaceShapeContracts: boolean;
   readonly themedSurfaceTextureContract: boolean;
   readonly themedSurfaceToneContracts: boolean;
+  readonly toolbarBoundaryContracts: boolean;
+  readonly toolbarClassContracts: boolean;
+  readonly toolbarDefaultBackground: string;
+  readonly toolbarDiagnostics: string;
+  readonly toolbarLayerSentinels: boolean;
+  readonly toolbarOrientationContracts: boolean;
+  readonly toolbarOverrideContract: boolean;
   readonly transitionDuration: string;
   readonly quietSitePriority3LayerSentinel: string;
   readonly viewportFrameCallerClassLast: boolean;
@@ -530,6 +537,21 @@ function requirePackedDefaultStylesheet(css: string): void {
   );
   assert.match(
     css,
+    /outline-offset:\s*2px/u,
+    "the packed default stylesheet must include the native Toolbar focus offset",
+  );
+  assert.match(
+    css,
+    /padding-block:\s*var\(--space-1\)/u,
+    "the packed default stylesheet must include the Toolbar block padding",
+  );
+  assert.match(
+    css,
+    /padding-inline:\s*var\(--space-1\)/u,
+    "the packed default stylesheet must include the Toolbar inline padding",
+  );
+  assert.match(
+    css,
     /background-image:\s*repeating-linear-gradient\(/u,
     "the harness bundle must include the downstream texture xstyle seam",
   );
@@ -571,6 +593,11 @@ function requirePackedDefaultStylesheet(css: string): void {
     css.replace(CARD_DESCRIPTION_BRIDGE_PATTERN, ""),
     /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain Card-family selectors beyond the compatibility bridge",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-toolbar(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain a legacy Toolbar selector",
   );
   assert.equal(
     css.match(CARD_DESCRIPTION_BRIDGE_PATTERN)?.length,
@@ -814,6 +841,63 @@ function requirePackedDefaultStylesheet(css: string): void {
     /@media\s*\(forced-colors:\s*active\)[\s\S]*\[data-gallery-card-family-layer-conflict=(?:"true"|true)\][^}]*\{[^}]*forced-color-adjust:\s*none/u,
     "the gallery Card conflict must carry its forced-colors counterexample",
   );
+  const toolbarConflict = css.match(
+    /\[data-gallery-toolbar-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"toolbar"|toolbar)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    toolbarConflict !== undefined
+    && /--gallery-toolbar-layer-conflict:\s*legacy/u.test(toolbarConflict)
+    && /min-width:\s*18rem/u.test(toolbarConflict)
+    && /align-items:\s*stretch/u.test(toolbarConflict)
+    && /display:\s*grid/u.test(toolbarConflict)
+    && /flex-wrap:\s*nowrap/u.test(toolbarConflict)
+    && /gap:\s*5rem/u.test(toolbarConflict)
+    && (
+      /padding-block:\s*5rem/u.test(toolbarConflict)
+      || (
+        /padding-block-start:\s*5rem/u.test(toolbarConflict)
+        && /padding-block-end:\s*5rem/u.test(toolbarConflict)
+      )
+    )
+    && (
+      /padding-inline:\s*5rem/u.test(toolbarConflict)
+      || (
+        /padding-inline-start:\s*5rem/u.test(toolbarConflict)
+        && /padding-inline-end:\s*5rem/u.test(toolbarConflict)
+      )
+    )
+    && /border:\s*7px dashed/u.test(toolbarConflict)
+    && /border-radius:\s*0/u.test(toolbarConflict)
+    && /background-color:/u.test(toolbarConflict),
+    `the gallery Toolbar conflict must carry every root counterexample: ${String(toolbarConflict)}`,
+  );
+  const verticalToolbarConflict = css.match(
+    /\[data-gallery-toolbar-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"toolbar"|toolbar)\]\[data-orientation=(?:"vertical"|vertical)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    verticalToolbarConflict !== undefined
+    && /width:\s*19rem/u.test(verticalToolbarConflict)
+    && /align-items:\s*center/u.test(verticalToolbarConflict)
+    && (
+      /flex-flow:\s*wrap/u.test(verticalToolbarConflict)
+      || (
+        /flex-direction:\s*row/u.test(verticalToolbarConflict)
+        && /flex-wrap:\s*wrap/u.test(verticalToolbarConflict)
+      )
+    ),
+    `the gallery vertical Toolbar conflict must carry every orientation counterexample: ${String(verticalToolbarConflict)}`,
+  );
+  const toolbarFocusConflict = css.match(
+    /\[data-gallery-toolbar-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"toolbar"|toolbar)\]:focus-visible\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    toolbarFocusConflict !== undefined
+    && /outline-color:/u.test(toolbarFocusConflict)
+    && /outline-offset:\s*11px/u.test(toolbarFocusConflict)
+    && /outline-style:\s*solid/u.test(toolbarFocusConflict)
+    && /outline-width:\s*7px/u.test(toolbarFocusConflict),
+    "the gallery Toolbar conflict must carry every focus counterexample",
+  );
 }
 
 function placePriority3BeforeLegacy(css: string): string {
@@ -975,6 +1059,14 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const cardNestedInnerDescription = document.querySelector(
       '[data-gallery-card-nested-inner-description="true"]',
     );
+    const toolbars = [
+      ...document.querySelectorAll<HTMLDivElement>(
+        '[data-gallery-toolbar-layer-conflict="true"]',
+      ),
+    ];
+    const toolbarOverride = document.querySelector(
+      '[data-gallery-toolbar-override="true"]',
+    );
     if (
       !(icon instanceof SVGElement)
       || !(iconCanary instanceof HTMLElement)
@@ -1017,6 +1109,8 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || !(cardNestedOuterDescription instanceof HTMLParagraphElement)
       || !(cardNestedInner instanceof HTMLDivElement)
       || !(cardNestedInnerDescription instanceof HTMLParagraphElement)
+      || toolbars.length !== 3
+      || !(toolbarOverride instanceof HTMLDivElement)
     ) {
       throw new Error("The primitive gallery structure is incomplete.");
     }
@@ -1917,6 +2011,56 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         .getPropertyValue("--hraness-card-description")
         .trim(),
     };
+    const toolbarEvidence = toolbars.map((toolbar) => {
+      const isOverride = toolbar.dataset.galleryToolbarOverride === "true";
+      const orientation = toolbar.dataset.orientation;
+      if (orientation !== "horizontal" && orientation !== "vertical") {
+        throw new Error(`Unexpected Toolbar orientation: ${String(orientation)}`);
+      }
+      const kind = isOverride ? "override" : orientation;
+      const style = getComputedStyle(toolbar);
+      const classes = [...toolbar.classList];
+      return {
+        alignItems: style.alignItems,
+        ariaLabel: toolbar.getAttribute("aria-label") ?? "",
+        ariaLabelledBy: toolbar.getAttribute("aria-labelledby") ?? "",
+        ariaOrientation: toolbar.getAttribute("aria-orientation") ?? "",
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        borderRadius: Number.parseFloat(style.borderRadius),
+        borderStyle: style.borderStyle,
+        borderWidth: Number.parseFloat(style.borderWidth),
+        classContract:
+          classes[0] === "hraness-toolbar"
+          && classes.at(-1) === `gallery-toolbar--${kind}`
+          && classes.some(
+            (name) =>
+              name !== "hraness-toolbar"
+              && name !== "gallery-toolbar"
+              && name !== `gallery-toolbar--${kind}`,
+          ),
+        display: style.display,
+        dynamicInlineValue: /--[^:]+:\s*14rem/u.test(toolbar.style.cssText),
+        flexDirection: style.flexDirection,
+        flexWrap: style.flexWrap,
+        gap: Number.parseFloat(style.gap),
+        inlineWidth: toolbar.style.width,
+        isOverride,
+        layerSentinel: style
+          .getPropertyValue("--gallery-toolbar-layer-conflict")
+          .trim(),
+        minWidth: Number.parseFloat(style.minWidth),
+        orientation,
+        paddingBottom: Number.parseFloat(style.paddingBottom),
+        paddingLeft: Number.parseFloat(style.paddingLeft),
+        paddingRight: Number.parseFloat(style.paddingRight),
+        paddingTop: Number.parseFloat(style.paddingTop),
+        refConnected: toolbar.dataset.galleryToolbarRef === "true",
+        role: toolbar.getAttribute("role") ?? "",
+        slot: toolbar.dataset.slot ?? "",
+        width: toolbar.getBoundingClientRect().width,
+      };
+    });
 
     return {
       appearanceAlignItems: appearanceStyle.alignItems,
@@ -2429,6 +2573,74 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
               : resolvedTokens.border
           ),
       ),
+      toolbarBoundaryContracts: toolbarEvidence.every(
+        (toolbar) =>
+          toolbar.borderStyle === "solid"
+          && toolbar.borderWidth === 1
+          && toolbar.display === "flex"
+          && toolbar.minWidth === 0
+          && (!toolbar.isOverride || toolbar.refConnected)
+          && toolbar.role === "toolbar"
+          && toolbar.slot === "toolbar"
+          && toolbar.ariaOrientation === toolbar.orientation
+          && (toolbar.ariaLabel.length > 0) !== (toolbar.ariaLabelledBy.length > 0),
+      ),
+      toolbarClassContracts: toolbarEvidence.every(
+        (toolbar) => toolbar.classContract,
+      ),
+      toolbarDefaultBackground:
+        toolbarEvidence.find(
+          (toolbar) => toolbar.orientation === "horizontal" && !toolbar.isOverride,
+        )?.backgroundColor ?? "",
+      toolbarDiagnostics: JSON.stringify({
+        toolbars: toolbarEvidence,
+        tokens: resolvedTokens,
+      }),
+      toolbarLayerSentinels: toolbarEvidence.every(
+        (toolbar) => toolbar.layerSentinel === "legacy",
+      ),
+      toolbarOrientationContracts: toolbarEvidence.every((toolbar) => {
+        if (toolbar.isOverride) {
+          return toolbar.orientation === "vertical"
+            && toolbar.alignItems === "end"
+            && toolbar.flexDirection === "row"
+            && toolbar.flexWrap === "wrap";
+        }
+        return toolbar.orientation === "vertical"
+          ? toolbar.alignItems === "stretch"
+            && toolbar.flexDirection === "column"
+            && toolbar.flexWrap === "nowrap"
+            && toolbar.width < 19 * 16
+          : toolbar.alignItems === "center"
+            && toolbar.backgroundColor === resolvedTokens.cardBackground
+            && toolbar.borderColor === resolvedTokens.border
+            && toolbar.borderRadius === resolvedTokens.largeRadius
+            && toolbar.flexDirection === "row"
+            && toolbar.flexWrap === "wrap"
+            && toolbar.gap === resolvedTokens.space1
+            && toolbar.paddingBottom === resolvedTokens.space1
+            && toolbar.paddingLeft === resolvedTokens.space1
+            && toolbar.paddingRight === resolvedTokens.space1
+            && toolbar.paddingTop === resolvedTokens.space1;
+      }),
+      toolbarOverrideContract: toolbarEvidence.some(
+        (toolbar) =>
+          toolbar.isOverride
+          && toolbar.alignItems === "end"
+          && toolbar.backgroundColor === resolvedTokens.secondaryBackground
+          && toolbar.borderColor === resolvedTokens.primary
+          && toolbar.borderRadius === resolvedTokens.smallRadius
+          && toolbar.dynamicInlineValue
+          && toolbar.flexDirection === "row"
+          && toolbar.flexWrap === "wrap"
+          && toolbar.gap === resolvedTokens.space2
+          && toolbar.inlineWidth === "13rem"
+          && toolbar.paddingBottom === resolvedTokens.space2
+          && toolbar.paddingLeft === resolvedTokens.space2
+          && toolbar.paddingRight === resolvedTokens.space2
+          && toolbar.paddingTop === resolvedTokens.space2
+          && toolbar.width === 208,
+      ),
       transitionDuration: buttonStyle.transitionDuration,
       quietSitePriority3LayerSentinel: footerStyle
         .getPropertyValue("--gallery-quiet-site-priority3-conflict")
@@ -2835,6 +3047,119 @@ async function verifyPressableCardCallerStatePrecedence(
   }, selector);
 }
 
+async function verifyToolbarKeyboardFocusPrecedence(
+  page: Page,
+  id: string,
+): Promise<void> {
+  const nativeSelector = '[data-gallery-toolbar-native-focus="true"]';
+  const overrideSelector = '[data-gallery-toolbar-override="true"]';
+  const nativeToolbar = page.locator(nativeSelector);
+  const overrideToolbar = page.locator(overrideSelector);
+
+  await Promise.all([
+    nativeToolbar.evaluate((element) => {
+      element.tabIndex = 0;
+    }),
+    overrideToolbar.evaluate((element) => {
+      element.tabIndex = 0;
+    }),
+  ]);
+
+  async function reachByKeyboard(
+    toolbar: ReturnType<Page["locator"]>,
+    selector: string,
+    description: string,
+  ): Promise<void> {
+    let reached = false;
+    for (let step = 0; step < 60; step += 1) {
+      await page.keyboard.press("Tab");
+      reached = await toolbar.evaluate(
+        (element) => document.activeElement === element,
+      );
+      if (reached) break;
+    }
+    invariant(reached, `${id}: ${description} was not reachable by keyboard`);
+    await page.waitForFunction((selector) => {
+      const element = document.querySelector(selector);
+      return element instanceof HTMLDivElement
+        && document.activeElement === element
+        && element.matches(":focus-visible");
+    }, selector);
+  }
+
+  await reachByKeyboard(
+    nativeToolbar,
+    nativeSelector,
+    "the native-focus Toolbar",
+  );
+  const nativeFocused = await nativeToolbar.evaluate((element) => {
+    const resolveColor = (value: string): string => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const style = getComputedStyle(element);
+    return {
+      expectedRing: resolveColor("var(--ui-ring)"),
+      focusVisible: element.matches(":focus-visible"),
+      outlineColor: style.outlineColor,
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  });
+  invariant(
+    nativeFocused.focusVisible
+    && nativeFocused.outlineColor === nativeFocused.expectedRing
+    && nativeFocused.outlineOffset === 2
+    && nativeFocused.outlineStyle === "solid"
+    && nativeFocused.outlineWidth === 2,
+    `${id}: the native Toolbar focus fallback changed: ${JSON.stringify(nativeFocused)}`,
+  );
+
+  await reachByKeyboard(
+    overrideToolbar,
+    overrideSelector,
+    "the caller-override Toolbar",
+  );
+  const overrideFocused = await overrideToolbar.evaluate((element) => {
+    const resolveColor = (value: string): string => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const style = getComputedStyle(element);
+    return {
+      expectedWarning: resolveColor("var(--ui-warning)"),
+      focusVisible: element.matches(":focus-visible"),
+      outlineColor: style.outlineColor,
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  });
+  invariant(
+    overrideFocused.focusVisible
+    && overrideFocused.outlineColor === overrideFocused.expectedWarning
+    && overrideFocused.outlineOffset === 7
+    && overrideFocused.outlineStyle === "dashed"
+    && overrideFocused.outlineWidth === 4,
+    `${id}: caller StyleX lost Toolbar keyboard-focus precedence: ${JSON.stringify(overrideFocused)}`,
+  );
+
+  await overrideToolbar.evaluate((element) => {
+    element.blur();
+    element.removeAttribute("tabindex");
+  });
+  await nativeToolbar.evaluate((element) => element.removeAttribute("tabindex"));
+}
+
 async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
   return page.evaluate(() => {
     const button = document.querySelector('[data-gallery-primary-action="true"][data-slot="button-control"]');
@@ -3213,6 +3538,15 @@ try {
   assert.match(html, /data-gallery-status-family-override="badge"/u);
   assert.match(html, /data-gallery-status-family-override="tag"/u);
   assert.match(html, /data-gallery-status-family-override="dot"/u);
+  assert.match(html, /data-gallery-toolbar-layer-conflict="true"/u);
+  assert.match(html, /data-gallery-toolbar-orientation="horizontal"/u);
+  assert.match(html, /data-gallery-toolbar-orientation="vertical"/u);
+  assert.match(html, /data-gallery-toolbar-native-focus="true"/u);
+  assert.match(html, /data-gallery-toolbar-override="true"/u);
+  assert.match(html, /data-slot="toolbar"/u);
+  assert.match(html, /role="toolbar"/u);
+  assert.match(html, /aria-label="Horizontal editor actions"/u);
+  assert.match(html, /aria-labelledby="gallery-vertical-toolbar-name"/u);
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
@@ -3436,6 +3770,14 @@ try {
             && light.cardFamilyToneShapeContracts,
             `${layout.id}: Card-family parity failed: ${light.cardFamilyDiagnostics}`,
           );
+          invariant(
+            light.toolbarBoundaryContracts
+            && light.toolbarClassContracts
+            && light.toolbarLayerSentinels
+            && light.toolbarOrientationContracts
+            && light.toolbarOverrideContract,
+            `${layout.id}: Toolbar parity failed: ${light.toolbarDiagnostics}`,
+          );
           if (productionPriority3PaddingTop === undefined) {
             productionPriority3PaddingTop = light.footerPaddingTop;
           } else {
@@ -3603,7 +3945,18 @@ try {
               !== light.cardFamilyDefaultBackground,
             `${layout.id}: dark Card-family parity failed: ${dark.cardFamilyDiagnostics}`,
           );
+          invariant(
+            dark.toolbarBoundaryContracts
+            && dark.toolbarClassContracts
+            && dark.toolbarLayerSentinels
+            && dark.toolbarOrientationContracts
+            && dark.toolbarOverrideContract
+            && dark.toolbarDefaultBackground
+              !== light.toolbarDefaultBackground,
+            `${layout.id}: dark Toolbar parity failed: ${dark.toolbarDiagnostics}`,
+          );
           await verifyPressableCardCallerStatePrecedence(page, layout.id);
+          await verifyToolbarKeyboardFocusPrecedence(page, layout.id);
           invariant(dark.recoverableErrors.length === 0, `${layout.id}: interaction introduced hydration recovery`);
           invariant(failures.length === 0, `${layout.id}: ${failures.join("; ")}`);
         } finally {
@@ -3757,7 +4110,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, Card, and PressableCard finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native precedence, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

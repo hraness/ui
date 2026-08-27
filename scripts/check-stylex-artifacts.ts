@@ -15,6 +15,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-avatar-layer-conflict",
   "data-gallery-status-family-layer-conflict",
   "data-gallery-card-family-layer-conflict",
+  "data-gallery-toolbar-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -567,6 +568,78 @@ function requireCardFamilyCallerFallbackSeam(cardSource: string): void {
   }
 }
 
+function requireToolbarContract(
+  legacyComponents: string,
+  compiledCss: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-toolbar(?![A-Za-z0-9_-])/u,
+    "a legacy Toolbar recipe",
+  );
+  const declarations = [
+    [/align-items:\s*center;/u, "the horizontal Toolbar alignment"],
+    [/align-items:\s*stretch;/u, "the vertical Toolbar alignment"],
+    [/background-color:\s*var\(--ui-card\);/u, "the Toolbar background"],
+    [/border-color:\s*var\(--ui-border\);/u, "the Toolbar border color"],
+    [/border-radius:\s*var\(--radius-lg\);/u, "the Toolbar radius"],
+    [/border-style:\s*solid;/u, "the Toolbar border style"],
+    [/border-width:\s*1px;/u, "the Toolbar border width"],
+    [/display:\s*flex;/u, "the Toolbar flex layout"],
+    [/flex-direction:\s*column;/u, "the vertical Toolbar direction"],
+    [/flex-wrap:\s*nowrap;/u, "the vertical Toolbar wrapping"],
+    [/flex-wrap:\s*wrap;/u, "the horizontal Toolbar wrapping"],
+    [/gap:\s*var\(--space-1\);/u, "the Toolbar gap"],
+    [/min-width:\s*0;/u, "the physical Toolbar shrink boundary"],
+    [/outline-color:\s*var\(--ui-ring\);/u, "the Toolbar focus ring color"],
+    [/outline-offset:\s*2px;/u, "the Toolbar focus ring offset"],
+    [/outline-style:\s*solid;/u, "the Toolbar focus ring style"],
+    [/outline-width:\s*2px;/u, "the Toolbar focus ring width"],
+    [/padding-block:\s*var\(--space-1\);/u, "the Toolbar block padding"],
+    [/padding-inline:\s*var\(--space-1\);/u, "the Toolbar inline padding"],
+    [/width:\s*fit-content;/u, "the vertical Toolbar width"],
+  ] as const;
+  for (const [pattern, description] of declarations) {
+    requireMatch(compiledCss, pattern, description);
+  }
+  requireMatch(
+    compiledCss,
+    /:focus-visible\s*\{\s*outline-color:\s*var\(--ui-ring\);/u,
+    "the native Toolbar focus-visible fallback",
+  );
+  forbid(
+    compiledCss,
+    /background:\s*var\(--ui-card\);/u,
+    "a Toolbar background shorthand",
+  );
+  forbid(
+    compiledCss,
+    /border:\s*1px\s+solid\s+var\(--ui-border\)/u,
+    "a Toolbar border shorthand",
+  );
+  forbid(
+    compiledCss,
+    /outline:\s*2px\s+solid\s+var\(--ui-ring\)/u,
+    "a Toolbar outline shorthand",
+  );
+  forbid(
+    compiledCss,
+    /padding:\s*var\(--space-1\)/u,
+    "a Toolbar padding shorthand",
+  );
+}
+
+function requireToolbarCallerFallbackSeam(toolbarSource: string): void {
+  const seams = toolbarSource.match(
+    /xstyle\s*===\s*undefined\s*&&\s*toolbarStyles\.nativeFocusFallback/gu,
+  ) ?? [];
+  if (seams.length !== 1) {
+    throw new Error(
+      "src/toolbar.tsx must omit the native Toolbar focus fallback exactly when caller xstyle is present",
+    );
+  }
+}
+
 function requireNoGallerySentinels(source: string): void {
   for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
     forbid(
@@ -584,6 +657,7 @@ const [
   legacyComponents,
   orderedStylesheet,
   cardSource,
+  toolbarSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -591,6 +665,7 @@ const [
     readFile(resolve(repository, "src/components.css"), "utf8"),
     readFile(resolve(repository, "src/styles.css"), "utf8"),
     readFile(resolve(repository, "src/card.tsx"), "utf8"),
+    readFile(resolve(repository, "src/toolbar.tsx"), "utf8"),
   ]);
 
 if (compiledCss.trim().length === 0) {
@@ -693,6 +768,8 @@ requireAvatarContract(legacyComponents, compiledCss);
 requireStatusFamilyContract(legacyComponents, compiledCss);
 requireCardFamilyContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCardFamilyCallerFallbackSeam(cardSource);
+requireToolbarContract(legacyComponents, compiledCss);
+requireToolbarCallerFallbackSeam(toolbarSource);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,
@@ -712,7 +789,7 @@ const physicalZeroMinimumWidths = [
 ];
 if (physicalZeroMinimumWidths.length !== 1) {
   throw new Error(
-    "dist/stylex.css must contain exactly one shared physical min-width zero declaration for the Tag label and PressableCard without lowering a structural surface's logical minimum",
+    "dist/stylex.css must contain exactly one shared physical min-width zero declaration for the Tag label, PressableCard, and Toolbar without lowering a structural surface's logical minimum",
   );
 }
 requireNoGallerySentinels(
@@ -783,6 +860,7 @@ for (const [pattern, description] of [
   [/hraness-card__content/u, "the CardContent semantic hook"],
   [/hraness-card__footer/u, "the CardFooter semantic hook"],
   [/hraness-pressable-card/u, "the PressableCard semantic hook"],
+  [/hraness-toolbar/u, "the Toolbar semantic hook"],
 ] as const) {
   requireMatch(compiledJavaScript, pattern, description);
 }
@@ -1115,6 +1193,49 @@ assert.throws(
     ),
   /gallery-only data-gallery-card-family-layer-conflict sentinel/u,
   "the Card-family guard must reject gallery sentinel leakage",
+);
+assert.throws(
+  () =>
+    requireToolbarContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-toolbar { display: flex; } }`,
+      compiledCss,
+    ),
+  /legacy Toolbar recipe/u,
+  "the Toolbar guard must reject a restored legacy selector",
+);
+assert.throws(
+  () =>
+    requireToolbarContract(
+      legacyComponents,
+      compiledCss.replace("outline-offset: 2px;", "outline-offset: 9px;"),
+    ),
+  /Toolbar focus ring offset/u,
+  "the Toolbar guard must reject a changed focus-ring offset",
+);
+assert.throws(
+  () =>
+    requireToolbarContract(
+      legacyComponents,
+      compiledCss.replaceAll("flex-direction: column;", "flex-direction: row;"),
+    ),
+  /vertical Toolbar direction/u,
+  "the Toolbar guard must reject a missing vertical direction",
+);
+assert.throws(
+  () =>
+    requireToolbarCallerFallbackSeam(
+      toolbarSource.replace("xstyle === undefined && ", ""),
+    ),
+  /omit the native Toolbar focus fallback exactly when caller xstyle is present/u,
+  "the Toolbar guard must reject an unconditional native focus fallback",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-toolbar-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-toolbar-layer-conflict sentinel/u,
+  "the Toolbar guard must reject gallery sentinel leakage",
 );
 
 console.log("StyleX package artifacts match the compiler contract");

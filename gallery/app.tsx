@@ -2,7 +2,7 @@
 
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import {
   AppearanceIcon,
@@ -30,6 +30,7 @@ import {
   Tabs,
   Tag,
   ThemedSurface,
+  Toolbar,
   ViewportFrame,
   WrappingRow,
 } from "@hraness/ui";
@@ -108,6 +109,24 @@ const galleryStyles = stylex.create({
     color: "var(--ui-secondary-foreground)",
     paddingInline: "var(--space-2)",
   },
+  toolbarDynamicWidth: (width: string) => ({ width }),
+  toolbarOverride: {
+    alignItems: "end",
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+    borderRadius: "var(--radius-sm)",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: "var(--space-2)",
+    paddingBlock: "var(--space-2)",
+    paddingInline: "var(--space-2)",
+    ":focus-visible": {
+      outlineColor: "var(--ui-warning)",
+      outlineOffset: "7px",
+      outlineStyle: "dashed",
+      outlineWidth: "4px",
+    },
+  },
   wrappingRowConstraint: {
     "inline-size": "11rem",
   },
@@ -117,13 +136,18 @@ export function PrimitiveGallery() {
   const [cardPressCount, setCardPressCount] = useState(0);
   const [pressCount, setPressCount] = useState(0);
   const [theme, setTheme] = useState<GalleryTheme>("light");
+  const toolbarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const root = document.querySelector<HTMLElement>("[data-gallery-hydration-root]");
     if (root === null) throw new Error("The primitive gallery hydration root is missing.");
+    const toolbar = toolbarRef.current;
+    if (toolbar === null) throw new Error("The Toolbar ref did not receive its native div.");
     root.dataset.hydrated = "true";
+    toolbar.dataset.galleryToolbarRef = "true";
     return () => {
       delete root.dataset.hydrated;
+      delete toolbar.dataset.galleryToolbarRef;
     };
   }, []);
 
@@ -547,6 +571,56 @@ export function PrimitiveGallery() {
           <output aria-live="polite" data-gallery-card-press-count="true">
             Card presses: {cardPressCount}
           </output>
+        </section>
+
+        <section aria-labelledby="gallery-toolbar-heading" data-gallery-section="toolbars">
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-toolbar-heading">Toolbars</h2>
+              <p>Finite orientation, accessible naming, arrow navigation, and caller focus recipes share one compiled boundary.</p>
+            </div>
+          </div>
+          <div data-gallery-toolbar-grid="true">
+            <Toolbar
+              aria-label="Horizontal editor actions"
+              className="gallery-toolbar gallery-toolbar--horizontal"
+              data-gallery-toolbar-layer-conflict="true"
+              data-gallery-toolbar-orientation="horizontal"
+              data-gallery-toolbar-native-focus="true"
+            >
+              <button type="button">Undo</button>
+              <button type="button">Redo</button>
+            </Toolbar>
+            <span id="gallery-vertical-toolbar-name">Vertical editor actions</span>
+            <Toolbar
+              aria-labelledby="gallery-vertical-toolbar-name"
+              className="gallery-toolbar gallery-toolbar--vertical"
+              data-gallery-toolbar-layer-conflict="true"
+              data-gallery-toolbar-orientation="vertical"
+              orientation="vertical"
+            >
+              <button type="button">Move up</button>
+              <button type="button">Move down</button>
+            </Toolbar>
+            <Toolbar
+              aria-label="Caller override toolbar"
+              className="gallery-toolbar gallery-toolbar--override"
+              data-gallery-toolbar-layer-conflict="true"
+              data-gallery-toolbar-override="true"
+              orientation="vertical"
+              ref={toolbarRef}
+              style={({ orientation }) => ({
+                width: orientation === "horizontal" ? "15rem" : "13rem",
+              })}
+              xstyle={[
+                galleryStyles.toolbarOverride,
+                galleryStyles.toolbarDynamicWidth("14rem"),
+              ]}
+            >
+              <button type="button">Align start</button>
+              <button type="button">Align end</button>
+            </Toolbar>
+          </div>
         </section>
 
         <section aria-labelledby="gallery-structure-heading" data-gallery-section="structure">

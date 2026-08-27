@@ -111,12 +111,20 @@
     overflow: hidden;
   }
 
+  .x1hpxurx {
+    padding-block: var(--space-1);
+  }
+
   .x1e1zj16 {
     padding-block: var(--space-6);
   }
 
   .x60vcjr {
     padding-inline: var(--hraness-quiet-site-gutter, 1.25rem);
+  }
+
+  .x1r26wqr {
+    padding-inline: var(--space-1);
   }
 
   .xv2ckdy {
@@ -141,6 +149,10 @@
 @layer components.hraness-ui.priority2 {
   .x6s0dn4 {
     align-items: center;
+  }
+
+  .x1qjc9v5 {
+    align-items: stretch;
   }
 
   .xh690g3 {
@@ -299,6 +311,10 @@
     flex-direction: column;
   }
 
+  .xozqiw3 {
+    flex-wrap: nowrap;
+  }
+
   .x1a02dak {
     flex-wrap: wrap;
   }
@@ -417,6 +433,10 @@
 
   .x1gph7r7:focus-visible {
     outline-color: var(--ui-ring);
+  }
+
+  .x7s97pk:focus-visible {
+    outline-offset: 2px;
   }
 
   .xj3ae5l:focus-visible {

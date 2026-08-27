@@ -85,6 +85,7 @@
     "src/tailwind.css",
     "src/toast.tsx",
     "src/tokens.css",
+    "src/toolbar.stylex.ts",
     "src/toolbar.tsx",
     "README.md",
     "LICENSE"
