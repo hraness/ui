@@ -3093,6 +3093,35 @@ async function verifyToolbarKeyboardFocusPrecedence(
     "the native-focus Toolbar",
   );
   const nativeFocused = await nativeToolbar.evaluate((element) => {
+    const matchedFocusRules: string[] = [];
+    const visitRules = (rules: CSSRuleList): void => {
+      for (const rule of rules) {
+        if (rule instanceof CSSStyleRule) {
+          if (rule.selectorText.includes(":focus-visible")) {
+            try {
+              if (element.matches(rule.selectorText)) {
+                matchedFocusRules.push(
+                  `${rule.selectorText} { ${rule.style.cssText} }`,
+                );
+              }
+            } catch {
+              // Ignore selectors the browser cannot evaluate in isolation.
+            }
+          }
+          continue;
+        }
+        if ("cssRules" in rule) {
+          visitRules((rule as CSSGroupingRule).cssRules);
+        }
+      }
+    };
+    for (const stylesheet of document.styleSheets) {
+      try {
+        visitRules(stylesheet.cssRules);
+      } catch {
+        // All gallery stylesheets are same-origin; retain diagnostics if that changes.
+      }
+    }
     const resolveColor = (value: string): string => {
       const probe = document.createElement("span");
       probe.style.color = value;
@@ -3103,8 +3132,10 @@ async function verifyToolbarKeyboardFocusPrecedence(
     };
     const style = getComputedStyle(element);
     return {
+      className: element.className,
       expectedRing: resolveColor("var(--ui-ring)"),
       focusVisible: element.matches(":focus-visible"),
+      matchedFocusRules,
       outlineColor: style.outlineColor,
       outlineOffset: Number.parseFloat(style.outlineOffset),
       outlineStyle: style.outlineStyle,
