@@ -24,6 +24,7 @@ import {
   QuietSiteFooter,
   QuietSitePage,
   SegmentedControl,
+  SelectField,
   Skeleton,
   SkipLink,
   SocialIcon,
@@ -55,6 +56,11 @@ const gallerySegments = [
   { id: "projects", label: "projects" },
   { id: "shared", label: "shared" },
   { id: "dependencies", label: "dependencies" },
+] as const;
+
+const gallerySelectOptions = [
+  { id: "followers", label: "followers", textValue: "followers" },
+  { id: "following", label: "following", textValue: "following" },
 ] as const;
 
 type GalleryTheme = "dark" | "light";
@@ -233,6 +239,15 @@ export function PrimitiveGallery() {
             data-gallery-checkbox="true"
             description="The browser harness toggles this control with the Space key."
             label="Preserve accessible interaction"
+          />
+          <SelectField
+            className="gallery-select"
+            data-gallery-select="true"
+            defaultValue="followers"
+            label="Profile metric"
+            options={gallerySelectOptions}
+            showLabel={false}
+            size="compact"
           />
         </section>
 

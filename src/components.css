@@ -719,8 +719,13 @@
   }
 
   .hraness-select-field__indicator {
+    display: block;
+    width: 1em;
+    height: 1em;
     flex: 0 0 auto;
     color: var(--ui-muted-foreground);
+    overflow: visible;
+    transform-origin: center;
     transition: transform var(--motion-duration-standard) var(--motion-easing-emphasized);
   }
 

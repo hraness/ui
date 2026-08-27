@@ -127,6 +127,14 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   expect(
     declarationBlock(components, ".hraness-select-field__trigger {"),
   ).toContain("background: var(--hraness-field-surface);");
+  const selectIndicator = declarationBlock(
+    components,
+    ".hraness-select-field__indicator {",
+  );
+  expect(selectIndicator).toContain("display: block;");
+  expect(selectIndicator).toContain("width: 1em;");
+  expect(selectIndicator).toContain("height: 1em;");
+  expect(selectIndicator).toContain("transform-origin: center;");
   expect(components).toContain('.hraness-radio-group[data-orientation="horizontal"]');
   expect(components).toContain('.hraness-list-box[data-orientation="horizontal"]');
   expect(components).toContain(":dir(rtl)[data-selected]");

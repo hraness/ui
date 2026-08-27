@@ -97,7 +97,22 @@ export function SelectField<Id extends string>({
       </Label>
       <AriaButton className="hraness-select-field__trigger">
         <SelectValue<SelectOption<Id>> className="hraness-select-field__value" />
-        <span aria-hidden="true" className="hraness-select-field__indicator">⌄</span>
+        <svg
+          aria-hidden="true"
+          className="hraness-select-field__indicator"
+          data-slot="select-field-indicator"
+          fill="none"
+          focusable="false"
+          viewBox="0 0 12 12"
+        >
+          <path
+            d="M2.25 4.25 6 7.75 9.75 4.25"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.25"
+          />
+        </svg>
       </AriaButton>
       {description === undefined ? null : (
         <FieldDescription className="hraness-select-field__description">

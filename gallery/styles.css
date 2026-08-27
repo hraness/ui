@@ -66,6 +66,19 @@
   display: block;
 }
 
+.gallery-select {
+  --hraness-field-height: 1.375rem;
+
+  inline-size: fit-content;
+  font-size: 0.625rem;
+  line-height: 1;
+}
+
+.gallery-select .hraness-select-field__trigger {
+  gap: 0.25rem;
+  padding-inline: 0.35rem 0.25rem;
+}
+
 [data-gallery-status-family-row] {
   display: block;
 }

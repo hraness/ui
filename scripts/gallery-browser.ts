@@ -220,6 +220,23 @@ interface SegmentedControlEvidence {
   readonly transitionProperties: readonly string[];
 }
 
+interface SelectFieldIndicatorEvidence {
+  readonly ariaHidden: string;
+  readonly display: string;
+  readonly flex: string;
+  readonly height: number;
+  readonly pathCenterDeltaX: number;
+  readonly pathCenterDeltaY: number;
+  readonly pathCount: number;
+  readonly slot: string;
+  readonly tagName: string;
+  readonly text: string;
+  readonly triggerHeight: number;
+  readonly verticalCenterDelta: number;
+  readonly viewBox: string;
+  readonly width: number;
+}
+
 interface VerticalWritingEvidence {
   readonly footerInlineSize: number;
   readonly footerMaxInlineSize: number;
@@ -3007,6 +3024,83 @@ async function segmentedControlEvidence(page: Page): Promise<SegmentedControlEvi
   });
 }
 
+async function selectFieldIndicatorEvidence(
+  page: Page,
+): Promise<SelectFieldIndicatorEvidence> {
+  return page.evaluate(() => {
+    const select = document.querySelector('[data-gallery-select="true"]');
+    const trigger = select?.querySelector(".hraness-select-field__trigger");
+    const indicator = select?.querySelector(".hraness-select-field__indicator");
+    const path = indicator?.querySelector("path");
+    if (
+      !(select instanceof HTMLElement)
+      || !(trigger instanceof HTMLButtonElement)
+      || !(indicator instanceof SVGSVGElement)
+      || !(path instanceof SVGGraphicsElement)
+      || path.tagName.toLowerCase() !== "path"
+    ) {
+      throw new Error("The select-field indicator gallery structure is incomplete.");
+    }
+
+    const triggerBox = trigger.getBoundingClientRect();
+    const indicatorBox = indicator.getBoundingClientRect();
+    const pathBox = path.getBBox();
+    const viewBox = indicator.viewBox.baseVal;
+    return {
+      ariaHidden: indicator.getAttribute("aria-hidden") ?? "",
+      display: getComputedStyle(indicator).display,
+      flex: getComputedStyle(indicator).flex,
+      height: indicatorBox.height,
+      pathCenterDeltaX: Math.abs(
+        pathBox.x + pathBox.width / 2 - (viewBox.x + viewBox.width / 2),
+      ),
+      pathCenterDeltaY: Math.abs(
+        pathBox.y + pathBox.height / 2 - (viewBox.y + viewBox.height / 2),
+      ),
+      pathCount: indicator.querySelectorAll(":scope > path").length,
+      slot: indicator.dataset.slot ?? "",
+      tagName: indicator.tagName.toLowerCase(),
+      text: indicator.textContent?.trim() ?? "",
+      triggerHeight: triggerBox.height,
+      verticalCenterDelta: Math.abs(
+        indicatorBox.top + indicatorBox.height / 2
+          - (triggerBox.top + triggerBox.height / 2),
+      ),
+      viewBox: indicator.getAttribute("viewBox") ?? "",
+      width: indicatorBox.width,
+    };
+  });
+}
+
+function verifySelectFieldIndicator(
+  evidence: SelectFieldIndicatorEvidence,
+  id: string,
+): void {
+  invariant(
+    evidence.tagName === "svg"
+    && evidence.ariaHidden === "true"
+    && evidence.slot === "select-field-indicator"
+    && evidence.text === ""
+    && evidence.pathCount === 1
+    && evidence.viewBox === "0 0 12 12",
+    `${id}: select-field indicator semantics changed: ${JSON.stringify(evidence)}`,
+  );
+  invariant(
+    evidence.display === "block"
+    && evidence.flex === "0 0 auto"
+    && nearlyEqual(evidence.width, 10)
+    && nearlyEqual(evidence.height, 10)
+    && nearlyEqual(evidence.triggerHeight, 22),
+    `${id}: compact select-field indicator geometry changed: ${JSON.stringify(evidence)}`,
+  );
+  invariant(
+    evidence.verticalCenterDelta <= 0.01
+    && evidence.pathCenterDeltaX <= 0.001
+    && evidence.pathCenterDeltaY <= 0.001,
+    `${id}: select-field caret is not geometrically centered: ${JSON.stringify(evidence)}`,
+  );
+}
+
 function verifySegmentedControlRecipe(
   evidence: SegmentedControlEvidence,
   id: string,
@@ -3286,6 +3380,15 @@ async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
   );
   await page.keyboard.press("Space");
   invariant(await checkbox.isChecked(), `${id}: Space did not select the native checkbox`);
+
+  await page.keyboard.press("Tab");
+  const selectTrigger = page.locator(
+    '[data-gallery-select="true"] .hraness-select-field__trigger',
+  );
+  invariant(
+    await selectTrigger.evaluate((element) => document.activeElement === element),
+    `${id}: the compact select is not reachable after the checkbox`,
+  );
 
   await page.keyboard.press("Tab");
   const semanticsTab = page.getByRole("tab", { name: "Semantics" });
@@ -4016,6 +4119,8 @@ try {
   assert.match(html, /data-gallery-viewport-frame-layer-conflict="true"/u);
   assert.match(html, /data-gallery-viewport-frame="true"/u);
   assert.match(html, /data-slot="viewport-frame"/u);
+  assert.match(html, /data-gallery-select="true"/u);
+  assert.match(html, /data-slot="select-field-indicator"/u);
   assert.match(html, /data-gallery-themed-surface-tone="card"/u);
   assert.match(html, /data-gallery-themed-surface-tone="accent"/u);
   assert.match(html, /data-gallery-themed-surface-tone="secondary"/u);
@@ -4127,6 +4232,8 @@ try {
           await waitForHydration(page, failures, requestedPaths, layout.id);
 
           const light = await browserEvidence(page);
+          const lightSelect = await selectFieldIndicatorEvidence(page);
+          verifySelectFieldIndicator(lightSelect, layout.id);
           const lightSegmented = await segmentedControlEvidence(page);
           verifySegmentedControlRecipe(lightSegmented, layout.id);
           invariant(light.heading === "Portable component behavior and presentation", `${layout.id}: heading changed`);
@@ -4672,7 +4779,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });
