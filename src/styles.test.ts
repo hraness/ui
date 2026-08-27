@@ -137,6 +137,7 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
     /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
   );
   expect(components).not.toMatch(/\.hraness-toolbar(?![A-Za-z0-9_-])/u);
+  expect(components).not.toMatch(/\.hraness-key-hint(?![A-Za-z0-9_-])/u);
   expect(tailwind).toContain(
     ':not(:where([data-theme="light"], [data-theme="light"] *))',
   );

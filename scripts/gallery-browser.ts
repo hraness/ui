@@ -100,6 +100,13 @@ interface BrowserEvidence {
   readonly iconFlex: string;
   readonly iconHeight: number;
   readonly iconWidth: number;
+  readonly keyHintBoundaryContracts: boolean;
+  readonly keyHintClassContracts: boolean;
+  readonly keyHintDefaultBackground: string;
+  readonly keyHintDefaultDisplay: string;
+  readonly keyHintDiagnostics: string;
+  readonly keyHintLayerSentinels: boolean;
+  readonly keyHintOverrideContract: boolean;
   readonly mainPresent: boolean;
   readonly pageBoxSizing: string;
   readonly pageCallerClassLast: boolean;
@@ -245,6 +252,8 @@ interface ForcedColorsEvidence {
   readonly cardFamilyContracts: boolean;
   readonly cardFamilyDiagnostics: string;
   readonly forcedColorsActive: boolean;
+  readonly keyHintContracts: boolean;
+  readonly keyHintDiagnostics: string;
   readonly selectedTabBackground: string;
   readonly selectedTabColor: string;
   readonly selectedSegmentBackground: string;
@@ -579,6 +588,26 @@ function requirePackedDefaultStylesheet(css: string): void {
   );
   assert.match(
     css,
+    /border-block-end-width:\s*2px/u,
+    "the packed default stylesheet must include the KeyHint block-end depth",
+  );
+  assert.match(
+    css,
+    /font-family:\s*var\(--ui-font-mono\)/u,
+    "the packed default stylesheet must include the KeyHint font",
+  );
+  assert.match(
+    css,
+    /min-block-size:\s*1\.5rem/u,
+    "the packed default stylesheet must include the KeyHint minimum block size",
+  );
+  assert.match(
+    css,
+    /min-inline-size:\s*1\.5rem/u,
+    "the packed default stylesheet must include the KeyHint minimum inline size",
+  );
+  assert.match(
+    css,
     /background-image:\s*repeating-linear-gradient\(/u,
     "the harness bundle must include the downstream texture xstyle seam",
   );
@@ -625,6 +654,11 @@ function requirePackedDefaultStylesheet(css: string): void {
     css,
     /\.hraness-toolbar(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain a legacy Toolbar selector",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-key-hint(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain a legacy KeyHint selector",
   );
   assert.equal(
     css.match(CARD_DESCRIPTION_BRIDGE_PATTERN)?.length,
@@ -925,6 +959,33 @@ function requirePackedDefaultStylesheet(css: string): void {
     && /outline-width:\s*7px/u.test(toolbarFocusConflict),
     "the gallery Toolbar conflict must carry every focus counterexample",
   );
+  const keyHintConflict = css.match(
+    /\[data-gallery-key-hint-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"key-hint"|key-hint)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    keyHintConflict !== undefined
+    && /--gallery-key-hint-layer-conflict:\s*legacy/u.test(keyHintConflict)
+    && /align-items:\s*stretch/u.test(keyHintConflict)
+    && /min-width:\s*5rem/u.test(keyHintConflict)
+    && /min-height:\s*4rem/u.test(keyHintConflict)
+    && /justify-content:\s*flex-start/u.test(keyHintConflict)
+    && (
+      /padding-inline:\s*5rem/u.test(keyHintConflict)
+      || (
+        /padding-inline-start:\s*5rem/u.test(keyHintConflict)
+        && /padding-inline-end:\s*5rem/u.test(keyHintConflict)
+      )
+    )
+    && /border:\s*7px dashed/u.test(keyHintConflict)
+    && /border-block-end-width:\s*9px/u.test(keyHintConflict)
+    && /border-radius:\s*0/u.test(keyHintConflict)
+    && /background-color:/u.test(keyHintConflict)
+    && /color:/u.test(keyHintConflict)
+    && /display:\s*block/u.test(keyHintConflict)
+    && /font-family:\s*serif/u.test(keyHintConflict)
+    && /font-size:\s*3rem/u.test(keyHintConflict),
+    `the gallery KeyHint conflict must carry every recipe counterexample: ${String(keyHintConflict)}`,
+  );
 }
 
 function placePriority3BeforeLegacy(css: string): string {
@@ -1094,6 +1155,12 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const toolbarOverride = document.querySelector(
       '[data-gallery-toolbar-override="true"]',
     );
+    const keyHints = [
+      ...document.querySelectorAll<HTMLElement>('[data-gallery-key-hint]'),
+    ];
+    const keyHintOverride = document.querySelector(
+      '[data-gallery-key-hint="override"]',
+    );
     if (
       !(icon instanceof SVGElement)
       || !(iconCanary instanceof HTMLElement)
@@ -1138,6 +1205,8 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || !(cardNestedInnerDescription instanceof HTMLParagraphElement)
       || toolbars.length !== 3
       || !(toolbarOverride instanceof HTMLDivElement)
+      || keyHints.length !== 2
+      || !(keyHintOverride instanceof HTMLElement)
     ) {
       throw new Error("The primitive gallery structure is incomplete.");
     }
@@ -1219,9 +1288,12 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       ),
       inverseBackground: resolveStyle("background-color", "var(--ui-foreground)"),
       inverseForeground: resolveStyle("color", "var(--ui-background)"),
+      headingFontFamily: resolveStyle("font-family", "var(--ui-font-heading)"),
+      bodySize: Number.parseFloat(resolveStyle("font-size", "var(--text-body)")),
       neutralBackground: resolveStyle("background-color", "var(--ui-background)"),
       neutralForeground: resolveStyle("color", "var(--ui-foreground)"),
       largeRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-lg)")),
+      monoFontFamily: resolveStyle("font-family", "var(--ui-font-mono)"),
       popoverBackground: resolveStyle("background-color", "var(--ui-popover)"),
       popoverForeground: resolveStyle("color", "var(--ui-popover-foreground)"),
       primary: resolveStyle("border-color", "var(--ui-primary)"),
@@ -2097,6 +2169,67 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         width: toolbar.getBoundingClientRect().width,
       };
     });
+    const keyHintEvidence = keyHints.map((keyHint) => {
+      const kind = keyHint.dataset.galleryKeyHint;
+      if (kind !== "default" && kind !== "override") {
+        throw new Error(`Unexpected KeyHint kind: ${String(kind)}`);
+      }
+      const isOverride = kind === "override";
+      const style = getComputedStyle(keyHint);
+      const classes = [...keyHint.classList];
+      const expectedColor = isOverride
+        ? resolvedTokens.secondaryForeground
+        : resolvedTokens.mutedForeground;
+      return {
+        alignItems: style.alignItems,
+        ariaLabel: keyHint.getAttribute("aria-label") ?? "",
+        backgroundColor: style.backgroundColor,
+        borderBlockEndWidth: Number.parseFloat(style.borderBlockEndWidth),
+        borderBottomStyle: style.borderBottomStyle,
+        borderBottomWidth: Number.parseFloat(style.borderBottomWidth),
+        borderColor: style.borderTopColor,
+        borderLeftWidth: Number.parseFloat(style.borderLeftWidth),
+        borderRadius: Number.parseFloat(style.borderRadius),
+        borderRightWidth: Number.parseFloat(style.borderRightWidth),
+        borderTopWidth: Number.parseFloat(style.borderTopWidth),
+        classContract:
+          classes[0] === "hraness-key-hint"
+          && classes.at(-1) === `gallery-key-hint--${kind}`
+          && classes.some(
+            (name) =>
+              name !== "hraness-key-hint"
+              && name !== "gallery-key-hint"
+              && name !== `gallery-key-hint--${kind}`,
+          ),
+        colorEquivalent: equivalentColor(style.color, expectedColor),
+        display: style.display,
+        dynamicInlineValue: /--[^:]+:\s*2\.5rem/u.test(keyHint.style.cssText),
+        fontFamily: style.fontFamily,
+        fontSize: Number.parseFloat(style.fontSize),
+        inlineWidth: keyHint.style.width,
+        isOverride,
+        justifyContent: style.justifyContent,
+        kind,
+        layerSentinel: style
+          .getPropertyValue("--gallery-key-hint-layer-conflict")
+          .trim(),
+        minHeight: Number.parseFloat(style.minHeight),
+        minWidth: Number.parseFloat(style.minWidth),
+        paddingLeft: Number.parseFloat(style.paddingLeft),
+        paddingRight: Number.parseFloat(style.paddingRight),
+        slot: keyHint.dataset.slot ?? "",
+        tagName: keyHint.tagName,
+        text: keyHint.textContent?.trim() ?? "",
+        title: keyHint.title,
+        width: keyHint.getBoundingClientRect().width,
+      };
+    });
+    const defaultKeyHintEvidence = keyHintEvidence.find(
+      (keyHint) => !keyHint.isOverride,
+    );
+    const overrideKeyHintEvidence = keyHintEvidence.find(
+      (keyHint) => keyHint.isOverride,
+    );
 
     return {
       appearanceAlignItems: appearanceStyle.alignItems,
@@ -2398,6 +2531,69 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         .getPropertyValue("--gallery-stylex-layer-conflict")
         .trim(),
       iconWidth: iconBox.width,
+      keyHintBoundaryContracts:
+        keyHintEvidence.every(
+          (keyHint) =>
+            keyHint.borderBlockEndWidth === 2
+            && keyHint.borderBottomStyle === "solid"
+            && keyHint.borderBottomWidth === 2
+            && keyHint.borderLeftWidth === 1
+            && keyHint.borderRightWidth === 1
+            && keyHint.borderTopWidth === 1
+            && keyHint.display === "inline-flex"
+            && keyHint.minHeight >= 24
+            && keyHint.minWidth >= 24
+            && keyHint.slot === "key-hint"
+            && keyHint.tagName === "KBD"
+            && keyHint.text.length > 0,
+        )
+        && defaultKeyHintEvidence !== undefined
+        && defaultKeyHintEvidence.alignItems === "center"
+        && defaultKeyHintEvidence.ariaLabel === ""
+        && defaultKeyHintEvidence.backgroundColor === resolvedTokens.mutedBackground
+        && defaultKeyHintEvidence.borderColor === resolvedTokens.border
+        && defaultKeyHintEvidence.borderRadius === resolvedTokens.smallRadius
+        && defaultKeyHintEvidence.colorEquivalent
+        && defaultKeyHintEvidence.fontFamily === resolvedTokens.monoFontFamily
+        && defaultKeyHintEvidence.fontSize === resolvedTokens.captionSize
+        && defaultKeyHintEvidence.justifyContent === "center"
+        && defaultKeyHintEvidence.minHeight === 24
+        && defaultKeyHintEvidence.minWidth === 24
+        && defaultKeyHintEvidence.paddingLeft === resolvedTokens.space1
+        && defaultKeyHintEvidence.paddingRight === resolvedTokens.space1
+        && defaultKeyHintEvidence.title === "Command K",
+      keyHintClassContracts: keyHintEvidence.every(
+        (keyHint) => keyHint.classContract,
+      ),
+      keyHintDefaultBackground: defaultKeyHintEvidence?.backgroundColor ?? "",
+      keyHintDefaultDisplay: defaultKeyHintEvidence?.display ?? "",
+      keyHintDiagnostics: JSON.stringify({
+        keyHints: keyHintEvidence,
+        tokens: resolvedTokens,
+      }),
+      keyHintLayerSentinels: keyHintEvidence.every(
+        (keyHint) => keyHint.layerSentinel === "legacy",
+      ),
+      keyHintOverrideContract:
+        overrideKeyHintEvidence !== undefined
+        && overrideKeyHintEvidence.alignItems === "stretch"
+        && overrideKeyHintEvidence.ariaLabel === "Escape"
+        && overrideKeyHintEvidence.backgroundColor
+          === resolvedTokens.secondaryBackground
+        && overrideKeyHintEvidence.borderColor === resolvedTokens.primary
+        && overrideKeyHintEvidence.borderRadius === resolvedTokens.largeRadius
+        && overrideKeyHintEvidence.colorEquivalent
+        && overrideKeyHintEvidence.dynamicInlineValue
+        && overrideKeyHintEvidence.fontFamily === resolvedTokens.headingFontFamily
+        && overrideKeyHintEvidence.fontSize === resolvedTokens.bodySize
+        && overrideKeyHintEvidence.inlineWidth === "3rem"
+        && overrideKeyHintEvidence.justifyContent === "flex-start"
+        && overrideKeyHintEvidence.minHeight === 32
+        && overrideKeyHintEvidence.minWidth === 32
+        && overrideKeyHintEvidence.paddingLeft === resolvedTokens.space2
+        && overrideKeyHintEvidence.paddingRight === resolvedTokens.space2
+        && overrideKeyHintEvidence.title === ""
+        && overrideKeyHintEvidence.width === 48,
       mainPresent: main.tagName === "MAIN",
       pageBoxSizing: pageStyle.boxSizing,
       pageCallerClassLast:
@@ -3452,6 +3648,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       '.gallery-segmented-control .hraness-segmented-control__item[data-selected]',
     );
     const spinner = document.querySelector('[data-slot="spinner"]');
+    const keyHint = document.querySelector('[data-gallery-key-hint="default"]');
     const statusPills = [
       ...document.querySelectorAll<HTMLElement>(
         '[data-gallery-badge-tone], [data-gallery-tag-variant], [data-gallery-status-family-override="badge"], [data-gallery-status-family-override="tag"]',
@@ -3473,6 +3670,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       || !(selectedTab instanceof HTMLElement)
       || !(selectedSegment instanceof HTMLElement)
       || !(spinner instanceof HTMLElement)
+      || !(keyHint instanceof HTMLElement)
       || statusPills.length !== 10
       || statusDots.length !== 6
       || cardFamily.length !== 11
@@ -3492,6 +3690,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     const cardStyle = getComputedStyle(card);
     const tabStyle = getComputedStyle(selectedTab);
     const segmentStyle = getComputedStyle(selectedSegment);
+    const keyHintStyle = getComputedStyle(keyHint);
     const canvas = normalize("backgroundColor", "Canvas");
     const canvasText = normalize("color", "CanvasText");
     const statusPillEvidence = statusPills.map((pill) => {
@@ -3555,6 +3754,26 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
         items: cardFamilyEvidence,
       }),
       forcedColorsActive: matchMedia("(forced-colors: active)").matches,
+      keyHintContracts:
+        keyHint.tagName === "KBD"
+        && keyHint.dataset.slot === "key-hint"
+        && keyHintStyle.borderBlockEndWidth === "2px"
+        && keyHintStyle.borderBottomStyle === "solid"
+        && keyHintStyle.borderBottomColor === canvasText
+        && keyHintStyle.color === canvasText
+        && keyHintStyle.display === "inline-flex"
+        && keyHintStyle.forcedColorAdjust === "auto"
+        && keyHintStyle
+          .getPropertyValue("--gallery-key-hint-layer-conflict")
+          .trim() === "legacy",
+      keyHintDiagnostics: JSON.stringify({
+        borderBlockEndWidth: keyHintStyle.borderBlockEndWidth,
+        borderBottomColor: keyHintStyle.borderBottomColor,
+        borderBottomStyle: keyHintStyle.borderBottomStyle,
+        color: keyHintStyle.color,
+        display: keyHintStyle.display,
+        forcedColorAdjust: keyHintStyle.forcedColorAdjust,
+      }),
       selectedTabBackground: tabStyle.backgroundColor,
       selectedTabColor: tabStyle.color,
       selectedSegmentBackground: segmentStyle.backgroundColor,
@@ -3704,7 +3923,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|status-family|themed-surface|viewport-frame|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|key-hint|status-family|themed-surface|toolbar|viewport-frame|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -3726,6 +3945,11 @@ try {
     installedPackageCss,
     /\.hraness-(?:badge(?:--(?:info|success|warning|danger|accent|positive|caution|critical))?|tag(?:__icon|__label)?|status-dot(?:--(?:info|success|warning|danger))?)(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate status-family declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-key-hint(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate KeyHint declarations in legacy CSS",
   );
 
   const productionDirectory = resolve(consumer, "dist/browser");
@@ -3837,6 +4061,13 @@ try {
   assert.match(html, /role="toolbar"/u);
   assert.match(html, /aria-label="Horizontal editor actions"/u);
   assert.match(html, /aria-labelledby="gallery-vertical-toolbar-name"/u);
+  assert.match(html, /data-gallery-key-hint="default"/u);
+  assert.match(html, /data-gallery-key-hint="override"/u);
+  assert.match(html, /data-gallery-key-hint-layer-conflict="true"/u);
+  assert.match(html, /data-slot="key-hint"/u);
+  assert.match(html, /class="hraness-key-hint [^"]+gallery-key-hint gallery-key-hint--default"/u);
+  assert.match(html, /aria-label="Escape"/u);
+  assert.match(html, />⌘K<\/kbd>/u);
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
@@ -4049,6 +4280,14 @@ try {
             `${layout.id}: color equivalence rejected alternate serialization or accepted a distinct color: ${light.colorEquivalenceDiagnostics}`,
           );
           invariant(
+            light.keyHintBoundaryContracts
+            && light.keyHintClassContracts
+            && light.keyHintLayerSentinels
+            && light.keyHintOverrideContract
+            && light.keyHintDefaultDisplay === "inline-flex",
+            `${layout.id}: KeyHint parity failed: ${light.keyHintDiagnostics}`,
+          );
+          invariant(
             light.statusFamilyClassContracts
             && light.statusFamilyGeometryContracts
             && light.statusFamilyLayerSentinels
@@ -4233,6 +4472,14 @@ try {
             `${layout.id}: dark color equivalence rejected alternate serialization or accepted a distinct color: ${dark.colorEquivalenceDiagnostics}`,
           );
           invariant(
+            dark.keyHintBoundaryContracts
+            && dark.keyHintClassContracts
+            && dark.keyHintLayerSentinels
+            && dark.keyHintOverrideContract
+            && dark.keyHintDefaultBackground !== light.keyHintDefaultBackground,
+            `${layout.id}: dark KeyHint parity failed: ${dark.keyHintDiagnostics}`,
+          );
+          invariant(
             dark.statusFamilyClassContracts
             && dark.statusFamilyGeometryContracts
             && dark.statusFamilyLayerSentinels
@@ -4356,6 +4603,10 @@ try {
           forced.cardFamilyContracts,
           `forced colors: Card-family parity failed: ${forced.cardFamilyDiagnostics}`,
         );
+        invariant(
+          forced.keyHintContracts,
+          `forced colors: KeyHint parity failed: ${forced.keyHintDiagnostics}`,
+        );
 
         await page.keyboard.press("Tab");
         await page.keyboard.press("Enter");
@@ -4421,7 +4672,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

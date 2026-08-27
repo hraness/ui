@@ -55,6 +55,10 @@
     border-radius: var(--radius-sharp);
   }
 
+  .x1sybd2c {
+    border-radius: var(--radius-sm);
+  }
+
   .x1y0btm7 {
     border-style: solid;
   }
@@ -223,6 +227,10 @@
     background-color: var(--ui-warning);
   }
 
+  .xhjnd2s {
+    border-block-end-width: 2px;
+  }
+
   .x1n2qkce {
     box-shadow: var(--elevation-low);
   }
@@ -319,6 +327,10 @@
     flex-wrap: wrap;
   }
 
+  .x1jygkft {
+    font-family: var(--ui-font-mono);
+  }
+
   .x1n56hm7 {
     font-size: var(--text-body);
   }
@@ -375,8 +387,16 @@
     max-inline-size: var(--hraness-quiet-site-measure, 34rem);
   }
 
+  .xl3ova5 {
+    min-block-size: 1.5rem;
+  }
+
   .xesnm00 {
     min-inline-size: 0;
+  }
+
+  .xt66bws {
+    min-inline-size: 1.5rem;
   }
 
   .xl1xv1r {

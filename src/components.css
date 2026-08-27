@@ -1430,22 +1430,6 @@
     text-wrap: pretty;
   }
 
-  .hraness-key-hint {
-    display: inline-flex;
-    min-width: 1.5rem;
-    min-height: 1.5rem;
-    align-items: center;
-    justify-content: center;
-    padding-inline: var(--space-1);
-    border: 1px solid var(--ui-border);
-    border-block-end-width: 2px;
-    border-radius: var(--radius-sm);
-    background: var(--ui-muted);
-    color: var(--ui-muted-foreground);
-    font-family: var(--ui-font-mono);
-    font-size: var(--text-caption);
-  }
-
   .hraness-skip-link {
     position: fixed;
     z-index: var(--z-skip-link);

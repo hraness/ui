@@ -211,7 +211,7 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 ```
 
 `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
-`Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
+`KeyHint`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `ViewportFrame`, `WrappingRow`, `ThemedSurface`, and `Toolbar` accept a typed StyleX
 override. Base declarations are applied first, finite size, tone, shape, and
@@ -220,7 +220,8 @@ Quiet-site landmarks and these surfaces also preserve dynamic StyleX inline
 values when merging the native `style` prop, with caller inline declarations
 taking precedence.
 
-For logical-size overrides on those landmarks and surfaces, use
+For logical-size overrides on `QuietSitePage`, `QuietSiteFooter`,
+`ViewportFrame`, `WrappingRow`, and `ThemedSurface`, use
 StyleX's canonical dashed keys such as `"inline-size"`, `"max-inline-size"`,
 and `"min-inline-size"`. Under the pinned StyleX 0.19
 property-specificity compiler, the camel-case aliases lower to physical
@@ -264,6 +265,11 @@ required accessible name, semantic class, slot, ref, and static or render-prop
 Supplying `xstyle` removes that fallback so a caller focus recipe remains the
 last compiled authority.
 
+`KeyHint` remains a server-compatible native `kbd` element. Its semantic class,
+slot, ref, attributes, and children remain stable while a typed caller `xstyle`
+recipe resolves after its compact presentation. Dynamic StyleX values merge
+before the native `style` prop, so native declarations remain final.
+
 ```tsx
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
@@ -272,6 +278,7 @@ import {
   Card,
   CardDescription,
   Icon,
+  KeyHint,
   PressableCard,
   QuietSitePage,
   StatusDot,
@@ -319,6 +326,10 @@ const styles = stylex.create({
       outlineWidth: "3px",
     },
   },
+  keyHint: {
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+  },
 });
 
 <Icon icon={Search01Icon} xstyle={styles.searchIcon} />;
@@ -337,6 +348,7 @@ const styles = stylex.create({
 <WrappingRow xstyle={styles.structuralRow}>...</WrappingRow>;
 <ThemedSurface tone="accent" xstyle={styles.texturedSurface}>...</ThemedSurface>;
 <Toolbar aria-label="Editor actions" xstyle={styles.toolbar}>...</Toolbar>;
+<KeyHint xstyle={styles.keyHint}>⌘K</KeyHint>;
 ```
 
 Keep importing `@hraness/ui/styles.css` while legacy and StyleX recipes
