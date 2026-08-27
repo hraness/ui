@@ -154,13 +154,38 @@ test("forced-colors field placeholders use unfaded system text", async () => {
   expect(placeholder).toContain("opacity: 1;");
 });
 
-test("segmented controls center icon labels without inline baseline drift", async () => {
+test("segmented controls keep one compact selection surface without item dividers", async () => {
   const components = await stylesheet("./components.css");
+  const control = declarationBlock(
+    components,
+    ".hraness-segmented-control {",
+  );
+  const item = declarationBlock(
+    components,
+    ".hraness-segmented-control__item {",
+  );
+  const compact = declarationBlock(
+    components,
+    '.hraness-segmented-control[data-size="compact"] {',
+  );
   const label = declarationBlock(
     components,
     ".hraness-segmented-control__label {",
   );
 
+  expect(control).toContain("gap: 0.125rem;");
+  expect(control).toContain("scrollbar-width: none;");
+  expect(item).toContain("cursor: pointer;");
+  expect(item).toContain("user-select: none;");
+  expect(item).toContain("background-color var(--motion-duration-fast)");
+  expect(compact).toContain("padding: 0.125rem;");
+  expect(compact).toContain("border-radius: var(--radius-md);");
+  expect(components).toContain(
+    ".hraness-segmented-control__item:where([data-hovered], :hover):not([data-selected])",
+  );
+  expect(components).toContain(
+    '.hraness-segmented-control[data-size="compact"]\n    .hraness-segmented-control__item {\n    border-radius: var(--radius-sm);',
+  );
   expect(label).toContain("display: inline-grid;");
   expect(label).toContain("place-items: center;");
   expect(components).toContain(

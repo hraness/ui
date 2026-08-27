@@ -22,6 +22,7 @@ import {
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
+  SegmentedControl,
   Skeleton,
   SkipLink,
   SocialIcon,
@@ -48,7 +49,15 @@ const galleryTabs = [
   },
 ] as const;
 
+const gallerySegments = [
+  { id: "all", label: "all" },
+  { id: "projects", label: "projects" },
+  { id: "shared", label: "shared" },
+  { id: "dependencies", label: "dependencies" },
+] as const;
+
 type GalleryTheme = "dark" | "light";
+type GallerySegment = typeof gallerySegments[number]["id"];
 
 const avatarImageSource =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%236366f1'/%3E%3Cpath d='M0 16 16 0v16Z' fill='%23f8fafc'/%3E%3C/svg%3E";
@@ -135,6 +144,7 @@ const galleryStyles = stylex.create({
 export function PrimitiveGallery() {
   const [cardPressCount, setCardPressCount] = useState(0);
   const [pressCount, setPressCount] = useState(0);
+  const [segment, setSegment] = useState<GallerySegment>("all");
   const [theme, setTheme] = useState<GalleryTheme>("light");
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -260,6 +270,14 @@ export function PrimitiveGallery() {
             defaultValue="semantics"
             items={galleryTabs}
             size="compact"
+          />
+          <SegmentedControl
+            aria-label="Systems shown"
+            className="gallery-segmented-control"
+            items={gallerySegments}
+            onChange={setSegment}
+            size="compact"
+            value={segment}
           />
         </section>
 
