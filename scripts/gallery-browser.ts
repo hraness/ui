@@ -188,6 +188,29 @@ interface BrowserEvidence {
   readonly wrappingRowWidth: number;
 }
 
+interface SegmentedControlEvidence {
+  readonly borderWidths: readonly (readonly number[])[];
+  readonly classContract: boolean;
+  readonly cursors: readonly string[];
+  readonly groupBackground: string;
+  readonly groupBorderRadius: number;
+  readonly groupGap: number;
+  readonly groupHeight: number;
+  readonly groupOverflowX: string;
+  readonly groupPaddingTop: number;
+  readonly inactiveBackgrounds: readonly string[];
+  readonly itemHeights: readonly number[];
+  readonly itemRadii: readonly number[];
+  readonly labels: readonly string[];
+  readonly selectedBackground: string;
+  readonly selectedBlockInset: number;
+  readonly selectedCount: number;
+  readonly selectedLabel: string;
+  readonly size: string;
+  readonly slot: string;
+  readonly transitionProperties: readonly string[];
+}
+
 interface VerticalWritingEvidence {
   readonly footerInlineSize: number;
   readonly footerMaxInlineSize: number;
@@ -222,6 +245,8 @@ interface ForcedColorsEvidence {
   readonly forcedColorsActive: boolean;
   readonly selectedTabBackground: string;
   readonly selectedTabColor: string;
+  readonly selectedSegmentBackground: string;
+  readonly selectedSegmentColor: string;
   readonly spinnerAnimationName: string;
   readonly statusFamilyContracts: boolean;
   readonly statusFamilyDiagnostics: string;
@@ -2691,6 +2716,149 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
   });
 }
 
+async function segmentedControlEvidence(page: Page): Promise<SegmentedControlEvidence> {
+  return page.evaluate(() => {
+    const control = document.querySelector(".gallery-segmented-control");
+    const items = [
+      ...document.querySelectorAll<HTMLElement>(
+        ".gallery-segmented-control .hraness-segmented-control__item",
+      ),
+    ];
+    const selected = items.find((item) => item.hasAttribute("data-selected"));
+    if (
+      !(control instanceof HTMLElement)
+      || items.length !== 4
+      || selected === undefined
+    ) {
+      throw new Error("The segmented-control gallery structure is incomplete.");
+    }
+
+    const controlBox = control.getBoundingClientRect();
+    const controlStyle = getComputedStyle(control);
+    const selectedBox = selected.getBoundingClientRect();
+    const itemEvidence = items.map((item) => {
+      const box = item.getBoundingClientRect();
+      const style = getComputedStyle(item);
+      return {
+        background: style.backgroundColor,
+        borderWidths: [
+          style.borderTopWidth,
+          style.borderRightWidth,
+          style.borderBottomWidth,
+          style.borderLeftWidth,
+        ].map(Number.parseFloat),
+        cursor: style.cursor,
+        height: box.height,
+        radius: Number.parseFloat(style.borderRadius),
+        transitionProperty: style.transitionProperty,
+      };
+    });
+
+    return {
+      borderWidths: itemEvidence.map(({ borderWidths }) => borderWidths),
+      classContract:
+        control.classList.item(0) === "hraness-segmented-control"
+        && control.classList.item(control.classList.length - 1)
+          === "gallery-segmented-control",
+      cursors: itemEvidence.map(({ cursor }) => cursor),
+      groupBackground: controlStyle.backgroundColor,
+      groupBorderRadius: Number.parseFloat(controlStyle.borderRadius),
+      groupGap: Number.parseFloat(controlStyle.columnGap),
+      groupHeight: controlBox.height,
+      groupOverflowX: controlStyle.overflowX,
+      groupPaddingTop: Number.parseFloat(controlStyle.paddingTop),
+      inactiveBackgrounds: itemEvidence
+        .filter((_, index) => items[index] !== selected)
+        .map(({ background }) => background),
+      itemHeights: itemEvidence.map(({ height }) => height),
+      itemRadii: itemEvidence.map(({ radius }) => radius),
+      labels: items.map((item) => item.textContent?.trim() ?? ""),
+      selectedBackground: getComputedStyle(selected).backgroundColor,
+      selectedBlockInset: Math.min(
+        selectedBox.top - controlBox.top,
+        controlBox.bottom - selectedBox.bottom,
+      ),
+      selectedCount: items.filter((item) => item.hasAttribute("data-selected")).length,
+      selectedLabel: selected.textContent?.trim() ?? "",
+      size: control.dataset.size ?? "",
+      slot: control.dataset.slot ?? "",
+      transitionProperties: itemEvidence.map(({ transitionProperty }) => transitionProperty),
+    };
+  });
+}
+
+function verifySegmentedControlRecipe(
+  evidence: SegmentedControlEvidence,
+  id: string,
+): void {
+  invariant(
+    evidence.classContract
+    && evidence.slot === "segmented-control"
+    && evidence.size === "compact",
+    `${id}: segmented-control semantics or class ordering changed`,
+  );
+  invariant(
+    evidence.labels.join("|") === "all|projects|shared|dependencies"
+    && evidence.selectedCount === 1,
+    `${id}: segmented-control labels or selection changed: ${JSON.stringify(evidence)}`,
+  );
+  invariant(
+    nearlyEqual(evidence.groupGap, 2)
+    && nearlyEqual(evidence.groupPaddingTop, 2)
+    && nearlyEqual(evidence.groupBorderRadius, 8)
+    && nearlyEqual(evidence.groupHeight, 38)
+    && evidence.groupOverflowX === "auto",
+    `${id}: segmented-control frame is ${JSON.stringify(evidence)}`,
+  );
+  invariant(
+    evidence.borderWidths.every((widths) => widths.every((width) => nearlyEqual(width, 0)))
+    && evidence.cursors.every((cursor) => cursor === "pointer")
+    && evidence.itemHeights.every((height) => nearlyEqual(height, 32))
+    && evidence.itemRadii.every((radius) => nearlyEqual(radius, 4))
+    && evidence.transitionProperties.every((properties) =>
+      properties.includes("background-color")
+      && properties.includes("box-shadow")
+      && properties.includes("color")),
+    `${id}: segmented-control item geometry is ${JSON.stringify(evidence)}`,
+  );
+  invariant(
+    evidence.selectedBackground !== evidence.groupBackground
+    && nearlyEqual(evidence.selectedBlockInset, 3)
+    && evidence.inactiveBackgrounds.every((background) => background === "rgba(0, 0, 0, 0)"),
+    `${id}: segmented-control selection surface is ${JSON.stringify(evidence)}`,
+  );
+}
+
+async function verifySegmentedControlInteraction(page: Page, id: string): Promise<void> {
+  const projects = page.getByRole("radio", { name: "projects" });
+  const projectsItem = page
+    .locator(".gallery-segmented-control .hraness-segmented-control__item")
+    .filter({ hasText: "projects" });
+  const shared = page.getByRole("radio", { name: "shared" });
+  const dependenciesItem = page
+    .locator(".gallery-segmented-control .hraness-segmented-control__item")
+    .filter({ hasText: "dependencies" });
+
+  await dependenciesItem.hover();
+  const hoveredBackground = await dependenciesItem.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  invariant(
+    hoveredBackground !== "rgba(0, 0, 0, 0)",
+    `${id}: segmented-control hover surface stayed transparent`,
+  );
+
+  await projectsItem.click();
+  invariant(await projects.isChecked(), `${id}: pointer input did not select projects`);
+  await projects.focus();
+  await page.keyboard.press("ArrowRight");
+  invariant(
+    await shared.isChecked(),
+    `${id}: ArrowRight did not move segmented-control selection to shared`,
+  );
+  await page.mouse.move(0, 0);
+}
+
 async function verticalWritingEvidence(
   page: Page,
 ): Promise<VerticalWritingEvidence> {
@@ -3245,6 +3413,9 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     const button = document.querySelector('[data-gallery-primary-action="true"][data-slot="button-control"]');
     const card = document.querySelector('[data-gallery-icon-card="true"]');
     const selectedTab = document.querySelector('[data-slot="tab"][data-selected]');
+    const selectedSegment = document.querySelector(
+      '.gallery-segmented-control .hraness-segmented-control__item[data-selected]',
+    );
     const spinner = document.querySelector('[data-slot="spinner"]');
     const statusPills = [
       ...document.querySelectorAll<HTMLElement>(
@@ -3265,6 +3436,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       !(button instanceof HTMLElement)
       || !(card instanceof HTMLElement)
       || !(selectedTab instanceof HTMLElement)
+      || !(selectedSegment instanceof HTMLElement)
       || !(spinner instanceof HTMLElement)
       || statusPills.length !== 10
       || statusDots.length !== 6
@@ -3284,6 +3456,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     const buttonStyle = getComputedStyle(button);
     const cardStyle = getComputedStyle(card);
     const tabStyle = getComputedStyle(selectedTab);
+    const segmentStyle = getComputedStyle(selectedSegment);
     const canvas = normalize("backgroundColor", "Canvas");
     const canvasText = normalize("color", "CanvasText");
     const statusPillEvidence = statusPills.map((pill) => {
@@ -3349,6 +3522,8 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       forcedColorsActive: matchMedia("(forced-colors: active)").matches,
       selectedTabBackground: tabStyle.backgroundColor,
       selectedTabColor: tabStyle.color,
+      selectedSegmentBackground: segmentStyle.backgroundColor,
+      selectedSegmentColor: segmentStyle.color,
       spinnerAnimationName: getComputedStyle(spinner).animationName,
       statusFamilyContracts:
         statusPillEvidence.every(
@@ -3686,6 +3861,8 @@ try {
           await waitForHydration(page, failures, requestedPaths, layout.id);
 
           const light = await browserEvidence(page);
+          const lightSegmented = await segmentedControlEvidence(page);
+          verifySegmentedControlRecipe(lightSegmented, layout.id);
           invariant(light.heading === "Portable component behavior and presentation", `${layout.id}: heading changed`);
           invariant(light.hydrationStarted && light.rootHydrated, `${layout.id}: hydration did not settle`);
           invariant(light.recoverableErrors.length === 0, `${layout.id}: hydration recovered from ${light.recoverableErrors.join("; ")}`);
@@ -3978,8 +4155,17 @@ try {
           }
 
           await verifyKeyboardPath(page, layout.id);
+          await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
+          const darkSegmented = await segmentedControlEvidence(page);
+          verifySegmentedControlRecipe(darkSegmented, `${layout.id} dark`);
+          invariant(
+            darkSegmented.selectedLabel === "shared"
+            && darkSegmented.groupBackground !== lightSegmented.groupBackground
+            && darkSegmented.selectedBackground !== lightSegmented.selectedBackground,
+            `${layout.id}: segmented-control theme or interaction did not settle`,
+          );
           invariant(dark.theme === "dark" && dark.colorScheme === "dark", `${layout.id}: explicit dark theme did not apply`);
           invariant(dark.bodyBackground !== light.bodyBackground, `${layout.id}: theme did not change the page background`);
           invariant(dark.buttonBackground !== light.buttonBackground, `${layout.id}: theme did not change the action recipe`);
@@ -4116,6 +4302,8 @@ try {
         invariant(forced.buttonTextColor === forced.buttonText, `forced colors: action text is ${forced.buttonTextColor}, expected ${forced.buttonText}`);
         invariant(forced.selectedTabBackground === forced.buttonFace, "forced colors: selected tab does not use ButtonFace");
         invariant(forced.selectedTabColor === forced.buttonText, "forced colors: selected tab does not use ButtonText");
+        invariant(forced.selectedSegmentBackground === forced.buttonFace, "forced colors: selected segment does not use ButtonFace");
+        invariant(forced.selectedSegmentColor === forced.buttonText, "forced colors: selected segment does not use ButtonText");
         invariant(forced.spinnerAnimationName === "none", "forced colors: reduced-motion spinner still animates");
         invariant(
           forced.statusFamilyContracts,
@@ -4190,7 +4378,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });
