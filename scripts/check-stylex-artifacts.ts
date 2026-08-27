@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const COMPONENTS_IMPORT = '@import "./components.css";';
+const CARD_DESCRIPTION_BRIDGE_PATTERN =
+  /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;\s*\}/gu;
 const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-stylex-layer-conflict",
   "data-gallery-quiet-site-layer-conflict",
@@ -12,6 +14,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-themed-surface-layer-conflict",
   "data-gallery-avatar-layer-conflict",
   "data-gallery-status-family-layer-conflict",
+  "data-gallery-card-family-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -412,6 +415,158 @@ function requireStatusFamilyContract(
   );
 }
 
+function requireCardFamilyContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+): void {
+  const bridgeMatches = [
+    ...legacyComponents.matchAll(CARD_DESCRIPTION_BRIDGE_PATTERN),
+  ];
+  if (bridgeMatches.length !== 1 || bridgeMatches[0]?.index === undefined) {
+    throw new Error(
+      "src/components.css must contain exactly one Card description compatibility bridge with no extra declarations",
+    );
+  }
+  const interactiveLegacyLayerIndex = legacyComponents.indexOf(
+    `@layer ${LEGACY_LAYER} {`,
+  );
+  if (
+    interactiveLegacyLayerIndex < 0
+    || bridgeMatches[0].index >= interactiveLegacyLayerIndex
+  ) {
+    throw new Error(
+      "the Card description compatibility bridge must stay in the legacy.base layer",
+    );
+  }
+  const legacyComponentsWithoutBridge = legacyComponents.replace(
+    CARD_DESCRIPTION_BRIDGE_PATTERN,
+    "",
+  );
+  forbid(
+    legacyComponentsWithoutBridge,
+    /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
+    "a legacy Card-family recipe beyond the compatibility bridge",
+  );
+  const declarations = [
+    [/background-color:\s*var\(--ui-accent\);/u, "the accent Card background"],
+    [/background-color:\s*var\(--ui-background\);/u, "the neutral Card background"],
+    [/background-color:\s*var\(--ui-card\);/u, "the default Card background"],
+    [/background-color:\s*var\(--ui-foreground\);/u, "the inverse Card background"],
+    [/border-color:\s*canvastext;/u, "the forced-colors Card border"],
+    [/border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 28%,var\(--ui-border\)\);/u, "the accent Card border"],
+    [/border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 35%,var\(--ui-border\)\);/u, "the PressableCard hover border"],
+    [/border-color:\s*var\(--ui-border\);/u, "the default Card border"],
+    [/border-color:\s*var\(--ui-foreground\);/u, "the inverse Card border"],
+    [/border-radius:\s*var\(--radius-lg\);/u, "the rounded Card shape"],
+    [/border-radius:\s*var\(--radius-sharp\);/u, "the rectangular Card shape"],
+    [/border-style:\s*solid;/u, "the Card border style"],
+    [/border-width:\s*1px;/u, "the Card border width"],
+    [/box-shadow:\s*var\(--elevation-low\);/u, "the Card elevation"],
+    [/box-shadow:\s*var\(--elevation-raised\);/u, "the hovered PressableCard elevation"],
+    [/color:\s*inherit;/u, "the CardTitle inherited foreground"],
+    [/color:\s*var\(--hraness-card-description\);/u, "the public Card description variable consumer"],
+    [/color:\s*var\(--ui-accent-foreground\);/u, "the accent Card foreground"],
+    [/color:\s*var\(--ui-background\);/u, "the inverse Card foreground"],
+    [/color:\s*var\(--ui-card-foreground\);/u, "the default Card foreground"],
+    [/color:\s*var\(--ui-foreground\);/u, "the neutral Card foreground"],
+    [/display:\s*flex;/u, "the Card and CardFooter flex layout"],
+    [/display:\s*grid;/u, "the CardHeader and PressableCard grid layout"],
+    [/flex-direction:\s*column;/u, "the Card column layout"],
+    [/flex-wrap:\s*wrap;/u, "the CardFooter wrapping"],
+    [/font-size:\s*var\(--text-heading\);/u, "the CardTitle size"],
+    [/font-size:\s*var\(--text-label\);/u, "the CardDescription size"],
+    [/font-weight:\s*var\(--font-weight-bold\);/u, "the CardTitle weight"],
+    [/forced-color-adjust:\s*auto;/u, "the forced-colors Card adjustment"],
+    [/gap:\s*var\(--space-2\);/u, "the CardHeader and CardFooter gap"],
+    [/gap:\s*var\(--space-4\);/u, "the PressableCard gap"],
+    [/gap:\s*var\(--space-6\);/u, "the Card root gap"],
+    [/line-height:\s*1\.2;/u, "the CardTitle line height"],
+    [/line-height:\s*1\.5;/u, "the CardDescription line height"],
+    [/min-width:\s*0;/u, "the physical PressableCard shrink boundary"],
+    [/outline-color:\s*var\(--ui-ring\);/u, "the PressableCard focus ring color"],
+    [/outline-offset:\s*3px;/u, "the PressableCard focus ring offset"],
+    [/outline-style:\s*solid;/u, "the PressableCard focus ring style"],
+    [/outline-width:\s*2px;/u, "the PressableCard focus ring width"],
+    [/padding-block:\s*var\(--space-6\);/u, "the Card-family block padding"],
+    [/padding-inline:\s*var\(--space-6\);/u, "the Card-family inline padding"],
+    [/text-align:\s*start;/u, "the PressableCard logical text alignment"],
+    [/transform:\s*translateY\(1px\);/u, "the pressed PressableCard transform"],
+    [/transition-delay:\s*0s, 0s, 0s;/u, "the PressableCard transition delay"],
+    [/transition-duration:\s*var\(--motion-duration-fast\),var\(--motion-duration-fast\),var\(--motion-duration-fast\);/u, "the PressableCard transition duration"],
+    [/transition-property:\s*border-color, box-shadow, transform;/u, "the PressableCard transition properties"],
+    [/transition-timing-function:\s*var\(--motion-easing-standard\),var\(--motion-easing-standard\),var\(--motion-easing-standard\);/u, "the PressableCard transition easing"],
+    [/width:\s*100%;/u, "the physical PressableCard width"],
+  ] as const;
+  for (const [pattern, description] of declarations) {
+    requireMatch(compiledCss, pattern, description);
+  }
+  const nativePseudoFallbacks = [
+    [/:hover\s*\{\s*border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 35%,var\(--ui-border\)\);/u, "the native PressableCard hover fallback"],
+    [/:active\s*\{\s*transform:\s*translateY\(1px\);/u, "the native PressableCard active fallback"],
+    [/:focus-visible\s*\{\s*outline-color:\s*var\(--ui-ring\);/u, "the native PressableCard focus-visible fallback"],
+  ] as const;
+  for (const [pattern, description] of nativePseudoFallbacks) {
+    requireMatch(compiledCss, pattern, description);
+  }
+  for (const [pattern, description] of [
+    [/--_hraness-card-description/u, "the literal private Card description inline property"],
+    [/color-mix\(in oklch,\s*var\(--ui-accent-foreground\) 78%,\s*var\(--ui-accent\)\)/u, "the accent Card description tone"],
+    [/color-mix\(in oklch,\s*var\(--ui-background\) 80%,\s*var\(--ui-foreground\)\)/u, "the inverse Card description tone"],
+    [/isHovered/u, "the React Aria hover-state recipe seam"],
+    [/isPressed/u, "the React Aria pressed-state recipe seam"],
+    [/isFocusVisible/u, "the React Aria focus-visible recipe seam"],
+  ] as const) {
+    requireMatch(compiledJavaScript, pattern, description);
+  }
+  forbid(
+    compiledCss,
+    /--hraness-card-description\s*:/u,
+    "a generated public Card description variable assignment",
+  );
+  forbid(
+    compiledCss,
+    /--_hraness-card-description/u,
+    "the private Card description inline property in generated CSS",
+  );
+  forbid(
+    compiledCss,
+    /background:\s*var\(--ui-(?:accent|background|card|foreground)\);/u,
+    "a Card-family background shorthand",
+  );
+  forbid(
+    compiledCss,
+    /border:\s*1px\s+solid/u,
+    "a Card-family border shorthand",
+  );
+  forbid(
+    compiledCss,
+    /outline:\s*(?:2px|none)/u,
+    "a PressableCard outline shorthand",
+  );
+  forbid(
+    compiledCss,
+    /padding:\s*var\(--space-6\);/u,
+    "a Card-family padding shorthand",
+  );
+  forbid(
+    compiledCss,
+    /transition:\s*border-color/u,
+    "a PressableCard transition shorthand",
+  );
+}
+
+function requireCardFamilyCallerFallbackSeam(cardSource: string): void {
+  const seams = cardSource.match(
+    /xstyle\s*===\s*undefined\s*&&\s*cardStyles\.nativeInteractionFallbacks/gu,
+  ) ?? [];
+  if (seams.length !== 1) {
+    throw new Error(
+      "src/card.tsx must omit native PressableCard pseudo fallbacks exactly when caller xstyle is present",
+    );
+  }
+}
+
 function requireNoGallerySentinels(source: string): void {
   for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
     forbid(
@@ -423,12 +578,19 @@ function requireNoGallerySentinels(source: string): void {
 }
 
 const repository = process.cwd();
-const [compiledJavaScript, compiledCss, legacyComponents, orderedStylesheet] =
+const [
+  compiledJavaScript,
+  compiledCss,
+  legacyComponents,
+  orderedStylesheet,
+  cardSource,
+] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
     readFile(resolve(repository, "dist/stylex.css"), "utf8"),
     readFile(resolve(repository, "src/components.css"), "utf8"),
     readFile(resolve(repository, "src/styles.css"), "utf8"),
+    readFile(resolve(repository, "src/card.tsx"), "utf8"),
   ]);
 
 if (compiledCss.trim().length === 0) {
@@ -529,6 +691,8 @@ forbid(
 requireThemedSurfaceContract(legacyComponents, compiledCss);
 requireAvatarContract(legacyComponents, compiledCss);
 requireStatusFamilyContract(legacyComponents, compiledCss);
+requireCardFamilyContract(legacyComponents, compiledCss, compiledJavaScript);
+requireCardFamilyCallerFallbackSeam(cardSource);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,
@@ -540,7 +704,7 @@ const physicalHundredPercentWidths = [
 ];
 if (physicalHundredPercentWidths.length !== 1) {
   throw new Error(
-    "dist/stylex.css must contain exactly one physical 100% width for Avatar children without lowering ViewportFrame's logical inline size",
+    "dist/stylex.css must contain exactly one shared physical 100% width declaration for Avatar children and PressableCard without lowering ViewportFrame's logical inline size",
   );
 }
 const physicalZeroMinimumWidths = [
@@ -548,7 +712,7 @@ const physicalZeroMinimumWidths = [
 ];
 if (physicalZeroMinimumWidths.length !== 1) {
   throw new Error(
-    "dist/stylex.css must contain exactly one physical min-width zero for the Tag label without lowering a structural surface's logical minimum",
+    "dist/stylex.css must contain exactly one shared physical min-width zero declaration for the Tag label and PressableCard without lowering a structural surface's logical minimum",
   );
 }
 requireNoGallerySentinels(
@@ -612,6 +776,13 @@ for (const [pattern, description] of [
   [/hraness-tag__icon/u, "the Tag icon semantic hook"],
   [/hraness-tag__label/u, "the Tag label semantic hook"],
   [/hraness-status-dot/u, "the StatusDot semantic hook"],
+  [/hraness-card(?:["'])/u, "the Card semantic hook"],
+  [/hraness-card__header/u, "the CardHeader semantic hook"],
+  [/hraness-card__title/u, "the CardTitle semantic hook"],
+  [/hraness-card__description/u, "the CardDescription semantic hook"],
+  [/hraness-card__content/u, "the CardContent semantic hook"],
+  [/hraness-card__footer/u, "the CardFooter semantic hook"],
+  [/hraness-pressable-card/u, "the PressableCard semantic hook"],
 ] as const) {
   requireMatch(compiledJavaScript, pattern, description);
 }
@@ -797,6 +968,14 @@ assert.throws(
 );
 assert.throws(
   () =>
+    requireCardFamilyCallerFallbackSeam(
+      cardSource.replace("xstyle === undefined && ", ""),
+    ),
+  /omit native PressableCard pseudo fallbacks exactly when caller xstyle is present/u,
+  "the Card-family guard must reject unconditional native pseudo fallbacks",
+);
+assert.throws(
+  () =>
     requireNoGallerySentinels(
       `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-avatar-layer-conflict] { display: block; }`,
     ),
@@ -849,6 +1028,93 @@ assert.throws(
     ),
   /gallery-only data-gallery-status-family-layer-conflict sentinel/u,
   "the status-family guard must reject gallery sentinel leakage",
+);
+assert.throws(
+  () =>
+    requireCardFamilyContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-card { display: flex; } }`,
+      compiledCss,
+      compiledJavaScript,
+    ),
+  /legacy Card-family recipe beyond the compatibility bridge/u,
+  "the Card-family guard must reject a restored legacy selector",
+);
+assert.throws(
+  () =>
+    requireCardFamilyContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript.replace(
+        "--_hraness-card-description",
+        "--missing-card-description",
+      ),
+    ),
+  /literal private Card description inline property/u,
+  "the Card-family guard must reject a missing private description property",
+);
+assert.throws(
+  () =>
+    requireCardFamilyContract(
+      legacyComponents.replace(CARD_DESCRIPTION_BRIDGE_PATTERN, ""),
+      compiledCss,
+      compiledJavaScript,
+    ),
+  /exactly one Card description compatibility bridge/u,
+  "the Card-family guard must reject a missing compatibility bridge",
+);
+assert.throws(
+  () =>
+    requireCardFamilyContract(
+      legacyComponents.replace(
+        "--hraness-card-description: var(--_hraness-card-description);",
+        "--hraness-card-description: var(--_hraness-card-description); color: red;",
+      ),
+      compiledCss,
+      compiledJavaScript,
+    ),
+  /exactly one Card description compatibility bridge/u,
+  "the Card-family guard must reject extra compatibility-bridge declarations",
+);
+assert.throws(
+  () =>
+    requireCardFamilyContract(
+      legacyComponents,
+      compiledCss.replace(
+        "color: var(--hraness-card-description);",
+        "--hraness-card-description: red; color: var(--hraness-card-description);",
+      ),
+      compiledJavaScript,
+    ),
+  /generated public Card description variable assignment/u,
+  "the Card-family guard must reject a StyleX public-variable assignment",
+);
+assert.throws(
+  () =>
+    requireCardFamilyContract(
+      legacyComponents,
+      compiledCss.replace(":hover {", ":not(:hover) {"),
+      compiledJavaScript,
+    ),
+  /native PressableCard hover fallback/u,
+  "the Card-family guard must reject a missing native hover fallback",
+);
+assert.throws(
+  () =>
+    requireCardFamilyContract(
+      legacyComponents,
+      compiledCss.replace("forced-color-adjust: auto;", "forced-color-adjust: none;"),
+      compiledJavaScript,
+    ),
+  /forced-colors Card adjustment/u,
+  "the Card-family guard must reject a missing forced-colors adjustment",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-card-family-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-card-family-layer-conflict sentinel/u,
+  "the Card-family guard must reject gallery sentinel leakage",
 );
 
 console.log("StyleX package artifacts match the compiler contract");
