@@ -95,6 +95,7 @@ import {
   CardHeader,
   CardTitle,
   Icon,
+  KeyHint,
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
@@ -159,6 +160,10 @@ assert.match(stylexCss, /:focus-visible\s*\{/u);
 assert.match(stylexCss, /outline-offset:\s*2px/u);
 assert.match(stylexCss, /padding-block:\s*var\(--space-1\)/u);
 assert.match(stylexCss, /padding-inline:\s*var\(--space-1\)/u);
+assert.match(stylexCss, /border-block-end-width:\s*2px/u);
+assert.match(stylexCss, /font-family:\s*var\(--ui-font-mono\)/u);
+assert.match(stylexCss, /min-block-size:\s*1\.5rem/u);
+assert.match(stylexCss, /min-inline-size:\s*1\.5rem/u);
 const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
 const viewportHeightPositions = viewportHeightFallbacks.map((fallback) => stylexCss.indexOf(fallback));
 assert.ok(viewportHeightPositions.every((position) => position >= 0));
@@ -196,6 +201,7 @@ assert.doesNotMatch(
   /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
 );
 assert.doesNotMatch(componentsCss, /\.hraness-toolbar(?![A-Za-z0-9_-])/u);
+assert.doesNotMatch(componentsCss, /\.hraness-key-hint(?![A-Za-z0-9_-])/u);
 assert.equal(
   componentsCss.match(
     /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu,
@@ -403,6 +409,20 @@ assert.match(toolbarMarkup, /data-slot="toolbar"/u);
 assert.match(toolbarMarkup, /background-color:rgb\(1, 2, 3\)/u);
 assert.match(toolbarMarkup, /width:8rem/u);
 
+const keyHintMarkup = renderToStaticMarkup(React.createElement(KeyHint, {
+  "aria-label": "Command K",
+  className: "consumer-key-hint",
+  style: { width: "2rem" },
+  title: "Open command menu",
+}, "⌘K"));
+assert.match(keyHintMarkup, /^<kbd/u);
+assert.match(keyHintMarkup, /aria-label="Command K"/u);
+assert.match(keyHintMarkup, /class="hraness-key-hint [^"]+ consumer-key-hint"/u);
+assert.match(keyHintMarkup, /data-slot="key-hint"/u);
+assert.match(keyHintMarkup, /style="width:2rem"/u);
+assert.match(keyHintMarkup, /title="Open command menu"/u);
+assert.match(keyHintMarkup, />⌘K<\/kbd>/u);
+
 const pageMarkup = renderToStaticMarkup(React.createElement(QuietSitePage, {
   "aria-label": "Package page",
   className: "consumer-page",
@@ -493,6 +513,7 @@ import {
   CardHeader,
   CardTitle,
   Icon,
+  KeyHint,
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
@@ -528,6 +549,13 @@ const styles = stylex.create({
   camelMaxInlineSize: { maxInlineSize: "40rem" },
   camelMinInlineSize: { minInlineSize: 0 },
   icon: { display: "block" },
+  keyHint: {
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+    color: "var(--ui-secondary-foreground)",
+    paddingInline: "var(--space-2)",
+  },
+  keyHintDynamic: (width: string) => ({ width }),
   dynamicPage: (inlineSize: string) => ({ "inline-size": inlineSize }),
   logicalPage: {
     "inline-size": "100%",
@@ -685,6 +713,16 @@ const toolbarMarkup: string = renderToStaticMarkup(createElement(Toolbar, {
   style: ({ orientation }) => ({ width: orientation === "vertical" ? "15rem" : "13rem" }),
   xstyle: [styles.toolbar, styles.toolbarDynamic("14rem")],
 }));
+const keyHintRef = createRef<HTMLElement>();
+const keyHintMarkup: string = renderToStaticMarkup(createElement(KeyHint, {
+  "aria-label": "Command K",
+  children: "⌘K",
+  className: "consumer-key-hint",
+  ref: keyHintRef,
+  style: { width: "3rem" },
+  title: "Open command menu",
+  xstyle: [styles.keyHint, styles.keyHintDynamic("2rem")],
+}));
 const pageRef = createRef<HTMLElement>();
 const pageMarkup: string = renderToStaticMarkup(createElement(QuietSitePage, {
   "aria-label": "Package page",
@@ -795,6 +833,7 @@ void dotMarkup;
 void cardMarkup;
 void pressableMarkup;
 void toolbarMarkup;
+void keyHintMarkup;
 void pageMarkup;
 void footerMarkup;
 void frameMarkup;
@@ -826,7 +865,7 @@ void invalidToolbarClassMarkup;
 `;
 
 const viteClient = `import "@hraness/ui/styles.css";
-import { Card, CardDescription, PressableCard, Toolbar } from "@hraness/ui";
+import { Card, CardDescription, KeyHint, PressableCard, Toolbar } from "@hraness/ui";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 
@@ -844,6 +883,7 @@ createRoot(root).render(React.createElement(React.Fragment, null,
     "aria-label": "Vite editor actions",
     orientation: "vertical",
   }, React.createElement("button", { type: "button" }, "Save")),
+  React.createElement(KeyHint, null, "⌘K"),
 ));
 `;
 
@@ -925,6 +965,9 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "toolbar.stylex.ts"),
   );
   await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "key-hint.stylex.ts"),
+  );
+  await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "lib", "stylex.ts"),
   );
 
@@ -980,10 +1023,14 @@ async function verifyConsumer(
   ]);
   assert.match(viteJavaScript, /hraness-pressable-card/u);
   assert.match(viteJavaScript, /hraness-toolbar/u);
+  assert.match(viteJavaScript, /hraness-key-hint/u);
   assert.match(viteJavaScript, /--_hraness-card-description/u);
   assert.match(viteCss, /color:var\(--hraness-card-description\)/u);
   assert.match(viteCss, /:hover\{/u);
   assert.match(viteCss, /outline-offset:2px/u);
+  assert.match(viteCss, /border-block-end-width:2px/u);
+  assert.match(viteCss, /min-block-size:1\.5rem/u);
+  assert.match(viteCss, /min-inline-size:1\.5rem/u);
   const viteCssWithoutCardBridge = viteCss.replace(
     /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu,
     "",
@@ -1000,6 +1047,7 @@ async function verifyConsumer(
     /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
   );
   assert.doesNotMatch(viteCss, /\.hraness-toolbar(?![A-Za-z0-9_-])/u);
+  assert.doesNotMatch(viteCss, /\.hraness-key-hint(?![A-Za-z0-9_-])/u);
 }
 
 const repository = process.cwd();

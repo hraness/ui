@@ -1,15 +1,18 @@
 import { expect, test } from "bun:test";
-import type {
-  MouseEvent as ReactMouseEvent,
-  ReactElement,
-  Ref,
+import {
+  createRef,
+  type MouseEvent as ReactMouseEvent,
+  type ReactElement,
+  type Ref,
 } from "react";
+import * as stylex from "@stylexjs/stylex";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   EmptyState,
   InlineAlert,
   KeyHint,
+  type KeyHintProps,
   PageIntro,
   SettingsCard,
 } from "./content.js";
@@ -55,6 +58,36 @@ function renderSkipLinkForTest(props: SkipLinkProps): SkipLinkTestElement {
     ) => SkipLinkTestElement;
   }>;
   return component.render(props, null);
+}
+
+const keyHintTestStyles = stylex.create({
+  dynamicWidth: (width: string) => ({ width }),
+  override: {
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+    borderRadius: "var(--radius-lg)",
+    color: "var(--ui-secondary-foreground)",
+    fontFamily: "var(--ui-font-heading)",
+    fontSize: "var(--text-body)",
+    justifyContent: "flex-start",
+    minHeight: "2rem",
+    minWidth: "2rem",
+    paddingInline: "var(--space-2)",
+  },
+});
+
+type KeyHintTestElement = ReactElement<{
+  ref: Ref<HTMLElement>;
+}>;
+
+function renderKeyHintForTest(
+  props: KeyHintProps,
+  ref: Ref<HTMLElement>,
+): KeyHintTestElement {
+  const component = KeyHint as unknown as Readonly<{
+    render: (props: KeyHintProps, ref: Ref<HTMLElement>) => KeyHintTestElement;
+  }>;
+  return component.render(props, ref);
 }
 
 test("normalizeProgress bounds non-finite and out-of-range values", () => {
@@ -135,6 +168,43 @@ test("content primitives preserve heading levels, slots, and live-region intent"
   expect(html).toContain('aria-live="assertive"');
   expect(html).toContain('data-shape="rectangular"');
   expect(html).toContain('data-slot="key-hint"');
+});
+
+test("KeyHint preserves its native element, ref, attributes, class order, and caller style precedence", () => {
+  const ref = createRef<HTMLElement>();
+  const element = renderKeyHintForTest({ children: "K" }, ref);
+  const html = renderToStaticMarkup(
+    <KeyHint
+      aria-label="Command K"
+      className="consumer-key-hint"
+      data-product="writer"
+      ref={ref}
+      style={{ width: "3rem" }}
+      title="Open command menu"
+      xstyle={[
+        keyHintTestStyles.override,
+        keyHintTestStyles.dynamicWidth("2rem"),
+      ]}
+    >
+      ⌘K
+    </KeyHint>,
+  );
+  const openingTag = html.slice(0, html.indexOf(">") + 1);
+  const classes = openingTag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+
+  expect(element.type).toBe("kbd");
+  expect(element.props.ref).toBe(ref);
+  expect(openingTag).toStartWith("<kbd");
+  expect(openingTag).toContain('aria-label="Command K"');
+  expect(openingTag).toContain('data-product="writer"');
+  expect(openingTag).toContain('data-slot="key-hint"');
+  expect(openingTag).toContain('title="Open command menu"');
+  expect(classes[0]).toBe("hraness-key-hint");
+  expect(classes.at(-1)).toBe("consumer-key-hint");
+  expect(classes.length).toBeGreaterThan(2);
+  expect(openingTag).toMatch(/style="--[^:]+:2rem;width:3rem"/u);
+  expect(html).toEndWith("⌘K</kbd>");
+  expect(KeyHint.displayName).toBe("KeyHint");
 });
 
 test("Avatar has deterministic fallbacks and optional accessible copy", () => {

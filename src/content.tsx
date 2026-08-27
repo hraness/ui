@@ -3,7 +3,11 @@ import {
   type HTMLAttributes,
   type ReactNode,
 } from "react";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 
+import { keyHintStyles } from "./key-hint.stylex.js";
+import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 import type { SurfaceShape } from "./surfaces.js";
 
@@ -11,19 +15,31 @@ export type ContentHeadingLevel = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 
 export type KeyHintProps = HTMLAttributes<HTMLElement> & Readonly<{
   children: ReactNode;
+  /** Typed StyleX presentation applied after the KeyHint recipe. */
+  xstyle?: StyleXStyles;
 }>;
 
 export const KeyHint = forwardRef<HTMLElement, KeyHintProps>(
-  ({ children, className, ...props }, ref) => (
-    <kbd
-      {...props}
-      className={cn("hraness-key-hint", className)}
-      data-slot="key-hint"
-      ref={ref}
-    >
-      {children}
-    </kbd>
-  ),
+  ({ children, className, style, xstyle, ...props }, ref) => {
+    const presentation = stylex.props(keyHintStyles.root, xstyle);
+
+    return (
+      <kbd
+        {...props}
+        {...presentation}
+        className={cn(
+          "hraness-key-hint",
+          presentation.className,
+          className,
+        )}
+        data-slot="key-hint"
+        ref={ref}
+        style={mergeStylexInlineStyles(presentation.style, style)}
+      >
+        {children}
+      </kbd>
+    );
+  },
 );
 
 KeyHint.displayName = "KeyHint";

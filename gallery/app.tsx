@@ -18,6 +18,7 @@ import {
   CheckboxField,
   Icon,
   InlineAlert,
+  KeyHint,
   Progress,
   PressableCard,
   QuietSiteFooter,
@@ -72,6 +73,20 @@ const galleryStyles = stylex.create({
   },
   cardPartOverride: {
     color: "var(--ui-primary)",
+    paddingInline: "var(--space-2)",
+  },
+  keyHintDynamicWidth: (width: string) => ({ width }),
+  keyHintOverride: {
+    alignItems: "stretch",
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+    borderRadius: "var(--radius-lg)",
+    color: "var(--ui-secondary-foreground)",
+    fontFamily: "var(--ui-font-heading)",
+    fontSize: "var(--text-body)",
+    justifyContent: "flex-start",
+    minHeight: "2rem",
+    minWidth: "2rem",
     paddingInline: "var(--space-2)",
   },
   pressableCardOverride: {
@@ -169,8 +184,8 @@ export function PrimitiveGallery() {
           <h1>Portable component behavior and presentation</h1>
           <p>
             The executable gallery verifies the packed default stylesheet,
-            semantic hooks, browser interaction, and the current StyleX icon and
-            quiet-site recipes.
+            semantic hooks, browser interaction, and the current package-compiled
+            StyleX recipes.
           </p>
         </header>
 
@@ -209,6 +224,44 @@ export function PrimitiveGallery() {
             description="The browser harness toggles this control with the Space key."
             label="Preserve accessible interaction"
           />
+        </section>
+
+        <section aria-labelledby="gallery-key-hint-heading" data-gallery-section="key-hints">
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-key-hint-heading">Key hints</h2>
+              <p>Native keyboard notation keeps its compact recipe and caller-last presentation.</p>
+            </div>
+          </div>
+          <div data-gallery-key-hint-row="true">
+            <span>
+              Open commands{" "}
+              <KeyHint
+                className="gallery-key-hint gallery-key-hint--default"
+                data-gallery-key-hint="default"
+                data-gallery-key-hint-layer-conflict="true"
+                title="Command K"
+              >
+                ⌘K
+              </KeyHint>
+            </span>
+            <span>
+              Dismiss{" "}
+              <KeyHint
+                aria-label="Escape"
+                className="gallery-key-hint gallery-key-hint--override"
+                data-gallery-key-hint="override"
+                data-gallery-key-hint-layer-conflict="true"
+                style={{ width: "3rem" }}
+                xstyle={[
+                  galleryStyles.keyHintOverride,
+                  galleryStyles.keyHintDynamicWidth("2.5rem"),
+                ]}
+              >
+                Esc
+              </KeyHint>
+            </span>
+          </div>
         </section>
 
         <section aria-labelledby="gallery-icon-heading" data-gallery-section="icons">

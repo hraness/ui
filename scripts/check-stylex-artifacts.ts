@@ -16,6 +16,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-status-family-layer-conflict",
   "data-gallery-card-family-layer-conflict",
   "data-gallery-toolbar-layer-conflict",
+  "data-gallery-key-hint-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -640,6 +641,70 @@ function requireToolbarCallerFallbackSeam(toolbarSource: string): void {
   }
 }
 
+function requireKeyHintContract(
+  legacyComponents: string,
+  compiledCss: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-key-hint(?![A-Za-z0-9_-])/u,
+    "a legacy KeyHint recipe",
+  );
+  const declarations = [
+    [/align-items:\s*center;/u, "the KeyHint block-axis alignment"],
+    [/background-color:\s*var\(--ui-muted\);/u, "the KeyHint background"],
+    [/border-block-end-width:\s*2px;/u, "the KeyHint block-end depth"],
+    [/border-color:\s*var\(--ui-border\);/u, "the KeyHint border color"],
+    [/border-radius:\s*var\(--radius-sm\);/u, "the KeyHint radius"],
+    [/border-style:\s*solid;/u, "the KeyHint border style"],
+    [/border-width:\s*1px;/u, "the KeyHint border width"],
+    [/color:\s*var\(--ui-muted-foreground\);/u, "the KeyHint foreground"],
+    [/display:\s*inline-flex;/u, "the KeyHint layout"],
+    [/font-family:\s*var\(--ui-font-mono\);/u, "the KeyHint font family"],
+    [/font-size:\s*var\(--text-caption\);/u, "the KeyHint font size"],
+    [/justify-content:\s*center;/u, "the KeyHint inline-axis alignment"],
+    [/min-block-size:\s*1\.5rem;/u, "the KeyHint minimum block size"],
+    [/min-inline-size:\s*1\.5rem;/u, "the KeyHint minimum inline size"],
+    [/padding-inline:\s*var\(--space-1\);/u, "the KeyHint inline padding"],
+  ] as const;
+  for (const [pattern, description] of declarations) {
+    requireMatch(compiledCss, pattern, description);
+  }
+  forbid(
+    compiledCss,
+    /background:\s*var\(--ui-muted\);/u,
+    "a KeyHint background shorthand",
+  );
+  forbid(
+    compiledCss,
+    /border:\s*1px\s+solid\s+var\(--ui-border\)/u,
+    "a KeyHint border shorthand",
+  );
+  forbid(
+    compiledCss,
+    /padding:\s*var\(--space-1\)/u,
+    "a KeyHint padding shorthand",
+  );
+}
+
+function requireKeyHintSourceContract(contentSource: string): void {
+  forbid(
+    contentSource,
+    /^\s*["']use client["'];?/u,
+    "a client boundary on the server-compatible content module",
+  );
+  requireMatch(
+    contentSource,
+    /stylex\.props\(keyHintStyles\.root,\s*xstyle\)/u,
+    "the caller-last KeyHint xstyle merge",
+  );
+  requireMatch(
+    contentSource,
+    /mergeStylexInlineStyles\(presentation\.style,\s*style\)/u,
+    "the KeyHint StyleX-before-native inline merge",
+  );
+}
+
 function requireNoGallerySentinels(source: string): void {
   for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
     forbid(
@@ -658,6 +723,7 @@ const [
   orderedStylesheet,
   cardSource,
   toolbarSource,
+  contentSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -666,6 +732,7 @@ const [
     readFile(resolve(repository, "src/styles.css"), "utf8"),
     readFile(resolve(repository, "src/card.tsx"), "utf8"),
     readFile(resolve(repository, "src/toolbar.tsx"), "utf8"),
+    readFile(resolve(repository, "src/content.tsx"), "utf8"),
   ]);
 
 if (compiledCss.trim().length === 0) {
@@ -770,6 +837,8 @@ requireCardFamilyContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCardFamilyCallerFallbackSeam(cardSource);
 requireToolbarContract(legacyComponents, compiledCss);
 requireToolbarCallerFallbackSeam(toolbarSource);
+requireKeyHintContract(legacyComponents, compiledCss);
+requireKeyHintSourceContract(contentSource);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,
@@ -861,6 +930,7 @@ for (const [pattern, description] of [
   [/hraness-card__footer/u, "the CardFooter semantic hook"],
   [/hraness-pressable-card/u, "the PressableCard semantic hook"],
   [/hraness-toolbar/u, "the Toolbar semantic hook"],
+  [/hraness-key-hint/u, "the KeyHint semantic hook"],
 ] as const) {
   requireMatch(compiledJavaScript, pattern, description);
 }
@@ -1236,6 +1306,63 @@ assert.throws(
     ),
   /gallery-only data-gallery-toolbar-layer-conflict sentinel/u,
   "the Toolbar guard must reject gallery sentinel leakage",
+);
+assert.throws(
+  () =>
+    requireKeyHintContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-key-hint { display: inline-flex; } }`,
+      compiledCss,
+    ),
+  /legacy KeyHint recipe/u,
+  "the KeyHint guard must reject a restored legacy selector",
+);
+assert.throws(
+  () =>
+    requireKeyHintContract(
+      legacyComponents,
+      compiledCss.replace(
+        "border-block-end-width: 2px;",
+        "border-block-end-width: 1px;",
+      ),
+    ),
+  /KeyHint block-end depth/u,
+  "the KeyHint guard must reject a missing block-end depth",
+);
+assert.throws(
+  () =>
+    requireKeyHintContract(
+      legacyComponents,
+      compiledCss.replace("min-inline-size: 1.5rem;", "min-inline-size: 2rem;"),
+    ),
+  /KeyHint minimum inline size/u,
+  "the KeyHint guard must reject changed logical geometry",
+);
+assert.throws(
+  () =>
+    requireKeyHintSourceContract(
+      `"use client";\n${contentSource}`,
+    ),
+  /client boundary on the server-compatible content module/u,
+  "the KeyHint guard must reject a client-only content module",
+);
+assert.throws(
+  () =>
+    requireKeyHintSourceContract(
+      contentSource.replace(
+        "mergeStylexInlineStyles(presentation.style, style)",
+        "mergeStylexInlineStyles(style, presentation.style)",
+      ),
+    ),
+  /KeyHint StyleX-before-native inline merge/u,
+  "the KeyHint guard must reject reversed native-style precedence",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-key-hint-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-key-hint-layer-conflict sentinel/u,
+  "the KeyHint guard must reject gallery sentinel leakage",
 );
 
 console.log("StyleX package artifacts match the compiler contract");
