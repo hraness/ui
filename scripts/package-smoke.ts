@@ -1,4 +1,14 @@
-import { access, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import assert from "node:assert/strict";
+import {
+  access,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
@@ -78,7 +88,14 @@ import {
   AppearanceIcon,
   Avatar,
   Badge,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
   Icon,
+  PressableCard,
   QuietSiteFooter,
   QuietSitePage,
   SocialIcon,
@@ -126,6 +143,18 @@ assert.match(stylexCss, /height:\s*\.625rem/u);
 assert.match(stylexCss, /min-height:\s*1\.5rem/u);
 assert.match(stylexCss, /width:\s*\.625rem/u);
 assert.match(stylexCss, /width:\s*fit-content/u);
+assert.match(stylexCss, /background-color:\s*var\(--ui-accent\)/u);
+assert.match(stylexCss, /border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 35%,var\(--ui-border\)\)/u);
+assert.match(stylexCss, /box-shadow:\s*var\(--elevation-low\)/u);
+assert.match(stylexCss, /color:\s*var\(--hraness-card-description\)/u);
+assert.doesNotMatch(stylexCss, /--hraness-card-description\s*:/u);
+assert.doesNotMatch(stylexCss, /--_hraness-card-description/u);
+assert.match(stylexCss, /gap:\s*var\(--space-6\)/u);
+assert.match(stylexCss, /outline-color:\s*var\(--ui-ring\)/u);
+assert.match(stylexCss, /transform:\s*translateY\(1px\)/u);
+assert.match(stylexCss, /:hover\s*\{/u);
+assert.match(stylexCss, /:active\s*\{/u);
+assert.match(stylexCss, /:focus-visible\s*\{/u);
 const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
 const viewportHeightPositions = viewportHeightFallbacks.map((fallback) => stylexCss.indexOf(fallback));
 assert.ok(viewportHeightPositions.every((position) => position >= 0));
@@ -137,12 +166,12 @@ assert.ok(
 assert.equal(
   stylexCss.match(/(?:^|[\s{;])width:\s*100%/gu)?.length,
   1,
-  "the packed CSS must contain exactly one physical 100% width for Avatar children",
+  "the packed CSS must contain exactly one shared physical 100% width declaration for Avatar children and PressableCard",
 );
 assert.equal(
   stylexCss.match(/(?:^|[\s{;])min-width:\s*0/gu)?.length,
   1,
-  "the packed CSS must contain exactly one physical zero min-width for the Tag label",
+  "the packed CSS must contain exactly one shared physical zero min-width declaration for the Tag label and PressableCard",
 );
 
 const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
@@ -154,6 +183,20 @@ assert.doesNotMatch(componentsCss, /\.hraness-avatar(?:__image|__fallback)?(?![A
 assert.doesNotMatch(
   componentsCss,
   /\.hraness-(?:badge(?:--[A-Za-z0-9_-]+)?|status-dot|tag(?:__(?:icon|label))?)(?![A-Za-z0-9_-])/u,
+);
+assert.doesNotMatch(
+  componentsCss.replace(
+    /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu,
+    "",
+  ),
+  /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
+);
+assert.equal(
+  componentsCss.match(
+    /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu,
+  )?.length,
+  1,
+  "components.css must contain the single Card description compatibility bridge",
 );
 
 const stylesCssUrl = import.meta.resolve("@hraness/ui/styles.css");
@@ -284,6 +327,58 @@ assert.match(dotMarkup, /data-slot="status-dot"/u);
 assert.match(dotMarkup, /data-tone="danger"/u);
 assert.match(dotMarkup, /style="height:1rem;width:1rem"/u);
 
+const cardMarkup = renderToStaticMarkup(React.createElement(Card, {
+  "aria-label": "Package card",
+  className: "consumer-card",
+  id: "package-card",
+  shape: "rectangular",
+  style: { borderRadius: "5px" },
+  tone: "accent",
+}, React.createElement(CardHeader, null,
+  React.createElement(CardTitle, null, "Project"),
+  React.createElement(CardDescription, null, "Compiled card"),
+), React.createElement(CardContent, null, "Ready"),
+React.createElement(CardFooter, null, "Footer")));
+assert.match(cardMarkup, /^<div/u);
+assert.match(cardMarkup, /aria-label="Package card"/u);
+assert.match(cardMarkup, /class="hraness-card [^"]+ consumer-card"/u);
+assert.match(cardMarkup, /data-shape="rectangular"/u);
+assert.match(cardMarkup, /data-slot="card"/u);
+assert.match(cardMarkup, /data-tone="accent"/u);
+assert.match(cardMarkup, /id="package-card"/u);
+assert.match(cardMarkup, /--_hraness-card-description:/u);
+assert.doesNotMatch(cardMarkup, /--hraness-card-description:/u);
+assert.match(cardMarkup, /border-radius:5px/u);
+for (const slot of [
+  "card-header",
+  "card-title",
+  "card-description",
+  "card-content",
+  "card-footer",
+]) assert.match(cardMarkup, new RegExp('data-slot="' + slot + '"', "u"));
+
+const pressableMarkup = renderToStaticMarkup(React.createElement(PressableCard, {
+  "aria-label": "Open project",
+  className: "consumer-pressable",
+  isPending: true,
+  shape: "rounded",
+  style: (state) => ({
+    opacity: state.isPending ? 0.75 : 1,
+    width: "8rem",
+  }),
+  tone: "inverse",
+}, "Open"));
+assert.match(pressableMarkup, /^<button/u);
+assert.match(pressableMarkup, /aria-label="Open project"/u);
+assert.match(pressableMarkup, /aria-disabled="true"/u);
+assert.match(pressableMarkup, /class="hraness-pressable-card [^"]+ consumer-pressable"/u);
+assert.match(pressableMarkup, /data-pending="true"/u);
+assert.match(pressableMarkup, /data-slot="pressable-card"/u);
+assert.match(pressableMarkup, /--_hraness-card-description:/u);
+assert.doesNotMatch(pressableMarkup, /--hraness-card-description:/u);
+assert.match(pressableMarkup, /opacity:0\.75/u);
+assert.match(pressableMarkup, /width:8rem/u);
+
 const pageMarkup = renderToStaticMarkup(React.createElement(QuietSitePage, {
   "aria-label": "Package page",
   className: "consumer-page",
@@ -367,7 +462,14 @@ import {
   AppearanceIcon,
   Avatar,
   Badge,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
   Icon,
+  PressableCard,
   QuietSiteFooter,
   QuietSitePage,
   SocialIcon,
@@ -388,6 +490,15 @@ const styles = stylex.create({
     width: "3rem",
   },
   avatarDynamic: (size: string) => ({ height: size, width: size }),
+  card: {
+    backgroundColor: "var(--ui-primary)",
+    borderColor: "var(--ui-destructive)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--ui-primary-foreground)",
+  },
+  cardPart: {
+    paddingInline: "var(--space-2)",
+  },
   camelInlineSize: { inlineSize: "100%" },
   camelMaxInlineSize: { maxInlineSize: "40rem" },
   camelMinInlineSize: { minInlineSize: 0 },
@@ -479,6 +590,55 @@ const dotMarkup: string = renderToStaticMarkup(createElement(StatusDot, {
   tone: "danger",
   xstyle: styles.statusDot,
 }));
+const cardRef = createRef<HTMLDivElement>();
+const cardMarkup: string = renderToStaticMarkup(createElement(Card, {
+  children: createElement(CardHeader, {
+    children: [
+      createElement(CardTitle, {
+        children: "Project",
+        key: "title",
+        xstyle: styles.cardPart,
+      }),
+      createElement(CardDescription, {
+        children: "Compiled card",
+        key: "description",
+        xstyle: styles.cardPart,
+      }),
+      createElement(CardContent, {
+        children: "Ready",
+        key: "content",
+        xstyle: styles.cardPart,
+      }),
+      createElement(CardFooter, {
+        children: "Footer",
+        key: "footer",
+        xstyle: styles.cardPart,
+      }),
+    ],
+    xstyle: styles.cardPart,
+  }),
+  className: "consumer-card",
+  ref: cardRef,
+  shape: "rectangular",
+  style: { borderRadius: "5px" },
+  tone: "accent",
+  xstyle: styles.card,
+}));
+const pressableRef = createRef<HTMLButtonElement>();
+const pressableMarkup: string = renderToStaticMarkup(createElement(PressableCard, {
+  buttonRef: pressableRef,
+  children: ({ isPending }) => isPending ? "Pending" : "Open",
+  className: "consumer-pressable",
+  isPending: true,
+  onPress: () => undefined,
+  shape: "rounded",
+  style: ({ isFocusVisible }) => ({
+    outlineColor: isFocusVisible ? "red" : undefined,
+    width: "8rem",
+  }),
+  tone: "inverse",
+  xstyle: styles.card,
+}));
 const pageRef = createRef<HTMLElement>();
 const pageMarkup: string = renderToStaticMarkup(createElement(QuietSitePage, {
   "aria-label": "Package page",
@@ -566,6 +726,12 @@ const invalidDotToneMarkup = renderToStaticMarkup(createElement(StatusDot, { ton
 const invalidTagVariantMarkup = renderToStaticMarkup(createElement(Tag, { children: "Tag", variant: "primary" }));
 // @ts-expect-error accentColor is available only for outline Tags.
 const invalidTagAccentMarkup = renderToStaticMarkup(createElement(Tag, { accentColor: "red", children: "Tag", variant: "muted" }));
+// @ts-expect-error Card keeps its tone set finite.
+const invalidCardToneMarkup = renderToStaticMarkup(createElement(Card, { tone: "popover" }));
+// @ts-expect-error Card keeps its shape set finite.
+const invalidCardShapeMarkup = renderToStaticMarkup(createElement(Card, { shape: "pill" }));
+// @ts-expect-error PressableCard keeps className static for stable semantic composition.
+const invalidPressableClassMarkup = renderToStaticMarkup(createElement(PressableCard, { children: "Open", className: () => "dynamic" }));
 
 void markup;
 void socialMarkup;
@@ -574,6 +740,8 @@ void avatarMarkup;
 void badgeMarkup;
 void tagMarkup;
 void dotMarkup;
+void cardMarkup;
+void pressableMarkup;
 void pageMarkup;
 void footerMarkup;
 void frameMarkup;
@@ -596,6 +764,44 @@ void invalidBadgeToneMarkup;
 void invalidDotToneMarkup;
 void invalidTagVariantMarkup;
 void invalidTagAccentMarkup;
+void invalidCardToneMarkup;
+void invalidCardShapeMarkup;
+void invalidPressableClassMarkup;
+`;
+
+const viteClient = `import "@hraness/ui/styles.css";
+import { Card, CardDescription, PressableCard } from "@hraness/ui";
+import * as React from "react";
+import { createRoot } from "react-dom/client";
+
+const root = document.getElementById("root");
+if (root === null) throw new Error("Vite package smoke root is missing");
+createRoot(root).render(React.createElement(React.Fragment, null,
+  React.createElement(Card, { tone: "accent" },
+    React.createElement(CardDescription, null, "Vite card"),
+  ),
+  React.createElement(PressableCard, {
+    onPress: () => undefined,
+    tone: "inverse",
+  }, "Vite pressable card"),
+));
+`;
+
+const viteHtml = `<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>Vite package smoke</title></head>
+  <body><div id="root"></div><script type="module" src="/vite-client.ts"></script></body>
+</html>
+`;
+
+const viteConfig = `import { defineConfig } from "vite";
+
+export default defineConfig({
+  build: {
+    emptyOutDir: true,
+    outDir: "vite-dist",
+  },
+});
 `;
 
 function typeScriptConfig(moduleResolution: "Bundler" | "NodeNext") {
@@ -637,6 +843,7 @@ async function verifyConsumer(
     `react@${release.version}`,
     `react-dom@${release.version}`,
     "typescript@^6.0.3",
+    "vite@^7.0.0",
     "--ignore-scripts",
   ], consumer);
   await access(
@@ -644,6 +851,9 @@ async function verifyConsumer(
   );
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "avatar.stylex.ts"),
+  );
+  await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "card.stylex.ts"),
   );
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "status.stylex.ts"),
@@ -682,6 +892,48 @@ async function verifyConsumer(
     );
     await run([process.execPath, "x", "tsc", "-p", `./${configName}`], consumer);
   }
+
+  await Promise.all([
+    writeFile(join(consumer, "index.html"), viteHtml),
+    writeFile(join(consumer, "vite-client.ts"), viteClient),
+    writeFile(join(consumer, "vite.config.ts"), viteConfig),
+  ]);
+  await run([
+    process.execPath,
+    "x",
+    "vite",
+    "build",
+    "--config",
+    "./vite.config.ts",
+  ], consumer);
+  const viteAssets = await readdir(join(consumer, "vite-dist", "assets"));
+  const viteJavaScriptPath = viteAssets.find((file) => file.endsWith(".js"));
+  const viteCssPath = viteAssets.find((file) => file.endsWith(".css"));
+  assert.ok(viteJavaScriptPath !== undefined, "Vite must emit package JavaScript");
+  assert.ok(viteCssPath !== undefined, "Vite must emit the package stylesheet");
+  const [viteJavaScript, viteCss] = await Promise.all([
+    readFile(join(consumer, "vite-dist", "assets", viteJavaScriptPath), "utf8"),
+    readFile(join(consumer, "vite-dist", "assets", viteCssPath), "utf8"),
+  ]);
+  assert.match(viteJavaScript, /hraness-pressable-card/u);
+  assert.match(viteJavaScript, /--_hraness-card-description/u);
+  assert.match(viteCss, /color:var\(--hraness-card-description\)/u);
+  assert.match(viteCss, /:hover\{/u);
+  const viteCssWithoutCardBridge = viteCss.replace(
+    /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu,
+    "",
+  );
+  assert.equal(
+    viteCss.match(
+      /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu,
+    )?.length,
+    1,
+    "Vite must preserve the single Card description compatibility bridge",
+  );
+  assert.doesNotMatch(
+    viteCssWithoutCardBridge,
+    /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
+  );
 }
 
 const repository = process.cwd();

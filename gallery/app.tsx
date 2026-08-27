@@ -2,7 +2,7 @@
 
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 
 import {
   AppearanceIcon,
@@ -19,6 +19,7 @@ import {
   Icon,
   InlineAlert,
   Progress,
+  PressableCard,
   QuietSiteFooter,
   QuietSitePage,
   Skeleton,
@@ -58,6 +59,27 @@ const galleryStyles = stylex.create({
     height: "3rem",
     width: "3rem",
   },
+  cardDynamicWidth: (width: string) => ({ width }),
+  cardOverride: {
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+    borderRadius: "var(--radius-sm)",
+    boxShadow: "none",
+    color: "var(--ui-secondary-foreground)",
+    gap: "var(--space-2)",
+    paddingInline: "var(--space-2)",
+  },
+  cardPartOverride: {
+    color: "var(--ui-primary)",
+    paddingInline: "var(--space-2)",
+  },
+  pressableCardOverride: {
+    outlineColor: "var(--ui-warning)",
+    outlineOffset: "7px",
+    outlineWidth: "4px",
+    transform: "none",
+    transitionDuration: "0s, 0s, 0s",
+  },
   quietSiteFooterOverride: {
     "max-inline-size": "35rem",
   },
@@ -92,6 +114,7 @@ const galleryStyles = stylex.create({
 });
 
 export function PrimitiveGallery() {
+  const [cardPressCount, setCardPressCount] = useState(0);
   const [pressCount, setPressCount] = useState(0);
   const [theme, setTheme] = useState<GalleryTheme>("light");
 
@@ -344,6 +367,186 @@ export function PrimitiveGallery() {
               xstyle={galleryStyles.statusDotOverride}
             />
           </div>
+        </section>
+
+        <section aria-labelledby="gallery-card-family-heading" data-gallery-section="card-family">
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-card-family-heading">Card family</h2>
+              <p>Finite tones, shapes, inherited descriptions, and React Aria interaction share one compiled boundary.</p>
+            </div>
+          </div>
+          <div data-gallery-card-family-grid="cards">
+            <Card className="gallery-card gallery-card--card" data-gallery-card-family-layer-conflict="true" data-gallery-card-tone="card" tone="card">
+              <CardHeader>
+                <CardTitle>Card tone</CardTitle>
+                <CardDescription>Default description</CardDescription>
+              </CardHeader>
+              <CardContent>Rounded content</CardContent>
+              <CardFooter>Footer</CardFooter>
+            </Card>
+            <Card className="gallery-card gallery-card--neutral" data-gallery-card-family-layer-conflict="true" data-gallery-card-tone="neutral" shape="rectangular" tone="neutral">
+              <CardHeader>
+                <CardTitle>Neutral tone</CardTitle>
+                <CardDescription>Rectangular description</CardDescription>
+              </CardHeader>
+            </Card>
+            <Card className="gallery-card gallery-card--accent" data-gallery-card-family-layer-conflict="true" data-gallery-card-tone="accent" tone="accent">
+              <CardHeader>
+                <CardTitle>Accent tone</CardTitle>
+                <CardDescription>Accent description</CardDescription>
+              </CardHeader>
+            </Card>
+            <Card className="gallery-card gallery-card--inverse" data-gallery-card-family-layer-conflict="true" data-gallery-card-tone="inverse" shape="rectangular" tone="inverse">
+              <CardHeader>
+                <CardTitle>Inverse tone</CardTitle>
+                <CardDescription>Inverse description</CardDescription>
+              </CardHeader>
+            </Card>
+          </div>
+          <div data-gallery-card-family-grid="pressables">
+            <PressableCard
+              aria-label="Run Card-family action"
+              className="gallery-pressable-card gallery-pressable-card--interactive"
+              data-gallery-card-family-layer-conflict="true"
+              data-gallery-pressable-card-tone="accent"
+              data-gallery-pressable-card-state="interactive"
+              onPress={() => setCardPressCount((count) => count + 1)}
+              tone="accent"
+            >
+              Interactive PressableCard
+            </PressableCard>
+            <PressableCard
+              className="gallery-pressable-card gallery-pressable-card--neutral"
+              data-gallery-card-family-layer-conflict="true"
+              data-gallery-pressable-card-tone="neutral"
+              shape="rectangular"
+              tone="neutral"
+            >
+              Neutral rectangular
+            </PressableCard>
+            <PressableCard
+              className="gallery-pressable-card gallery-pressable-card--disabled"
+              data-gallery-card-family-layer-conflict="true"
+              data-gallery-pressable-card-tone="card"
+              data-gallery-pressable-card-state="disabled"
+              isDisabled
+              tone="card"
+            >
+              Disabled PressableCard
+            </PressableCard>
+            <PressableCard
+              className="gallery-pressable-card gallery-pressable-card--pending"
+              data-gallery-card-family-layer-conflict="true"
+              data-gallery-pressable-card-tone="inverse"
+              data-gallery-pressable-card-state="pending"
+              isPending
+              shape="rectangular"
+              tone="inverse"
+            >
+              {({ isPending }) => isPending ? "Pending PressableCard" : "Ready PressableCard"}
+            </PressableCard>
+          </div>
+          <div data-gallery-card-family-grid="overrides">
+            <Card
+              className="gallery-card gallery-card--class-variable"
+              data-gallery-card-class-variable="true"
+              data-gallery-card-family-layer-conflict="true"
+              tone="accent"
+            >
+              <CardHeader>
+                <CardTitle>Caller class variable</CardTitle>
+                <CardDescription>
+                  Unlayered class description override
+                </CardDescription>
+              </CardHeader>
+            </Card>
+            <Card
+              className="gallery-card gallery-card--override"
+              data-gallery-card-family-layer-conflict="true"
+              data-gallery-card-family-override="card"
+              style={{
+                "--hraness-card-description": "rgb(11, 12, 13)",
+                backgroundColor: "rgb(7, 8, 9)",
+                borderRadius: "13px",
+                width: "15rem",
+              } as CSSProperties}
+              tone="accent"
+              xstyle={[
+                galleryStyles.cardOverride,
+                galleryStyles.cardDynamicWidth("14rem"),
+              ]}
+            >
+              <CardHeader xstyle={galleryStyles.cardPartOverride}>
+                <CardTitle xstyle={galleryStyles.cardPartOverride}>Caller Card</CardTitle>
+                <CardDescription
+                  style={{ color: "rgb(14, 15, 16)" }}
+                  xstyle={galleryStyles.cardPartOverride}
+                >
+                  Native description override
+                </CardDescription>
+              </CardHeader>
+              <CardContent xstyle={galleryStyles.cardPartOverride}>
+                <span
+                  data-gallery-card-variable-override="true"
+                  style={{ color: "var(--hraness-card-description)" }}
+                >
+                  Inherited caller variable
+                </span>
+              </CardContent>
+              <CardFooter xstyle={galleryStyles.cardPartOverride}>Caller footer</CardFooter>
+            </Card>
+            <PressableCard
+              aria-label="Caller override PressableCard"
+              className="gallery-pressable-card gallery-pressable-card--override"
+              data-gallery-card-family-layer-conflict="true"
+              data-gallery-card-family-override="pressable"
+              onPress={() => setCardPressCount((count) => count + 1)}
+              style={({ isFocusVisible }) => ({
+                backgroundColor: isFocusVisible
+                  ? "rgb(21, 22, 23)"
+                  : "rgb(17, 18, 19)",
+                borderRadius: "13px",
+                width: "15rem",
+              })}
+              tone="accent"
+              xstyle={[
+                galleryStyles.cardOverride,
+                galleryStyles.cardDynamicWidth("14rem"),
+                galleryStyles.pressableCardOverride,
+              ]}
+            >
+              Caller PressableCard
+            </PressableCard>
+            <Card
+              className="gallery-card gallery-card--nested"
+              data-gallery-card-nested-outer="true"
+              style={{
+                "--hraness-card-description": "rgb(41, 42, 43)",
+              } as CSSProperties}
+              tone="accent"
+            >
+              <CardHeader>
+                <CardTitle>Nested description reset</CardTitle>
+                <CardDescription data-gallery-card-nested-outer-description="true">
+                  Caller-owned outer description
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Card data-gallery-card-nested-inner="true" tone="inverse">
+                  <CardHeader>
+                    <CardTitle>Nested inverse Card</CardTitle>
+                    <CardDescription data-gallery-card-nested-inner-description="true">
+                      Tone-owned inner description
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              </CardContent>
+            </Card>
+          </div>
+          <output aria-live="polite" data-gallery-card-press-count="true">
+            Card presses: {cardPressCount}
+          </output>
         </section>
 
         <section aria-labelledby="gallery-structure-heading" data-gallery-section="structure">

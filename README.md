@@ -211,12 +211,14 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 ```
 
 `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
-`QuietSitePage`, `QuietSiteFooter`, `ViewportFrame`, `WrappingRow`, and
-`ThemedSurface` accept a typed StyleX override. Base declarations are applied
-first, finite size, tone, and shape recipes come next, and the caller recipe is
-applied last. Quiet-site landmarks and
-these surfaces also preserve dynamic StyleX inline values when merging the
-native `style` prop, with caller inline declarations taking precedence.
+`Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
+`CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
+`ViewportFrame`, `WrappingRow`, and `ThemedSurface` accept a typed StyleX
+override. Base declarations are applied first, finite size, tone, shape, and
+interaction recipes come next, and the caller recipe is applied last.
+Quiet-site landmarks and these surfaces also preserve dynamic StyleX inline
+values when merging the native `style` prop, with caller inline declarations
+taking precedence.
 
 For logical-size overrides on those landmarks and surfaces, use
 StyleX's canonical dashed keys such as `"inline-size"`, `"max-inline-size"`,
@@ -240,12 +242,31 @@ their compact physical geometry. An outline `Tag` continues to read the public
 `--hraness-tag-accent` custom property set by `accentColor` or consumer CSS.
 Forced-colors mode replaces Badge and Tag borders with `CanvasText`.
 
+`Card` and `PressableCard` share the finite `card`, `neutral`, `accent`, and
+`inverse` tones plus `rounded` and `rectangular` shapes. Their descriptions
+inherit the literal public `--hraness-card-description` custom property, which
+callers may override with native `style` or CSS. One compatibility selector
+maps that public property to a private tone value on each Card root, so a nested
+Card resets its own description tone. All visual declarations remain in
+compiled StyleX. `PressableCard` remains one semantic React Aria button and
+keeps its static string `className` API. Its native `style` may be either a
+static object or a React Aria state callback; both are merged after compiled
+StyleX output. Pointer, pressed, keyboard-focus, disabled, and pending behavior
+continue to come from React Aria. Native pseudo-class fallbacks are attached
+when `xstyle` is omitted. Supplying `xstyle` selects the caller-last path:
+React Aria state recipes remain active, and the caller recipe resolves after
+them without a hidden pseudo-class rule reverting hover, press, or focus
+values.
+
 ```tsx
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
 import {
   Avatar,
+  Card,
+  CardDescription,
   Icon,
+  PressableCard,
   QuietSitePage,
   StatusDot,
   Tag,
@@ -270,6 +291,10 @@ const styles = stylex.create({
     backgroundColor: "var(--ui-accent)",
     borderColor: "var(--ui-primary)",
   },
+  cardOverride: {
+    borderRadius: "var(--radius-sm)",
+    paddingInline: "var(--space-4)",
+  },
   structuralRow: {
     "inline-size": "16rem",
   },
@@ -286,6 +311,12 @@ const styles = stylex.create({
   Project
 </Tag>;
 <StatusDot tone="success" />;
+<Card tone="accent" xstyle={styles.cardOverride}>
+  <CardDescription>Compiled card presentation</CardDescription>
+</Card>;
+<PressableCard onPress={() => openProject()} xstyle={styles.cardOverride}>
+  Open project
+</PressableCard>;
 <QuietSitePage xstyle={styles.quietPage}>...</QuietSitePage>;
 <WrappingRow xstyle={styles.structuralRow}>...</WrappingRow>;
 <ThemedSurface tone="accent" xstyle={styles.texturedSurface}>...</ThemedSurface>;

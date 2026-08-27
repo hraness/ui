@@ -63,6 +63,12 @@
   display: block;
 }
 
+[data-gallery-card-family-grid] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-3);
+}
+
 [data-gallery-icon-canary="true"] {
   color: var(--ui-primary);
   font-size: 0;
@@ -206,13 +212,104 @@
     flex: 1 1 auto;
   }
 
+  html body [data-gallery-card-family-layer-conflict="true"][data-slot="card"],
+  html body [data-gallery-card-family-layer-conflict="true"][data-slot="pressable-card"] {
+    --gallery-card-family-layer-conflict: legacy;
+    border-color: rgb(255 0 255);
+    border-style: dashed;
+    border-width: 7px;
+    border-radius: 0;
+    background-color: rgb(1 2 3);
+    color: rgb(4 5 6);
+    box-shadow: none;
+  }
+
+  html body [data-gallery-card-family-layer-conflict="true"][data-slot="card"] {
+    display: grid;
+    flex-direction: row;
+    gap: 5rem;
+    padding-block: 5rem;
+  }
+
+  html body [data-gallery-card-family-layer-conflict="true"][data-slot="pressable-card"] {
+    display: block;
+    width: 19rem;
+    min-width: 18rem;
+    gap: 5rem;
+    padding-block: 5rem;
+    padding-inline: 5rem;
+    outline-style: dashed;
+    text-align: end;
+    transition-delay: 9s;
+    transition-duration: 9s;
+    transition-property: opacity;
+    transition-timing-function: linear;
+  }
+
+  html body [data-gallery-card-family-layer-conflict="true"] [data-slot="card-header"] {
+    display: block;
+    gap: 5rem;
+    padding-inline: 5rem;
+  }
+
+  html body [data-gallery-card-family-layer-conflict="true"] [data-slot="card-title"] {
+    color: rgb(255 0 255);
+    font-size: 3rem;
+    font-weight: 100;
+    line-height: 3;
+  }
+
+  html body [data-gallery-card-family-layer-conflict="true"] [data-slot="card-description"] {
+    color: rgb(255 0 255);
+    font-size: 3rem;
+    line-height: 3;
+  }
+
+  html body [data-gallery-card-family-layer-conflict="true"] [data-slot="card-content"] {
+    padding-inline: 5rem;
+  }
+
+  html body [data-gallery-card-family-layer-conflict="true"] [data-slot="card-footer"] {
+    align-items: stretch;
+    display: grid;
+    flex-wrap: nowrap;
+    gap: 5rem;
+    padding-inline: 5rem;
+  }
+
+  html body [data-gallery-card-family-layer-conflict="true"][data-slot="pressable-card"]:where([data-hovered], :hover) {
+    border-color: rgb(255 0 255);
+    box-shadow: none;
+  }
+
+  html body [data-gallery-card-family-layer-conflict="true"][data-slot="pressable-card"]:where([data-pressed], :active) {
+    transform: translateY(9px);
+  }
+
+  html body [data-gallery-card-family-layer-conflict="true"][data-slot="pressable-card"]:where([data-focus-visible], :focus-visible) {
+    outline-color: rgb(255 0 255);
+    outline-offset: 11px;
+    outline-style: dashed;
+    outline-width: 7px;
+  }
+
   @media (forced-colors: active) {
     html body [data-gallery-status-family-layer-conflict="true"][data-slot="badge"],
     html body [data-gallery-status-family-layer-conflict="true"][data-slot="tag"] {
       border-color: LinkText;
       forced-color-adjust: none;
     }
+
+    html body [data-gallery-card-family-layer-conflict="true"][data-slot="card"],
+    html body [data-gallery-card-family-layer-conflict="true"][data-slot="pressable-card"] {
+      border-color: LinkText;
+      forced-color-adjust: none;
+    }
   }
+}
+
+.gallery-card--class-variable {
+  --hraness-card-description: rgb(31 32 33);
 }
 
 [data-gallery-themed-surface-grid="true"] {

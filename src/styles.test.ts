@@ -130,8 +130,11 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   expect(components).toContain('.hraness-radio-group[data-orientation="horizontal"]');
   expect(components).toContain('.hraness-list-box[data-orientation="horizontal"]');
   expect(components).toContain(":dir(rtl)[data-selected]");
-  expect(components).toContain(
-    ".hraness-pressable-card {\n    --hraness-card-description: var(--ui-muted-foreground);",
+  const cardBridgePattern =
+    /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
+  expect(components.match(cardBridgePattern)).toHaveLength(1);
+  expect(components.replace(cardBridgePattern, "")).not.toMatch(
+    /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
   );
   expect(tailwind).toContain(
     ':not(:where([data-theme="light"], [data-theme="light"] *))',

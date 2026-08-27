@@ -51,6 +51,7 @@
     "src/autocomplete.tsx",
     "src/avatar.stylex.ts",
     "src/badge.tsx",
+    "src/card.stylex.ts",
     "src/card.tsx",
     "src/checkbox-group.tsx",
     "src/collections.tsx",

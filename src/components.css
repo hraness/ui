@@ -1356,50 +1356,6 @@
     pointer-events: none;
   }
 
-  .hraness-card {
-    --hraness-card-description: var(--ui-muted-foreground);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-6);
-    padding-block: var(--space-6);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    background: var(--ui-card);
-    color: var(--ui-card-foreground);
-    box-shadow: var(--elevation-low);
-  }
-
-  .hraness-card__header,
-  .hraness-card__content,
-  .hraness-card__footer {
-    padding-inline: var(--space-6);
-  }
-
-  .hraness-card__header {
-    display: grid;
-    gap: var(--space-2);
-  }
-
-  .hraness-card__title {
-    color: inherit;
-    font-size: var(--text-heading);
-    font-weight: var(--font-weight-bold);
-    line-height: 1.2;
-  }
-
-  .hraness-card__description {
-    color: var(--hraness-card-description);
-    font-size: var(--text-label);
-    line-height: 1.5;
-  }
-
-  .hraness-card__footer {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
   .hraness-spinner {
     display: inline-block;
     width: 1em;
@@ -1837,72 +1793,6 @@
     background: var(--ui-primary);
   }
 
-  .hraness-pressable-card {
-    --hraness-card-description: var(--ui-muted-foreground);
-    display: grid;
-    width: 100%;
-    min-width: 0;
-    gap: var(--space-4);
-    padding: var(--space-6);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    outline: none;
-    background: var(--ui-card);
-    color: var(--ui-card-foreground);
-    box-shadow: var(--elevation-low);
-    font: inherit;
-    text-align: start;
-    transition:
-      border-color var(--motion-duration-fast) var(--motion-easing-standard),
-      box-shadow var(--motion-duration-fast) var(--motion-easing-standard),
-      transform var(--motion-duration-fast) var(--motion-easing-standard);
-  }
-
-  :where(.hraness-card, .hraness-pressable-card)[data-shape="rectangular"] {
-    border-radius: var(--radius-sharp);
-  }
-
-  :where(.hraness-card, .hraness-pressable-card)[data-tone="neutral"] {
-    background: var(--ui-background);
-    color: var(--ui-foreground);
-  }
-
-  :where(.hraness-card, .hraness-pressable-card)[data-tone="accent"] {
-    --hraness-card-description: color-mix(
-      in oklch,
-      var(--ui-accent-foreground) 78%,
-      var(--ui-accent)
-    );
-    border-color: color-mix(in oklch, var(--ui-primary) 28%, var(--ui-border));
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  :where(.hraness-card, .hraness-pressable-card)[data-tone="inverse"] {
-    --hraness-card-description: color-mix(
-      in oklch,
-      var(--ui-background) 80%,
-      var(--ui-foreground)
-    );
-    border-color: var(--ui-foreground);
-    background: var(--ui-foreground);
-    color: var(--ui-background);
-  }
-
-  .hraness-pressable-card:where([data-hovered], :hover) {
-    border-color: color-mix(in oklch, var(--ui-primary) 35%, var(--ui-border));
-    box-shadow: var(--elevation-raised);
-  }
-
-  .hraness-pressable-card:where([data-pressed], :active) {
-    transform: translateY(1px);
-  }
-
-  .hraness-pressable-card:where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 3px;
-  }
-
   .hraness-spinner[data-size="small"] {
     font-size: 0.75rem;
   }
@@ -2287,6 +2177,11 @@
       transform: translateX(1rem);
     }
   }
+
+  /* Keep the public description variable overridable while each Card root resets its tone. */
+  :where(.hraness-card, .hraness-pressable-card) {
+    --hraness-card-description: var(--_hraness-card-description);
+  }
 }
 
 @layer components.hraness-ui.legacy {
@@ -2423,8 +2318,6 @@
     .hraness-popover,
     .hraness-tooltip,
     .hraness-dialog,
-    .hraness-card,
-    .hraness-pressable-card,
     .hraness-inline-alert,
     .hraness-toast
   ) {

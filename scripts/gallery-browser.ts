@@ -22,6 +22,8 @@ import {
 import { stylexCompilerOptions } from "./stylex-config.js";
 
 const BUN_VERSION = "1.3.14";
+const CARD_DESCRIPTION_BRIDGE_PATTERN =
+  /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
 const HUGEICONS_VERSION = "4.2.2";
 const PACKAGE_LAYER_PRELUDE =
   /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3/u;
@@ -51,6 +53,14 @@ interface BrowserEvidence {
   readonly buttonBackground: string;
   readonly buttonMinHeight: number;
   readonly cardBorderStyle: string;
+  readonly cardFamilyBoundaryContracts: boolean;
+  readonly cardFamilyClassContracts: boolean;
+  readonly cardFamilyDefaultBackground: string;
+  readonly cardFamilyDiagnostics: string;
+  readonly cardFamilyLayerSentinels: boolean;
+  readonly cardFamilyNestedResetContract: boolean;
+  readonly cardFamilyOverrideContracts: boolean;
+  readonly cardFamilyToneShapeContracts: boolean;
   readonly clientWidth: number;
   readonly clientHeight: number;
   readonly colorScheme: string;
@@ -200,6 +210,8 @@ interface ForcedColorsEvidence {
   readonly canvasText: string;
   readonly cardBorderColor: string;
   readonly cardForcedColorAdjust: string;
+  readonly cardFamilyContracts: boolean;
+  readonly cardFamilyDiagnostics: string;
   readonly forcedColorsActive: boolean;
   readonly selectedTabBackground: string;
   readonly selectedTabColor: string;
@@ -498,6 +510,26 @@ function requirePackedDefaultStylesheet(css: string): void {
   );
   assert.match(
     css,
+    /color:\s*var\(--hraness-card-description\)/u,
+    "the packed default stylesheet must include the public Card description consumer",
+  );
+  assert.match(
+    css,
+    /border-color:\s*color-mix\(in oklch,var\(--ui-primary\)\s*35%,var\(--ui-border\)\)/u,
+    "the packed default stylesheet must include the PressableCard hover border",
+  );
+  assert.match(
+    css,
+    /transform:\s*translateY\(1px\)/u,
+    "the packed default stylesheet must include the PressableCard pressed transform",
+  );
+  assert.match(
+    css,
+    /outline-color:\s*var\(--ui-ring\)/u,
+    "the packed default stylesheet must include the PressableCard focus ring",
+  );
+  assert.match(
+    css,
     /background-image:\s*repeating-linear-gradient\(/u,
     "the harness bundle must include the downstream texture xstyle seam",
   );
@@ -534,6 +566,16 @@ function requirePackedDefaultStylesheet(css: string): void {
     css,
     /\.hraness-(?:badge(?:--(?:info|success|warning|danger|accent|positive|caution|critical))?|tag(?:__icon|__label)?|status-dot(?:--(?:info|success|warning|danger))?)(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain legacy status-family selectors",
+  );
+  assert.doesNotMatch(
+    css.replace(CARD_DESCRIPTION_BRIDGE_PATTERN, ""),
+    /\.hraness-(?:card(?:__(?:header|title|description|content|footer))?|pressable-card)(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain Card-family selectors beyond the compatibility bridge",
+  );
+  assert.equal(
+    css.match(CARD_DESCRIPTION_BRIDGE_PATTERN)?.length,
+    1,
+    "the packed default stylesheet must contain the single Card description compatibility bridge",
   );
   assert.match(
     css,
@@ -727,6 +769,51 @@ function requirePackedDefaultStylesheet(css: string): void {
     && /flex:\s*(?:auto|1\s+1\s+auto)/u.test(statusDotConflict),
     "the gallery StatusDot conflict must carry every finite-geometry counterexample",
   );
+  const cardConflict = css.match(
+    /\[data-gallery-card-family-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"card"|card)\][^{]*\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    cardConflict !== undefined
+    && /--gallery-card-family-layer-conflict:\s*legacy/u.test(cardConflict)
+    && !/--hraness-card-description:/u.test(cardConflict)
+    && /border:\s*7px dashed/u.test(cardConflict)
+    && /background-color:/u.test(cardConflict)
+    && /box-shadow:\s*none/u.test(cardConflict),
+    "the gallery Card conflict must carry its base counterexamples",
+  );
+  assert.match(
+    css,
+    /\.gallery-card--class-variable\s*\{\s*--hraness-card-description:/u,
+    "the gallery must keep an unlayered public Card variable override",
+  );
+  const pressableConflict = [
+    ...css.matchAll(
+      /\[data-gallery-card-family-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"pressable-card"|pressable-card)\][^{]*\{[^}]*\}/gu,
+    ),
+  ]
+    .map((match) => match[0])
+    .find((block) => /width:\s*19rem/u.test(block));
+  assert.ok(
+    pressableConflict !== undefined
+    && /width:\s*19rem/u.test(pressableConflict)
+    && /min-width:\s*18rem/u.test(pressableConflict)
+    && /transition[^;{}]*opacity/u.test(pressableConflict),
+    "the gallery PressableCard conflict must carry geometry and transition counterexamples",
+  );
+  const pressableHoverConflict = css.match(
+    /\[data-gallery-card-family-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"pressable-card"|pressable-card)\]:where\([^)]*:hover[^)]*\)\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    pressableHoverConflict !== undefined
+    && /border(?:-color)?:/u.test(pressableHoverConflict)
+    && /box-shadow:/u.test(pressableHoverConflict),
+    "the gallery PressableCard conflict must carry the native and data hover counterexample",
+  );
+  assert.match(
+    css,
+    /@media\s*\(forced-colors:\s*active\)[\s\S]*\[data-gallery-card-family-layer-conflict=(?:"true"|true)\][^}]*\{[^}]*forced-color-adjust:\s*none/u,
+    "the gallery Card conflict must carry its forced-colors counterexample",
+  );
 }
 
 function placePriority3BeforeLegacy(css: string): string {
@@ -856,6 +943,38 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const statusDotOverride = document.querySelector(
       '[data-gallery-status-family-override="dot"]',
     );
+    const cards = [
+      ...document.querySelectorAll<HTMLElement>('[data-gallery-card-tone]'),
+    ];
+    const pressableCards = [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        '[data-gallery-pressable-card-tone]',
+      ),
+    ];
+    const cardClassVariableOverride = document.querySelector(
+      '[data-gallery-card-class-variable="true"]',
+    );
+    const cardOverride = document.querySelector(
+      '[data-gallery-card-family-override="card"]',
+    );
+    const pressableCardOverride = document.querySelector(
+      '[data-gallery-card-family-override="pressable"]',
+    );
+    const cardVariableOverride = document.querySelector(
+      '[data-gallery-card-variable-override="true"]',
+    );
+    const cardNestedOuter = document.querySelector(
+      '[data-gallery-card-nested-outer="true"]',
+    );
+    const cardNestedOuterDescription = document.querySelector(
+      '[data-gallery-card-nested-outer-description="true"]',
+    );
+    const cardNestedInner = document.querySelector(
+      '[data-gallery-card-nested-inner="true"]',
+    );
+    const cardNestedInnerDescription = document.querySelector(
+      '[data-gallery-card-nested-inner-description="true"]',
+    );
     if (
       !(icon instanceof SVGElement)
       || !(iconCanary instanceof HTMLElement)
@@ -888,6 +1007,16 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || !(statusBadgeOverride instanceof HTMLSpanElement)
       || !(statusTagOverride instanceof HTMLSpanElement)
       || !(statusDotOverride instanceof HTMLSpanElement)
+      || cards.length !== 4
+      || pressableCards.length !== 4
+      || !(cardClassVariableOverride instanceof HTMLDivElement)
+      || !(cardOverride instanceof HTMLDivElement)
+      || !(pressableCardOverride instanceof HTMLButtonElement)
+      || !(cardVariableOverride instanceof HTMLSpanElement)
+      || !(cardNestedOuter instanceof HTMLDivElement)
+      || !(cardNestedOuterDescription instanceof HTMLParagraphElement)
+      || !(cardNestedInner instanceof HTMLDivElement)
+      || !(cardNestedInnerDescription instanceof HTMLParagraphElement)
     ) {
       throw new Error("The primitive gallery structure is incomplete.");
     }
@@ -942,11 +1071,34 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const resolvedTokens = {
       accentBackground: resolveStyle("background-color", "var(--ui-accent)"),
       accentForeground: resolveStyle("color", "var(--ui-accent-foreground)"),
+      accentCardBorder: resolveStyle(
+        "border-color",
+        "color-mix(in oklch, var(--ui-primary) 28%, var(--ui-border))",
+      ),
       border: resolveStyle("border-color", "var(--ui-border)"),
       cardBackground: resolveStyle("background-color", "var(--ui-card)"),
       cardForeground: resolveStyle("color", "var(--ui-card-foreground)"),
+      cardDescription: resolveStyle("color", "var(--ui-muted-foreground)"),
+      cardHeadingSize: Number.parseFloat(
+        resolveStyle("font-size", "var(--text-heading)"),
+      ),
+      cardLabelSize: Number.parseFloat(
+        resolveStyle("font-size", "var(--text-label)"),
+      ),
+      cardLowShadow: resolveStyle("box-shadow", "var(--elevation-low)"),
+      cardBoldWeight: resolveStyle("font-weight", "var(--font-weight-bold)"),
+      cardAccentDescription: resolveStyle(
+        "color",
+        "color-mix(in oklch, var(--ui-accent-foreground) 78%, var(--ui-accent))",
+      ),
+      cardInverseDescription: resolveStyle(
+        "color",
+        "color-mix(in oklch, var(--ui-background) 80%, var(--ui-foreground))",
+      ),
       inverseBackground: resolveStyle("background-color", "var(--ui-foreground)"),
       inverseForeground: resolveStyle("color", "var(--ui-background)"),
+      neutralBackground: resolveStyle("background-color", "var(--ui-background)"),
+      neutralForeground: resolveStyle("color", "var(--ui-foreground)"),
       largeRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-lg)")),
       popoverBackground: resolveStyle("background-color", "var(--ui-popover)"),
       popoverForeground: resolveStyle("color", "var(--ui-popover-foreground)"),
@@ -957,6 +1109,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       sharpRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-sharp)")),
       smallRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-sm)")),
       space2: Number.parseFloat(resolveStyle("padding-left", "var(--space-2)")),
+      space4: Number.parseFloat(resolveStyle("padding-left", "var(--space-4)")),
       space6: Number.parseFloat(resolveStyle("padding-left", "var(--space-6)")),
       avatarAccentBackground: resolveStyle("background-color", "var(--ui-accent)"),
       avatarBodySize: Number.parseFloat(resolveStyle("font-size", "var(--text-body)")),
@@ -1492,6 +1645,278 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         width: box.width,
       };
     });
+    const expectedCardTones = {
+      accent: [
+        resolvedTokens.accentBackground,
+        resolvedTokens.accentForeground,
+        resolvedTokens.accentCardBorder,
+        resolvedTokens.cardAccentDescription,
+      ],
+      card: [
+        resolvedTokens.cardBackground,
+        resolvedTokens.cardForeground,
+        resolvedTokens.border,
+        resolvedTokens.cardDescription,
+      ],
+      inverse: [
+        resolvedTokens.inverseBackground,
+        resolvedTokens.inverseForeground,
+        resolvedTokens.inverseBackground,
+        resolvedTokens.cardInverseDescription,
+      ],
+      neutral: [
+        resolvedTokens.neutralBackground,
+        resolvedTokens.neutralForeground,
+        resolvedTokens.border,
+        resolvedTokens.cardDescription,
+      ],
+    } as const;
+    const cardEvidence = cards.map((cardElement) => {
+      const tone = cardElement.dataset.galleryCardTone;
+      const header = cardElement.querySelector(':scope > [data-slot="card-header"]');
+      const title = cardElement.querySelector('[data-slot="card-title"]');
+      const description = cardElement.querySelector('[data-slot="card-description"]');
+      const content = cardElement.querySelector(':scope > [data-slot="card-content"]');
+      const footerElement = cardElement.querySelector(':scope > [data-slot="card-footer"]');
+      if (
+        tone === undefined
+        || !(tone in expectedCardTones)
+        || !(header instanceof HTMLDivElement)
+        || !(title instanceof HTMLHeadingElement)
+        || !(description instanceof HTMLParagraphElement)
+      ) {
+        throw new Error(`Unexpected Card tone fixture: ${String(tone)}`);
+      }
+      const finiteTone = tone as keyof typeof expectedCardTones;
+      const expected = expectedCardTones[finiteTone];
+      const style = getComputedStyle(cardElement);
+      const headerStyle = getComputedStyle(header);
+      const titleStyle = getComputedStyle(title);
+      const descriptionStyle = getComputedStyle(description);
+      const contentStyle = content instanceof HTMLElement
+        ? getComputedStyle(content)
+        : null;
+      const footerStyle = footerElement instanceof HTMLElement
+        ? getComputedStyle(footerElement)
+        : null;
+      const classes = [...cardElement.classList];
+      return {
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        borderRadius: Number.parseFloat(style.borderRadius),
+        borderStyle: style.borderStyle,
+        borderWidth: Number.parseFloat(style.borderWidth),
+        boxShadow: style.boxShadow,
+        classContract:
+          classes[0] === "hraness-card"
+          && classes.at(-1) === `gallery-card--${tone}`
+          && classes.some(
+            (name) =>
+              name !== "hraness-card"
+              && name !== "gallery-card"
+              && name !== `gallery-card--${tone}`,
+          ),
+        color: style.color,
+        contentPaddingLeft: contentStyle === null
+          ? null
+          : Number.parseFloat(contentStyle.paddingLeft),
+        contentPaddingRight: contentStyle === null
+          ? null
+          : Number.parseFloat(contentStyle.paddingRight),
+        descriptionColor: descriptionStyle.color,
+        descriptionEquivalent: equivalentColor(descriptionStyle.color, expected[3]),
+        descriptionFontSize: Number.parseFloat(descriptionStyle.fontSize),
+        descriptionLineHeight: Number.parseFloat(descriptionStyle.lineHeight),
+        display: style.display,
+        expectedBackground: expected[0],
+        expectedBorder: expected[2],
+        expectedColor: expected[1],
+        flexDirection: style.flexDirection,
+        footerContract: footerStyle === null
+          ? finiteTone !== "card"
+          : footerElement instanceof HTMLElement
+            && footerElement.dataset.slot === "card-footer"
+            && footerStyle.alignItems === "center"
+            && footerStyle.display === "flex"
+            && footerStyle.flexWrap === "wrap"
+            && Number.parseFloat(footerStyle.gap) === resolvedTokens.space2
+            && Number.parseFloat(footerStyle.paddingLeft) === resolvedTokens.space6
+            && Number.parseFloat(footerStyle.paddingRight) === resolvedTokens.space6,
+        gap: Number.parseFloat(style.gap),
+        headerContract:
+          header.dataset.slot === "card-header"
+          && headerStyle.display === "grid"
+          && Number.parseFloat(headerStyle.gap) === resolvedTokens.space2
+          && Number.parseFloat(headerStyle.paddingLeft) === resolvedTokens.space6
+          && Number.parseFloat(headerStyle.paddingRight) === resolvedTokens.space6,
+        layerSentinel: style
+          .getPropertyValue("--gallery-card-family-layer-conflict")
+          .trim(),
+        paddingBottom: Number.parseFloat(style.paddingBottom),
+        paddingTop: Number.parseFloat(style.paddingTop),
+        publicDescription: style
+          .getPropertyValue("--hraness-card-description")
+          .trim(),
+        shape: cardElement.dataset.shape ?? "",
+        slot: cardElement.dataset.slot ?? "",
+        subpartContract:
+          title.dataset.slot === "card-title"
+          && equivalentColor(titleStyle.color, style.color)
+          && Number.parseFloat(titleStyle.fontSize) === resolvedTokens.cardHeadingSize
+          && titleStyle.fontWeight === resolvedTokens.cardBoldWeight
+          && Math.abs(
+            Number.parseFloat(titleStyle.lineHeight)
+              / Number.parseFloat(titleStyle.fontSize) - 1.2,
+          ) < 0.000_01
+          && description.dataset.slot === "card-description"
+          && Number.parseFloat(descriptionStyle.fontSize) === resolvedTokens.cardLabelSize
+          && Math.abs(
+            Number.parseFloat(descriptionStyle.lineHeight)
+              / Number.parseFloat(descriptionStyle.fontSize) - 1.5,
+          ) < 0.000_01
+          && (contentStyle === null
+            ? finiteTone !== "card"
+            : content instanceof HTMLElement
+              && content.dataset.slot === "card-content"
+              && Number.parseFloat(contentStyle.paddingLeft) === resolvedTokens.space6
+              && Number.parseFloat(contentStyle.paddingRight) === resolvedTokens.space6),
+        titleColor: titleStyle.color,
+        titleFontSize: Number.parseFloat(titleStyle.fontSize),
+        titleFontWeight: titleStyle.fontWeight,
+        titleLineHeight: Number.parseFloat(titleStyle.lineHeight),
+        tone: finiteTone,
+      };
+    });
+    const pressableEvidence = pressableCards.map((pressable) => {
+      const tone = pressable.dataset.galleryPressableCardTone;
+      if (tone === undefined || !(tone in expectedCardTones)) {
+        throw new Error(`Unexpected PressableCard tone fixture: ${String(tone)}`);
+      }
+      const finiteTone = tone as keyof typeof expectedCardTones;
+      const expected = expectedCardTones[finiteTone];
+      const style = getComputedStyle(pressable);
+      const classes = [...pressable.classList];
+      const state = pressable.dataset.galleryPressableCardState ?? "neutral";
+      return {
+        ariaDisabled: pressable.getAttribute("aria-disabled") ?? "",
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        borderRadius: Number.parseFloat(style.borderRadius),
+        borderStyle: style.borderStyle,
+        borderWidth: Number.parseFloat(style.borderWidth),
+        boxShadow: style.boxShadow,
+        classContract:
+          classes[0] === "hraness-pressable-card"
+          && classes.at(-1)?.startsWith("gallery-pressable-card--") === true
+          && classes.some(
+            (name) =>
+              name !== "hraness-pressable-card"
+              && name !== "gallery-pressable-card"
+              && !name.startsWith("gallery-pressable-card--"),
+          ),
+        color: style.color,
+        dataDisabled: pressable.dataset.disabled ?? "",
+        dataPending: pressable.dataset.pending ?? "",
+        disabled: pressable.disabled,
+        display: style.display,
+        expectedBackground: expected[0],
+        expectedBorder: expected[2],
+        expectedColor: expected[1],
+        gap: Number.parseFloat(style.gap),
+        layerSentinel: style
+          .getPropertyValue("--gallery-card-family-layer-conflict")
+          .trim(),
+        minWidth: Number.parseFloat(style.minWidth),
+        paddingBottom: Number.parseFloat(style.paddingBottom),
+        paddingLeft: Number.parseFloat(style.paddingLeft),
+        paddingRight: Number.parseFloat(style.paddingRight),
+        paddingTop: Number.parseFloat(style.paddingTop),
+        publicDescription: style
+          .getPropertyValue("--hraness-card-description")
+          .trim(),
+        shape: pressable.dataset.shape ?? "",
+        slot: pressable.dataset.slot ?? "",
+        state,
+        textAlign: style.textAlign,
+        tone: finiteTone,
+        transitionProperty: style.transitionProperty,
+        type: pressable.type,
+      };
+    });
+    const cardOverrideStyle = getComputedStyle(cardOverride);
+    const cardClassVariableOverrideStyle = getComputedStyle(
+      cardClassVariableOverride,
+    );
+    const pressableOverrideStyle = getComputedStyle(pressableCardOverride);
+    const cardOverrideClasses = [...cardOverride.classList];
+    const pressableOverrideClasses = [...pressableCardOverride.classList];
+    const cardOverrideEvidence = {
+      backgroundColor: cardOverrideStyle.backgroundColor,
+      borderColor: cardOverrideStyle.borderColor,
+      borderRadius: Number.parseFloat(cardOverrideStyle.borderRadius),
+      classContract:
+        cardOverrideClasses[0] === "hraness-card"
+        && cardOverrideClasses.at(-1) === "gallery-card--override"
+        && cardOverrideClasses.some((name) => name.startsWith("x")),
+      descriptionColor: getComputedStyle(
+        cardOverride.querySelector('[data-slot="card-description"]')!,
+      ).color,
+      dynamicInlineValue: /--[^:]+:\s*14rem/u.test(cardOverride.style.cssText),
+      gap: Number.parseFloat(cardOverrideStyle.gap),
+      inheritedVariableColor: getComputedStyle(cardVariableOverride).color,
+      inlinePublicDescription: cardOverride.style
+        .getPropertyValue("--hraness-card-description")
+        .trim(),
+      inlineWidth: cardOverride.style.width,
+      layerSentinel: cardOverrideStyle
+        .getPropertyValue("--gallery-card-family-layer-conflict")
+        .trim(),
+      paddingLeft: Number.parseFloat(cardOverrideStyle.paddingLeft),
+      paddingRight: Number.parseFloat(cardOverrideStyle.paddingRight),
+      width: cardOverride.getBoundingClientRect().width,
+    };
+    const cardClassVariableOverrideEvidence = {
+      descriptionColor: getComputedStyle(
+        cardClassVariableOverride.querySelector(
+          '[data-slot="card-description"]',
+        )!,
+      ).color,
+      publicDescription: cardClassVariableOverrideStyle
+        .getPropertyValue("--hraness-card-description")
+        .trim(),
+    };
+    const pressableOverrideEvidence = {
+      backgroundColor: pressableOverrideStyle.backgroundColor,
+      borderColor: pressableOverrideStyle.borderColor,
+      borderRadius: Number.parseFloat(pressableOverrideStyle.borderRadius),
+      classContract:
+        pressableOverrideClasses[0] === "hraness-pressable-card"
+        && pressableOverrideClasses.at(-1) === "gallery-pressable-card--override"
+        && pressableOverrideClasses.some((name) => name.startsWith("x")),
+      dynamicInlineValue:
+        /--[^:]+:\s*14rem/u.test(pressableCardOverride.style.cssText),
+      gap: Number.parseFloat(pressableOverrideStyle.gap),
+      inlineWidth: pressableCardOverride.style.width,
+      layerSentinel: pressableOverrideStyle
+        .getPropertyValue("--gallery-card-family-layer-conflict")
+        .trim(),
+      paddingLeft: Number.parseFloat(pressableOverrideStyle.paddingLeft),
+      paddingRight: Number.parseFloat(pressableOverrideStyle.paddingRight),
+      width: pressableCardOverride.getBoundingClientRect().width,
+    };
+    const cardNestedOuterStyle = getComputedStyle(cardNestedOuter);
+    const cardNestedInnerStyle = getComputedStyle(cardNestedInner);
+    const cardNestedEvidence = {
+      innerDescriptionColor: getComputedStyle(cardNestedInnerDescription).color,
+      innerPublicDescription: cardNestedInnerStyle
+        .getPropertyValue("--hraness-card-description")
+        .trim(),
+      innerTone: cardNestedInner.dataset.tone ?? "",
+      outerDescriptionColor: getComputedStyle(cardNestedOuterDescription).color,
+      outerPublicDescription: cardNestedOuterStyle
+        .getPropertyValue("--hraness-card-description")
+        .trim(),
+    };
 
     return {
       appearanceAlignItems: appearanceStyle.alignItems,
@@ -1588,6 +2013,156 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       buttonBackground: buttonStyle.backgroundColor,
       buttonMinHeight: Number.parseFloat(buttonStyle.minHeight),
       cardBorderStyle: getComputedStyle(card).borderStyle,
+      cardFamilyBoundaryContracts:
+        cardEvidence.every(
+          (item) =>
+            item.borderStyle === "solid"
+            && item.borderWidth === 1
+            && item.boxShadow === resolvedTokens.cardLowShadow
+            && item.display === "flex"
+            && item.flexDirection === "column"
+            && item.footerContract
+            && item.gap === resolvedTokens.space6
+            && item.headerContract
+            && item.paddingBottom === resolvedTokens.space6
+            && item.paddingTop === resolvedTokens.space6
+            && item.slot === "card"
+            && item.subpartContract,
+        )
+        && pressableEvidence.every(
+          (item) =>
+            item.borderStyle === "solid"
+            && item.borderWidth === 1
+            && item.boxShadow === resolvedTokens.cardLowShadow
+            && item.display === "grid"
+            && item.gap === resolvedTokens.space4
+            && item.minWidth === 0
+            && item.paddingBottom === resolvedTokens.space6
+            && item.paddingLeft === resolvedTokens.space6
+            && item.paddingRight === resolvedTokens.space6
+            && item.paddingTop === resolvedTokens.space6
+            && item.slot === "pressable-card"
+            && item.textAlign === "start"
+            && item.transitionProperty === "border-color, box-shadow, transform"
+            && item.type === "button",
+        ),
+      cardFamilyClassContracts:
+        cardEvidence.every((item) => item.classContract)
+        && pressableEvidence.every((item) => item.classContract)
+        && cardOverrideEvidence.classContract
+        && pressableOverrideEvidence.classContract,
+      cardFamilyDefaultBackground:
+        cardEvidence.find((item) => item.tone === "card")?.backgroundColor ?? "",
+      cardFamilyDiagnostics: JSON.stringify({
+        cards: cardEvidence,
+        cardClassVariableOverride: cardClassVariableOverrideEvidence,
+        nested: cardNestedEvidence,
+        cardOverride: cardOverrideEvidence,
+        pressableOverride: pressableOverrideEvidence,
+        pressables: pressableEvidence,
+        tokens: resolvedTokens,
+      }),
+      cardFamilyLayerSentinels:
+        cardEvidence.every((item) => item.layerSentinel === "legacy")
+        && pressableEvidence.every((item) => item.layerSentinel === "legacy")
+        && cardOverrideEvidence.layerSentinel === "legacy"
+        && pressableOverrideEvidence.layerSentinel === "legacy",
+      cardFamilyNestedResetContract:
+        equivalentColor(
+          cardNestedEvidence.outerDescriptionColor,
+          "rgb(41 42 43)",
+        )
+        && equivalentColor(
+          cardNestedEvidence.outerPublicDescription,
+          "rgb(41 42 43)",
+        )
+        && cardNestedEvidence.innerTone === "inverse"
+        && equivalentColor(
+          cardNestedEvidence.innerDescriptionColor,
+          expectedCardTones.inverse[3],
+        )
+        && equivalentColor(
+          cardNestedEvidence.innerPublicDescription,
+          expectedCardTones.inverse[3],
+        )
+        && !equivalentColor(
+          cardNestedEvidence.innerPublicDescription,
+          cardNestedEvidence.outerPublicDescription,
+        ),
+      cardFamilyOverrideContracts:
+        equivalentColor(
+          cardClassVariableOverrideEvidence.descriptionColor,
+          "rgb(31 32 33)",
+        )
+        && equivalentColor(
+          cardClassVariableOverrideEvidence.publicDescription,
+          "rgb(31 32 33)",
+        )
+        && equivalentColor(cardOverrideEvidence.backgroundColor, "rgb(7 8 9)")
+        && equivalentColor(cardOverrideEvidence.borderColor, resolvedTokens.primary)
+        && cardOverrideEvidence.borderRadius === 13
+        && cardOverrideEvidence.descriptionColor === "rgb(14, 15, 16)"
+        && cardOverrideEvidence.dynamicInlineValue
+        && cardOverrideEvidence.gap === resolvedTokens.space2
+        && equivalentColor(
+          cardOverrideEvidence.inheritedVariableColor,
+          "rgb(11 12 13)",
+        )
+        && cardOverrideEvidence.inlinePublicDescription.length > 0
+        && cardOverrideEvidence.inlineWidth === "15rem"
+        && cardOverrideEvidence.paddingLeft === resolvedTokens.space2
+        && cardOverrideEvidence.paddingRight === resolvedTokens.space2
+        && cardOverrideEvidence.width === 240
+        && equivalentColor(
+          pressableOverrideEvidence.backgroundColor,
+          "rgb(17 18 19)",
+        )
+        && equivalentColor(
+          pressableOverrideEvidence.borderColor,
+          resolvedTokens.primary,
+        )
+        && pressableOverrideEvidence.borderRadius === 13
+        && pressableOverrideEvidence.dynamicInlineValue
+        && pressableOverrideEvidence.gap === resolvedTokens.space2
+        && pressableOverrideEvidence.inlineWidth === "15rem"
+        && pressableOverrideEvidence.paddingLeft === resolvedTokens.space2
+        && pressableOverrideEvidence.paddingRight === resolvedTokens.space2
+        && pressableOverrideEvidence.width === 240,
+      cardFamilyToneShapeContracts:
+        cardEvidence.every(
+          (item) =>
+            equivalentColor(item.backgroundColor, item.expectedBackground)
+            && equivalentColor(item.borderColor, item.expectedBorder)
+            && equivalentColor(item.color, item.expectedColor)
+            && item.descriptionEquivalent
+            && item.publicDescription.length > 0
+            && item.publicDescription !== "rgb(251 0 251)"
+            && item.borderRadius === (
+              item.shape === "rectangular"
+                ? resolvedTokens.sharpRadius
+                : resolvedTokens.largeRadius
+            ),
+        )
+        && pressableEvidence.every(
+          (item) =>
+            equivalentColor(item.backgroundColor, item.expectedBackground)
+            && equivalentColor(item.borderColor, item.expectedBorder)
+            && equivalentColor(item.color, item.expectedColor)
+            && item.publicDescription.length > 0
+            && item.publicDescription !== "rgb(251 0 251)"
+            && item.borderRadius === (
+              item.shape === "rectangular"
+                ? resolvedTokens.sharpRadius
+                : resolvedTokens.largeRadius
+            )
+            && (item.state === "disabled"
+              ? item.disabled && item.dataDisabled === "true"
+              : item.state === "pending"
+                ? !item.disabled
+                  && item.ariaDisabled === "true"
+                  && item.dataPending === "true"
+                : !item.disabled),
+        ),
       clientWidth: document.documentElement.clientWidth,
       clientHeight: document.documentElement.clientHeight,
       colorScheme: getComputedStyle(document.documentElement).colorScheme,
@@ -2109,6 +2684,137 @@ async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
   );
 }
 
+async function verifyPressableCardCallerStatePrecedence(
+  page: Page,
+  id: string,
+): Promise<void> {
+  const selector = '[data-gallery-card-family-override="pressable"]';
+  const pressableCard = page.locator(selector);
+  let reachedThroughKeyboard = false;
+
+  for (let step = 0; step < 40; step += 1) {
+    await page.keyboard.press("Tab");
+    reachedThroughKeyboard = await pressableCard.evaluate(
+      (element) => document.activeElement === element,
+    );
+    if (reachedThroughKeyboard) break;
+  }
+
+  invariant(
+    reachedThroughKeyboard,
+    `${id}: the caller-override PressableCard was not reachable by keyboard`,
+  );
+  await page.waitForFunction((targetSelector) => {
+    const element = document.querySelector(targetSelector);
+    return element instanceof HTMLButtonElement
+      && document.activeElement === element
+      && element.matches(":focus-visible")
+      && element.hasAttribute("data-focus-visible");
+  }, selector);
+
+  const focused = await pressableCard.evaluate((element) => {
+    const resolveColor = (value: string): string => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const style = getComputedStyle(element);
+    return {
+      dataFocusVisible: element.hasAttribute("data-focus-visible"),
+      expectedWarning: resolveColor("var(--ui-warning)"),
+      focusVisible: element.matches(":focus-visible"),
+      outlineColor: style.outlineColor,
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  });
+  invariant(
+    focused.dataFocusVisible
+    && focused.focusVisible
+    && focused.outlineColor === focused.expectedWarning
+    && focused.outlineOffset === 7
+    && focused.outlineStyle === "solid"
+    && focused.outlineWidth === 4,
+    `${id}: caller StyleX lost to the PressableCard focus-visible recipe: ${JSON.stringify(focused)}`,
+  );
+
+  await pressableCard.hover();
+  await page.waitForFunction((targetSelector) => {
+    const element = document.querySelector(targetSelector);
+    return element instanceof HTMLButtonElement
+      && element.matches(":hover")
+      && element.hasAttribute("data-hovered");
+  }, selector);
+  const hovered = await pressableCard.evaluate((element) => {
+    const resolveColor = (value: string): string => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const style = getComputedStyle(element);
+    return {
+      borderColor: style.borderColor,
+      boxShadow: style.boxShadow,
+      dataHovered: element.hasAttribute("data-hovered"),
+      expectedPrimary: resolveColor("var(--ui-primary)"),
+      hovered: element.matches(":hover"),
+      transform: style.transform,
+    };
+  });
+  invariant(
+    hovered.dataHovered
+    && hovered.hovered
+    && hovered.borderColor === hovered.expectedPrimary
+    && hovered.boxShadow === "none"
+    && hovered.transform === "none",
+    `${id}: caller StyleX lost to the PressableCard hover recipe: ${JSON.stringify(hovered)}`,
+  );
+
+  let pressed: Readonly<{
+    active: boolean;
+    dataPressed: boolean;
+    transform: string;
+  }>;
+  await page.mouse.down();
+  try {
+    await page.waitForFunction((targetSelector) => {
+      const element = document.querySelector(targetSelector);
+      return element instanceof HTMLButtonElement
+        && element.matches(":active")
+        && element.hasAttribute("data-pressed");
+    }, selector);
+    pressed = await pressableCard.evaluate((element) => ({
+      active: element.matches(":active"),
+      dataPressed: element.hasAttribute("data-pressed"),
+      transform: getComputedStyle(element).transform,
+    }));
+  } finally {
+    await page.mouse.up();
+  }
+  invariant(
+    pressed.active && pressed.dataPressed && pressed.transform === "none",
+    `${id}: caller StyleX lost to the PressableCard active recipe: ${JSON.stringify(pressed)}`,
+  );
+
+  await pressableCard.evaluate((element) => element.blur());
+  await page.mouse.move(0, 0);
+  await page.waitForFunction((targetSelector) => {
+    const element = document.querySelector(targetSelector);
+    return element instanceof HTMLButtonElement
+      && document.activeElement !== element
+      && !element.hasAttribute("data-focus-visible")
+      && !element.hasAttribute("data-hovered")
+      && !element.hasAttribute("data-pressed");
+  }, selector);
+}
+
 async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
   return page.evaluate(() => {
     const button = document.querySelector('[data-gallery-primary-action="true"][data-slot="button-control"]');
@@ -2125,6 +2831,11 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
         '[data-gallery-status-dot-tone], [data-gallery-status-family-override="dot"]',
       ),
     ];
+    const cardFamily = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-gallery-card-tone], [data-gallery-pressable-card-tone], [data-gallery-card-family-override], [data-gallery-card-class-variable]',
+      ),
+    ];
     if (
       !(button instanceof HTMLElement)
       || !(card instanceof HTMLElement)
@@ -2132,6 +2843,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       || !(spinner instanceof HTMLElement)
       || statusPills.length !== 10
       || statusDots.length !== 6
+      || cardFamily.length !== 11
     ) {
       throw new Error("The forced-colors gallery structure is incomplete.");
     }
@@ -2175,6 +2887,20 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
         width: box.width,
       };
     });
+    const cardFamilyEvidence = cardFamily.map((element) => {
+      const style = getComputedStyle(element);
+      return {
+        borderColor: style.borderColor,
+        forcedColorAdjust: style.forcedColorAdjust,
+        layerSentinel: style
+          .getPropertyValue("--gallery-card-family-layer-conflict")
+          .trim(),
+        publicDescription: style
+          .getPropertyValue("--hraness-card-description")
+          .trim(),
+        slot: element.dataset.slot ?? "",
+      };
+    });
     return {
       buttonBackground: buttonStyle.backgroundColor,
       buttonFace: normalize("backgroundColor", "ButtonFace"),
@@ -2183,6 +2909,18 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       canvasText,
       cardBorderColor: cardStyle.borderColor,
       cardForcedColorAdjust: cardStyle.forcedColorAdjust,
+      cardFamilyContracts: cardFamilyEvidence.every(
+        (item) =>
+          item.borderColor === canvasText
+          && item.forcedColorAdjust === "auto"
+          && item.layerSentinel === "legacy"
+          && item.publicDescription.length > 0
+          && (item.slot === "card" || item.slot === "pressable-card"),
+      ),
+      cardFamilyDiagnostics: JSON.stringify({
+        canvasText,
+        items: cardFamilyEvidence,
+      }),
       forcedColorsActive: matchMedia("(forced-colors: active)").matches,
       selectedTabBackground: tabStyle.backgroundColor,
       selectedTabColor: tabStyle.color,
@@ -2669,6 +3407,15 @@ try {
             && light.statusFamilyVariableContract,
             `${layout.id}: status-family parity failed: ${light.statusFamilyDiagnostics}`,
           );
+          invariant(
+            light.cardFamilyBoundaryContracts
+            && light.cardFamilyClassContracts
+            && light.cardFamilyLayerSentinels
+            && light.cardFamilyNestedResetContract
+            && light.cardFamilyOverrideContracts
+            && light.cardFamilyToneShapeContracts,
+            `${layout.id}: Card-family parity failed: ${light.cardFamilyDiagnostics}`,
+          );
           if (productionPriority3PaddingTop === undefined) {
             productionPriority3PaddingTop = light.footerPaddingTop;
           } else {
@@ -2824,6 +3571,18 @@ try {
               !== light.statusFamilyDefaultBackground,
             `${layout.id}: dark status-family parity failed: ${dark.statusFamilyDiagnostics}`,
           );
+          invariant(
+            dark.cardFamilyBoundaryContracts
+            && dark.cardFamilyClassContracts
+            && dark.cardFamilyLayerSentinels
+            && dark.cardFamilyNestedResetContract
+            && dark.cardFamilyOverrideContracts
+            && dark.cardFamilyToneShapeContracts
+            && dark.cardFamilyDefaultBackground
+              !== light.cardFamilyDefaultBackground,
+            `${layout.id}: dark Card-family parity failed: ${dark.cardFamilyDiagnostics}`,
+          );
+          await verifyPressableCardCallerStatePrecedence(page, layout.id);
           invariant(dark.recoverableErrors.length === 0, `${layout.id}: interaction introduced hydration recovery`);
           invariant(failures.length === 0, `${layout.id}: ${failures.join("; ")}`);
         } finally {
@@ -2908,6 +3667,10 @@ try {
           forced.statusFamilyContracts,
           `forced colors: status-family parity failed: ${forced.statusFamilyDiagnostics}`,
         );
+        invariant(
+          forced.cardFamilyContracts,
+          `forced colors: Card-family parity failed: ${forced.cardFamilyDiagnostics}`,
+        );
 
         await page.keyboard.press("Tab");
         await page.keyboard.press("Enter");
@@ -2973,7 +3736,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, Avatar fallback sizes, data-URI image cropping, Badge, Tag, and StatusDot finite recipes, public Tag accent, caller and native precedence, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, every themed-surface tone and shape, caller-last texture composition, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, Card, and PressableCard finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native precedence, compact/short layouts, keyboard focus, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });
