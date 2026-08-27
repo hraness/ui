@@ -3087,10 +3087,52 @@ async function verifyToolbarKeyboardFocusPrecedence(
     }, selector);
   }
 
+  async function settleFocusPresentation(
+    selector: string,
+    expectedColor: string,
+    expectedOffset: number,
+    expectedStyle: string,
+    expectedWidth: number,
+  ): Promise<void> {
+    await page.waitForFunction(
+      (contract) => {
+        const element = document.querySelector(contract.selector);
+        if (!(element instanceof HTMLDivElement)) return false;
+        const probe = document.createElement("span");
+        probe.style.color = contract.expectedColor;
+        document.body.append(probe);
+        const resolvedColor = getComputedStyle(probe).color;
+        probe.remove();
+        const style = getComputedStyle(element);
+        return document.activeElement === element
+          && element.matches(":focus-visible")
+          && style.outlineColor === resolvedColor
+          && Number.parseFloat(style.outlineOffset) === contract.expectedOffset
+          && style.outlineStyle === contract.expectedStyle
+          && Number.parseFloat(style.outlineWidth) === contract.expectedWidth;
+      },
+      {
+        expectedColor,
+        expectedOffset,
+        expectedStyle,
+        expectedWidth,
+        selector,
+      },
+      { polling: "raf", timeout: 2_000 },
+    ).catch(() => undefined);
+  }
+
   await reachByKeyboard(
     nativeToolbar,
     nativeSelector,
     "the native-focus Toolbar",
+  );
+  await settleFocusPresentation(
+    nativeSelector,
+    "var(--ui-ring)",
+    2,
+    "solid",
+    2,
   );
   const nativeFocused = await nativeToolbar.evaluate((element) => {
     const matchedFocusRules: string[] = [];
@@ -3155,6 +3197,13 @@ async function verifyToolbarKeyboardFocusPrecedence(
     overrideToolbar,
     overrideSelector,
     "the caller-override Toolbar",
+  );
+  await settleFocusPresentation(
+    overrideSelector,
+    "var(--ui-warning)",
+    7,
+    "dashed",
+    4,
   );
   const overrideFocused = await overrideToolbar.evaluate((element) => {
     const resolveColor = (value: string): string => {
