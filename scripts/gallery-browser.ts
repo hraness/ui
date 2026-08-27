@@ -64,6 +64,8 @@ interface BrowserEvidence {
   readonly clientWidth: number;
   readonly clientHeight: number;
   readonly colorScheme: string;
+  readonly colorEquivalenceContract: boolean;
+  readonly colorEquivalenceDiagnostics: string;
   readonly documentScrollWidth: number;
   readonly footerAlignItems: string;
   readonly footerBorderTopStyle: string;
@@ -1181,7 +1183,8 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       ).map(Number);
       const actualChannels = normalize(actual);
       const expectedChannels = normalize(expected);
-      return actualChannels.length === expectedChannels.length
+      return actualChannels.length > 0
+        && actualChannels.length === expectedChannels.length
         && actualChannels.every(
           (channel, index) =>
             Math.abs(channel - (expectedChannels[index] ?? Number.NaN)) < 0.000_01,
@@ -1276,6 +1279,14 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       warning: resolveStyle("background-color", "var(--ui-warning)"),
       warningForeground: resolveStyle("color", "var(--ui-warning)"),
       warningSoft: resolveStyle("background-color", "var(--ui-warning-soft)"),
+    };
+    const colorEquivalenceEvidence = {
+      distinct: resolveStyle("color", "rgb(0 0 0)"),
+      oklab: resolveStyle(
+        "color",
+        "color-mix(in oklab, oklch(0.68 0.19 25) 100%, transparent)",
+      ),
+      oklch: resolveStyle("color", "oklch(0.68 0.19 25)"),
     };
     const expectedTones = {
       accent: [resolvedTokens.accentBackground, resolvedTokens.accentForeground],
@@ -2335,6 +2346,16 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       clientWidth: document.documentElement.clientWidth,
       clientHeight: document.documentElement.clientHeight,
       colorScheme: getComputedStyle(document.documentElement).colorScheme,
+      colorEquivalenceContract:
+        equivalentColor(
+          colorEquivalenceEvidence.oklch,
+          colorEquivalenceEvidence.oklab,
+        )
+        && !equivalentColor(
+          colorEquivalenceEvidence.oklch,
+          colorEquivalenceEvidence.distinct,
+        ),
+      colorEquivalenceDiagnostics: JSON.stringify(colorEquivalenceEvidence),
       documentScrollWidth: document.documentElement.scrollWidth,
       footerAlignItems: footerStyle.alignItems,
       footerBorderTopStyle: footerStyle.borderTopStyle,
@@ -2474,17 +2495,20 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       statusFamilyOverrideContracts:
         statusOverrides.every((item) => {
           if (item.kind === "dot") {
-            return item.backgroundColor === resolvedTokens.primary
+            return equivalentColor(item.backgroundColor, resolvedTokens.primary)
               && item.borderRadius === resolvedTokens.roundRadius
               && item.height === 20
               && item.inlineHeight === "1.25rem"
               && item.inlineWidth === "1.25rem"
               && item.width === 20;
           }
-          return item.backgroundColor === resolvedTokens.accentBackground
-            && item.borderColor === resolvedTokens.primary
+          return equivalentColor(
+            item.backgroundColor,
+            resolvedTokens.accentBackground,
+          )
+            && equivalentColor(item.borderColor, resolvedTokens.primary)
             && item.borderRadius === resolvedTokens.smallRadius
-            && item.color === resolvedTokens.accentForeground
+            && equivalentColor(item.color, resolvedTokens.accentForeground)
             && item.inlineMinHeight === "2.5rem"
             && item.inlineWidth === "9rem"
             && item.minHeight === 40
@@ -2493,9 +2517,9 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       statusFamilyToneContracts:
         badgeEvidence.every(
           (badge) =>
-            badge.backgroundColor === badge.expectedBackground
-            && badge.borderColor === badge.expectedBorder
-            && badge.color === badge.expectedColor
+            equivalentColor(badge.backgroundColor, badge.expectedBackground)
+            && equivalentColor(badge.borderColor, badge.expectedBorder)
+            && equivalentColor(badge.color, badge.expectedColor)
             && badge.slot === "badge"
             && (badge.tone === "success"
               ? badge.ariaLive === "polite" && badge.role === "status"
@@ -2503,21 +2527,21 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         )
         && tagEvidence.every(
           (tag) =>
-            tag.backgroundColor === tag.expectedBackground
-            && tag.borderColor === tag.expectedBorder
-            && tag.color === tag.expectedColor
+            equivalentColor(tag.backgroundColor, tag.expectedBackground)
+            && equivalentColor(tag.borderColor, tag.expectedBorder)
+            && equivalentColor(tag.color, tag.expectedColor)
             && tag.role === ""
             && tag.slot === "tag",
         )
         && dotEvidence.every(
-          (dot) => dot.backgroundColor === dot.expectedBackground,
+          (dot) => equivalentColor(dot.backgroundColor, dot.expectedBackground),
         ),
       statusFamilyVariableContract:
         tagEvidence.some(
           (tag) =>
             tag.variant === "outline"
             && tag.publicAccent.toLowerCase() === "#d97706"
-            && tag.borderColor === resolvedTokens.outlineAccent,
+            && equivalentColor(tag.borderColor, resolvedTokens.outlineAccent),
         ),
       stylexRuntimeStyleCount: document.querySelectorAll("style[data-stylex]").length,
       stylesheetCount: document.querySelectorAll('link[rel="stylesheet"]').length,
@@ -4021,6 +4045,10 @@ try {
             `${layout.id}: Avatar parity failed: ${light.avatarDiagnostics}`,
           );
           invariant(
+            light.colorEquivalenceContract,
+            `${layout.id}: color equivalence rejected alternate serialization or accepted a distinct color: ${light.colorEquivalenceDiagnostics}`,
+          );
+          invariant(
             light.statusFamilyClassContracts
             && light.statusFamilyGeometryContracts
             && light.statusFamilyLayerSentinels
@@ -4199,6 +4227,10 @@ try {
             && dark.avatarTokenContracts
             && dark.avatarDefaultBackground !== light.avatarDefaultBackground,
             `${layout.id}: dark Avatar parity failed: ${dark.avatarDiagnostics}`,
+          );
+          invariant(
+            dark.colorEquivalenceContract,
+            `${layout.id}: dark color equivalence rejected alternate serialization or accepted a distinct color: ${dark.colorEquivalenceDiagnostics}`,
           );
           invariant(
             dark.statusFamilyClassContracts
