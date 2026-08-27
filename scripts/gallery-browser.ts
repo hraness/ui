@@ -2857,6 +2857,17 @@ async function verifySegmentedControlInteraction(page: Page, id: string): Promis
     `${id}: ArrowRight did not move segmented-control selection to shared`,
   );
   await page.mouse.move(0, 0);
+  await page.locator(".gallery-segmented-control").evaluate(async (element) => {
+    await Promise.all(
+      element.getAnimations({ subtree: true }).map(async (animation) => {
+        try {
+          await animation.finished;
+        } catch {
+          // A superseded interaction may cancel its transition before settlement.
+        }
+      }),
+    );
+  });
 }
 
 async function verticalWritingEvidence(
