@@ -213,7 +213,7 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
-`ViewportFrame`, `WrappingRow`, and `ThemedSurface` accept a typed StyleX
+`ViewportFrame`, `WrappingRow`, `ThemedSurface`, and `Toolbar` accept a typed StyleX
 override. Base declarations are applied first, finite size, tone, shape, and
 interaction recipes come next, and the caller recipe is applied last.
 Quiet-site landmarks and these surfaces also preserve dynamic StyleX inline
@@ -258,6 +258,12 @@ React Aria state recipes remain active, and the caller recipe resolves after
 them without a hidden pseudo-class rule reverting hover, press, or focus
 values.
 
+`Toolbar` preserves React Aria's horizontal and vertical arrow-key behavior,
+required accessible name, semantic class, slot, ref, and static or render-prop
+`style`. Its native `:focus-visible` ring is attached when `xstyle` is omitted.
+Supplying `xstyle` removes that fallback so a caller focus recipe remains the
+last compiled authority.
+
 ```tsx
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
@@ -271,6 +277,7 @@ import {
   StatusDot,
   Tag,
   ThemedSurface,
+  Toolbar,
   WrappingRow,
 } from "@hraness/ui";
 
@@ -303,6 +310,15 @@ const styles = stylex.create({
       "repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px)",
     backgroundSize: "4px 4px",
   },
+  toolbar: {
+    borderColor: "var(--ui-primary)",
+    ":focus-visible": {
+      outlineColor: "var(--ui-warning)",
+      outlineOffset: "4px",
+      outlineStyle: "solid",
+      outlineWidth: "3px",
+    },
+  },
 });
 
 <Icon icon={Search01Icon} xstyle={styles.searchIcon} />;
@@ -320,6 +336,7 @@ const styles = stylex.create({
 <QuietSitePage xstyle={styles.quietPage}>...</QuietSitePage>;
 <WrappingRow xstyle={styles.structuralRow}>...</WrappingRow>;
 <ThemedSurface tone="accent" xstyle={styles.texturedSurface}>...</ThemedSurface>;
+<Toolbar aria-label="Editor actions" xstyle={styles.toolbar}>...</Toolbar>;
 ```
 
 Keep importing `@hraness/ui/styles.css` while legacy and StyleX recipes
