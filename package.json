@@ -1,6 +1,6 @@
 {
   "name": "@hraness/ui",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Accessible product-neutral React Aria components with a shared CSS theme.",
   "license": "MIT",
   "type": "module",
