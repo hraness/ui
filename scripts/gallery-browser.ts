@@ -942,7 +942,13 @@ function requirePackedDefaultStylesheet(css: string): void {
     && /min-width:\s*5rem/u.test(keyHintConflict)
     && /min-height:\s*4rem/u.test(keyHintConflict)
     && /justify-content:\s*flex-start/u.test(keyHintConflict)
-    && /padding-inline:\s*5rem/u.test(keyHintConflict)
+    && (
+      /padding-inline:\s*5rem/u.test(keyHintConflict)
+      || (
+        /padding-inline-start:\s*5rem/u.test(keyHintConflict)
+        && /padding-inline-end:\s*5rem/u.test(keyHintConflict)
+      )
+    )
     && /border:\s*7px dashed/u.test(keyHintConflict)
     && /border-block-end-width:\s*9px/u.test(keyHintConflict)
     && /border-radius:\s*0/u.test(keyHintConflict)
