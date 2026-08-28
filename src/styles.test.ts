@@ -283,7 +283,7 @@ test("inline icon links keep typographic scale without losing interaction states
   expect(content).toContain("line-height: 0;");
 });
 
-test("real coarse pointers restore compact action targets without widening icon toggles", async () => {
+test("real coarse pointers preserve every action density without widening icon toggles", async () => {
   const components = await stylesheet("./components.css");
   const coarse = conditionalBlock(components, "(pointer: coarse)");
   const compactActions = declarationBlock(
@@ -293,6 +293,22 @@ test("real coarse pointers restore compact action targets without widening icon 
   const compactIcons = declarationBlock(
     coarse,
     '.hraness-icon-button[data-size="compact"] > .hraness-icon-button__control {',
+  );
+  const largeActions = declarationBlock(
+    coarse,
+    ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="large"] > :where(',
+  );
+  const transportActions = declarationBlock(
+    coarse,
+    ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="transport"] > :where(',
+  );
+  const largeIcons = declarationBlock(
+    coarse,
+    '.hraness-icon-button[data-size="large"] > .hraness-icon-button__control {',
+  );
+  const transportIcons = declarationBlock(
+    coarse,
+    '.hraness-icon-button[data-size="transport"] > .hraness-icon-button__control {',
   );
   const iconOnlyToggle = declarationBlock(
     components,
@@ -312,6 +328,14 @@ test("real coarse pointers restore compact action targets without widening icon 
   expect(compactIcons).toContain("width: var(--interactive-target-min);");
   expect(compactIcons).toContain("min-width: var(--interactive-target-min);");
   expect(compactIcons).toContain("min-height: var(--interactive-target-min);");
+  expect(largeActions).toContain("min-height: var(--control-height-primary);");
+  expect(transportActions).toContain("min-height: var(--control-height-transport);");
+  expect(largeIcons).toContain("width: var(--control-height-primary);");
+  expect(largeIcons).toContain("min-width: var(--control-height-primary);");
+  expect(largeIcons).toContain("min-height: var(--control-height-primary);");
+  expect(transportIcons).toContain("width: var(--control-height-transport);");
+  expect(transportIcons).toContain("min-width: var(--control-height-transport);");
+  expect(transportIcons).toContain("min-height: var(--control-height-transport);");
   expect(coarse).not.toContain(".hraness-inline-icon-link");
   expect(coarse).not.toContain("[data-icon-only]");
   expect(iconOnlyToggle).toContain("width: var(--interactive-target-compact);");
