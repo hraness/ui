@@ -22,6 +22,24 @@ function declarationBlock(source: string, selector: string): string {
   return source.slice(openingBrace + 1, closingBrace);
 }
 
+function conditionalBlock(source: string, condition: string): string {
+  const marker = `@media ${condition}`;
+  const markerIndex = source.indexOf(marker);
+  expect(markerIndex).toBeGreaterThanOrEqual(0);
+  const openingBrace = source.indexOf("{", markerIndex + marker.length);
+  expect(openingBrace).toBeGreaterThanOrEqual(0);
+  let depth = 0;
+  for (let index = openingBrace; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === "{") depth += 1;
+    else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(openingBrace + 1, index);
+    }
+  }
+  throw new Error(`${marker} has no closing brace.`);
+}
+
 function oklchProperty(block: string, property: string): Oklch {
   const declaration = block
     .split("\n")
@@ -263,6 +281,44 @@ test("inline icon links keep typographic scale without losing interaction states
   expect(content).toContain("height: 100%;");
   expect(content).toContain("place-items: center;");
   expect(content).toContain("line-height: 0;");
+});
+
+test("real coarse pointers restore compact action targets without widening icon toggles", async () => {
+  const components = await stylesheet("./components.css");
+  const coarse = conditionalBlock(components, "(pointer: coarse)");
+  const compactActions = declarationBlock(
+    coarse,
+    ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="compact"] > :where(',
+  );
+  const compactIcons = declarationBlock(
+    coarse,
+    '.hraness-icon-button[data-size="compact"] > .hraness-icon-button__control {',
+  );
+  const iconOnlyToggle = declarationBlock(
+    components,
+    ".hraness-toggle-button[data-icon-only] > .hraness-toggle-button__control {",
+  );
+  const largeAction = components.indexOf(
+    ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="large"] > :where(',
+  );
+  const transportAction = components.indexOf(
+    ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="transport"] > :where(',
+  );
+  const iconOnlyToggleSelector = components.indexOf(
+    ".hraness-toggle-button[data-icon-only] > .hraness-toggle-button__control {",
+  );
+
+  expect(compactActions).toContain("min-height: var(--interactive-target-min);");
+  expect(compactIcons).toContain("width: var(--interactive-target-min);");
+  expect(compactIcons).toContain("min-width: var(--interactive-target-min);");
+  expect(compactIcons).toContain("min-height: var(--interactive-target-min);");
+  expect(coarse).not.toContain(".hraness-inline-icon-link");
+  expect(coarse).not.toContain("[data-icon-only]");
+  expect(iconOnlyToggle).toContain("width: var(--interactive-target-compact);");
+  expect(iconOnlyToggle).toContain("min-width: var(--interactive-target-compact);");
+  expect(largeAction).toBeGreaterThanOrEqual(0);
+  expect(transportAction).toBeGreaterThan(largeAction);
+  expect(iconOnlyToggleSelector).toBeGreaterThan(transportAction);
 });
 
 test("copy buttons reserve both transient labels without layout shift", async () => {

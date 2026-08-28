@@ -1896,6 +1896,25 @@
     min-width: var(--interactive-target-min);
   }
 
+  :where(.hraness-button, .hraness-toggle-button,
+    .hraness-link-button)[data-size="compact"] > :where(
+    .hraness-button__control,
+    .hraness-toggle-button__control,
+    .hraness-link-button__control
+  ) {
+    min-height: var(--interactive-target-min);
+  }
+
+  .hraness-icon-button[data-size="compact"] > .hraness-icon-button__control {
+    width: var(--interactive-target-min);
+    min-width: var(--interactive-target-min);
+    min-height: var(--interactive-target-min);
+  }
+
+  .hraness-segmented-control__item {
+    min-width: var(--interactive-target-min);
+  }
+
   :where(.hraness-field, .hraness-search-field, .hraness-number-field,
     .hraness-native-select-field, .hraness-file-field, .hraness-select-field) {
     --hraness-field-height: var(--interactive-target-min);

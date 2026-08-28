@@ -23,9 +23,12 @@ import {
   CardTitle,
   CheckboxField,
   Icon,
+  IconButton,
+  IconLink,
   InlineAlert,
   KeyHint,
   Link,
+  LinkButton,
   Progress,
   PressableCard,
   QuietSiteFooter,
@@ -41,6 +44,7 @@ import {
   Tag,
   ThemedSurface,
   Toolbar,
+  ToggleButton,
   ViewportFrame,
   WrappingRow,
 } from "@hraness/ui";
@@ -69,6 +73,8 @@ const gallerySelectOptions = [
   { id: "followers", label: "followers", textValue: "followers" },
   { id: "following", label: "following", textValue: "following" },
 ] as const;
+
+const galleryActionSizes = ["compact", "default", "large", "transport"] as const;
 
 type GalleryTheme = "dark" | "light";
 type GallerySegment = typeof gallerySegments[number]["id"];
@@ -912,6 +918,85 @@ export function PrimitiveGallery() {
           >
             Downstream texture override
           </ThemedSurface>
+        </section>
+
+        <section
+          aria-labelledby="gallery-coarse-actions-heading"
+          data-gallery-section="coarse-actions"
+        >
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-coarse-actions-heading">Coarse action targets</h2>
+              <p>Real touch-pointer evidence covers every action density and presentation.</p>
+            </div>
+          </div>
+          <div data-gallery-coarse-action-matrix="true">
+            {galleryActionSizes.map((size) => (
+              <div data-gallery-coarse-action-row={size} key={size}>
+                <span data-gallery-coarse-action-size={size}>{size}</span>
+                <Button
+                  data-gallery-coarse-kind="button"
+                  data-gallery-coarse-size={size}
+                  size={size}
+                >
+                  Button
+                </Button>
+                <LinkButton
+                  data-gallery-coarse-kind="link-button"
+                  data-gallery-coarse-size={size}
+                  href={`/coarse-targets/${size}/link-button`}
+                  size={size}
+                >
+                  Link button
+                </LinkButton>
+                <IconButton
+                  aria-label={`${size} icon button`}
+                  data-gallery-coarse-kind="icon-button"
+                  data-gallery-coarse-size={size}
+                  size={size}
+                >
+                  I
+                </IconButton>
+                <IconLink
+                  aria-label={`${size} control icon link`}
+                  data-gallery-coarse-kind="control-icon-link"
+                  data-gallery-coarse-size={size}
+                  href={`/coarse-targets/${size}/icon-link`}
+                  size={size}
+                >
+                  L
+                </IconLink>
+                <ToggleButton
+                  data-gallery-coarse-kind="toggle-button"
+                  data-gallery-coarse-size={size}
+                  size={size}
+                >
+                  Toggle
+                </ToggleButton>
+                <ToggleButton
+                  aria-label={`${size} icon toggle`}
+                  data-gallery-coarse-kind="icon-toggle-button"
+                  data-gallery-coarse-size={size}
+                  isIconOnly
+                  size={size}
+                >
+                  T
+                </ToggleButton>
+              </div>
+            ))}
+            <div data-gallery-coarse-action-row="inline">
+              <span data-gallery-coarse-action-size="inline">inline</span>
+              <IconLink
+                aria-label="Inline icon link"
+                data-gallery-coarse-kind="inline-icon-link"
+                data-gallery-coarse-size="inline"
+                href="/coarse-targets/inline-icon-link"
+                presentation="inline"
+              >
+                L
+              </IconLink>
+            </div>
+          </div>
         </section>
       </QuietSitePage>
       <QuietSiteFooter

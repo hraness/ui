@@ -5542,6 +5542,126 @@ async function checkboxCoarsePointerEvidence(page: Page) {
   });
 }
 
+async function actionCoarsePointerEvidence(page: Page) {
+  return page.evaluate(() => {
+    const controls = [
+      ...document.querySelectorAll<HTMLElement>("[data-gallery-coarse-kind]"),
+    ];
+    if (controls.length !== 25) {
+      throw new Error(
+        `The coarse-pointer action matrix has ${String(controls.length)} controls instead of 25`,
+      );
+    }
+    return {
+      coarsePointer: matchMedia("(pointer: coarse)").matches,
+      controls: controls.map((control) => {
+        const box = control.getBoundingClientRect();
+        const sizeRoot = control.closest<HTMLElement>("[data-size]");
+        return {
+          ancestorSize: sizeRoot?.dataset.size ?? "",
+          className: control.className,
+          height: box.height,
+          kind: control.dataset.galleryCoarseKind ?? "",
+          size: control.dataset.galleryCoarseSize ?? "",
+          slot: control.dataset.slot ?? "",
+          tagName: control.tagName,
+          width: box.width,
+        };
+      }),
+      maxTouchPoints: navigator.maxTouchPoints,
+      verificationOverride:
+        document.documentElement.dataset.verificationPointer ?? "",
+    };
+  });
+}
+
+function verifyActionCoarsePointerEvidence(
+  evidence: Awaited<ReturnType<typeof actionCoarsePointerEvidence>>,
+): void {
+  invariant(
+    evidence.coarsePointer
+    && evidence.maxTouchPoints > 0
+    && evidence.verificationOverride === "",
+    `the action matrix did not run in a real touch/coarse context: ${JSON.stringify(evidence)}`,
+  );
+
+  const blockSizes = new Map([
+    ["compact", 48],
+    ["default", 48],
+    ["large", 56],
+    ["transport", 64],
+  ] as const);
+  const kinds = [
+    "button",
+    "link-button",
+    "icon-button",
+    "control-icon-link",
+    "toggle-button",
+    "icon-toggle-button",
+  ] as const;
+  const controls = new Map(
+    evidence.controls.map((control) => [`${control.size}:${control.kind}`, control]),
+  );
+  invariant(
+    controls.size === evidence.controls.length,
+    `the action matrix contains duplicate evidence keys: ${JSON.stringify(evidence.controls)}`,
+  );
+
+  for (const [size, expectedBlockSize] of blockSizes) {
+    for (const kind of kinds) {
+      const control = controls.get(`${size}:${kind}`);
+      invariant(
+        control !== undefined,
+        `the action matrix is missing ${size}:${kind}`,
+      );
+      const expectedSlot = kind === "button"
+        ? "button-control"
+        : kind === "link-button"
+          ? "link-button-control"
+          : kind === "icon-button"
+            ? "icon-button-control"
+            : kind === "control-icon-link"
+              ? "icon-link-control"
+              : "toggle-button-control";
+      const expectsAnchor = kind === "link-button" || kind === "control-icon-link";
+      invariant(
+        control.ancestorSize === size
+        && control.slot === expectedSlot
+        && control.tagName === (expectsAnchor ? "A" : "BUTTON")
+        && nearlyEqual(control.height, expectedBlockSize)
+        && control.width >= 48,
+        `coarse ${size}:${kind} geometry changed: ${JSON.stringify(control)}`,
+      );
+
+      if (kind === "icon-button" || kind === "control-icon-link") {
+        invariant(
+          nearlyEqual(control.width, expectedBlockSize),
+          `coarse ${size}:${kind} did not retain its square action density: ${JSON.stringify(control)}`,
+        );
+      }
+      if (kind === "icon-toggle-button") {
+        invariant(
+          nearlyEqual(control.width, 48),
+          `coarse ${size}:${kind} lost its compact inline size: ${JSON.stringify(control)}`,
+        );
+      }
+    }
+  }
+
+  const inline = controls.get("inline:inline-icon-link");
+  invariant(
+    inline !== undefined
+    && inline.ancestorSize === ""
+    && inline.className.includes("hraness-inline-icon-link__control")
+    && !inline.className.includes("hraness-icon-button__control")
+    && inline.slot === "inline-icon-link-control"
+    && inline.tagName === "A"
+    && nearlyEqual(inline.height, 24)
+    && nearlyEqual(inline.width, 24),
+    `the inline IconLink incorrectly joined the coarse action family: ${JSON.stringify(inline)}`,
+  );
+}
+
 function startGalleryServer(directory: string, requestedPaths: Set<string>) {
   return Bun.serve({
     hostname: "127.0.0.1",
@@ -6355,8 +6475,10 @@ try {
           page,
           failures,
           requestedPaths,
-          "coarse-pointer CheckboxField",
+          "coarse-pointer action and CheckboxField matrix",
         );
+        const coarseActions = await actionCoarsePointerEvidence(page);
+        verifyActionCoarsePointerEvidence(coarseActions);
         const coarse = await checkboxCoarsePointerEvidence(page);
         invariant(
           coarse.coarsePointer
@@ -6368,7 +6490,7 @@ try {
         );
         invariant(
           failures.length === 0,
-          `coarse-pointer CheckboxField: ${failures.join("; ")}`,
+          `coarse-pointer action and CheckboxField matrix: ${failures.join("; ")}`,
         );
       } finally {
         await coarsePointerContext.close();
@@ -6584,7 +6706,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, CheckboxField, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, CheckboxField, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });
