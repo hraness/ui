@@ -661,6 +661,15 @@ assert.match(stylexCss, /min-inline-size:\s*1\.5rem/u);
 assert.match(stylexCss, /text-decoration-thickness:\s*1px/u);
 assert.match(stylexCss, /text-decoration-thickness:\s*2px/u);
 assert.match(stylexCss, /text-underline-offset:\s*0?\.2em/u);
+assert.match(stylexCss, /background-color:\s*var\(--ui-destructive\)/u);
+assert.match(stylexCss, /min-height:\s*var\(--interactive-target-min\)/u);
+assert.match(stylexCss, /min-height:\s*var\(--control-height-primary\)/u);
+assert.match(stylexCss, /min-height:\s*var\(--control-height-transport\)/u);
+assert.match(stylexCss, /font:\s*inherit/u);
+assert.match(stylexCss, /animation-name:\s*hraness-spin/u);
+assert.match(stylexCss, /background-color:\s*buttonface/u);
+assert.match(stylexCss, /color:\s*buttontext/u);
+assert.match(stylexCss, /@media\s*\(pointer:\s*coarse\)/u);
 const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
 const viewportHeightPositions = viewportHeightFallbacks.map((fallback) => stylexCss.indexOf(fallback));
 assert.ok(viewportHeightPositions.every((position) => position >= 0));
@@ -700,6 +709,14 @@ assert.doesNotMatch(
 assert.doesNotMatch(componentsCss, /\.hraness-toolbar(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-key-hint(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-link(?![A-Za-z0-9_-])/u);
+assert.doesNotMatch(
+  componentsCss,
+  /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
+);
+assert.match(
+  componentsCss,
+  /--hraness-action-coarse-min:\s*var\(--interactive-target-min\)/u,
+);
 assert.doesNotMatch(
   componentsCss,
   /\.hraness-checkbox-field(?:__(?:control|indicator|label))?(?![A-Za-z0-9_-])/u,

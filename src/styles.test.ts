@@ -22,24 +22,6 @@ function declarationBlock(source: string, selector: string): string {
   return source.slice(openingBrace + 1, closingBrace);
 }
 
-function conditionalBlock(source: string, condition: string): string {
-  const marker = `@media ${condition}`;
-  const markerIndex = source.indexOf(marker);
-  expect(markerIndex).toBeGreaterThanOrEqual(0);
-  const openingBrace = source.indexOf("{", markerIndex + marker.length);
-  expect(openingBrace).toBeGreaterThanOrEqual(0);
-  let depth = 0;
-  for (let index = openingBrace; index < source.length; index += 1) {
-    const character = source[index];
-    if (character === "{") depth += 1;
-    else if (character === "}") {
-      depth -= 1;
-      if (depth === 0) return source.slice(openingBrace + 1, index);
-    }
-  }
-  throw new Error(`${marker} has no closing brace.`);
-}
-
 function oklchProperty(block: string, property: string): Oklch {
   const declaration = block
     .split("\n")
@@ -121,7 +103,6 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   ]) expect(tokens).toContain(role);
 
   for (const contract of [
-    ".hraness-button__control",
     ".hraness-field__control",
     ".hraness-select-field__popover",
     ".hraness-dialog-overlay",
@@ -175,6 +156,9 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
     "",
   );
   expect(renderedComponents).not.toMatch(/\.hraness-(?:tabs|disclosure|accordion|toggle-group|segmented-control|separator)(?![A-Za-z0-9_-])/u);
+  expect(components).not.toMatch(
+    /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
+  );
   expect(tailwind).toContain(
     ':not(:where([data-theme="light"], [data-theme="light"] *))',
   );
@@ -251,187 +235,50 @@ test("Separator owns its physical orientation and shorthand resets in StyleX", a
 });
 
 test("inline icon links keep typographic scale without losing interaction states", async () => {
-  const components = await stylesheet("./components.css");
-  const control = declarationBlock(
-    components,
-    ".hraness-inline-icon-link__control {",
-  );
-  const content = declarationBlock(
-    components,
-    ".hraness-inline-icon-link__content {",
-  );
-  const hover = declarationBlock(
-    components,
-    ".hraness-inline-icon-link__control:where([data-hovered], :hover) {",
-  );
-  const focus = declarationBlock(
-    components,
-    ".hraness-inline-icon-link__control:where([data-focus-visible], :focus-visible) {",
-  );
+  const source = await stylesheet("./actions.stylex.ts");
 
-  expect(control).toContain("width: 1.5rem;");
-  expect(control).toContain("height: 1.5rem;");
-  expect(control).toContain("min-height: 1.5rem;");
-  expect(control).toContain("border: 0;");
-  expect(control).toContain("background: transparent;");
-  expect(control).toContain("color: var(--ui-primary);");
-  expect(hover).toContain("background: var(--ui-accent);");
-  expect(focus).toContain("outline: 2px solid var(--ui-ring);");
-  expect(content).toContain("width: 100%;");
-  expect(content).toContain("height: 100%;");
-  expect(content).toContain("place-items: center;");
-  expect(content).toContain("line-height: 0;");
+  expect(source).toContain('inlineControl: {');
+  expect(source).toContain('height: "1.5rem"');
+  expect(source).toContain('minHeight: "1.5rem"');
+  expect(source).toContain('minWidth: "1.5rem"');
+  expect(source).toContain('width: "1.5rem"');
+  expect(source).toContain('backgroundColor: "var(--ui-accent)"');
+  expect(source).toContain('outlineColor: "var(--ui-ring)"');
+  expect(source).toContain('inlineContent: {');
+  expect(source).toContain('lineHeight: 0');
 });
 
 test("coarse-pointer seams preserve every action density without widening icon toggles", async () => {
-  const components = await stylesheet("./components.css");
-  const coarse = conditionalBlock(components, "(pointer: coarse)");
-  const coarseActionMinimum = declarationBlock(
-    coarse,
-    ":where(\n    .hraness-button__control,\n    .hraness-toggle-button__control,\n    .hraness-link-button__control\n  ) {",
-  );
-  const compactActions = declarationBlock(
-    coarse,
-    ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="compact"] > :where(',
-  );
-  const compactIcons = declarationBlock(
-    coarse,
-    '.hraness-icon-button[data-size="compact"] > .hraness-icon-button__control {',
-  );
-  const largeActions = declarationBlock(
-    coarse,
-    ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="large"] > :where(',
-  );
-  const transportActions = declarationBlock(
-    coarse,
-    ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="transport"] > :where(',
-  );
-  const largeIcons = declarationBlock(
-    coarse,
-    '.hraness-icon-button[data-size="large"] > .hraness-icon-button__control {',
-  );
-  const transportIcons = declarationBlock(
-    coarse,
-    '.hraness-icon-button[data-size="transport"] > .hraness-icon-button__control {',
-  );
-  const iconOnlyToggle = declarationBlock(
-    components,
-    ".hraness-toggle-button[data-icon-only] > .hraness-toggle-button__control {",
-  );
-  const largeAction = components.indexOf(
-    ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="large"] > :where(',
-  );
-  const transportAction = components.indexOf(
-    ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="transport"] > :where(',
-  );
-  const iconOnlyToggleSelector = components.indexOf(
-    ".hraness-toggle-button[data-icon-only] > .hraness-toggle-button__control {",
-  );
-  const verificationActionMinimum = declarationBlock(
-    components,
-    ':root[data-verification-pointer="coarse"] :where(\n  .hraness-button__control,\n  .hraness-toggle-button__control,\n  .hraness-link-button__control\n) {',
-  );
-  const verificationTargetMinimum = declarationBlock(
-    components,
-    ':root[data-verification-pointer="coarse"] :where(\n  .hraness-button__control,\n  .hraness-icon-button__control,\n  .hraness-toggle-button__control,\n  .hraness-link-button__control,',
-  );
-  const verificationIconMinimum = declarationBlock(
-    components,
-    ':root[data-verification-pointer="coarse"] .hraness-icon-button__control {',
-  );
-  const verificationLargeActions = declarationBlock(
-    components,
-    ':root[data-verification-pointer="coarse"] :where(\n  .hraness-button,\n  .hraness-toggle-button,\n  .hraness-link-button\n)[data-size="large"] > :where(',
-  );
-  const verificationTransportActions = declarationBlock(
-    components,
-    ':root[data-verification-pointer="coarse"] :where(\n  .hraness-button,\n  .hraness-toggle-button,\n  .hraness-link-button\n)[data-size="transport"] > :where(',
-  );
-  const verificationLargeIcons = declarationBlock(
-    components,
-    ':root[data-verification-pointer="coarse"]\n  .hraness-icon-button[data-size="large"]\n  > .hraness-icon-button__control {',
-  );
-  const verificationTransportIcons = declarationBlock(
-    components,
-    ':root[data-verification-pointer="coarse"]\n  .hraness-icon-button[data-size="transport"]\n  > .hraness-icon-button__control {',
-  );
+  const [components, source] = await Promise.all([
+    stylesheet("./components.css"),
+    stylesheet("./actions.stylex.ts"),
+  ]);
 
-  expect(coarseActionMinimum).toContain("min-width: var(--interactive-target-min);");
-  expect(compactActions).toContain("min-height: var(--interactive-target-min);");
-  expect(compactIcons).toContain("width: var(--interactive-target-min);");
-  expect(compactIcons).toContain("min-width: var(--interactive-target-min);");
-  expect(compactIcons).toContain("min-height: var(--interactive-target-min);");
-  expect(largeActions).toContain("min-height: var(--control-height-primary);");
-  expect(transportActions).toContain("min-height: var(--control-height-transport);");
-  expect(largeIcons).toContain("width: var(--control-height-primary);");
-  expect(largeIcons).toContain("min-width: var(--control-height-primary);");
-  expect(largeIcons).toContain("min-height: var(--control-height-primary);");
-  expect(transportIcons).toContain("width: var(--control-height-transport);");
-  expect(transportIcons).toContain("min-width: var(--control-height-transport);");
-  expect(transportIcons).toContain("min-height: var(--control-height-transport);");
-  expect(verificationActionMinimum).toContain(
-    "min-width: var(--interactive-target-min);",
+  expect(source).toContain('const coarsePointer = "@media (pointer: coarse)"');
+  expect(source).toContain('[coarsePointer]: "var(--interactive-target-min)"');
+  expect(source).toContain('[coarsePointer]: "var(--control-height-primary)"');
+  expect(source).toContain('[coarsePointer]: "var(--control-height-transport)"');
+  expect(source).toContain('iconOnlyToggle: {');
+  expect(source).toContain('max(var(--interactive-target-compact), ${syntheticCoarseMinimum})');
+  const inlineControl = source.slice(
+    source.indexOf("inlineControl: {"),
+    source.indexOf("labeledDanger: {"),
   );
-  expect(verificationTargetMinimum).toContain(
-    "min-height: var(--interactive-target-min);",
+  expect(inlineControl).not.toContain("[coarsePointer]");
+  expect(components).toContain(
+    '--hraness-action-coarse-min: var(--interactive-target-min);',
   );
-  expect(verificationIconMinimum).toContain(
-    "width: var(--interactive-target-min);",
+  expect(components).not.toMatch(
+    /\.hraness-(?:(?:button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
   );
-  expect(verificationIconMinimum).toContain(
-    "min-width: var(--interactive-target-min);",
-  );
-  expect(verificationLargeActions).toContain(
-    "min-height: var(--control-height-primary);",
-  );
-  expect(verificationTransportActions).toContain(
-    "min-height: var(--control-height-transport);",
-  );
-  expect(verificationLargeIcons).toContain(
-    "width: var(--control-height-primary);",
-  );
-  expect(verificationLargeIcons).toContain(
-    "min-width: var(--control-height-primary);",
-  );
-  expect(verificationLargeIcons).toContain(
-    "min-height: var(--control-height-primary);",
-  );
-  expect(verificationTransportIcons).toContain(
-    "width: var(--control-height-transport);",
-  );
-  expect(verificationTransportIcons).toContain(
-    "min-width: var(--control-height-transport);",
-  );
-  expect(verificationTransportIcons).toContain(
-    "min-height: var(--control-height-transport);",
-  );
-  expect(coarse).not.toContain(".hraness-inline-icon-link");
-  expect(coarse).not.toContain("[data-icon-only]");
-  expect(iconOnlyToggle).toContain("width: var(--interactive-target-compact);");
-  expect(iconOnlyToggle).toContain("min-width: var(--interactive-target-compact);");
-  expect(largeAction).toBeGreaterThanOrEqual(0);
-  expect(transportAction).toBeGreaterThan(largeAction);
-  expect(iconOnlyToggleSelector).toBeGreaterThan(transportAction);
 });
 
 test("copy buttons reserve both transient labels without layout shift", async () => {
-  const components = await stylesheet("./components.css");
-  const labels = declarationBlock(
-    components,
-    ".hraness-copy-button__labels {",
-  );
-  const label = declarationBlock(
-    components,
-    ".hraness-copy-button__label {",
-  );
-  const hidden = declarationBlock(
-    components,
-    '.hraness-copy-button__label[aria-hidden="true"] {',
-  );
+  const source = await stylesheet("./actions.stylex.ts");
 
-  expect(labels).toContain("display: inline-grid;");
-  expect(label).toContain("grid-area: 1 / 1;");
-  expect(hidden).toContain("visibility: hidden;");
+  expect(source).toContain('copyLabels: {\n    display: "inline-grid"');
+  expect(source).toContain('copyLabel: {\n    gridArea: "1 / 1"');
+  expect(source).toContain('hiddenCopyLabel: {\n    visibility: "hidden"');
 });
 
 test("breadcrumbs keep the current page on one shrinkable line", async () => {
@@ -476,11 +323,10 @@ test("collapsed disclosure panels do not retain their expanded inset", async () 
 });
 
 test("transport actions and slider thumbs use their shared geometry", async () => {
-  const components = await stylesheet("./components.css");
-  const transport = declarationBlock(
-    components,
-    '.hraness-icon-button[data-size="transport"] > .hraness-icon-button__control {',
-  );
+  const [actions, components] = await Promise.all([
+    stylesheet("./actions.stylex.ts"),
+    stylesheet("./components.css"),
+  ]);
   const horizontalThumb = declarationBlock(
     components,
     '.hraness-slider[data-orientation="horizontal"] .hraness-slider__thumb {',
@@ -490,8 +336,13 @@ test("transport actions and slider thumbs use their shared geometry", async () =
     '.hraness-slider[data-orientation="vertical"] .hraness-slider__thumb {',
   );
 
-  expect(transport).toContain("width: var(--control-height-transport);");
-  expect(transport).toContain("min-height: var(--control-height-transport);");
+  expect(actions).toContain('transportIconControl: {');
+  expect(actions).toContain(
+    '`max(var(--control-height-transport), ${syntheticCoarseMinimum})`',
+  );
+  expect(actions).toContain(
+    '[coarsePointer]: "var(--control-height-transport)"',
+  );
   expect(horizontalThumb).toContain("top: 50%;");
   expect(verticalThumb).toContain("left: 50%;");
 });

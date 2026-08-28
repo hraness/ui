@@ -113,7 +113,9 @@ test("action controls retain names, destinations, variants, and pending focusabi
   expect(html).toContain('data-slot="icon-link"');
   expect(html).toContain('data-slot="inline-icon-link"');
   expect(html).toContain('data-slot="inline-icon-link-control"');
-  expect(html).toContain('class="hraness-inline-icon-link__content"');
+  expect(html).toMatch(
+    /class="hraness-inline-icon-link__content [^"]+"/u,
+  );
   expect(html).not.toContain('class="hraness-inline-icon-link" data-size');
   expect(Button.displayName).toBe("Button");
 });
@@ -129,11 +131,11 @@ test("CopyButton reserves both labels and exposes polite success feedback", () =
   );
 
   expect(html).toContain('data-slot="copy-button-labels"');
-  expect(html).toContain(
-    'class="hraness-copy-button__label" data-slot="copy-button-idle-label">Copy token</span>',
+  expect(html).toMatch(
+    /class="hraness-copy-button__label [^"]+" data-slot="copy-button-idle-label">Copy token<\/span>/u,
   );
-  expect(html).toContain(
-    'aria-hidden="true" class="hraness-copy-button__label" data-slot="copy-button-success-label">Token copied</span>',
+  expect(html).toMatch(
+    /aria-hidden="true" class="hraness-copy-button__label [^"]+" data-slot="copy-button-success-label">Token copied<\/span>/u,
   );
   expect(html).toContain('aria-live="polite"');
   expect(html).toContain('role="status"');

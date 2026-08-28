@@ -1572,6 +1572,74 @@ function requireLinkSourceContract(actionsSource: string): void {
   requireMatch(linkSource, /data-slot=["']link["']/u, "the Link semantic slot");
 }
 
+function requireActionFamilyContract(
+  legacyComponents: string,
+  compiledCss: string,
+  actionsSource: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
+    "a legacy action-family recipe",
+  );
+  for (const [pattern, description] of [
+    [/background-color:\s*var\(--ui-destructive\);/u, "the danger action surface"],
+    [/background-color:\s*var\(--ui-accent\);/u, "the quiet hover surface"],
+    [/min-height:\s*var\(--interactive-target-min\);/u, "the coarse action target"],
+    [/min-height:\s*var\(--control-height-primary\);/u, "the large action target"],
+    [/min-height:\s*var\(--control-height-transport\);/u, "the transport action target"],
+    [/height:\s*1\.5rem;/u, "the inline IconLink height"],
+    [/width:\s*1\.5rem;/u, "the inline IconLink width"],
+    [/font:\s*inherit;/u, "the inherited action font shorthand"],
+    [/animation-name:\s*hraness-spin;/u, "the action spinner animation"],
+    [/animation-name:\s*none;/u, "the reduced-motion action spinner"],
+    [/background-color:\s*buttonface;/u, "the forced-color labeled action surface"],
+    [/color:\s*buttontext;/u, "the forced-color labeled action text"],
+  ] as const) {
+    requireMatch(compiledCss, pattern, description);
+  }
+  requireMatch(
+    compiledCss,
+    /@media\s*\(pointer:\s*coarse\)/u,
+    "the real coarse-pointer action condition",
+  );
+  requireMatch(
+    legacyComponents,
+    /:root\[data-verification-pointer=["']coarse["']\]\s*\{\s*--hraness-action-coarse-min:\s*var\(--interactive-target-min\);\s*\}/u,
+    "the synthetic coarse-pointer action variable",
+  );
+  requireMatch(
+    actionsSource,
+    /xstyle\?:\s*StyleXStyles;/u,
+    "the action wrapper xstyle seam",
+  );
+  requireMatch(
+    actionsSource,
+    /controlXstyle\?:\s*StyleXStyles;/u,
+    "the action controlXstyle seam",
+  );
+  requireMatch(
+    actionsSource,
+    /partXstyles\?:\s*ActionLabelPartXstyles;/u,
+    "the closed action label-part seam",
+  );
+  requireMatch(
+    actionsSource,
+    /!hasControlPresentation\s*&&\s*actionStyles\.nativeInteractionFallbacks/u,
+    "the conditional native action interaction fallbacks",
+  );
+  requireMatch(
+    actionsSource,
+    /state\.isHovered\s*&&\s*actionHoverStyles\[variant\][\s\S]*?state\.isSelected\s*&&\s*actionStyles\.selected[\s\S]*?controlXstyle/u,
+    "the action state, selection, and caller precedence",
+  );
+  requireMatch(
+    actionsSource,
+    /mergeStylexInlineStyles\(presentation\.style,\s*callerStyle\)/u,
+    "the action StyleX-before-native inline merge",
+  );
+}
+
 function requireCheckboxFieldContract(
   legacyComponents: string,
   compiledCss: string,
@@ -1866,6 +1934,7 @@ requireKeyHintContract(legacyComponents, compiledCss);
 requireKeyHintSourceContract(contentSource);
 requireLinkContract(legacyComponents, compiledCss, compiledJavaScript);
 requireLinkSourceContract(actionsSource);
+requireActionFamilyContract(legacyComponents, compiledCss, actionsSource);
 requireCheckboxFieldContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCheckboxFieldSourceContract(fieldsSource);
 requireEarliestLayerPrelude(resetStylesheet);

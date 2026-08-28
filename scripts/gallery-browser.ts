@@ -977,10 +977,30 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   );
   requireFinalBundleLayerOrder(css);
   requirePackedCheckboxConflictLayer(css);
+  assert.doesNotMatch(
+    css,
+    /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not include legacy action recipes",
+  );
   assert.match(
     css,
-    /\.hraness-button(?:__control)?(?=[\s,{:.])/u,
-    "the packed default stylesheet must include legacy action recipes",
+    /min-height:\s*var\(--interactive-target-min\)/u,
+    "the packed default stylesheet must include the compiled coarse action target",
+  );
+  assert.match(
+    css,
+    /background-color:\s*var\(--ui-destructive\)/u,
+    "the packed default stylesheet must include the compiled danger action surface",
+  );
+  assert.match(
+    css,
+    /font:\s*inherit/u,
+    "the packed default stylesheet must preserve the inherited action font shorthand",
+  );
+  assert.match(
+    css,
+    /animation-name:\s*hraness-spin/u,
+    "the packed default stylesheet must include the compiled action spinner",
   );
   assert.match(
     css,
@@ -5818,6 +5838,11 @@ try {
     installedPackageCss,
     /\.hraness-link(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate Link declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate action-family declarations in legacy CSS",
   );
 
   const productionDirectory = resolve(consumer, "dist/browser");
