@@ -68,6 +68,11 @@
   gap: var(--space-3);
 }
 
+[data-gallery-form-row="true"] {
+  display: grid;
+  gap: var(--space-3);
+}
+
 [data-gallery-coarse-action-matrix="true"] {
   display: grid;
   gap: var(--space-3);
@@ -219,6 +224,14 @@
     font-size: 4rem;
     font-weight: 100;
     line-height: 4;
+    width: 18rem;
+  }
+
+  html body [data-gallery-form-layer-conflict="true"][data-slot="form"] {
+    --gallery-form-layer-conflict: legacy;
+    display: block;
+    gap: 5rem;
+    min-width: 11rem;
     width: 18rem;
   }
 

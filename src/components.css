@@ -1,10 +1,4 @@
 @layer components.hraness-ui.legacy.base {
-  .hraness-form {
-    display: grid;
-    min-width: 0;
-    gap: var(--space-6);
-  }
-
   :where(.hraness-field, .hraness-search-field, .hraness-number-field,
     .hraness-checkbox-group, .hraness-radio-group,
     .hraness-radio-option, .hraness-switch-field, .hraness-native-select-field,

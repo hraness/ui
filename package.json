@@ -66,6 +66,7 @@
     "src/feedback.stylex.ts",
     "src/feedback.tsx",
     "src/fields.tsx",
+    "src/form.stylex.ts",
     "src/form.tsx",
     "src/icon.stylex.ts",
     "src/icon.tsx",

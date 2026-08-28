@@ -261,7 +261,7 @@ const styles = stylex.create({
 `LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `KeyHint`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
-`SkipLink`, `ViewportFrame`, `WrappingRow`, `ThemedSurface`, `Toolbar`, and `CheckboxField`
+`SkipLink`, `Separator`, `Form`, `ViewportFrame`, `WrappingRow`, `ThemedSurface`, `Toolbar`, and `CheckboxField`
 accept a typed StyleX override. Base declarations are applied first, finite
 size, tone, shape, and interaction recipes come next, and the caller recipe is
 applied last. `CheckboxField` exposes `controlXstyle` separately for its
@@ -285,6 +285,13 @@ and the helper's important offscreen declarations are implementation details.
 `SkipLink` applies `xstyle` to its native anchor without changing its hash,
 focus-transfer, or native `:focus` reveal behavior. Native `style` declarations
 resolve after the StyleX recipe.
+`Separator` resolves its physical horizontal or vertical recipe through React
+Aria context before applying `xstyle`. Native `style` declarations remain last.
+`Form` remains a native React Aria form with its action, method, validation,
+submission handler, ref, and inherited context or caller DOM renderer intact.
+Its grid recipe keeps a physical zero minimum width and `var(--space-6)` gap.
+Caller `xstyle` resolves after that recipe, and native `style` declarations
+remain final.
 Quiet-site landmarks and these surfaces also preserve dynamic StyleX inline
 values when merging the native `style` prop, with caller inline declarations
 taking precedence.
