@@ -86,6 +86,7 @@ import { readFile } from "node:fs/promises";
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import {
   AppearanceIcon,
+  AskAiAboutThis,
   Avatar,
   Badge,
   Card,
@@ -106,6 +107,7 @@ import {
   Toolbar,
   ViewportFrame,
   WrappingRow,
+  buildAskAiProviderLinks,
 } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -162,6 +164,8 @@ assert.match(stylexCss, /padding-block:\s*var\(--space-1\)/u);
 assert.match(stylexCss, /padding-inline:\s*var\(--space-1\)/u);
 assert.match(stylexCss, /border-block-end-width:\s*2px/u);
 assert.match(stylexCss, /font-family:\s*var\(--ui-font-mono\)/u);
+assert.match(stylexCss, /min-height:\s*1\.875rem/u);
+assert.match(stylexCss, /min-height:\s*var\(--interactive-target-min,\s*3rem\)/u);
 assert.match(stylexCss, /min-block-size:\s*1\.5rem/u);
 assert.match(stylexCss, /min-inline-size:\s*1\.5rem/u);
 const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
@@ -230,6 +234,24 @@ assert.match(markup, /<svg/u);
 assert.match(markup, /aria-hidden="true"/u);
 assert.match(markup, /class="[^"]*hraness-icon[^"]*consumer-icon[^"]*"/u);
 assert.match(markup, /data-slot="icon"/u);
+
+const askAiUrl = "https://hraness.com/stripe";
+const askAiLinks = buildAskAiProviderLinks(askAiUrl);
+assert.equal(askAiLinks.length, 4);
+for (const link of askAiLinks) {
+  const destination = new URL(link.href);
+  const parameter = destination.hostname === "x.com" ? "text" : "q";
+  assert.equal(destination.searchParams.get(parameter), "Tell me about " + askAiUrl);
+}
+const askAiMarkup = renderToStaticMarkup(React.createElement(AskAiAboutThis, {
+  className: "consumer-ask-ai",
+  url: askAiUrl,
+}));
+assert.match(askAiMarkup, /^<nav/u);
+assert.match(askAiMarkup, /aria-label="Ask AI about this"/u);
+assert.match(askAiMarkup, /class="[^"]*hraness-ask-ai-about-this[^"]*consumer-ask-ai[^"]*"/u);
+assert.equal(askAiMarkup.match(/data-slot="ask-ai-about-this-link"/gu)?.length, 4);
+assert.equal(askAiMarkup.match(/target="_blank"/gu)?.length, 4);
 
 const socialMarkup = renderToStaticMarkup(React.createElement(SocialIcon, {
   className: "consumer-social-icon",
@@ -504,6 +526,7 @@ const typeScriptProbe = `import { Search01Icon } from "@hugeicons/core-free-icon
 import * as stylex from "@stylexjs/stylex";
 import {
   AppearanceIcon,
+  AskAiAboutThis,
   Avatar,
   Badge,
   Card,
@@ -524,6 +547,7 @@ import {
   Toolbar,
   ViewportFrame,
   WrappingRow,
+  buildAskAiProviderLinks,
 } from "@hraness/ui";
 import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -602,6 +626,15 @@ const markup: string = renderToStaticMarkup(createElement(Icon, {
   size: 24,
   strokeWidth: 2,
   xstyle: styles.icon,
+}));
+const askAiLinks = buildAskAiProviderLinks("https://hraness.com/stripe");
+const askAiRef = createRef<HTMLElement>();
+const askAiMarkup: string = renderToStaticMarkup(createElement(AskAiAboutThis, {
+  className: "consumer-ask-ai",
+  ref: askAiRef,
+  style: { marginTop: "1rem" },
+  url: "https://hraness.com/stripe",
+  xstyle: styles.wrapper,
 }));
 const socialMarkup: string = renderToStaticMarkup(createElement(SocialIcon, {
   className: "consumer-social-icon",
@@ -822,8 +855,12 @@ const unnamedToolbarMarkup = renderToStaticMarkup(createElement(Toolbar, { child
 const multiplyNamedToolbarMarkup = renderToStaticMarkup(createElement(Toolbar, { "aria-label": "Commands", "aria-labelledby": "commands", children: "Commands" }));
 // @ts-expect-error Toolbar keeps className static for stable semantic composition.
 const invalidToolbarClassMarkup = renderToStaticMarkup(createElement(Toolbar, { "aria-label": "Commands", className: () => "dynamic" }));
+// @ts-expect-error AskAiAboutThis requires one explicit canonical HTTPS URL.
+const missingAskAiUrlMarkup = renderToStaticMarkup(createElement(AskAiAboutThis, {}));
 
 void markup;
+void askAiLinks;
+void askAiMarkup;
 void socialMarkup;
 void appearanceMarkup;
 void avatarMarkup;
@@ -862,10 +899,11 @@ void invalidPressableClassMarkup;
 void unnamedToolbarMarkup;
 void multiplyNamedToolbarMarkup;
 void invalidToolbarClassMarkup;
+void missingAskAiUrlMarkup;
 `;
 
 const viteClient = `import "@hraness/ui/styles.css";
-import { Card, CardDescription, KeyHint, PressableCard, Toolbar } from "@hraness/ui";
+import { AskAiAboutThis, Card, CardDescription, KeyHint, PressableCard, Toolbar } from "@hraness/ui";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 
@@ -884,6 +922,7 @@ createRoot(root).render(React.createElement(React.Fragment, null,
     orientation: "vertical",
   }, React.createElement("button", { type: "button" }, "Save")),
   React.createElement(KeyHint, null, "⌘K"),
+  React.createElement(AskAiAboutThis, { url: "https://hraness.com/stripe" }),
 ));
 `;
 
