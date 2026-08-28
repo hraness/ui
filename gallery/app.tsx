@@ -935,19 +935,21 @@ export function PrimitiveGallery() {
               <div data-gallery-coarse-action-row={size} key={size}>
                 <span data-gallery-coarse-action-size={size}>{size}</span>
                 <Button
+                  aria-label={`${size} button`}
                   data-gallery-coarse-kind="button"
                   data-gallery-coarse-size={size}
                   size={size}
                 >
-                  Button
+                  B
                 </Button>
                 <LinkButton
+                  aria-label={`${size} link button`}
                   data-gallery-coarse-kind="link-button"
                   data-gallery-coarse-size={size}
                   href={`/coarse-targets/${size}/link-button`}
                   size={size}
                 >
-                  Link button
+                  L
                 </LinkButton>
                 <IconButton
                   aria-label={`${size} icon button`}
@@ -967,11 +969,12 @@ export function PrimitiveGallery() {
                   L
                 </IconLink>
                 <ToggleButton
+                  aria-label={`${size} toggle button`}
                   data-gallery-coarse-kind="toggle-button"
                   data-gallery-coarse-size={size}
                   size={size}
                 >
-                  Toggle
+                  T
                 </ToggleButton>
                 <ToggleButton
                   aria-label={`${size} icon toggle`}

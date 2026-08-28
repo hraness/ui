@@ -283,9 +283,13 @@ test("inline icon links keep typographic scale without losing interaction states
   expect(content).toContain("line-height: 0;");
 });
 
-test("real coarse pointers preserve every action density without widening icon toggles", async () => {
+test("coarse-pointer seams preserve every action density without widening icon toggles", async () => {
   const components = await stylesheet("./components.css");
   const coarse = conditionalBlock(components, "(pointer: coarse)");
+  const coarseActionMinimum = declarationBlock(
+    coarse,
+    ":where(\n    .hraness-button__control,\n    .hraness-toggle-button__control,\n    .hraness-link-button__control\n  ) {",
+  );
   const compactActions = declarationBlock(
     coarse,
     ':where(.hraness-button, .hraness-toggle-button,\n    .hraness-link-button)[data-size="compact"] > :where(',
@@ -323,7 +327,36 @@ test("real coarse pointers preserve every action density without widening icon t
   const iconOnlyToggleSelector = components.indexOf(
     ".hraness-toggle-button[data-icon-only] > .hraness-toggle-button__control {",
   );
+  const verificationActionMinimum = declarationBlock(
+    components,
+    ':root[data-verification-pointer="coarse"] :where(\n  .hraness-button__control,\n  .hraness-toggle-button__control,\n  .hraness-link-button__control\n) {',
+  );
+  const verificationTargetMinimum = declarationBlock(
+    components,
+    ':root[data-verification-pointer="coarse"] :where(\n  .hraness-button__control,\n  .hraness-icon-button__control,\n  .hraness-toggle-button__control,\n  .hraness-link-button__control,',
+  );
+  const verificationIconMinimum = declarationBlock(
+    components,
+    ':root[data-verification-pointer="coarse"] .hraness-icon-button__control {',
+  );
+  const verificationLargeActions = declarationBlock(
+    components,
+    ':root[data-verification-pointer="coarse"] :where(\n  .hraness-button,\n  .hraness-toggle-button,\n  .hraness-link-button\n)[data-size="large"] > :where(',
+  );
+  const verificationTransportActions = declarationBlock(
+    components,
+    ':root[data-verification-pointer="coarse"] :where(\n  .hraness-button,\n  .hraness-toggle-button,\n  .hraness-link-button\n)[data-size="transport"] > :where(',
+  );
+  const verificationLargeIcons = declarationBlock(
+    components,
+    ':root[data-verification-pointer="coarse"]\n  .hraness-icon-button[data-size="large"]\n  > .hraness-icon-button__control {',
+  );
+  const verificationTransportIcons = declarationBlock(
+    components,
+    ':root[data-verification-pointer="coarse"]\n  .hraness-icon-button[data-size="transport"]\n  > .hraness-icon-button__control {',
+  );
 
+  expect(coarseActionMinimum).toContain("min-width: var(--interactive-target-min);");
   expect(compactActions).toContain("min-height: var(--interactive-target-min);");
   expect(compactIcons).toContain("width: var(--interactive-target-min);");
   expect(compactIcons).toContain("min-width: var(--interactive-target-min);");
@@ -336,6 +369,42 @@ test("real coarse pointers preserve every action density without widening icon t
   expect(transportIcons).toContain("width: var(--control-height-transport);");
   expect(transportIcons).toContain("min-width: var(--control-height-transport);");
   expect(transportIcons).toContain("min-height: var(--control-height-transport);");
+  expect(verificationActionMinimum).toContain(
+    "min-width: var(--interactive-target-min);",
+  );
+  expect(verificationTargetMinimum).toContain(
+    "min-height: var(--interactive-target-min);",
+  );
+  expect(verificationIconMinimum).toContain(
+    "width: var(--interactive-target-min);",
+  );
+  expect(verificationIconMinimum).toContain(
+    "min-width: var(--interactive-target-min);",
+  );
+  expect(verificationLargeActions).toContain(
+    "min-height: var(--control-height-primary);",
+  );
+  expect(verificationTransportActions).toContain(
+    "min-height: var(--control-height-transport);",
+  );
+  expect(verificationLargeIcons).toContain(
+    "width: var(--control-height-primary);",
+  );
+  expect(verificationLargeIcons).toContain(
+    "min-width: var(--control-height-primary);",
+  );
+  expect(verificationLargeIcons).toContain(
+    "min-height: var(--control-height-primary);",
+  );
+  expect(verificationTransportIcons).toContain(
+    "width: var(--control-height-transport);",
+  );
+  expect(verificationTransportIcons).toContain(
+    "min-width: var(--control-height-transport);",
+  );
+  expect(verificationTransportIcons).toContain(
+    "min-height: var(--control-height-transport);",
+  );
   expect(coarse).not.toContain(".hraness-inline-icon-link");
   expect(coarse).not.toContain("[data-icon-only]");
   expect(iconOnlyToggle).toContain("width: var(--interactive-target-compact);");

@@ -1891,6 +1891,14 @@
     min-height: var(--interactive-target-min);
   }
 
+  :where(
+    .hraness-button__control,
+    .hraness-toggle-button__control,
+    .hraness-link-button__control
+  ) {
+    min-width: var(--interactive-target-min);
+  }
+
   .hraness-icon-button__control {
     width: var(--interactive-target-min);
     min-width: var(--interactive-target-min);
@@ -1967,6 +1975,63 @@
   .hraness-pagination__boundary
 ) {
   min-height: var(--interactive-target-min);
+}
+
+:root[data-verification-pointer="coarse"] :where(
+  .hraness-button__control,
+  .hraness-toggle-button__control,
+  .hraness-link-button__control
+) {
+  min-width: var(--interactive-target-min);
+}
+
+:root[data-verification-pointer="coarse"] .hraness-icon-button__control {
+  width: var(--interactive-target-min);
+  min-width: var(--interactive-target-min);
+}
+
+:root[data-verification-pointer="coarse"] :where(
+  .hraness-button,
+  .hraness-toggle-button,
+  .hraness-link-button
+)[data-size="large"] > :where(
+  .hraness-button__control,
+  .hraness-toggle-button__control,
+  .hraness-link-button__control
+) {
+  min-height: var(--control-height-primary);
+}
+
+:root[data-verification-pointer="coarse"] :where(
+  .hraness-button,
+  .hraness-toggle-button,
+  .hraness-link-button
+)[data-size="transport"] > :where(
+  .hraness-button__control,
+  .hraness-toggle-button__control,
+  .hraness-link-button__control
+) {
+  min-height: var(--control-height-transport);
+}
+
+:root[data-verification-pointer="coarse"]
+  .hraness-icon-button[data-size="large"]
+  > .hraness-icon-button__control {
+  width: var(--control-height-primary);
+  min-width: var(--control-height-primary);
+  min-height: var(--control-height-primary);
+}
+
+:root[data-verification-pointer="coarse"]
+  .hraness-icon-button[data-size="transport"]
+  > .hraness-icon-button__control {
+  width: var(--control-height-transport);
+  min-width: var(--control-height-transport);
+  min-height: var(--control-height-transport);
+}
+
+:root[data-verification-pointer="coarse"] .hraness-segmented-control__item {
+  min-width: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
