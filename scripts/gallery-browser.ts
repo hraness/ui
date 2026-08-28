@@ -695,6 +695,135 @@ function checkboxRuleBodies(
     .map((match) => match[2]!);
 }
 
+function normalizedAtomicDeclaration(body: string): string {
+  return body
+    .toLowerCase()
+    .replace(/,/gu, " ")
+    .replace(/\s+/gu, " ")
+    .replace(/\s*:\s*/gu, ":")
+    .replace(/\s*!important/gu, "!important")
+    .replace(/\s*;\s*/gu, ";")
+    .trim();
+}
+
+function packedVisuallyHiddenClassNames(
+  javaScript: string,
+  css: string,
+): ReadonlySet<string> {
+  const candidates: ReadonlySet<string>[] = [];
+  const fingerprints = new Set([
+    "clip:rect(0 0 0 0)!important;",
+    "height:1px!important;",
+    "overflow:hidden!important;",
+    "position:absolute!important;",
+    "white-space:nowrap!important;",
+    "width:1px!important;",
+  ]);
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*root\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(
+      javaScript,
+      open,
+      "packed visuallyHiddenStyles JavaScript",
+    );
+    const objectBody = object.slice(1, -1);
+    const rootMatch = /(?:^|,)\s*root\s*:\s*\{/u.exec(objectBody);
+    if (rootMatch === null) continue;
+    const rootOpen = (rootMatch.index ?? 0) + rootMatch[0].lastIndexOf("{");
+    const root = balancedBlock(
+      objectBody,
+      rootOpen,
+      "packed visuallyHiddenStyles.root",
+    );
+    const rootEnd = rootOpen + root.length;
+    if (objectBody.slice(rootEnd).replace(/^\s*,?\s*/u, "").length !== 0) {
+      continue;
+    }
+    const classNames = new Set<string>();
+    for (const classMatch of root.matchAll(
+      /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    )) {
+      for (const className of classMatch[1]!.split(/\s+/u)) {
+        classNames.add(className);
+      }
+    }
+    if (classNames.size === 0) continue;
+    const declarations = new Set(
+      checkboxRuleBodies(css, classNames)
+        .map((body) => normalizedAtomicDeclaration(body)),
+    );
+    if ([...declarations].filter((value) => fingerprints.has(value)).length >= 4) {
+      candidates.push(classNames);
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "the packed JavaScript must contain exactly one compiled visuallyHiddenStyles class map",
+  );
+  return candidates[0]!;
+}
+
+function requirePackedVisuallyHiddenStyles(
+  javaScript: string,
+  css: string,
+): void {
+  const classNames = packedVisuallyHiddenClassNames(javaScript, css);
+  assert.equal(
+    classNames.size,
+    15,
+    "visuallyHiddenStyles.root must preserve exactly 15 packed atomic classes",
+  );
+  const expectedDeclarations = new Set([
+    "border-color:currentcolor!important;",
+    "border-image-outset:0!important;",
+    "border-image-repeat:stretch!important;",
+    "border-image-slice:100%!important;",
+    "border-image-source:none!important;",
+    "border-image-width:1!important;",
+    "border-style:none!important;",
+    "border-width:0!important;",
+    "clip:rect(0 0 0 0)!important;",
+    "height:1px!important;",
+    "overflow:hidden!important;",
+    "padding:0!important;",
+    "position:absolute!important;",
+    "white-space:nowrap!important;",
+    "width:1px!important;",
+  ]);
+  const actualDeclarations = new Set<string>();
+  for (const className of classNames) {
+    const escapedClassName = className.replace(
+      /[.*+?^${}()|[\]\\]/gu,
+      "\\$&",
+    );
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter(
+      (match) => new RegExp(
+        `\\.${escapedClassName}(?![A-Za-z0-9_-])`,
+        "u",
+      ).test(match[1]!),
+    );
+    assert.equal(
+      rules.length,
+      1,
+      `packed CSS must contain one rule for visually-hidden class ${className}`,
+    );
+    assert.doesNotMatch(
+      rules[0]?.[1] ?? "",
+      /:/u,
+      `packed visually-hidden class ${className} must remain unconditional`,
+    );
+    actualDeclarations.add(normalizedAtomicDeclaration(rules[0]?.[2] ?? ""));
+  }
+  assert.deepEqual(
+    [...actualDeclarations].sort(),
+    [...expectedDeclarations].sort(),
+    "packed visuallyHiddenStyles.root must preserve the exact important declaration set",
+  );
+}
+
 function exactLayerCss(css: string, layer: string): string {
   const bodies: string[] = [];
   for (const match of css.matchAll(/@layer\s+[A-Za-z0-9_.-]+\s*\{/gu)) {
@@ -983,6 +1112,7 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   );
   requireFinalBundleLayerOrder(css);
   requirePackedCheckboxConflictLayer(css);
+  requirePackedVisuallyHiddenStyles(javaScript, css);
   assert.doesNotMatch(
     css,
     /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
@@ -992,6 +1122,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     css,
     /\.hraness-skip-link(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not include the legacy SkipLink recipe",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not include the legacy visually-hidden recipe",
   );
   assert.match(
     css,
@@ -1762,6 +1897,41 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     && /font-size:\s*3rem/u.test(keyHintConflict),
     `the gallery KeyHint conflict must carry every recipe counterexample: ${String(keyHintConflict)}`,
   );
+  const visuallyHiddenConflict = css.match(
+    /\[data-gallery-visually-hidden-layer-conflict=(?:"true"|true)\][^{]*\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    visuallyHiddenConflict !== undefined,
+    "the packed stylesheet must include the gallery visually-hidden conflict",
+  );
+  assert.match(
+    visuallyHiddenConflict,
+    /--gallery-visually-hidden-layer-conflict:\s*consumer-important(?:;|\})/u,
+    "the gallery visually-hidden sentinel must remain non-important",
+  );
+  for (const declaration of [
+    /border-color:[^;}]+\s*!important/u,
+    /border-image-outset:\s*9\s*!important/u,
+    /border-image-repeat:\s*round\s*!important/u,
+    /border-image-slice:\s*1%\s*!important/u,
+    /border-image-source:\s*linear-gradient\([^;}]+\s*!important/u,
+    /border-image-width:\s*9\s*!important/u,
+    /border-style:\s*dashed\s*!important/u,
+    /border-width:\s*9px\s*!important/u,
+    /clip:\s*auto\s*!important/u,
+    /height:\s*99px\s*!important/u,
+    /overflow:\s*visible\s*!important/u,
+    /padding:\s*9px\s*!important/u,
+    /position:\s*static\s*!important/u,
+    /white-space:\s*normal\s*!important/u,
+    /width:\s*99px\s*!important/u,
+  ] as const) {
+    assert.match(
+      visuallyHiddenConflict,
+      declaration,
+      "the gallery visually-hidden conflict must carry every important counterexample",
+    );
+  }
 }
 
 function placePriority3BeforeLegacy(css: string): string {
@@ -4345,6 +4515,187 @@ function verifySegmentedControlRecipe(
   );
 }
 
+async function verifyVisuallyHiddenPresentation(
+  page: Page,
+  id: string,
+): Promise<void> {
+  const evidence = await page.evaluate(() => {
+    const roots = {
+      checkbox: document.querySelector(
+        '[data-gallery-checkbox="override"][data-gallery-visually-hidden-layer-conflict="true"]',
+      ),
+      select: document.querySelector(
+        '[data-gallery-select="true"][data-gallery-visually-hidden-layer-conflict="true"]',
+      ),
+      spinner: document.querySelector(
+        '[data-slot="spinner"][data-gallery-visually-hidden-layer-conflict="true"]',
+      ),
+    };
+    if (
+      !(roots.checkbox instanceof HTMLElement)
+      || !(roots.select instanceof HTMLElement)
+      || !(roots.spinner instanceof HTMLElement)
+    ) {
+      throw new Error("The gallery visually-hidden specimens are incomplete.");
+    }
+    const read = (root: HTMLElement) => {
+      const hidden = root.querySelector(".hraness-visually-hidden");
+      if (!(hidden instanceof HTMLElement)) {
+        throw new Error("A gallery visually-hidden specimen has no hidden child.");
+      }
+      const classes = [...hidden.classList];
+      const hiddenIndex = classes.indexOf("hraness-visually-hidden");
+      const style = getComputedStyle(hidden);
+      const box = hidden.getBoundingClientRect();
+      return {
+        borderColor: style.borderColor,
+        borderImageOutset: style.borderImageOutset,
+        borderImageRepeat: style.borderImageRepeat,
+        borderImageSlice: style.borderImageSlice,
+        borderImageSource: style.borderImageSource,
+        borderImageWidth: style.borderImageWidth,
+        borderStyle: style.borderStyle,
+        borderWidth: style.borderWidth,
+        classes,
+        clip: style.clip,
+        color: style.color,
+        height: box.height,
+        hiddenAtoms: classes.slice(hiddenIndex + 1)
+          .filter((className) => className.startsWith("x")),
+        hiddenIndex,
+        inlineHeight: style.height,
+        inlineWidth: style.width,
+        overflow: style.overflow,
+        padding: [
+          style.paddingTop,
+          style.paddingRight,
+          style.paddingBottom,
+          style.paddingLeft,
+        ],
+        position: style.position,
+        rootSlot: root.getAttribute("data-slot"),
+        sentinel: style
+          .getPropertyValue("--gallery-visually-hidden-layer-conflict")
+          .trim(),
+        slot: hidden.getAttribute("data-slot"),
+        styleAttribute: hidden.getAttribute("style") ?? "",
+        tagName: hidden.tagName,
+        text: hidden.textContent?.trim() ?? "",
+        whiteSpace: style.whiteSpace,
+        width: box.width,
+      };
+    };
+    const checkboxControl = roots.checkbox.querySelector(
+      '[data-slot="checkbox-control"]',
+    );
+    const checkboxInput = roots.checkbox.querySelector(
+      'input[type="checkbox"][name="gallery-override-checkbox"]',
+    );
+    const checkboxHidden = roots.checkbox.querySelector(
+      ".hraness-visually-hidden",
+    );
+    const selectLabel = roots.select.querySelector(
+      ".hraness-visually-hidden",
+    );
+    const selectTrigger = roots.select.querySelector("button");
+    return {
+      checkbox: read(roots.checkbox),
+      checkboxAssociation: checkboxControl instanceof HTMLLabelElement
+        && checkboxInput instanceof HTMLInputElement
+        && checkboxHidden instanceof HTMLElement
+        && checkboxControl.contains(checkboxInput)
+        && checkboxControl.contains(checkboxHidden)
+        && [...(checkboxInput.labels ?? [])].includes(checkboxControl),
+      select: read(roots.select),
+      selectAssociation: selectLabel instanceof HTMLLabelElement
+        && selectTrigger instanceof HTMLButtonElement
+        && (
+          selectLabel.control === selectTrigger
+          || (
+            selectLabel.id.length > 0
+            && (selectTrigger.getAttribute("aria-labelledby") ?? "")
+              .split(/\s+/u)
+              .includes(selectLabel.id)
+          )
+        ),
+      spinner: read(roots.spinner),
+      spinnerRole: roots.spinner.getAttribute("role"),
+    };
+  });
+  const canonicalAtoms = new Set(evidence.spinner.hiddenAtoms);
+  invariant(
+    evidence.spinner.hiddenAtoms.length === 15 && canonicalAtoms.size === 15,
+    `${id}: Spinner did not expose the canonical 15 visually-hidden atoms: ${JSON.stringify(evidence.spinner)}`,
+  );
+  const allPartsEqual = (
+    value: string,
+    expected: readonly string[],
+  ): boolean => value.split(/\s+/u).every((part) => expected.includes(part));
+  const hiddenContract = (
+    specimen: typeof evidence.spinner,
+    expected: Readonly<{
+      rootSlot: string;
+      slot: string | null;
+      tagName: string;
+      text: string;
+    }>,
+  ): boolean => specimen.hiddenIndex >= 0
+    && specimen.hiddenAtoms.length === canonicalAtoms.size
+    && [...canonicalAtoms].every(
+      (className) => specimen.classes.indexOf(className) > specimen.hiddenIndex,
+    )
+    && specimen.rootSlot === expected.rootSlot
+    && specimen.slot === expected.slot
+    && specimen.tagName === expected.tagName
+    && specimen.text === expected.text
+    && specimen.sentinel === "consumer-important"
+    && specimen.styleAttribute === ""
+    && specimen.position === "absolute"
+    && specimen.overflow === "hidden"
+    && specimen.whiteSpace === "nowrap"
+    && specimen.clip !== "auto"
+    && specimen.inlineHeight === "1px"
+    && specimen.inlineWidth === "1px"
+    && specimen.height <= 1.5
+    && specimen.width <= 1.5
+    && specimen.padding.every((value) => value === "0px")
+    && specimen.borderColor === specimen.color
+    && allPartsEqual(specimen.borderImageOutset, ["0", "0px"])
+    && allPartsEqual(specimen.borderImageRepeat, ["stretch"])
+    && allPartsEqual(specimen.borderImageSlice, ["100%"])
+    && specimen.borderImageSource === "none"
+    && allPartsEqual(specimen.borderImageWidth, ["1"])
+    && allPartsEqual(specimen.borderStyle, ["none"])
+    && allPartsEqual(specimen.borderWidth, ["0px"]);
+  invariant(
+    hiddenContract(evidence.spinner, {
+      rootSlot: "spinner",
+      slot: "spinner-label",
+      tagName: "SPAN",
+      text: "Checking primitives",
+    }) && evidence.spinnerRole === "status",
+    `${id}: Spinner visually-hidden presentation failed: ${JSON.stringify(evidence.spinner)}`,
+  );
+  invariant(
+    hiddenContract(evidence.select, {
+      rootSlot: "select-field",
+      slot: null,
+      tagName: "LABEL",
+      text: "Profile metric",
+    }) && evidence.selectAssociation,
+    `${id}: SelectField visually-hidden presentation failed: ${JSON.stringify(evidence.select)}`,
+  );
+  invariant(
+    hiddenContract(evidence.checkbox, {
+      rootSlot: "checkbox-field",
+      slot: "checkbox-label",
+      tagName: "SPAN",
+      text: "Select archived projects",
+    }) && evidence.checkboxAssociation,
+    `${id}: CheckboxField visually-hidden presentation failed: ${JSON.stringify(evidence.checkbox)}`,
+  );
+}
+
 async function verifySegmentedControlInteraction(page: Page, id: string): Promise<void> {
   const projects = page.getByRole("radio", { name: "projects" });
   const projectsItem = page
@@ -6342,6 +6693,7 @@ try {
     access(resolve(installedRoot, "src/actions.stylex.ts")),
     access(resolve(installedRoot, "src/checkbox-field.stylex.ts")),
     access(resolve(installedRoot, "src/skip-link.stylex.ts")),
+    access(resolve(installedRoot, "src/visually-hidden.stylex.ts")),
   ]);
   await assert.rejects(
     access(resolve(installedRoot, "gallery/styles.css")),
@@ -6357,7 +6709,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|checkbox-field|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|checkbox-field|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -6404,6 +6756,11 @@ try {
     installedPackageCss,
     /\.hraness-skip-link(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate SkipLink declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate visually-hidden declarations in legacy CSS",
   );
 
   const productionDirectory = resolve(consumer, "dist/browser");
@@ -6544,6 +6901,23 @@ try {
   assert.match(html, /class="hraness-link [^"]+gallery-link gallery-link--default"/u);
   assert.match(html, /href="\/reference"/u);
   assert.match(html, /href="\/reference\?presentation=override"/u);
+  assert.equal(
+    html.match(/data-gallery-visually-hidden-layer-conflict="true"/gu)?.length,
+    3,
+    "SSR must include the CheckboxField, SelectField, and Spinner hidden-layer specimens",
+  );
+  assert.match(
+    html,
+    /<label[^>]*class="hraness-select-field__label hraness-visually-hidden x[^"]+"[^>]*>Profile metric<\/label>/u,
+  );
+  assert.match(
+    html,
+    /<span[^>]*class="hraness-checkbox-field__label [^"]* hraness-visually-hidden x[^"]+"[^>]*data-slot="checkbox-label"[^>]*>Select archived projects<\/span>/u,
+  );
+  assert.match(
+    html,
+    /<span[^>]*class="hraness-visually-hidden x[^"]+"[^>]*data-slot="spinner-label"[^>]*>Checking primitives<\/span>/u,
+  );
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
@@ -6934,6 +7308,7 @@ try {
             );
           }
 
+          await verifyVisuallyHiddenPresentation(page, layout.id);
           await verifyCheckboxFocusCascadeIsolation(
             page,
             layout.id,

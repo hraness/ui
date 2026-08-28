@@ -22,6 +22,7 @@ import {
   type FieldSurface,
 } from "./fields.js";
 import { cn } from "./lib/utils.js";
+import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
 
 export interface SelectOption<Id extends string> {
   readonly description?: ReactNode;
@@ -91,6 +92,7 @@ export function SelectField<Id extends string>({
         className={cn(
           "hraness-select-field__label",
           !showLabel && "hraness-visually-hidden",
+          visuallyHiddenClassName(!showLabel),
         )}
       >
         {label}

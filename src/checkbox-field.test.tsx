@@ -8,6 +8,7 @@ import {
 } from "react-aria-components";
 
 import { CheckboxField } from "./fields.js";
+import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
 
 const testStyles = stylex.create({
   controlDynamicHeight: (height: string) => ({ minHeight: height }),
@@ -108,6 +109,16 @@ test("CheckboxField keeps a required label accessible when its copy is visually 
   expect(rendered.control).toStartWith("<label");
   expect(rendered.label).toContain("hraness-checkbox-field__label");
   expect(rendered.label).toContain("hraness-visually-hidden");
+  const labelClasses = classes(rendered.label);
+  const hiddenClasses = visuallyHiddenClassName()?.split(" ") ?? [];
+  const hiddenIndex = labelClasses.indexOf("hraness-visually-hidden");
+  expect(labelClasses[0]).toBe("hraness-checkbox-field__label");
+  expect(hiddenIndex).toBeGreaterThan(0);
+  expect(hiddenClasses.every((className) => labelClasses.includes(className))).toBe(true);
+  expect(hiddenClasses.every(
+    (className) => labelClasses.indexOf(className) > hiddenIndex,
+  )).toBe(true);
+  expect(rendered.label).not.toContain("style=");
   expect(html).toContain(">Select this project</span>");
   expect(rendered.input).not.toContain("aria-label=");
 });

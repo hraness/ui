@@ -96,6 +96,7 @@
     "src/tokens.css",
     "src/toolbar.stylex.ts",
     "src/toolbar.tsx",
+    "src/visually-hidden.stylex.ts",
     "README.md",
     "LICENSE"
   ],

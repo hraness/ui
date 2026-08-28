@@ -15,6 +15,7 @@ import {
   quantizeKnobValue,
   resolveKnobTouchIntent,
 } from "./knob-model.js";
+import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
 
 test("knob renders one labelled native range with formatted value and form ownership", () => {
   const html = renderToStaticMarkup(
@@ -92,9 +93,18 @@ test("knob can hide its output visually without removing value semantics", () =>
 
   expect(html).toContain('data-output-visibility="visually-hidden"');
   expect(html).toContain('aria-valuetext="83%"');
-  expect(html).toMatch(
-    /<output\b[^>]*data-slot="knob-value"[^>]*class="hraness-knob__value hraness-visually-hidden"[^>]*>83%<\/output>/u,
-  );
+  const output = html.match(
+    /<output\b[^>]*data-slot="knob-value"[^>]*>83%<\/output>/u,
+  )?.[0];
+  expect(output).toBeDefined();
+  const outputClasses = output?.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+  const hiddenClasses = visuallyHiddenClassName()?.split(" ") ?? [];
+  expect(outputClasses.slice(0, 2)).toEqual([
+    "hraness-knob__value",
+    "hraness-visually-hidden",
+  ]);
+  expect(hiddenClasses.every((className) => outputClasses.includes(className))).toBe(true);
+  expect(output).not.toContain("style=");
 });
 
 test("knob output stays visible by default", () => {
@@ -104,9 +114,7 @@ test("knob output stays visible by default", () => {
 
   expect(html).toContain('data-output-visibility="visible"');
   expect(html).toContain('class="hraness-knob__value"');
-  expect(html).not.toContain(
-    'class="hraness-knob__value hraness-visually-hidden"',
-  );
+  expect(html).not.toContain("hraness-visually-hidden");
 });
 
 test("disabled knob retains its value while removing native and gesture interaction", () => {

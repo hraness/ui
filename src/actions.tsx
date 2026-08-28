@@ -42,6 +42,7 @@ import {
 import { cn } from "./lib/utils.js";
 import { Tooltip } from "./overlays.js";
 import { useLinkPrefetch } from "./router.js";
+import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
 
 export type ActionVariant = "danger" | "primary" | "quiet" | "secondary";
 export type ActionSize = "compact" | "default" | "large" | "transport";
@@ -498,7 +499,10 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(
         <span
           aria-atomic="true"
           aria-live="polite"
-          className="hraness-visually-hidden"
+          className={cn(
+            "hraness-visually-hidden",
+            visuallyHiddenClassName(),
+          )}
           data-slot="copy-button-status"
           role="status"
         >
