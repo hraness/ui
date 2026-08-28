@@ -11,7 +11,7 @@ Pin an immutable release from GitHub:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.4.9"
+    "@hraness/ui": "github:hraness/ui#v0.4.10"
   }
 }
 ```
@@ -131,6 +131,22 @@ Substack, Threads, X, and YouTube marks used beside visible profile labels.
 controls that own their accessible names. Icon-only `SegmentedControl` labels
 are centered independently of inline text baselines.
 
+Add one quiet AI handoff to a project or individual content page by passing
+its canonical absolute HTTPS URL:
+
+```tsx
+import { AskAiAboutThis } from "@hraness/ui";
+
+<AskAiAboutThis url="https://hraness.com/stripe" />;
+```
+
+`AskAiAboutThis` renders the visible label “Ask AI about this” followed by real
+outbound links to ChatGPT, Claude, Perplexity, and Grok. Each provider receives
+the minimal prompt `Tell me about https://hraness.com/stripe`, including the
+literal full URL. The component has no client state or framework dependency,
+works in server-rendered layouts, wraps on narrow surfaces, and rejects
+relative, non-HTTPS, credentialed, or malformed subject URLs.
+
 Use React Aria's `onPress` event for actions. Action controls use the semantic `primary`, `secondary`, `quiet`, and `danger` variants and the `compact`, `default`, and `large` sizes. `CopyButton` writes one string to the clipboard, announces success, and temporarily swaps to its `copiedLabel`; both labels always occupy the same grid cell, so the button keeps the wider intrinsic width throughout the transition. `IconButton` and `IconLink` require an accessible name and own their hover/focus tooltip; `aria-label` supplies the default visible copy, while controls named by `aria-labelledby` must also provide `tooltip`. Set `IconLink` to `presentation="inline"` when an icon-only destination sits beside typographic content. The inline presentation keeps the link semantics, tooltip, centered glyph, and focus treatment without persistent action-control chrome, and it intentionally does not accept action sizes or variants.
 
 `Knob` is a circular, single-value slider for compact numeric controls. It
@@ -182,7 +198,7 @@ The public barrel includes:
 - Collections: tabs, disclosures and accordions, toggle groups, segmented controls, list boxes, and separators.
 - Overlays: menus, dialogs, popovers, tooltips, and an isolated toast provider and queue.
 - Feedback and data: tags, badges, status dots, alerts, spinners, skeletons, progress, meters, sliders, knobs, avatars, and data tables.
-- Content and layout: cards, pressable and themed surfaces, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, skip links, viewport frames, wrapping rows, and quiet-site page and footer landmarks.
+- Content and layout: cards, pressable and themed surfaces, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, skip links, viewport frames, wrapping rows, quiet-site page and footer landmarks, and the server-renderable `AskAiAboutThis` outbound link group.
 - Icons: the current-color HugeIcons renderer plus finite social-profile and appearance glyphs.
 
 Interactive primitives preserve React Aria state through `data-hovered`, `data-pressed`, `data-selected`, `data-invalid`, `data-focus-visible`, and related attributes. The shared CSS includes pointer-coarse target sizing, reduced-motion fallbacks, forced-color support, and visible focus treatment.
@@ -210,7 +226,7 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 </Button>
 ```
 
-`Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
+`AskAiAboutThis`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `KeyHint`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `ViewportFrame`, `WrappingRow`, `ThemedSurface`, and `Toolbar` accept a typed StyleX

@@ -27,7 +27,7 @@ type Artifact = Readonly<{
 
 const applicationSource = `import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
-import { Icon } from "@hraness/ui";
+import { AskAiAboutThis, Icon } from "@hraness/ui";
 
 const styles = stylex.create({
   icon: {
@@ -48,6 +48,7 @@ export function App() {
           xstyle={styles.icon}
         />
       </span>
+      <AskAiAboutThis url="https://hraness.com/stripe" />
     </main>
   );
 }
@@ -613,6 +614,13 @@ try {
   assert.match(html, /class="[^"]*hraness-icon[^"]*consumer-icon[^"]*"/u);
   assert.match(html, /data-slot="icon"/u);
   assert.match(html, /Visible packed consumer icon/u);
+  assert.match(html, /aria-label="Ask AI about this"/u);
+  assert.equal(
+    countMatches(html, /data-slot="ask-ai-about-this-link"/gu),
+    4,
+    "the packed consumer must SSR four real AI provider links",
+  );
+  assert.match(html, /https%3A%2F%2Fhraness\.com%2Fstripe/u);
   assert.match(html, /href="\/client\.css"/u);
   assert.match(html, /src="\/client\.js"/u);
 
@@ -686,7 +694,7 @@ try {
     `Fetched SSR HTML (${String(html.length)} bytes), browser JS (${String(browserJavaScript.length)} bytes), and browser CSS (${String(browserCss.length)} bytes) with explicit production MIME types.`,
   );
   console.log(
-    "Verified browser and Bun-target SSR plugin-free negative controls, SSR icon hooks, bundled dependencies, extracted UI and caller CSS, duplicate-free UI declarations, and all browser/SSR artifact exclusions.",
+    "Verified browser and Bun-target SSR plugin-free negative controls, SSR icon and Ask AI hooks, bundled dependencies, extracted UI and caller CSS, duplicate-free UI declarations, and all browser/SSR artifact exclusions.",
   );
   console.log(
     "Hydration boundary: hydrateRoot and onRecoverableError instrumentation were compiled and served, but no browser executed them; this smoke does not claim real hydration.",

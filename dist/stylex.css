@@ -123,6 +123,10 @@
     padding-block: var(--space-6);
   }
 
+  .xvpgqt4 {
+    padding-inline: .625rem;
+  }
+
   .x60vcjr {
     padding-inline: var(--hraness-quiet-site-gutter, 1.25rem);
   }
@@ -137,6 +141,10 @@
 
   .x1g860ya {
     padding-inline: var(--space-6);
+  }
+
+  .x1hl2dhg {
+    text-decoration: none;
   }
 
   .x19pv2u9:hover {
@@ -295,6 +303,10 @@
     color: var(--ui-warning);
   }
 
+  .x1lliihq {
+    display: block;
+  }
+
   .x78zum5 {
     display: flex;
   }
@@ -371,8 +383,16 @@
     justify-items: center;
   }
 
+  .x9pfba7 {
+    letter-spacing: .08em;
+  }
+
   .x1u7k74 {
     line-height: 1.2;
+  }
+
+  .x132q4wb {
+    line-height: 1.25;
   }
 
   .x1evy7pa {
@@ -427,6 +447,10 @@
     text-align: start;
   }
 
+  .xtvhhri {
+    text-transform: uppercase;
+  }
+
   .xavs3du {
     transform: translateY(1px);
   }
@@ -471,8 +495,16 @@
     outline-width: 2px;
   }
 
+  .xjdw8nj:hover {
+    background-color: var(--ui-muted);
+  }
+
   .x16sc2ix:hover {
     box-shadow: var(--elevation-raised);
+  }
+
+  .xu0kh1y:hover {
+    color: var(--ui-foreground);
   }
 
   .xymg228:active {
@@ -482,6 +514,10 @@
   @media (forced-colors: active) {
     .xr5dkdi.xr5dkdi {
       forced-color-adjust: auto;
+    }
+
+    .xz4eswf.xz4eswf:focus-visible {
+      outline-color: highlight;
     }
   }
 }
@@ -525,6 +561,10 @@
 
   .x1rqwxy8 {
     min-height: 1.5rem;
+  }
+
+  .x1k5hnt4 {
+    min-height: 1.875rem;
   }
 
   .xeuugli {
@@ -580,6 +620,12 @@
       .x1uqklc0.x1uqklc0.x1uqklc0 {
         height: 100dvh;
       }
+    }
+  }
+
+  @media (pointer: coarse) {
+    .x1y8xrbr.x1y8xrbr {
+      min-height: var(--interactive-target-min, 3rem);
     }
   }
 }
