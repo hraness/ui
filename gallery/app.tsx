@@ -83,6 +83,33 @@ const avatarImageSource =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%236366f1'/%3E%3Cpath d='M0 16 16 0v16Z' fill='%23f8fafc'/%3E%3C/svg%3E";
 
 const galleryStyles = stylex.create({
+  actionControlOverride: {
+    alignItems: "stretch",
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-warning)",
+    color: "var(--ui-secondary-foreground)",
+    display: "grid",
+    justifyContent: "start",
+    minHeight: "3.5rem",
+    paddingInline: "var(--space-5)",
+    width: "15rem",
+    ":focus-visible": {
+      boxShadow: "none",
+      outlineColor: "var(--ui-warning)",
+      outlineOffset: "6px",
+      outlineStyle: "dashed",
+      outlineWidth: "3px",
+    },
+    ":hover": {
+      backgroundColor: "var(--ui-accent)",
+      color: "var(--ui-accent-foreground)",
+    },
+  },
+  actionRootOverride: {
+    display: "inline-grid",
+    maxWidth: "17rem",
+    verticalAlign: "bottom",
+  },
   avatarOverride: {
     backgroundColor: "var(--ui-accent)",
     borderRadius: "var(--radius-sm)",
@@ -276,14 +303,30 @@ export function PrimitiveGallery() {
             </Button>
           </div>
 
-          <div data-gallery-action-row="true">
+          <div
+            data-gallery-action-family-layer-conflict="true"
+            data-gallery-action-row="true"
+          >
             <Button
+              className="gallery-action gallery-action--default"
+              controlClassName="gallery-action-control gallery-action-control--default"
+              data-gallery-action="default"
               data-gallery-primary-action="true"
               leading={<Icon icon={Search01Icon} />}
               onPress={() => setPressCount((count) => count + 1)}
               variant="primary"
             >
               Run primitive check
+            </Button>
+            <Button
+              className="gallery-action gallery-action--override"
+              controlClassName="gallery-action-control gallery-action-control--override"
+              controlXstyle={galleryStyles.actionControlOverride}
+              data-gallery-action="override"
+              variant="primary"
+              xstyle={galleryStyles.actionRootOverride}
+            >
+              Caller action
             </Button>
             <output aria-live="polite" data-gallery-press-count="true">
               Runs: {pressCount}

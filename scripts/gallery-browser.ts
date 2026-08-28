@@ -32,6 +32,12 @@ const STYLED_GALLERY_LAYER_PRELUDES =
 const REACT_VERSION = "19.2.3";
 
 interface BrowserEvidence {
+  readonly actionFamilyBoundaryContracts: boolean;
+  readonly actionFamilyClassContracts: boolean;
+  readonly actionFamilyDefaultBackground: string;
+  readonly actionFamilyDiagnostics: string;
+  readonly actionFamilyLayerSentinels: boolean;
+  readonly actionFamilyOverrideContract: boolean;
   readonly appearanceAlignItems: string;
   readonly appearanceAriaHidden: string;
   readonly appearanceCallerClassLast: boolean;
@@ -1244,6 +1250,61 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   );
   assert.match(
     css,
+    /data-gallery-action-family-layer-conflict/u,
+    "the harness bundle must include its action-family legacy conflict",
+  );
+  const actionRootConflict = css.match(
+    /\[data-gallery-action-family-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"button"|button)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    actionRootConflict !== undefined
+    && /--gallery-action-family-root-conflict:\s*legacy/u.test(actionRootConflict)
+    && /display:\s*block/u.test(actionRootConflict)
+    && /max-width:\s*6rem/u.test(actionRootConflict)
+    && /vertical-align:\s*top/u.test(actionRootConflict),
+    `the gallery action root conflict is incomplete: ${String(actionRootConflict)}`,
+  );
+  const actionControlConflict = css.match(
+    /\[data-gallery-action-family-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"button-control"|button-control)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    actionControlConflict !== undefined
+    && /--gallery-action-family-control-conflict:\s*legacy/u.test(actionControlConflict)
+    && /background-color:/u.test(actionControlConflict)
+    && /border-radius:\s*99px/u.test(actionControlConflict)
+    && /display:\s*block/u.test(actionControlConflict)
+    && /min-height:\s*9rem/u.test(actionControlConflict)
+    && /width:\s*18rem/u.test(actionControlConflict),
+    `the gallery action control conflict is incomplete: ${String(actionControlConflict)}`,
+  );
+  const actionHoverConflict = css.match(
+    /\[data-gallery-action-family-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"button-control"|button-control)\]:where\([^)]*(?:data-hovered|:hover)[^)]*\)\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    actionHoverConflict !== undefined
+    && /--gallery-action-family-hover-conflict:\s*legacy/u.test(actionHoverConflict)
+    && /background-color:/u.test(actionHoverConflict)
+    && /color:/u.test(actionHoverConflict),
+    `the gallery action hover conflict is incomplete: ${String(actionHoverConflict)}`,
+  );
+  const actionFocusConflict = css.match(
+    /\[data-gallery-action-family-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"button-control"|button-control)\]:where\([^)]*(?:data-focus-visible|:focus-visible)[^)]*\)\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    actionFocusConflict !== undefined
+    && /--gallery-action-family-focus-conflict:\s*legacy/u.test(actionFocusConflict)
+    && /outline-offset:\s*11px/u.test(actionFocusConflict)
+    && (
+      /outline:\s*7px solid/u.test(actionFocusConflict)
+      || (
+        /outline-style:\s*solid/u.test(actionFocusConflict)
+        && /outline-width:\s*7px/u.test(actionFocusConflict)
+      )
+    ),
+    `the gallery action focus conflict is incomplete: ${String(actionFocusConflict)}`,
+  );
+  assert.match(
+    css,
     /\[data-gallery-stylex-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"icon"|icon)\]\{(?=[^}]*--gallery-stylex-layer-conflict:\s*legacy)(?=[^}]*display:\s*block)(?=[^}]*flex:\s*(?:auto|1\s+1\s+auto))[^}]*\}/u,
     "the gallery conflict must independently carry its sentinel, display, and flex declarations",
   );
@@ -1739,6 +1800,9 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const appearance = document.querySelector('[data-gallery-icon-wrapper-canary="true"] [data-appearance-icon="system"]');
     const appearanceIcon = appearance?.querySelector(':scope > [data-slot="icon"]');
     const button = document.querySelector('[data-gallery-primary-action="true"][data-slot="button-control"]');
+    const actionControls = [
+      ...document.querySelectorAll<HTMLButtonElement>('[data-gallery-action]'),
+    ];
     const card = document.querySelector('[data-gallery-icon-card="true"]');
     const spinner = document.querySelector('[data-slot="spinner"]');
     const skeleton = document.querySelector('[data-slot="skeleton"]');
@@ -1850,6 +1914,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || !(appearance instanceof HTMLSpanElement)
       || !(appearanceIcon instanceof SVGElement)
       || !(button instanceof HTMLElement)
+      || actionControls.length !== 2
       || !(card instanceof HTMLElement)
       || !(spinner instanceof HTMLElement)
       || !(skeleton instanceof HTMLElement)
@@ -1977,9 +2042,12 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       neutralBackground: resolveStyle("background-color", "var(--ui-background)"),
       neutralForeground: resolveStyle("color", "var(--ui-foreground)"),
       largeRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-lg)")),
+      mediumRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-md)")),
       monoFontFamily: resolveStyle("font-family", "var(--ui-font-mono)"),
       popoverBackground: resolveStyle("background-color", "var(--ui-popover)"),
       popoverForeground: resolveStyle("color", "var(--ui-popover-foreground)"),
+      primaryBackground: resolveStyle("background-color", "var(--ui-primary)"),
+      primaryForeground: resolveStyle("color", "var(--ui-primary-foreground)"),
       primary: resolveStyle("border-color", "var(--ui-primary)"),
       inputBorder: resolveStyle("border-color", "var(--ui-input)"),
       destructiveBorder: resolveStyle("border-color", "var(--ui-destructive)"),
@@ -3017,6 +3085,77 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const overrideKeyHintEvidence = keyHintEvidence.find(
       (keyHint) => keyHint.isOverride,
     );
+    const actionEvidence = actionControls.map((control) => {
+      const kind = control.dataset.galleryAction;
+      if (kind !== "default" && kind !== "override") {
+        throw new Error(`Unexpected action kind: ${String(kind)}`);
+      }
+      const actionRoot = control.closest('[data-slot="button"]');
+      if (!(actionRoot instanceof HTMLSpanElement)) {
+        throw new Error(`The ${kind} action wrapper is missing`);
+      }
+      const isOverride = kind === "override";
+      const controlClasses = [...control.classList];
+      const controlStyle = getComputedStyle(control);
+      const rootClasses = [...actionRoot.classList];
+      const rootStyle = getComputedStyle(actionRoot);
+      return {
+        alignItems: controlStyle.alignItems,
+        backgroundColor: controlStyle.backgroundColor,
+        borderColor: controlStyle.borderColor,
+        borderRadius: Number.parseFloat(controlStyle.borderRadius),
+        borderStyle: controlStyle.borderStyle,
+        borderWidth: Number.parseFloat(controlStyle.borderWidth),
+        color: controlStyle.color,
+        controlClassContract:
+          controlClasses[0] === "hraness-button__control"
+          && controlClasses.at(-1) === `gallery-action-control--${kind}`
+          && controlClasses.some(
+            (name) =>
+              name !== "hraness-button__control"
+              && name !== "gallery-action-control"
+              && name !== `gallery-action-control--${kind}`,
+          ),
+        controlDisplay: controlStyle.display,
+        controlLayerSentinel: controlStyle
+          .getPropertyValue("--gallery-action-family-control-conflict")
+          .trim(),
+        controlSlot: control.dataset.slot ?? "",
+        isOverride,
+        justifyContent: controlStyle.justifyContent,
+        kind,
+        minHeight: Number.parseFloat(controlStyle.minHeight),
+        paddingLeft: Number.parseFloat(controlStyle.paddingLeft),
+        paddingRight: Number.parseFloat(controlStyle.paddingRight),
+        rootClassContract:
+          rootClasses[0] === "hraness-button"
+          && rootClasses.at(-1) === `gallery-action--${kind}`
+          && rootClasses.some(
+            (name) =>
+              name !== "hraness-button"
+              && name !== "gallery-action"
+              && name !== `gallery-action--${kind}`,
+          ),
+        rootDisplay: rootStyle.display,
+        rootLayerSentinel: rootStyle
+          .getPropertyValue("--gallery-action-family-root-conflict")
+          .trim(),
+        rootMaxWidth: rootStyle.maxWidth,
+        rootSlot: actionRoot.dataset.slot ?? "",
+        rootTagName: actionRoot.tagName,
+        rootVerticalAlign: rootStyle.verticalAlign,
+        tagName: control.tagName,
+        text: control.textContent?.trim() ?? "",
+        type: control.getAttribute("type") ?? "",
+        width: Number.parseFloat(controlStyle.width),
+      };
+    });
+    const defaultActionEvidence = actionEvidence.find(
+      (action) => !action.isOverride,
+    );
+    const overrideActionEvidence = actionEvidence.find(
+      (action) => action.isOverride,
+    );
     const linkEvidence = links.map((link) => {
       const kind = link.dataset.galleryLink;
       if (kind !== "default" && kind !== "override") {
@@ -3070,6 +3209,76 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const overrideLinkEvidence = linkEvidence.find((link) => link.isOverride);
 
     return {
+      actionFamilyBoundaryContracts:
+        actionEvidence.every(
+          (action) =>
+            action.controlSlot === "button-control"
+            && action.rootSlot === "button"
+            && action.rootTagName === "SPAN"
+            && action.tagName === "BUTTON"
+            && action.text.length > 0
+            && action.type === "button",
+        )
+        && defaultActionEvidence !== undefined
+        && defaultActionEvidence.alignItems === "center"
+        && equivalentColor(
+          defaultActionEvidence.backgroundColor,
+          resolvedTokens.primaryBackground,
+        )
+        && defaultActionEvidence.borderRadius === resolvedTokens.mediumRadius
+        && defaultActionEvidence.borderStyle === "solid"
+        && defaultActionEvidence.borderWidth === 1
+        && equivalentColor(
+          defaultActionEvidence.color,
+          resolvedTokens.primaryForeground,
+        )
+        && defaultActionEvidence.controlDisplay === "inline-flex"
+        && defaultActionEvidence.justifyContent === "center"
+        && defaultActionEvidence.minHeight >= 40
+        && defaultActionEvidence.rootDisplay === "inline-flex"
+        && defaultActionEvidence.rootMaxWidth === "100%"
+        && defaultActionEvidence.rootVerticalAlign === "middle",
+      actionFamilyClassContracts: actionEvidence.every(
+        (action) => action.controlClassContract && action.rootClassContract,
+      ),
+      actionFamilyDefaultBackground:
+        defaultActionEvidence?.backgroundColor ?? "",
+      actionFamilyDiagnostics: JSON.stringify({
+        actions: actionEvidence,
+        tokens: resolvedTokens,
+      }),
+      actionFamilyLayerSentinels: actionEvidence.every(
+        (action) =>
+          action.controlLayerSentinel === "legacy"
+          && action.rootLayerSentinel === "legacy",
+      ),
+      actionFamilyOverrideContract:
+        overrideActionEvidence !== undefined
+        && overrideActionEvidence.alignItems === "stretch"
+        && equivalentColor(
+          overrideActionEvidence.backgroundColor,
+          resolvedTokens.secondaryBackground,
+        )
+        && equivalentColor(
+          overrideActionEvidence.borderColor,
+          resolvedTokens.warning,
+        )
+        && overrideActionEvidence.borderRadius === resolvedTokens.mediumRadius
+        && overrideActionEvidence.borderStyle === "solid"
+        && overrideActionEvidence.borderWidth === 1
+        && equivalentColor(
+          overrideActionEvidence.color,
+          resolvedTokens.secondaryForeground,
+        )
+        && overrideActionEvidence.controlDisplay === "grid"
+        && overrideActionEvidence.justifyContent === "start"
+        && overrideActionEvidence.minHeight === 56
+        && overrideActionEvidence.paddingLeft === resolvedTokens.space5
+        && overrideActionEvidence.paddingRight === resolvedTokens.space5
+        && overrideActionEvidence.rootDisplay === "inline-grid"
+        && overrideActionEvidence.rootMaxWidth === "272px"
+        && overrideActionEvidence.rootVerticalAlign === "bottom"
+        && overrideActionEvidence.width === 240,
       appearanceAlignItems: appearanceStyle.alignItems,
       appearanceAriaHidden: appearance.getAttribute("aria-hidden") ?? "",
       appearanceCallerClassLast:
@@ -4521,10 +4730,17 @@ async function verifyKeyboardPath(
   await page.getByText("Runs: 1", { exact: true }).waitFor();
 
   await page.keyboard.press("Tab");
+  const callerAction = page.getByRole("button", { name: "Caller action" });
+  invariant(
+    await callerAction.evaluate((element) => document.activeElement === element),
+    `${id}: the caller-override action is not reachable after the primary action`,
+  );
+
+  await page.keyboard.press("Tab");
   const defaultLink = page.getByRole("link", { name: "Default reference" });
   invariant(
     await defaultLink.evaluate((element) => document.activeElement === element),
-    `${id}: the default Link is not next after the primary action`,
+    `${id}: the default Link is not next after the caller-override action`,
   );
 
   await page.keyboard.press("Tab");
@@ -4972,6 +5188,184 @@ async function verifyLinkCallerStatePrecedence(
   await page.waitForFunction((selector) => {
     const element = document.querySelector(selector);
     return element instanceof HTMLAnchorElement
+      && document.activeElement !== element
+      && !element.hasAttribute("data-focus-visible")
+      && !element.hasAttribute("data-hovered");
+  }, overrideSelector);
+}
+
+async function verifyActionCallerStatePrecedence(
+  page: Page,
+  id: string,
+): Promise<void> {
+  const themeSelector = '[data-gallery-theme-toggle="true"]';
+  const defaultSelector = '[data-gallery-action="default"]';
+  const overrideSelector = '[data-gallery-action="override"]';
+  const defaultAction = page.locator(defaultSelector);
+  const overrideAction = page.locator(overrideSelector);
+
+  async function reachByKeyboard(
+    action: ReturnType<Page["locator"]>,
+    selector: string,
+    description: string,
+  ): Promise<void> {
+    await page.locator(themeSelector).focus();
+    let reached = false;
+    for (let step = 0; step < 4; step += 1) {
+      await page.keyboard.press("Tab");
+      reached = await action.evaluate(
+        (element) => document.activeElement === element,
+      );
+      if (reached) break;
+    }
+    invariant(reached, `${id}: ${description} was not reachable by keyboard`);
+    await page.waitForFunction((targetSelector) => {
+      const element = document.querySelector(targetSelector);
+      return element instanceof HTMLButtonElement
+        && document.activeElement === element
+        && element.matches(":focus-visible")
+        && element.hasAttribute("data-focus-visible");
+    }, selector);
+  }
+
+  async function focusEvidence(action: ReturnType<Page["locator"]>) {
+    return action.evaluate((element) => {
+      const resolveColor = (value: string): string => {
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      };
+      const style = getComputedStyle(element);
+      return {
+        dataFocusVisible: element.hasAttribute("data-focus-visible"),
+        expectedRing: resolveColor("var(--ui-ring)"),
+        expectedWarning: resolveColor("var(--ui-warning)"),
+        focusLayerSentinel: style
+          .getPropertyValue("--gallery-action-family-focus-conflict")
+          .trim(),
+        focusVisible: element.matches(":focus-visible"),
+        outlineColor: style.outlineColor,
+        outlineOffset: Number.parseFloat(style.outlineOffset),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+      };
+    });
+  }
+
+  async function hoverEvidence(
+    action: ReturnType<Page["locator"]>,
+    selector: string,
+    expectedBackground: string,
+    expectedColor: string,
+  ) {
+    await action.evaluate((element) => element.blur());
+    await page.mouse.move(0, 0);
+    await action.hover();
+    await page.waitForFunction((targetSelector) => {
+      const element = document.querySelector(targetSelector);
+      return element instanceof HTMLButtonElement
+        && element.matches(":hover")
+        && element.hasAttribute("data-hovered");
+    }, selector);
+    return action.evaluate(
+      (element, expected) => {
+        const resolveStyle = (property: string, value: string): string => {
+          const probe = document.createElement("span");
+          probe.style.setProperty(property, value);
+          document.body.append(probe);
+          const resolved = getComputedStyle(probe)
+            .getPropertyValue(property)
+            .trim();
+          probe.remove();
+          return resolved;
+        };
+        const style = getComputedStyle(element);
+        return {
+          backgroundColor: style.backgroundColor,
+          color: style.color,
+          dataHovered: element.hasAttribute("data-hovered"),
+          expectedBackground: resolveStyle(
+            "background-color",
+            expected.background,
+          ),
+          expectedColor: resolveStyle("color", expected.color),
+          hoverLayerSentinel: style
+            .getPropertyValue("--gallery-action-family-hover-conflict")
+            .trim(),
+          hovered: element.matches(":hover"),
+        };
+      },
+      { background: expectedBackground, color: expectedColor },
+    );
+  }
+
+  await reachByKeyboard(defaultAction, defaultSelector, "the default action");
+  const defaultFocused = await focusEvidence(defaultAction);
+  invariant(
+    defaultFocused.dataFocusVisible
+    && defaultFocused.focusLayerSentinel === "legacy"
+    && defaultFocused.focusVisible
+    && defaultFocused.outlineColor === defaultFocused.expectedRing
+    && defaultFocused.outlineOffset === 2
+    && defaultFocused.outlineStyle === "solid"
+    && defaultFocused.outlineWidth === 2,
+    `${id}: the action focus-visible recipe lost to legacy CSS: ${JSON.stringify(defaultFocused)}`,
+  );
+  const defaultHovered = await hoverEvidence(
+    defaultAction,
+    defaultSelector,
+    "color-mix(in oklch, var(--ui-primary) 88%, var(--ui-background))",
+    "var(--ui-primary-foreground)",
+  );
+  invariant(
+    defaultHovered.dataHovered
+    && defaultHovered.hoverLayerSentinel === "legacy"
+    && defaultHovered.hovered
+    && defaultHovered.backgroundColor === defaultHovered.expectedBackground
+    && defaultHovered.color === defaultHovered.expectedColor,
+    `${id}: the action hover recipe lost to legacy CSS: ${JSON.stringify(defaultHovered)}`,
+  );
+
+  await page.mouse.move(0, 0);
+  await reachByKeyboard(
+    overrideAction,
+    overrideSelector,
+    "the caller-override action",
+  );
+  const overrideFocused = await focusEvidence(overrideAction);
+  invariant(
+    overrideFocused.dataFocusVisible
+    && overrideFocused.focusLayerSentinel === "legacy"
+    && overrideFocused.focusVisible
+    && overrideFocused.outlineColor === overrideFocused.expectedWarning
+    && overrideFocused.outlineOffset === 6
+    && overrideFocused.outlineStyle === "dashed"
+    && overrideFocused.outlineWidth === 3,
+    `${id}: caller StyleX lost action keyboard-focus precedence: ${JSON.stringify(overrideFocused)}`,
+  );
+  const overrideHovered = await hoverEvidence(
+    overrideAction,
+    overrideSelector,
+    "var(--ui-accent)",
+    "var(--ui-accent-foreground)",
+  );
+  invariant(
+    overrideHovered.dataHovered
+    && overrideHovered.hoverLayerSentinel === "legacy"
+    && overrideHovered.hovered
+    && overrideHovered.backgroundColor === overrideHovered.expectedBackground
+    && overrideHovered.color === overrideHovered.expectedColor,
+    `${id}: caller StyleX lost action hover precedence: ${JSON.stringify(overrideHovered)}`,
+  );
+
+  await overrideAction.evaluate((element) => element.blur());
+  await page.mouse.move(0, 0);
+  await page.waitForFunction((targetSelector) => {
+    const element = document.querySelector(targetSelector);
+    return element instanceof HTMLButtonElement
       && document.activeElement !== element
       && !element.hasAttribute("data-focus-visible")
       && !element.hasAttribute("data-hovered");
@@ -6184,6 +6578,13 @@ try {
             `${layout.id}: themed-surface parity failed: ${light.themedSurfaceDiagnostics}`,
           );
           invariant(
+            light.actionFamilyBoundaryContracts
+            && light.actionFamilyClassContracts
+            && light.actionFamilyLayerSentinels
+            && light.actionFamilyOverrideContract,
+            `${layout.id}: action-family parity failed: ${light.actionFamilyDiagnostics}`,
+          );
+          invariant(
             light.avatarClassContracts
             && light.avatarFallbackContracts
             && light.avatarImageContract
@@ -6402,6 +6803,15 @@ try {
             `${layout.id}: dark themed-surface parity failed: ${dark.themedSurfaceDiagnostics}`,
           );
           invariant(
+            dark.actionFamilyBoundaryContracts
+            && dark.actionFamilyClassContracts
+            && dark.actionFamilyLayerSentinels
+            && dark.actionFamilyOverrideContract
+            && dark.actionFamilyDefaultBackground
+              !== light.actionFamilyDefaultBackground,
+            `${layout.id}: dark action-family parity failed: ${dark.actionFamilyDiagnostics}`,
+          );
+          invariant(
             dark.avatarClassContracts
             && dark.avatarFallbackContracts
             && dark.avatarImageContract
@@ -6473,6 +6883,7 @@ try {
               !== light.toolbarDefaultBackground,
             `${layout.id}: dark Toolbar parity failed: ${dark.toolbarDiagnostics}`,
           );
+          await verifyActionCallerStatePrecedence(page, layout.id);
           await verifyLinkCallerStatePrecedence(page, layout.id);
           await verifyPressableCardCallerStatePrecedence(page, layout.id);
           await verifyToolbarKeyboardFocusPrecedence(page, layout.id);
@@ -6731,7 +7142,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, CheckboxField, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

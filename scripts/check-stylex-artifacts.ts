@@ -19,6 +19,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-key-hint-layer-conflict",
   "data-gallery-link-layer-conflict",
   "data-gallery-checkbox-field-layer-conflict",
+  "data-gallery-action-family-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -2170,8 +2171,12 @@ function requireActionFamilyContract(
     /partXstyles\?:\s*ActionLabelPartXstyles;/u,
     "the closed action label-part seam",
   );
+  const actionRootStart = actionsSource.indexOf(
+    "function actionRootPresentation(",
+  );
   const actionControlStart = actionsSource.indexOf(
     "function actionControlPresentation(",
+    actionRootStart,
   );
   const inlineControlStart = actionsSource.indexOf(
     "function inlineIconControlPresentation(",
@@ -2182,12 +2187,17 @@ function requireActionFamilyContract(
     inlineControlStart,
   );
   if (
-    actionControlStart < 0
+    actionRootStart < 0
+    || actionControlStart < 0
     || inlineControlStart < 0
     || pendingIndicatorStart < 0
   ) {
     throw new Error("src/actions.tsx must retain the bounded action presentation helpers");
   }
+  const actionRootSource = actionsSource.slice(
+    actionRootStart,
+    actionControlStart,
+  );
   const actionControlSource = actionsSource.slice(
     actionControlStart,
     inlineControlStart,
@@ -2195,6 +2205,11 @@ function requireActionFamilyContract(
   const inlineControlSource = actionsSource.slice(
     inlineControlStart,
     pendingIndicatorStart,
+  );
+  requireMatch(
+    actionRootSource,
+    /stylex\.props\(\s*actionStyles\.root,\s*xstyle,?\s*\)/u,
+    "the action wrapper caller precedence",
   );
   requireMatch(
     actionControlSource,
@@ -3266,6 +3281,14 @@ const actionStyleAfterCallerSource = replaceExactlyOnceInBoundedSource(
   () => "controlXstyle,\n    actionStyles.control,\n  );",
   "action caller class precedence",
 );
+const actionRootStyleAfterCallerSource = replaceExactlyOnceInBoundedSource(
+  actionsSource,
+  "function actionRootPresentation(",
+  "function actionControlPresentation(",
+  /stylex\.props\(\s*actionStyles\.root,\s*xstyle,?\s*\)/u,
+  () => "stylex.props(xstyle, actionStyles.root)",
+  "action wrapper caller precedence",
+);
 assert.throws(
   () =>
     requireActionFamilyContract(
@@ -3392,6 +3415,25 @@ assert.throws(
     ),
   /action state, selection, and caller precedence/u,
   "the action-family guard must reject a control style after caller controlXstyle",
+);
+assert.throws(
+  () =>
+    requireActionFamilyContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      actionRootStyleAfterCallerSource,
+    ),
+  /action wrapper caller precedence/u,
+  "the action-family guard must reject a root style after caller xstyle",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-action-family-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-action-family-layer-conflict sentinel/u,
+  "the action-family guard must reject gallery sentinel leakage",
 );
 for (const {
   component,
