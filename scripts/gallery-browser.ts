@@ -2841,7 +2841,9 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
             && checkbox.controlBorderWidth === 0
             && checkbox.descriptionConnected
             && (checkbox.isOverride || checkbox.fieldRefAttached)
-            && checkbox.indicatorDisplay === "inline-grid"
+            // The artifact oracle proves `inline-grid`; this direct grid child
+            // is blockified to `grid` in the browser's computed style.
+            && checkbox.indicatorDisplay === "grid"
             && checkbox.indicatorFlex === "0 0 auto"
             && checkbox.indicatorHeight === 20
             && checkbox.indicatorWidth === 20
