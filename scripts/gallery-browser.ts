@@ -27,6 +27,8 @@ const CARD_DESCRIPTION_BRIDGE_PATTERN =
 const HUGEICONS_VERSION = "4.2.2";
 const PACKAGE_LAYER_PRELUDE =
   /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3/u;
+const STYLED_GALLERY_LAYER_PRELUDES =
+  /@layer\s+base\s*,\s*components\s*;\s*@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*;/u;
 const REACT_VERSION = "19.2.3";
 
 interface BrowserEvidence {
@@ -61,6 +63,13 @@ interface BrowserEvidence {
   readonly cardFamilyNestedResetContract: boolean;
   readonly cardFamilyOverrideContracts: boolean;
   readonly cardFamilyToneShapeContracts: boolean;
+  readonly checkboxBoundaryContracts: boolean;
+  readonly checkboxClassContracts: boolean;
+  readonly checkboxDefaultBackground: string;
+  readonly checkboxDiagnostics: string;
+  readonly checkboxLayerSentinels: boolean;
+  readonly checkboxOverrideContract: boolean;
+  readonly checkboxStateContracts: boolean;
   readonly clientWidth: number;
   readonly clientHeight: number;
   readonly colorScheme: string;
@@ -268,6 +277,8 @@ interface ForcedColorsEvidence {
   readonly cardForcedColorAdjust: string;
   readonly cardFamilyContracts: boolean;
   readonly cardFamilyDiagnostics: string;
+  readonly checkboxContracts: boolean;
+  readonly checkboxDiagnostics: string;
   readonly forcedColorsActive: boolean;
   readonly keyHintContracts: boolean;
   readonly keyHintDiagnostics: string;
@@ -285,6 +296,18 @@ interface ArtifactSet {
   readonly cssPath: string;
   readonly javaScript: string;
   readonly javaScriptPath: string;
+}
+
+interface CheckboxFocusRuleEvidence {
+  readonly className: string;
+  readonly declaration: string;
+  readonly layer: "components.hraness-ui.priority2";
+  readonly selector: string;
+}
+
+interface CheckboxFocusContract {
+  readonly classNames: readonly string[];
+  readonly rules: readonly CheckboxFocusRuleEvidence[];
 }
 
 const layouts = [
@@ -452,7 +475,380 @@ async function buildServerRenderer(
   );
 }
 
-function requirePackedDefaultStylesheet(css: string): void {
+const CHECKBOX_STYLE_KEYS = [
+  "control",
+  "disabled",
+  "focusVisible",
+  "indicator",
+  "invalidIndicator",
+  "label",
+  "root",
+  "selectedIndicator",
+] as const;
+
+function balancedBlock(source: string, open: number, description: string): string {
+  let depth = 0;
+  let escaped = false;
+  let quote: "\"" | "'" | "`" | undefined;
+  for (let index = open; index < source.length; index += 1) {
+    const character = source[index];
+    const nextCharacter = source[index + 1];
+    if (character === undefined) continue;
+    if (quote !== undefined) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === "/" && nextCharacter === "*") {
+      const end = source.indexOf("*/", index + 2);
+      assert.notEqual(end, -1, `${description} contains an unterminated comment`);
+      index = end + 1;
+      continue;
+    }
+    if (character === "\"" || character === "'" || character === "`") {
+      quote = character;
+    } else if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, index + 1);
+    }
+  }
+  throw new Error(`${description} contains an unterminated block`);
+}
+
+function packedCheckboxStyleMap(javaScript: string): string {
+  const candidates: string[] = [];
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*control\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(javaScript, open, "packed CheckboxField JavaScript");
+    if (CHECKBOX_STYLE_KEYS.every(
+      (key) => new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u")
+        .test(object.slice(1, -1)),
+    )) {
+      candidates.push(object);
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "the packed JavaScript must contain exactly one compiled checkboxFieldStyles class map",
+  );
+  const candidate = candidates[0];
+  assert.ok(candidate !== undefined);
+  return candidate;
+}
+
+function packedCheckboxStyleClassNames(
+  javaScript: string,
+  key: typeof CHECKBOX_STYLE_KEYS[number],
+): readonly string[] {
+  const styleMap = packedCheckboxStyleMap(javaScript);
+  const matches = [...styleMap.matchAll(
+    new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+  )];
+  assert.equal(
+    matches.length,
+    1,
+    `the packed checkboxFieldStyles map must contain exactly one ${key} entry`,
+  );
+  const match = matches[0];
+  assert.ok(match !== undefined);
+  const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+  const nestedMap = balancedBlock(
+    styleMap,
+    open,
+    `packed CheckboxField ${key} JavaScript`,
+  );
+  const classNames: string[] = [];
+  for (const classMatch of nestedMap.slice(1, -1).matchAll(
+    /(?:^|,)\s*[A-Za-z_$][\w$]*\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )) {
+    classNames.push(...classMatch[1]!.split(/\s+/u));
+  }
+  assert.notEqual(
+    classNames.length,
+    0,
+    `the packed checkboxFieldStyles ${key} entry has no generated classes`,
+  );
+  assert.equal(
+    new Set(classNames).size,
+    classNames.length,
+    `the packed checkboxFieldStyles ${key} entry contains duplicate generated classes`,
+  );
+  return classNames;
+}
+
+function packedCheckboxClassNames(javaScript: string): ReadonlySet<string> {
+  const styleMap = packedCheckboxStyleMap(javaScript);
+  const classNames = new Set<string>();
+  for (const match of styleMap.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )) {
+    for (const className of match[1]!.split(/\s+/u)) classNames.add(className);
+  }
+  assert.notEqual(classNames.size, 0, "the packed checkboxFieldStyles map is empty");
+  return classNames;
+}
+
+function checkboxRuleBodies(
+  css: string,
+  classNames: ReadonlySet<string>,
+): string[] {
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+    .filter((match) => [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(match[1]!)
+    ))
+    .map((match) => match[2]!);
+}
+
+function exactLayerCss(css: string, layer: string): string {
+  const bodies: string[] = [];
+  for (const match of css.matchAll(/@layer\s+[A-Za-z0-9_.-]+\s*\{/gu)) {
+    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+    const header = css.slice(match.index, open).replace(/\s+/gu, "");
+    if (header === `@layer${layer}`) {
+      const block = balancedBlock(css, open, `packed ${layer} CSS`);
+      bodies.push(block.slice(1, -1));
+    }
+  }
+  assert.notEqual(
+    bodies.length,
+    0,
+    `the packed CSS must contain an exact ${layer} block`,
+  );
+  return bodies.join("\n");
+}
+
+function requireFinalBundleLayerOrder(css: string): void {
+  const preludes = css.match(STYLED_GALLERY_LAYER_PRELUDES);
+  assert.ok(
+    preludes !== null,
+    "the final styled gallery bundle must contain the adjacent canonical base and package layer preludes",
+  );
+  const preludeStart = preludes.index ?? -1;
+  assert.ok(
+    preludeStart >= 0,
+    "the final styled gallery bundle must expose the canonical prelude position",
+  );
+  const preludeEnd = preludeStart + preludes[0].length;
+  const firstNamedLayerBlock = css.search(
+    /@layer\s+(?:base|components\.hraness-ui\.(?:legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3))\s*\{/u,
+  );
+  assert.notEqual(
+    firstNamedLayerBlock,
+    -1,
+    "the final styled gallery bundle must contain a named base or package layer block",
+  );
+  assert.ok(
+    preludeEnd <= firstNamedLayerBlock,
+    "the canonical base and package layer preludes must precede every named base and package layer block",
+  );
+
+  const firstBlockPositions = new Map<
+    "legacy" | "priority1" | "priority2" | "priority3",
+    number
+  >();
+  const packageLayerBlocks = [...css.matchAll(
+    /@layer\s+components\.hraness-ui\.(legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3)\s*\{/gu,
+  )];
+  assert.notEqual(
+    packageLayerBlocks.length,
+    0,
+    "the final styled gallery bundle must contain package named-layer blocks",
+  );
+  for (const match of packageLayerBlocks) {
+    const position = match.index ?? -1;
+    assert.ok(
+      position >= preludeEnd,
+      "the canonical package layer prelude must precede every package named-layer block",
+    );
+    const matchedLayer = match[1];
+    assert.ok(matchedLayer !== undefined);
+    const layer = matchedLayer === "legacy" || matchedLayer.startsWith("legacy.")
+      ? "legacy"
+      : matchedLayer;
+    assert.ok(
+      layer === "legacy"
+      || layer === "priority1"
+      || layer === "priority2"
+      || layer === "priority3",
+      `the final styled gallery bundle contains an unknown package layer: ${layer}`,
+    );
+    if (!firstBlockPositions.has(layer)) firstBlockPositions.set(layer, position);
+  }
+
+  const orderedLayers = ["legacy", "priority1", "priority2", "priority3"] as const;
+  const positions = orderedLayers.map((layer) => {
+    const position = firstBlockPositions.get(layer);
+    assert.ok(
+      position !== undefined,
+      `the final styled gallery bundle must contain a ${layer} package layer block`,
+    );
+    return position;
+  });
+  assert.ok(
+    positions.every((position, index) => index === 0 || positions[index - 1]! < position),
+    "the first package named-layer blocks must be ordered legacy, priority1, priority2, then priority3",
+  );
+}
+
+function requirePackedCheckboxConflictLayer(css: string): void {
+  const selectors = [...css.matchAll(
+    /html\s+body\s+\[data-gallery-checkbox-field-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"checkbox-control"|checkbox-control)\]\s*\{/gu,
+  )];
+  assert.equal(
+    selectors.length,
+    1,
+    "the final styled gallery bundle must contain exactly one CheckboxField control conflict selector",
+  );
+  const selector = selectors[0];
+  assert.ok(selector?.index !== undefined);
+  const selectorPosition = selector.index;
+  const enclosingLayers: string[] = [];
+  for (const match of css.matchAll(/@layer\s+([A-Za-z0-9_.-]+)\s*\{/gu)) {
+    const start = match.index ?? -1;
+    const open = start + match[0].lastIndexOf("{");
+    const block = balancedBlock(css, open, `final ${String(match[1])} CSS`);
+    if (selectorPosition >= open && selectorPosition < open + block.length) {
+      enclosingLayers.push(match[1]!);
+    }
+  }
+  assert.deepEqual(
+    enclosingLayers,
+    ["components.hraness-ui.legacy"],
+    "the unique CheckboxField control conflict selector must exist only inside components.hraness-ui.legacy",
+  );
+}
+
+function exactAtomicClassRules(
+  css: string,
+  className: string,
+): readonly Omit<CheckboxFocusRuleEvidence, "className" | "layer">[] {
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+    .map((match) => ({
+      declaration: match[2]!.replace(/\s+/gu, "").replace(/;$/u, ""),
+      selector: match[1]!.trim(),
+    }))
+    .filter((rule) => rule.selector === `.${className}`);
+}
+
+function requirePackedCheckboxFocusContract(
+  javaScript: string,
+  css: string,
+): CheckboxFocusContract {
+  const layer = "components.hraness-ui.priority2" as const;
+  const classNames = packedCheckboxStyleClassNames(javaScript, "focusVisible");
+  const expectedDeclarations = [
+    "outline-color:var(--ui-ring)",
+    "outline-offset:3px",
+    "outline-style:solid",
+    "outline-width:2px",
+  ] as const;
+  assert.equal(
+    classNames.length,
+    expectedDeclarations.length,
+    "the packed CheckboxField focus recipe must contain one class per declaration",
+  );
+  const layerCss = exactLayerCss(css, layer);
+  const rules = classNames.map((className) => {
+    const finalRules = exactAtomicClassRules(css, className);
+    const layerRules = exactAtomicClassRules(layerCss, className);
+    assert.equal(
+      finalRules.length,
+      1,
+      `the final bundle must contain exactly one .${className} rule`,
+    );
+    assert.equal(
+      layerRules.length,
+      1,
+      `the final bundle must place .${className} in ${layer}`,
+    );
+    const finalRule = finalRules[0];
+    const layerRule = layerRules[0];
+    assert.ok(finalRule !== undefined && layerRule !== undefined);
+    assert.deepEqual(
+      finalRule,
+      layerRule,
+      `the ${layer} .${className} rule must be the unique final bundled rule`,
+    );
+    return { className, layer, ...finalRule };
+  });
+  for (const declaration of expectedDeclarations) {
+    assert.equal(
+      rules.filter((rule) => rule.declaration === declaration).length,
+      1,
+      `the final CheckboxField focus recipe must bind exactly one class to ${declaration}`,
+    );
+  }
+  const expectedDeclarationSet: ReadonlySet<string> = new Set(
+    expectedDeclarations,
+  );
+  assert.equal(
+    rules.every((rule) => expectedDeclarationSet.has(rule.declaration)),
+    true,
+    "the final CheckboxField focus recipe contains an unexpected declaration",
+  );
+  return { classNames, rules };
+}
+
+function exactConditionalCss(css: string, condition: string): string {
+  const bodies: string[] = [];
+  for (const match of css.matchAll(/@media\s*\([^{}]+\)\s*\{/gu)) {
+    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+    const header = css.slice(match.index, open).replace(/\s+/gu, "")
+      .toLowerCase();
+    if (header === condition) {
+      const block = balancedBlock(css, open, `packed ${condition} CSS`);
+      bodies.push(block.slice(1, -1));
+    }
+  }
+  assert.notEqual(bodies.length, 0, `the packed CSS must contain an exact ${condition} block`);
+  return bodies.join("\n");
+}
+
+function requirePackedCheckboxStyles(javaScript: string, css: string): void {
+  const classNames = packedCheckboxClassNames(javaScript);
+  const familyCss = checkboxRuleBodies(css, classNames).join("\n");
+  assert.match(
+    familyCss,
+    /min-height:\s*var\(--interactive-target-compact\)/u,
+    "checkboxFieldStyles must own the packed CheckboxField default target",
+  );
+  assert.match(
+    familyCss,
+    /transition-property:\s*background-color,\s*border-color/u,
+    "checkboxFieldStyles must own the packed CheckboxField transitions",
+  );
+  const coarseCss = checkboxRuleBodies(
+    exactConditionalCss(css, "@media(pointer:coarse)"),
+    classNames,
+  ).join("\n");
+  assert.match(
+    coarseCss,
+    /min-height:\s*var\(--interactive-target-min\)/u,
+    "checkboxFieldStyles must own the coarse target inside the exact conditional block",
+  );
+  const forcedColorsCss = checkboxRuleBodies(
+    exactConditionalCss(css, "@media(forced-colors:active)"),
+    classNames,
+  ).join("\n");
+  assert.match(
+    forcedColorsCss,
+    /border-color:\s*canvastext/u,
+    "checkboxFieldStyles must own the forced-color border inside the exact conditional block",
+  );
+  assert.match(
+    forcedColorsCss,
+    /forced-color-adjust:\s*auto/u,
+    "checkboxFieldStyles must own the forced-color adjustment inside the exact conditional block",
+  );
+}
+
+function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   assert.match(
     css,
     /@layer components\.hraness-ui\.priority[12]/u,
@@ -468,6 +864,8 @@ function requirePackedDefaultStylesheet(css: string): void {
     PACKAGE_LAYER_PRELUDE,
     "the packed default stylesheet must freeze the package layer order",
   );
+  requireFinalBundleLayerOrder(css);
+  requirePackedCheckboxConflictLayer(css);
   assert.match(
     css,
     /\.hraness-button(?:__control)?(?=[\s,{:.])/u,
@@ -623,6 +1021,7 @@ function requirePackedDefaultStylesheet(css: string): void {
     /min-inline-size:\s*1\.5rem/u,
     "the packed default stylesheet must include the KeyHint minimum inline size",
   );
+  requirePackedCheckboxStyles(javaScript, css);
   assert.match(
     css,
     /background-image:\s*repeating-linear-gradient\(/u,
@@ -677,6 +1076,11 @@ function requirePackedDefaultStylesheet(css: string): void {
     /\.hraness-key-hint(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain a legacy KeyHint selector",
   );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-checkbox-field(?:__(?:control|indicator|label))?(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain legacy CheckboxField selectors",
+  );
   assert.equal(
     css.match(CARD_DESCRIPTION_BRIDGE_PATTERN)?.length,
     1,
@@ -691,6 +1095,11 @@ function requirePackedDefaultStylesheet(css: string): void {
     css,
     /data-gallery-stylex-layer-conflict/u,
     "the harness bundle must include its gallery-only legacy conflict",
+  );
+  assert.match(
+    css,
+    /data-gallery-checkbox-field-layer-conflict/u,
+    "the harness bundle must include its CheckboxField legacy conflict",
   );
   assert.match(
     css,
@@ -918,6 +1327,71 @@ function requirePackedDefaultStylesheet(css: string): void {
     css,
     /@media\s*\(forced-colors:\s*active\)[\s\S]*\[data-gallery-card-family-layer-conflict=(?:"true"|true)\][^}]*\{[^}]*forced-color-adjust:\s*none/u,
     "the gallery Card conflict must carry its forced-colors counterexample",
+  );
+  const checkboxRootConflict = css.match(
+    /\[data-gallery-checkbox-field-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"checkbox-field"|checkbox-field)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    checkboxRootConflict !== undefined
+    && /--gallery-checkbox-field-layer-conflict:\s*legacy/u.test(checkboxRootConflict)
+    && /display:\s*block/u.test(checkboxRootConflict)
+    && /gap:\s*9rem/u.test(checkboxRootConflict)
+    && /grid-template-columns:\s*7rem 8rem/u.test(checkboxRootConflict)
+    && /min-width:\s*11rem/u.test(checkboxRootConflict),
+    `the gallery CheckboxField root conflict is incomplete: ${String(checkboxRootConflict)}`,
+  );
+  const checkboxControlConflict = css.match(
+    /\[data-gallery-checkbox-field-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"checkbox-control"|checkbox-control)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    checkboxControlConflict !== undefined
+    && /align-items:\s*stretch/u.test(checkboxControlConflict)
+    && (
+      /border:\s*7px solid/u.test(checkboxControlConflict)
+      || (
+        /border-style:\s*solid/u.test(checkboxControlConflict)
+        && /border-width:\s*7px/u.test(checkboxControlConflict)
+      )
+    )
+    && /border-radius:\s*99px/u.test(checkboxControlConflict)
+    && /display:\s*flex/u.test(checkboxControlConflict)
+    && /gap:\s*8rem/u.test(checkboxControlConflict)
+    && /grid-template-columns:\s*9rem 10rem/u.test(checkboxControlConflict)
+    && /min-height:\s*9rem/u.test(checkboxControlConflict)
+    && (
+      /outline:\s*8px dashed/u.test(checkboxControlConflict)
+      || (
+        /outline-style:\s*dashed/u.test(checkboxControlConflict)
+        && /outline-width:\s*8px/u.test(checkboxControlConflict)
+      )
+    )
+    && /outline-offset:\s*19px/u.test(checkboxControlConflict)
+    && /width:\s*18rem/u.test(checkboxControlConflict),
+    `the gallery CheckboxField control conflict is incomplete: ${String(checkboxControlConflict)}`,
+  );
+  const checkboxIndicatorConflict = css.match(
+    /\[data-gallery-checkbox-field-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"checkbox-indicator"|checkbox-indicator)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    checkboxIndicatorConflict !== undefined
+    && (
+      /border:\s*7px dashed/u.test(checkboxIndicatorConflict)
+      || (
+        /border-style:\s*dashed/u.test(checkboxIndicatorConflict)
+        && /border-width:\s*7px/u.test(checkboxIndicatorConflict)
+      )
+    )
+    && /border-radius:\s*99px/u.test(checkboxIndicatorConflict)
+    && /display:\s*block/u.test(checkboxIndicatorConflict)
+    && /flex:\s*(?:auto|1\s+1\s+auto)/u.test(checkboxIndicatorConflict)
+    && /height:\s*8rem/u.test(checkboxIndicatorConflict)
+    && /width:\s*9rem/u.test(checkboxIndicatorConflict),
+    `the gallery CheckboxField indicator conflict is incomplete: ${String(checkboxIndicatorConflict)}`,
+  );
+  assert.match(
+    css,
+    /\[data-gallery-checkbox-field-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"checkbox-label"|checkbox-label)\]\{(?=[^}]*font-size:\s*4rem)(?=[^}]*font-weight:\s*100)(?=[^}]*line-height:\s*4)(?=[^}]*width:\s*18rem)[^}]*\}/u,
+    "the gallery CheckboxField label conflict must carry every typography counterexample",
   );
   const toolbarConflict = css.match(
     /\[data-gallery-toolbar-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"toolbar"|toolbar)\]\{[^}]*\}/u,
@@ -1178,6 +1652,15 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const keyHintOverride = document.querySelector(
       '[data-gallery-key-hint="override"]',
     );
+    const checkboxFields = [
+      ...document.querySelectorAll<HTMLElement>('[data-gallery-checkbox]'),
+    ];
+    const defaultCheckbox = document.querySelector(
+      '[data-gallery-checkbox="default"]',
+    );
+    const overrideCheckbox = document.querySelector(
+      '[data-gallery-checkbox="override"]',
+    );
     if (
       !(icon instanceof SVGElement)
       || !(iconCanary instanceof HTMLElement)
@@ -1224,6 +1707,9 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || !(toolbarOverride instanceof HTMLDivElement)
       || keyHints.length !== 2
       || !(keyHintOverride instanceof HTMLElement)
+      || checkboxFields.length !== 2
+      || !(defaultCheckbox instanceof HTMLDivElement)
+      || !(overrideCheckbox instanceof HTMLDivElement)
     ) {
       throw new Error("The primitive gallery structure is incomplete.");
     }
@@ -1314,13 +1800,17 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       popoverBackground: resolveStyle("background-color", "var(--ui-popover)"),
       popoverForeground: resolveStyle("color", "var(--ui-popover-foreground)"),
       primary: resolveStyle("border-color", "var(--ui-primary)"),
+      inputBorder: resolveStyle("border-color", "var(--ui-input)"),
+      destructiveBorder: resolveStyle("border-color", "var(--ui-destructive)"),
       raisedShadow: resolveStyle("box-shadow", "var(--elevation-raised)"),
       secondaryBackground: resolveStyle("background-color", "var(--ui-secondary)"),
       secondaryForeground: resolveStyle("color", "var(--ui-secondary-foreground)"),
       sharpRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-sharp)")),
       smallRadius: Number.parseFloat(resolveStyle("border-radius", "var(--radius-sm)")),
       space2: Number.parseFloat(resolveStyle("padding-left", "var(--space-2)")),
+      space3: Number.parseFloat(resolveStyle("padding-left", "var(--space-3)")),
       space4: Number.parseFloat(resolveStyle("padding-left", "var(--space-4)")),
+      space5: Number.parseFloat(resolveStyle("padding-left", "var(--space-5)")),
       space6: Number.parseFloat(resolveStyle("padding-left", "var(--space-6)")),
       avatarAccentBackground: resolveStyle("background-color", "var(--ui-accent)"),
       avatarBodySize: Number.parseFloat(resolveStyle("font-size", "var(--text-body)")),
@@ -2136,6 +2626,105 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         .getPropertyValue("--hraness-card-description")
         .trim(),
     };
+    const checkboxEvidence = checkboxFields.map((field) => {
+      const kind = field.dataset.galleryCheckbox;
+      const control = field.querySelector(':scope > [data-slot="checkbox-control"]');
+      const input = control?.querySelector('input[type="checkbox"]');
+      const indicator = control?.querySelector(
+        ':scope > [data-slot="checkbox-indicator"]',
+      );
+      const label = control?.querySelector(':scope > [data-slot="checkbox-label"]');
+      const description = field.querySelector(
+        ':scope > [data-slot="field-description"]',
+      );
+      if (
+        (kind !== "default" && kind !== "override")
+        || !(control instanceof HTMLLabelElement)
+        || !(input instanceof HTMLInputElement)
+        || !(indicator instanceof HTMLSpanElement)
+        || !(label instanceof HTMLSpanElement)
+        || !(description instanceof HTMLElement)
+      ) {
+        throw new Error(`Unexpected CheckboxField fixture: ${String(kind)}`);
+      }
+      const isOverride = kind === "override";
+      const fieldStyle = getComputedStyle(field);
+      const controlStyle = getComputedStyle(control);
+      const indicatorStyle = getComputedStyle(indicator);
+      const labelStyle = getComputedStyle(label);
+      const fieldClasses = [...field.classList];
+      const controlClasses = [...control.classList];
+      const indicatorClasses = [...indicator.classList];
+      const labelClasses = [...label.classList];
+      const indicatorBox = indicator.getBoundingClientRect();
+      return {
+        ariaDescribedBy: input.getAttribute("aria-describedby") ?? "",
+        backgroundColor: indicatorStyle.backgroundColor,
+        borderColor: indicatorStyle.borderColor,
+        borderRadius: Number.parseFloat(indicatorStyle.borderRadius),
+        borderStyle: indicatorStyle.borderStyle,
+        borderWidth: Number.parseFloat(indicatorStyle.borderWidth),
+        checked: input.checked,
+        classContract:
+          fieldClasses[0] === "hraness-checkbox-field"
+          && fieldClasses.at(-1) === `gallery-checkbox--${kind}`
+          && fieldClasses.some((name) => name.startsWith("x"))
+          && controlClasses[0] === "hraness-checkbox-field__control"
+          && controlClasses.at(-1) === `gallery-checkbox-control--${kind}`
+          && controlClasses.some((name) => name.startsWith("x"))
+          && indicatorClasses[0] === "hraness-checkbox-field__indicator"
+          && indicatorClasses.some((name) => name.startsWith("x"))
+          && labelClasses[0] === "hraness-checkbox-field__label"
+          && labelClasses.some((name) => name.startsWith("x")),
+        color: fieldStyle.color,
+        controlBackground: controlStyle.backgroundColor,
+        controlBorderWidth: Number.parseFloat(controlStyle.borderWidth),
+        controlDisplay: controlStyle.display,
+        controlGap: Number.parseFloat(controlStyle.gap),
+        controlGridColumns: controlStyle.gridTemplateColumns,
+        controlMinHeight: Number.parseFloat(controlStyle.minHeight),
+        controlStyleValue: control.style.cssText,
+        dataDisabled: field.dataset.disabled ?? "",
+        dataInvalid: field.dataset.invalid ?? "",
+        dataSelected: field.dataset.selected ?? "",
+        descriptionConnected:
+          description.id.length > 0
+          && (input.getAttribute("aria-describedby") ?? "")
+            .split(" ")
+            .includes(description.id),
+        disabled: input.disabled,
+        fieldDisplay: fieldStyle.display,
+        fieldGap: Number.parseFloat(fieldStyle.gap),
+        fieldMinWidth: Number.parseFloat(fieldStyle.minWidth),
+        fieldRefAttached: field.dataset.galleryCheckboxFieldRef === "true",
+        fieldStyleValue: field.style.cssText,
+        fieldWidth: field.getBoundingClientRect().width,
+        forcedColorAdjust: indicatorStyle.forcedColorAdjust,
+        indicatorDisplay: indicatorStyle.display,
+        indicatorFlex: indicatorStyle.flex,
+        indicatorHeight: indicatorBox.height,
+        indicatorWidth: indicatorBox.width,
+        inputName: input.name,
+        inputType: input.type,
+        isOverride,
+        kind,
+        labelFontSize: Number.parseFloat(labelStyle.fontSize),
+        labelFontWeight: labelStyle.fontWeight,
+        labelHidden: labelClasses.includes("hraness-visually-hidden"),
+        labelText: label.textContent?.trim() ?? "",
+        layerSentinel: fieldStyle
+          .getPropertyValue("--gallery-checkbox-field-layer-conflict")
+          .trim(),
+        slot: field.dataset.slot ?? "",
+        transitionProperty: indicatorStyle.transitionProperty,
+      };
+    });
+    const defaultCheckboxEvidence = checkboxEvidence.find(
+      (checkbox) => !checkbox.isOverride,
+    );
+    const overrideCheckboxEvidence = checkboxEvidence.find(
+      (checkbox) => checkbox.isOverride,
+    );
     const toolbarEvidence = toolbars.map((toolbar) => {
       const isOverride = toolbar.dataset.galleryToolbarOverride === "true";
       const orientation = toolbar.dataset.orientation;
@@ -2495,6 +3084,87 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         ),
       clientWidth: document.documentElement.clientWidth,
       clientHeight: document.documentElement.clientHeight,
+      checkboxBoundaryContracts:
+        checkboxEvidence.every(
+          (checkbox) =>
+            checkbox.ariaDescribedBy.length > 0
+            && checkbox.borderRadius === resolvedTokens.smallRadius
+            && checkbox.borderStyle === "solid"
+            && checkbox.borderWidth === 1
+            && checkbox.controlBorderWidth === 0
+            && checkbox.descriptionConnected
+            && (checkbox.isOverride || checkbox.fieldRefAttached)
+            // The artifact oracle proves `inline-grid`; this direct grid child
+            // is blockified to `grid` in the browser's computed style.
+            && checkbox.indicatorDisplay === "grid"
+            && checkbox.indicatorFlex === "0 0 auto"
+            && checkbox.indicatorHeight === 20
+            && checkbox.indicatorWidth === 20
+            && checkbox.inputName === `gallery-${checkbox.kind}-checkbox`
+            && checkbox.inputType === "checkbox"
+            && checkbox.labelFontSize === resolvedTokens.cardLabelSize
+            && checkbox.labelFontWeight === resolvedTokens.mediumWeight
+            && checkbox.labelText.length > 0
+            && checkbox.slot === "checkbox-field"
+            && checkbox.transitionProperty === "background-color, border-color",
+        ),
+      checkboxClassContracts: checkboxEvidence.every(
+        (checkbox) => checkbox.classContract,
+      ),
+      checkboxDefaultBackground: defaultCheckboxEvidence?.backgroundColor ?? "",
+      checkboxDiagnostics: JSON.stringify({
+        checkboxes: checkboxEvidence,
+        tokens: resolvedTokens,
+      }),
+      checkboxLayerSentinels: checkboxEvidence.every(
+        (checkbox) => checkbox.layerSentinel === "legacy",
+      ),
+      checkboxOverrideContract:
+        overrideCheckboxEvidence !== undefined
+        && equivalentColor(
+          overrideCheckboxEvidence.color,
+          resolvedTokens.primary,
+        )
+        && overrideCheckboxEvidence.controlBackground
+          === resolvedTokens.secondaryBackground
+        && overrideCheckboxEvidence.controlGap === resolvedTokens.space4
+        && overrideCheckboxEvidence.controlGridColumns !== "none"
+        && overrideCheckboxEvidence.controlMinHeight === 52
+        && /--[^:]+:\s*3\.25rem/u.test(
+          overrideCheckboxEvidence.controlStyleValue,
+        )
+        && overrideCheckboxEvidence.fieldDisplay === "flex"
+        && overrideCheckboxEvidence.fieldGap === resolvedTokens.space5
+        && overrideCheckboxEvidence.fieldMinWidth === 0
+        && /--[^:]+:\s*14rem/u.test(overrideCheckboxEvidence.fieldStyleValue)
+        && overrideCheckboxEvidence.fieldStyleValue.includes("width: 15rem")
+        && overrideCheckboxEvidence.fieldWidth === 240
+        && overrideCheckboxEvidence.labelHidden,
+      checkboxStateContracts:
+        defaultCheckboxEvidence !== undefined
+        && defaultCheckboxEvidence.backgroundColor
+          === resolvedTokens.neutralBackground
+        && defaultCheckboxEvidence.borderColor === resolvedTokens.inputBorder
+        && !defaultCheckboxEvidence.checked
+        && defaultCheckboxEvidence.controlBackground === resolvedTokens.transparent
+        && defaultCheckboxEvidence.controlDisplay === "grid"
+        && defaultCheckboxEvidence.controlGap === resolvedTokens.space3
+        && defaultCheckboxEvidence.controlMinHeight === 40
+        && defaultCheckboxEvidence.dataDisabled === ""
+        && defaultCheckboxEvidence.dataInvalid === ""
+        && defaultCheckboxEvidence.dataSelected === ""
+        && defaultCheckboxEvidence.fieldDisplay === "grid"
+        && defaultCheckboxEvidence.fieldGap === resolvedTokens.space2
+        && defaultCheckboxEvidence.fieldMinWidth === 0
+        && !defaultCheckboxEvidence.labelHidden
+        && overrideCheckboxEvidence !== undefined
+        && overrideCheckboxEvidence.backgroundColor === resolvedTokens.primary
+        && overrideCheckboxEvidence.borderColor === resolvedTokens.destructiveBorder
+        && overrideCheckboxEvidence.checked
+        && overrideCheckboxEvidence.dataDisabled === "true"
+        && overrideCheckboxEvidence.dataInvalid === "true"
+        && overrideCheckboxEvidence.dataSelected === "true"
+        && overrideCheckboxEvidence.disabled,
       colorScheme: getComputedStyle(document.documentElement).colorScheme,
       colorEquivalenceContract:
         equivalentColor(
@@ -3278,7 +3948,83 @@ async function settleCardFamilyTransitions(page: Page): Promise<void> {
   });
 }
 
-async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
+async function verifyCheckboxFocusCascadeIsolation(
+  page: Page,
+  id: string,
+  checkboxFocusContract: CheckboxFocusContract,
+): Promise<void> {
+  const evidence = await page.evaluate((focusContract) => {
+    const activeAnimations = (element: Element) => element
+      .getAnimations({ subtree: true })
+      .filter((animation) =>
+        animation.playState !== "finished" && animation.playState !== "idle"
+      )
+      .map((animation) => ({
+        currentTime: typeof animation.currentTime === "number"
+          ? animation.currentTime
+          : String(animation.currentTime),
+        id: animation.id,
+        playState: animation.playState,
+        playbackRate: animation.playbackRate,
+        startTime: typeof animation.startTime === "number"
+          ? animation.startTime
+          : String(animation.startTime),
+        type: animation.constructor.name,
+      }));
+    const root = document.createElement("div");
+    root.dataset.galleryCheckboxFieldLayerConflict = "true";
+    root.setAttribute("aria-hidden", "true");
+    const control = document.createElement("div");
+    control.dataset.slot = "checkbox-control";
+    control.classList.add(...focusContract.classNames);
+    root.append(control);
+    document.body.append(root);
+    try {
+      const style = getComputedStyle(control);
+      const colorProbe = document.createElement("div");
+      colorProbe.style.setProperty("outline-color", "var(--ui-ring)");
+      document.body.append(colorProbe);
+      const expectedOutlineColor = getComputedStyle(colorProbe).outlineColor;
+      colorProbe.remove();
+      const controlClassNames = [...control.classList];
+      return {
+        activeAnimations: activeAnimations(control),
+        controlClassNames,
+        expectedOutlineColor,
+        missingFocusClassNames: focusContract.classNames.filter(
+          (className) => !controlClassNames.includes(className),
+        ),
+        outlineColor: style.outlineColor,
+        outlineOffset: Number.parseFloat(style.outlineOffset),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+      };
+    } finally {
+      root.remove();
+    }
+  }, checkboxFocusContract);
+  const diagnostics = JSON.stringify({
+    ...evidence,
+    expectedFocusRules: checkboxFocusContract.rules,
+  });
+  invariant(
+    evidence.missingFocusClassNames.length === 0,
+    `${id}: the non-React CheckboxField cascade canary is missing focus classes: ${diagnostics}`,
+  );
+  invariant(
+    evidence.outlineColor === evidence.expectedOutlineColor
+    && evidence.outlineOffset === 3
+    && evidence.outlineStyle === "solid"
+    && evidence.outlineWidth === 2,
+    `${id}: the non-React CheckboxField focus classes do not win the final cascade: ${diagnostics}`,
+  );
+}
+
+async function verifyKeyboardPath(
+  page: Page,
+  id: string,
+  checkboxFocusContract: CheckboxFocusContract,
+): Promise<void> {
   await page.keyboard.press("Tab");
   const skipLink = page.locator('[data-slot="skip-link"]');
   await page.waitForFunction(() => {
@@ -3378,8 +4124,143 @@ async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
     await checkbox.evaluate((element) => document.activeElement === element),
     `${id}: the checkbox is not reachable after the action`,
   );
+  const checkboxTransitionSettlement = await checkbox.evaluate(async (element) => {
+    const control = element.closest('[data-slot="checkbox-control"]');
+    if (!(control instanceof HTMLLabelElement)) {
+      throw new Error("The focused checkbox control label is missing");
+    }
+    const seconds = (durationList: string) => durationList.split(",").map(
+      (duration) => {
+        const value = duration.trim();
+        if (value.endsWith("ms")) return Number.parseFloat(value) / 1_000;
+        if (value.endsWith("s")) return Number.parseFloat(value);
+        return Number.NaN;
+      },
+    );
+    const transitionEvidence = (animation: Animation) => ({
+      currentTime: typeof animation.currentTime === "number"
+        ? animation.currentTime
+        : String(animation.currentTime),
+      id: animation.id,
+      playState: animation.playState,
+      playbackRate: animation.playbackRate,
+      startTime: typeof animation.startTime === "number"
+        ? animation.startTime
+        : String(animation.startTime),
+      type: animation.constructor.name,
+    });
+    const style = getComputedStyle(control);
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const transitionDelays = seconds(style.transitionDelay);
+    const transitionDurations = seconds(style.transitionDuration);
+    const reducedMotionContract = transitionDurations.length > 0
+      && transitionDurations.every(
+        (duration) => Number.isFinite(duration)
+          && duration >= 0
+          && duration <= 0.000_01,
+      )
+      && transitionDelays.length > 0
+      && transitionDelays.every(
+        (delay) => Number.isFinite(delay) && delay === 0,
+      );
+    const transitionsBefore = control.getAnimations({ subtree: true })
+      .filter((animation) => animation.constructor.name === "CSSTransition");
+    if (reducedMotion && reducedMotionContract) {
+      await Promise.allSettled(
+        transitionsBefore.map(async (transition) => transition.finished),
+      );
+    }
+    const activeTransitionsAfter = control.getAnimations({ subtree: true })
+      .filter((animation) =>
+        animation.constructor.name === "CSSTransition"
+        && animation.playState !== "finished"
+        && animation.playState !== "idle"
+      );
+    return {
+      activeTransitionsAfter: activeTransitionsAfter.map(transitionEvidence),
+      reducedMotion,
+      reducedMotionContract,
+      transitionDelays,
+      transitionDuration: style.transitionDuration,
+      transitionDurations,
+      transitionProperty: style.transitionProperty,
+      transitionsBefore: transitionsBefore.map(transitionEvidence),
+    };
+  });
+  if (checkboxTransitionSettlement.reducedMotion) {
+    invariant(
+      checkboxTransitionSettlement.reducedMotionContract,
+      `${id}: CheckboxField transitions exceed the reduced-motion reset contract: ${JSON.stringify(checkboxTransitionSettlement)}`,
+    );
+    invariant(
+      checkboxTransitionSettlement.activeTransitionsAfter.length === 0,
+      `${id}: CheckboxField reduced-motion transitions did not settle: ${JSON.stringify(checkboxTransitionSettlement)}`,
+    );
+  }
+  const checkboxFocus = await checkbox.evaluate((element, focusClassNames) => {
+    const control = element.closest('[data-slot="checkbox-control"]');
+    if (!(control instanceof HTMLLabelElement)) {
+      throw new Error("The focused checkbox control label is missing");
+    }
+    const style = getComputedStyle(control);
+    const controlClassNames = [...control.classList];
+    const colorProbe = document.createElement("div");
+    colorProbe.style.setProperty("outline-color", "var(--ui-ring)");
+    document.body.append(colorProbe);
+    const expectedOutlineColor = getComputedStyle(colorProbe).outlineColor;
+    colorProbe.remove();
+    return {
+      activeAnimations: control.getAnimations({ subtree: true })
+        .filter((animation) =>
+          animation.playState !== "finished" && animation.playState !== "idle"
+        )
+        .map((animation) => ({
+          currentTime: typeof animation.currentTime === "number"
+            ? animation.currentTime
+            : String(animation.currentTime),
+          id: animation.id,
+          playState: animation.playState,
+          playbackRate: animation.playbackRate,
+          startTime: typeof animation.startTime === "number"
+            ? animation.startTime
+            : String(animation.startTime),
+          type: animation.constructor.name,
+        })),
+      controlClassNames,
+      dataFocusVisible: control.dataset.focusVisible ?? "",
+      expectedOutlineColor,
+      missingFocusClassNames: focusClassNames.filter(
+        (className) => !controlClassNames.includes(className),
+      ),
+      nativeFocusVisible: element.matches(":focus-visible"),
+      outlineColor: style.outlineColor,
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  }, checkboxFocusContract.classNames);
+  const checkboxFocusDiagnostics = JSON.stringify({
+    ...checkboxFocus,
+    expectedFocusRules: checkboxFocusContract.rules,
+    transitionSettlement: checkboxTransitionSettlement,
+  });
+  invariant(
+    checkboxFocus.missingFocusClassNames.length === 0,
+    `${id}: CheckboxField focus classes are missing from the rendered control: ${checkboxFocusDiagnostics}`,
+  );
+  invariant(
+    checkboxFocus.dataFocusVisible === "true"
+    && checkboxFocus.nativeFocusVisible
+    && checkboxFocus.outlineColor === checkboxFocus.expectedOutlineColor
+    && checkboxFocus.outlineOffset === 3
+    && checkboxFocus.outlineStyle === "solid"
+    && checkboxFocus.outlineWidth === 2,
+    `${id}: CheckboxField focus classes do not win the final cascade: ${checkboxFocusDiagnostics}`,
+  );
   await page.keyboard.press("Space");
   invariant(await checkbox.isChecked(), `${id}: Space did not select the native checkbox`);
+  await page.keyboard.press("Space");
+  invariant(!await checkbox.isChecked(), `${id}: Space did not restore the native checkbox`);
 
   await page.keyboard.press("Tab");
   const selectTrigger = page.locator(
@@ -3767,6 +4648,11 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
         '[data-gallery-card-tone], [data-gallery-pressable-card-tone], [data-gallery-card-family-override], [data-gallery-card-class-variable]',
       ),
     ];
+    const checkboxIndicators = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-gallery-checkbox] [data-slot="checkbox-indicator"]',
+      ),
+    ];
     if (
       !(button instanceof HTMLElement)
       || !(card instanceof HTMLElement)
@@ -3777,6 +4663,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       || statusPills.length !== 10
       || statusDots.length !== 6
       || cardFamily.length !== 11
+      || checkboxIndicators.length !== 2
     ) {
       throw new Error("The forced-colors gallery structure is incomplete.");
     }
@@ -3836,6 +4723,26 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
         slot: element.dataset.slot ?? "",
       };
     });
+    const checkboxEvidence = checkboxIndicators.map((indicator) => {
+      const field = indicator.closest('[data-gallery-checkbox]');
+      const style = getComputedStyle(indicator);
+      const box = indicator.getBoundingClientRect();
+      if (!(field instanceof HTMLDivElement)) {
+        throw new Error("The forced-colors CheckboxField root is missing");
+      }
+      return {
+        borderColor: style.borderColor,
+        borderStyle: style.borderStyle,
+        borderWidth: Number.parseFloat(style.borderWidth),
+        forcedColorAdjust: style.forcedColorAdjust,
+        height: box.height,
+        kind: field.dataset.galleryCheckbox ?? "",
+        layerSentinel: getComputedStyle(field)
+          .getPropertyValue("--gallery-checkbox-field-layer-conflict")
+          .trim(),
+        width: box.width,
+      };
+    });
     return {
       buttonBackground: buttonStyle.backgroundColor,
       buttonFace: normalize("backgroundColor", "ButtonFace"),
@@ -3855,6 +4762,21 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       cardFamilyDiagnostics: JSON.stringify({
         canvasText,
         items: cardFamilyEvidence,
+      }),
+      checkboxContracts: checkboxEvidence.every(
+        (checkbox) =>
+          checkbox.borderColor === canvasText
+          && checkbox.borderStyle === "solid"
+          && checkbox.borderWidth === 1
+          && checkbox.forcedColorAdjust === "auto"
+          && checkbox.height === 20
+          && (checkbox.kind === "default" || checkbox.kind === "override")
+          && checkbox.layerSentinel === "legacy"
+          && checkbox.width === 20,
+      ),
+      checkboxDiagnostics: JSON.stringify({
+        canvasText,
+        checkboxes: checkboxEvidence,
       }),
       forcedColorsActive: matchMedia("(forced-colors: active)").matches,
       keyHintContracts:
@@ -3905,6 +4827,31 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
         dots: statusDotEvidence,
         pills: statusPillEvidence,
       }),
+    };
+  });
+}
+
+async function checkboxCoarsePointerEvidence(page: Page) {
+  return page.evaluate(() => {
+    const field = document.querySelector('[data-gallery-checkbox="default"]');
+    const control = field?.querySelector('[data-slot="checkbox-control"]');
+    const indicator = field?.querySelector('[data-slot="checkbox-indicator"]');
+    if (
+      !(field instanceof HTMLDivElement)
+      || !(control instanceof HTMLLabelElement)
+      || !(indicator instanceof HTMLSpanElement)
+    ) {
+      throw new Error("The coarse-pointer CheckboxField fixture is incomplete");
+    }
+    const controlStyle = getComputedStyle(control);
+    const indicatorBox = indicator.getBoundingClientRect();
+    return {
+      coarsePointer: matchMedia("(pointer: coarse)").matches,
+      controlMinHeight: Number.parseFloat(controlStyle.minHeight),
+      indicatorHeight: indicatorBox.height,
+      indicatorWidth: indicatorBox.width,
+      verificationOverride:
+        document.documentElement.dataset.verificationPointer ?? "",
     };
   });
 }
@@ -4011,6 +4958,7 @@ try {
   await Promise.all([
     access(resolve(installedRoot, "src/styles.css")),
     access(resolve(installedRoot, "dist/stylex.css")),
+    access(resolve(installedRoot, "src/checkbox-field.stylex.ts")),
   ]);
   await assert.rejects(
     access(resolve(installedRoot, "gallery/styles.css")),
@@ -4026,7 +4974,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|key-hint|status-family|themed-surface|toolbar|viewport-frame|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|checkbox-field|key-hint|status-family|themed-surface|toolbar|viewport-frame|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -4054,6 +5002,11 @@ try {
     /\.hraness-key-hint(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate KeyHint declarations in legacy CSS",
   );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-checkbox-field(?:__(?:control|indicator|label))?(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate CheckboxField declarations in legacy CSS",
+  );
 
   const productionDirectory = resolve(consumer, "dist/browser");
   const negativeDirectory = resolve(consumer, "dist/unstyled-negative-control");
@@ -4063,9 +5016,16 @@ try {
     buildBrowserEntry(consumer, "gallery/unstyled-client.tsx", negativeDirectory),
     buildServerRenderer(consumer, serverRendererDirectory),
   ]);
-  requirePackedDefaultStylesheet(production.css);
+  requirePackedDefaultStylesheet(production.css, production.javaScript);
+  const checkboxFocusContract = requirePackedCheckboxFocusContract(
+    production.javaScript,
+    production.css,
+  );
   assert.throws(
-    () => requirePackedDefaultStylesheet(negativeControl.css),
+    () => requirePackedDefaultStylesheet(
+      negativeControl.css,
+      negativeControl.javaScript,
+    ),
     /must keep reset styles below components/u,
     "the stylesheet delivery oracle must reject the unstyled negative-control consumer",
   );
@@ -4525,6 +5485,14 @@ try {
           );
           invariant(light.buttonMinHeight >= 40, `${layout.id}: action target is only ${String(light.buttonMinHeight)}px high`);
           invariant(light.cardBorderStyle !== "none", `${layout.id}: card recipe did not load`);
+          invariant(
+            light.checkboxBoundaryContracts
+            && light.checkboxClassContracts
+            && light.checkboxLayerSentinels
+            && light.checkboxOverrideContract
+            && light.checkboxStateContracts,
+            `${layout.id}: CheckboxField parity failed: ${light.checkboxDiagnostics}`,
+          );
 
           if (layout.context.reducedMotion === "reduce") {
             invariant(
@@ -4539,7 +5507,12 @@ try {
             );
           }
 
-          await verifyKeyboardPath(page, layout.id);
+          await verifyCheckboxFocusCascadeIsolation(
+            page,
+            layout.id,
+            checkboxFocusContract,
+          );
+          await verifyKeyboardPath(page, layout.id, checkboxFocusContract);
           await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
@@ -4587,6 +5560,15 @@ try {
             `${layout.id}: dark KeyHint parity failed: ${dark.keyHintDiagnostics}`,
           );
           invariant(
+            dark.checkboxBoundaryContracts
+            && dark.checkboxClassContracts
+            && dark.checkboxLayerSentinels
+            && dark.checkboxOverrideContract
+            && dark.checkboxStateContracts
+            && dark.checkboxDefaultBackground !== light.checkboxDefaultBackground,
+            `${layout.id}: dark CheckboxField parity failed: ${dark.checkboxDiagnostics}`,
+          );
+          invariant(
             dark.statusFamilyClassContracts
             && dark.statusFamilyGeometryContracts
             && dark.statusFamilyLayerSentinels
@@ -4625,6 +5607,42 @@ try {
         } finally {
           await context.close();
         }
+      }
+
+      const coarsePointerContext = await browser.newContext({
+        colorScheme: "light",
+        hasTouch: true,
+        isMobile: true,
+        reducedMotion: "no-preference",
+        viewport: { height: 844, width: 390 },
+      });
+      try {
+        const page = await coarsePointerContext.newPage();
+        const failures = attachDiagnostics(page);
+        await page.goto(`http://${server.hostname}:${String(server.port)}/`, {
+          waitUntil: "networkidle",
+        });
+        await waitForHydration(
+          page,
+          failures,
+          requestedPaths,
+          "coarse-pointer CheckboxField",
+        );
+        const coarse = await checkboxCoarsePointerEvidence(page);
+        invariant(
+          coarse.coarsePointer
+          && coarse.controlMinHeight === 48
+          && coarse.indicatorHeight === 20
+          && coarse.indicatorWidth === 20
+          && coarse.verificationOverride === "",
+          `coarse-pointer CheckboxField geometry changed: ${JSON.stringify(coarse)}`,
+        );
+        invariant(
+          failures.length === 0,
+          `coarse-pointer CheckboxField: ${failures.join("; ")}`,
+        );
+      } finally {
+        await coarsePointerContext.close();
       }
 
       const counterfactualContext = await browser.newContext({
@@ -4714,6 +5732,10 @@ try {
           forced.keyHintContracts,
           `forced colors: KeyHint parity failed: ${forced.keyHintDiagnostics}`,
         );
+        invariant(
+          forced.checkboxContracts,
+          `forced colors: CheckboxField parity failed: ${forced.checkboxDiagnostics}`,
+        );
 
         await page.keyboard.press("Tab");
         await page.keyboard.press("Enter");
@@ -4779,7 +5801,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, CheckboxField, Card, PressableCard, and Toolbar finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

@@ -10,11 +10,16 @@ import {
   type SelectHTMLAttributes,
   useId,
 } from "react";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 import {
   Button as AriaButton,
   CheckboxButton as AriaCheckboxButton,
+  type CheckboxButtonRenderProps,
   CheckboxField as AriaCheckboxField,
+  CheckboxFieldContext,
   type CheckboxFieldProps as AriaCheckboxFieldProps,
+  type CheckboxFieldRenderProps,
   FieldError as AriaFieldError,
   type FieldErrorProps as AriaFieldErrorProps,
   Group,
@@ -40,8 +45,11 @@ import {
   TextField as AriaTextField,
   type TextFieldProps as AriaTextFieldProps,
   type ValidationResult,
+  useSlottedContext,
 } from "react-aria-components";
 
+import { checkboxFieldStyles } from "./checkbox-field.stylex.js";
+import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 
 export type FieldSize = "compact" | "default" | "large";
@@ -394,47 +402,137 @@ export type CheckboxFieldProps = Omit<
   Readonly<{
     className?: string;
     controlClassName?: string;
+    /** Typed StyleX presentation applied to the semantic checkbox control. */
+    controlXstyle?: StyleXStyles;
     description?: ReactNode;
     errorMessage?: FieldErrorMessage;
     fieldRef?: Ref<HTMLDivElement>;
     label: ReactNode;
+    showLabel?: boolean;
+    /** Typed StyleX presentation applied to the field root. */
+    xstyle?: StyleXStyles;
   }>;
+
+function checkboxFieldPresentation(
+  state: CheckboxFieldRenderProps,
+  xstyle: StyleXStyles | undefined,
+) {
+  return stylex.props(
+    checkboxFieldStyles.root,
+    state.isDisabled && checkboxFieldStyles.disabled,
+    xstyle,
+  );
+}
+
+function checkboxControlPresentation(
+  state: CheckboxButtonRenderProps,
+  controlXstyle: StyleXStyles | undefined,
+) {
+  return stylex.props(
+    checkboxFieldStyles.control,
+    state.isFocusVisible && checkboxFieldStyles.focusVisible,
+    controlXstyle,
+  );
+}
 
 /** A validation-aware checkbox built on the React Aria 1.19 split field API. */
 export function CheckboxField({
   className,
   controlClassName,
+  controlXstyle,
   description,
   errorMessage,
   fieldRef,
   label,
+  render,
+  showLabel = true,
+  style,
+  xstyle,
   ...props
 }: CheckboxFieldProps) {
+  const inheritedRender = useSlottedContext(
+    CheckboxFieldContext,
+    props.slot,
+  )?.render;
+  const resolvedRender = render ?? inheritedRender;
+
   return (
     <AriaCheckboxField
       {...props}
-      className={cn("hraness-checkbox-field", className)}
+      className=""
       data-slot="checkbox-field"
       ref={fieldRef}
+      render={(domProps, state) => {
+        const presentation = checkboxFieldPresentation(state, xstyle);
+        const composedProps = {
+          ...domProps,
+          className: cn(
+            domProps.className,
+            "hraness-checkbox-field",
+            presentation.className,
+            className,
+          ),
+          style: mergeStylexInlineStyles(presentation.style, domProps.style),
+        };
+
+        return resolvedRender === undefined
+          ? <div {...composedProps} />
+          : resolvedRender(composedProps, state);
+      }}
+      {...(style === undefined ? {} : { style })}
     >
       <AriaCheckboxButton
-        className={cn("hraness-checkbox-field__control", controlClassName)}
+        className={(state) => {
+          const presentation = checkboxControlPresentation(state, controlXstyle);
+          return cn(
+            "hraness-checkbox-field__control",
+            presentation.className,
+            controlClassName,
+          );
+        }}
         data-slot="checkbox-control"
+        style={(state) =>
+          mergeStylexInlineStyles(
+            checkboxControlPresentation(state, controlXstyle).style,
+            undefined,
+          )}
       >
-        {({ isIndeterminate, isSelected }) => (
-          <>
-            <span
-              aria-hidden="true"
-              className="hraness-checkbox-field__indicator"
-              data-slot="checkbox-indicator"
-            >
-              {isIndeterminate ? "−" : isSelected ? "✓" : null}
-            </span>
-            <span className="hraness-checkbox-field__label" data-slot="checkbox-label">
-              {label}
-            </span>
-          </>
-        )}
+        {({ isIndeterminate, isInvalid, isSelected }) => {
+          const indicatorPresentation = stylex.props(
+            checkboxFieldStyles.indicator,
+            (isIndeterminate || isSelected)
+              && checkboxFieldStyles.selectedIndicator,
+            isInvalid && checkboxFieldStyles.invalidIndicator,
+          );
+          const labelPresentation = stylex.props(checkboxFieldStyles.label);
+
+          return (
+            <>
+              <span
+                aria-hidden="true"
+                {...indicatorPresentation}
+                className={cn(
+                  "hraness-checkbox-field__indicator",
+                  indicatorPresentation.className,
+                )}
+                data-slot="checkbox-indicator"
+              >
+                {isIndeterminate ? "−" : isSelected ? "✓" : null}
+              </span>
+              <span
+                {...labelPresentation}
+                className={cn(
+                  "hraness-checkbox-field__label",
+                  labelPresentation.className,
+                  !showLabel && "hraness-visually-hidden",
+                )}
+                data-slot="checkbox-label"
+              >
+                {label}
+              </span>
+            </>
+          );
+        }}
       </AriaCheckboxButton>
       <FieldMessages description={description} errorMessage={errorMessage} />
     </AriaCheckboxField>

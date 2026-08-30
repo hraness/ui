@@ -114,7 +114,12 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
     "@media (forced-colors: active)",
   ]) expect(components).toContain(contract);
 
-  expect(reset.trimStart().startsWith("@layer base {")).toBe(true);
+  expect(reset.trimStart().startsWith([
+    "@layer base, components;",
+    "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3;",
+    "",
+    "@layer base {",
+  ].join("\n"))).toBe(true);
   expect(declarationBlock(reset, ":where(h1, h2, h3, h4, h5, h6) {")).toContain(
     "font-family: var(--ui-font-heading);",
   );
@@ -146,6 +151,7 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   );
   expect(components).not.toMatch(/\.hraness-toolbar(?![A-Za-z0-9_-])/u);
   expect(components).not.toMatch(/\.hraness-key-hint(?![A-Za-z0-9_-])/u);
+  expect(components).not.toMatch(/\.hraness-checkbox-field(?![A-Za-z0-9_-])/u);
   expect(tailwind).toContain(
     ':not(:where([data-theme="light"], [data-theme="light"] *))',
   );
