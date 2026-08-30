@@ -4124,6 +4124,79 @@ async function verifyKeyboardPath(
     await checkbox.evaluate((element) => document.activeElement === element),
     `${id}: the checkbox is not reachable after the action`,
   );
+  const checkboxTransitionSettlement = await checkbox.evaluate(async (element) => {
+    const control = element.closest('[data-slot="checkbox-control"]');
+    if (!(control instanceof HTMLLabelElement)) {
+      throw new Error("The focused checkbox control label is missing");
+    }
+    const seconds = (durationList: string) => durationList.split(",").map(
+      (duration) => {
+        const value = duration.trim();
+        if (value.endsWith("ms")) return Number.parseFloat(value) / 1_000;
+        if (value.endsWith("s")) return Number.parseFloat(value);
+        return Number.NaN;
+      },
+    );
+    const transitionEvidence = (animation: Animation) => ({
+      currentTime: typeof animation.currentTime === "number"
+        ? animation.currentTime
+        : String(animation.currentTime),
+      id: animation.id,
+      playState: animation.playState,
+      playbackRate: animation.playbackRate,
+      startTime: typeof animation.startTime === "number"
+        ? animation.startTime
+        : String(animation.startTime),
+      type: animation.constructor.name,
+    });
+    const style = getComputedStyle(control);
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const transitionDelays = seconds(style.transitionDelay);
+    const transitionDurations = seconds(style.transitionDuration);
+    const reducedMotionContract = transitionDurations.length > 0
+      && transitionDurations.every(
+        (duration) => Number.isFinite(duration)
+          && duration >= 0
+          && duration <= 0.000_01,
+      )
+      && transitionDelays.length > 0
+      && transitionDelays.every(
+        (delay) => Number.isFinite(delay) && delay === 0,
+      );
+    const transitionsBefore = control.getAnimations({ subtree: true })
+      .filter((animation) => animation.constructor.name === "CSSTransition");
+    if (reducedMotion && reducedMotionContract) {
+      await Promise.allSettled(
+        transitionsBefore.map(async (transition) => transition.finished),
+      );
+    }
+    const activeTransitionsAfter = control.getAnimations({ subtree: true })
+      .filter((animation) =>
+        animation.constructor.name === "CSSTransition"
+        && animation.playState !== "finished"
+        && animation.playState !== "idle"
+      );
+    return {
+      activeTransitionsAfter: activeTransitionsAfter.map(transitionEvidence),
+      reducedMotion,
+      reducedMotionContract,
+      transitionDelays,
+      transitionDuration: style.transitionDuration,
+      transitionDurations,
+      transitionProperty: style.transitionProperty,
+      transitionsBefore: transitionsBefore.map(transitionEvidence),
+    };
+  });
+  if (checkboxTransitionSettlement.reducedMotion) {
+    invariant(
+      checkboxTransitionSettlement.reducedMotionContract,
+      `${id}: CheckboxField transitions exceed the reduced-motion reset contract: ${JSON.stringify(checkboxTransitionSettlement)}`,
+    );
+    invariant(
+      checkboxTransitionSettlement.activeTransitionsAfter.length === 0,
+      `${id}: CheckboxField reduced-motion transitions did not settle: ${JSON.stringify(checkboxTransitionSettlement)}`,
+    );
+  }
   const checkboxFocus = await checkbox.evaluate((element, focusClassNames) => {
     const control = element.closest('[data-slot="checkbox-control"]');
     if (!(control instanceof HTMLLabelElement)) {
@@ -4169,6 +4242,7 @@ async function verifyKeyboardPath(
   const checkboxFocusDiagnostics = JSON.stringify({
     ...checkboxFocus,
     expectedFocusRules: checkboxFocusContract.rules,
+    transitionSettlement: checkboxTransitionSettlement,
   });
   invariant(
     checkboxFocus.missingFocusClassNames.length === 0,
