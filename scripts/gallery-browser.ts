@@ -696,6 +696,34 @@ function requireFinalBundleLayerOrder(css: string): void {
   );
 }
 
+function requirePackedCheckboxConflictLayer(css: string): void {
+  const selectors = [...css.matchAll(
+    /html\s+body\s+\[data-gallery-checkbox-field-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"checkbox-control"|checkbox-control)\]\s*\{/gu,
+  )];
+  assert.equal(
+    selectors.length,
+    1,
+    "the final styled gallery bundle must contain exactly one CheckboxField control conflict selector",
+  );
+  const selector = selectors[0];
+  assert.ok(selector?.index !== undefined);
+  const selectorPosition = selector.index;
+  const enclosingLayers: string[] = [];
+  for (const match of css.matchAll(/@layer\s+([A-Za-z0-9_.-]+)\s*\{/gu)) {
+    const start = match.index ?? -1;
+    const open = start + match[0].lastIndexOf("{");
+    const block = balancedBlock(css, open, `final ${String(match[1])} CSS`);
+    if (selectorPosition >= open && selectorPosition < open + block.length) {
+      enclosingLayers.push(match[1]!);
+    }
+  }
+  assert.deepEqual(
+    enclosingLayers,
+    ["components.hraness-ui.legacy"],
+    "the unique CheckboxField control conflict selector must exist only inside components.hraness-ui.legacy",
+  );
+}
+
 function exactAtomicClassRules(
   css: string,
   className: string,
@@ -837,6 +865,7 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     "the packed default stylesheet must freeze the package layer order",
   );
   requireFinalBundleLayerOrder(css);
+  requirePackedCheckboxConflictLayer(css);
   assert.match(
     css,
     /\.hraness-button(?:__control)?(?=[\s,{:.])/u,
@@ -3919,6 +3948,78 @@ async function settleCardFamilyTransitions(page: Page): Promise<void> {
   });
 }
 
+async function verifyCheckboxFocusCascadeIsolation(
+  page: Page,
+  id: string,
+  checkboxFocusContract: CheckboxFocusContract,
+): Promise<void> {
+  const evidence = await page.evaluate((focusContract) => {
+    const activeAnimations = (element: Element) => element
+      .getAnimations({ subtree: true })
+      .filter((animation) =>
+        animation.playState !== "finished" && animation.playState !== "idle"
+      )
+      .map((animation) => ({
+        currentTime: typeof animation.currentTime === "number"
+          ? animation.currentTime
+          : String(animation.currentTime),
+        id: animation.id,
+        playState: animation.playState,
+        playbackRate: animation.playbackRate,
+        startTime: typeof animation.startTime === "number"
+          ? animation.startTime
+          : String(animation.startTime),
+        type: animation.constructor.name,
+      }));
+    const root = document.createElement("div");
+    root.dataset.galleryCheckboxFieldLayerConflict = "true";
+    root.setAttribute("aria-hidden", "true");
+    const control = document.createElement("div");
+    control.dataset.slot = "checkbox-control";
+    control.classList.add(...focusContract.classNames);
+    root.append(control);
+    document.body.append(root);
+    try {
+      const style = getComputedStyle(control);
+      const colorProbe = document.createElement("div");
+      colorProbe.style.setProperty("outline-color", "var(--ui-ring)");
+      document.body.append(colorProbe);
+      const expectedOutlineColor = getComputedStyle(colorProbe).outlineColor;
+      colorProbe.remove();
+      const controlClassNames = [...control.classList];
+      return {
+        activeAnimations: activeAnimations(control),
+        controlClassNames,
+        expectedOutlineColor,
+        missingFocusClassNames: focusContract.classNames.filter(
+          (className) => !controlClassNames.includes(className),
+        ),
+        outlineColor: style.outlineColor,
+        outlineOffset: Number.parseFloat(style.outlineOffset),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+      };
+    } finally {
+      root.remove();
+    }
+  }, checkboxFocusContract);
+  const diagnostics = JSON.stringify({
+    ...evidence,
+    expectedFocusRules: checkboxFocusContract.rules,
+  });
+  invariant(
+    evidence.missingFocusClassNames.length === 0,
+    `${id}: the non-React CheckboxField cascade canary is missing focus classes: ${diagnostics}`,
+  );
+  invariant(
+    evidence.outlineColor === evidence.expectedOutlineColor
+    && evidence.outlineOffset === 3
+    && evidence.outlineStyle === "solid"
+    && evidence.outlineWidth === 2,
+    `${id}: the non-React CheckboxField focus classes do not win the final cascade: ${diagnostics}`,
+  );
+}
+
 async function verifyKeyboardPath(
   page: Page,
   id: string,
@@ -4036,6 +4137,22 @@ async function verifyKeyboardPath(
     const expectedOutlineColor = getComputedStyle(colorProbe).outlineColor;
     colorProbe.remove();
     return {
+      activeAnimations: control.getAnimations({ subtree: true })
+        .filter((animation) =>
+          animation.playState !== "finished" && animation.playState !== "idle"
+        )
+        .map((animation) => ({
+          currentTime: typeof animation.currentTime === "number"
+            ? animation.currentTime
+            : String(animation.currentTime),
+          id: animation.id,
+          playState: animation.playState,
+          playbackRate: animation.playbackRate,
+          startTime: typeof animation.startTime === "number"
+            ? animation.startTime
+            : String(animation.startTime),
+          type: animation.constructor.name,
+        })),
       controlClassNames,
       dataFocusVisible: control.dataset.focusVisible ?? "",
       expectedOutlineColor,
@@ -5316,6 +5433,11 @@ try {
             );
           }
 
+          await verifyCheckboxFocusCascadeIsolation(
+            page,
+            layout.id,
+            checkboxFocusContract,
+          );
           await verifyKeyboardPath(page, layout.id, checkboxFocusContract);
           await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
