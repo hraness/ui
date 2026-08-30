@@ -535,6 +535,15 @@ function requirePublicLayerContract(
   }
 }
 
+function requireEarliestLayerPrelude(tokensStylesheet: string): void {
+  const expectedPrefix = `${TOP_LEVEL_LAYER_PRELUDE}\n${LAYER_PRELUDE}\n`;
+  if (!tokensStylesheet.startsWith(expectedPrefix)) {
+    throw new Error(
+      "src/tokens.css must begin with the exact base < components and legacy < priority1 < priority2 < priority3 preludes",
+    );
+  }
+}
+
 function requireViewportHeightFallbacks(compiledCss: string): void {
   const fallbacks = [
     /height:\s*100vh;/gu,
@@ -1193,6 +1202,7 @@ const [
   toolbarSource,
   contentSource,
   fieldsSource,
+  tokensStylesheet,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -1203,6 +1213,7 @@ const [
     readFile(resolve(repository, "src/toolbar.tsx"), "utf8"),
     readFile(resolve(repository, "src/content.tsx"), "utf8"),
     readFile(resolve(repository, "src/fields.tsx"), "utf8"),
+    readFile(resolve(repository, "src/tokens.css"), "utf8"),
   ]);
 
 if (compiledCss.trim().length === 0) {
@@ -1311,6 +1322,7 @@ requireKeyHintContract(legacyComponents, compiledCss);
 requireKeyHintSourceContract(contentSource);
 requireCheckboxFieldContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCheckboxFieldSourceContract(fieldsSource);
+requireEarliestLayerPrelude(tokensStylesheet);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,
