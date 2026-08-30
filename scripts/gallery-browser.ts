@@ -296,6 +296,18 @@ interface ArtifactSet {
   readonly javaScriptPath: string;
 }
 
+interface CheckboxFocusRuleEvidence {
+  readonly className: string;
+  readonly declaration: string;
+  readonly layer: "components.hraness-ui.priority2";
+  readonly selector: string;
+}
+
+interface CheckboxFocusContract {
+  readonly classNames: readonly string[];
+  readonly rules: readonly CheckboxFocusRuleEvidence[];
+}
+
 const layouts = [
   {
     context: {
@@ -504,7 +516,7 @@ function balancedBlock(source: string, open: number, description: string): strin
   throw new Error(`${description} contains an unterminated block`);
 }
 
-function packedCheckboxClassNames(javaScript: string): ReadonlySet<string> {
+function packedCheckboxStyleMap(javaScript: string): string {
   const candidates: string[] = [];
   for (const match of javaScript.matchAll(
     /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*control\s*:\s*\{/gu,
@@ -523,8 +535,55 @@ function packedCheckboxClassNames(javaScript: string): ReadonlySet<string> {
     1,
     "the packed JavaScript must contain exactly one compiled checkboxFieldStyles class map",
   );
+  const candidate = candidates[0];
+  assert.ok(candidate !== undefined);
+  return candidate;
+}
+
+function packedCheckboxStyleClassNames(
+  javaScript: string,
+  key: typeof CHECKBOX_STYLE_KEYS[number],
+): readonly string[] {
+  const styleMap = packedCheckboxStyleMap(javaScript);
+  const matches = [...styleMap.matchAll(
+    new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+  )];
+  assert.equal(
+    matches.length,
+    1,
+    `the packed checkboxFieldStyles map must contain exactly one ${key} entry`,
+  );
+  const match = matches[0];
+  assert.ok(match !== undefined);
+  const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+  const nestedMap = balancedBlock(
+    styleMap,
+    open,
+    `packed CheckboxField ${key} JavaScript`,
+  );
+  const classNames: string[] = [];
+  for (const classMatch of nestedMap.slice(1, -1).matchAll(
+    /(?:^|,)\s*[A-Za-z_$][\w$]*\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )) {
+    classNames.push(...classMatch[1]!.split(/\s+/u));
+  }
+  assert.notEqual(
+    classNames.length,
+    0,
+    `the packed checkboxFieldStyles ${key} entry has no generated classes`,
+  );
+  assert.equal(
+    new Set(classNames).size,
+    classNames.length,
+    `the packed checkboxFieldStyles ${key} entry contains duplicate generated classes`,
+  );
+  return classNames;
+}
+
+function packedCheckboxClassNames(javaScript: string): ReadonlySet<string> {
+  const styleMap = packedCheckboxStyleMap(javaScript);
   const classNames = new Set<string>();
-  for (const match of candidates[0]!.matchAll(
+  for (const match of styleMap.matchAll(
     /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
   )) {
     for (const className of match[1]!.split(/\s+/u)) classNames.add(className);
@@ -542,6 +601,95 @@ function checkboxRuleBodies(
       new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(match[1]!)
     ))
     .map((match) => match[2]!);
+}
+
+function exactLayerCss(css: string, layer: string): string {
+  const bodies: string[] = [];
+  for (const match of css.matchAll(/@layer\s+[A-Za-z0-9_.-]+\s*\{/gu)) {
+    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+    const header = css.slice(match.index, open).replace(/\s+/gu, "");
+    if (header === `@layer${layer}`) {
+      const block = balancedBlock(css, open, `packed ${layer} CSS`);
+      bodies.push(block.slice(1, -1));
+    }
+  }
+  assert.notEqual(
+    bodies.length,
+    0,
+    `the packed CSS must contain an exact ${layer} block`,
+  );
+  return bodies.join("\n");
+}
+
+function exactAtomicClassRules(
+  css: string,
+  className: string,
+): readonly Omit<CheckboxFocusRuleEvidence, "className" | "layer">[] {
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+    .map((match) => ({
+      declaration: match[2]!.replace(/\s+/gu, "").replace(/;$/u, ""),
+      selector: match[1]!.trim(),
+    }))
+    .filter((rule) => rule.selector === `.${className}`);
+}
+
+function requirePackedCheckboxFocusContract(
+  javaScript: string,
+  css: string,
+): CheckboxFocusContract {
+  const layer = "components.hraness-ui.priority2" as const;
+  const classNames = packedCheckboxStyleClassNames(javaScript, "focusVisible");
+  const expectedDeclarations = [
+    "outline-color:var(--ui-ring)",
+    "outline-offset:3px",
+    "outline-style:solid",
+    "outline-width:2px",
+  ] as const;
+  assert.equal(
+    classNames.length,
+    expectedDeclarations.length,
+    "the packed CheckboxField focus recipe must contain one class per declaration",
+  );
+  const layerCss = exactLayerCss(css, layer);
+  const rules = classNames.map((className) => {
+    const finalRules = exactAtomicClassRules(css, className);
+    const layerRules = exactAtomicClassRules(layerCss, className);
+    assert.equal(
+      finalRules.length,
+      1,
+      `the final bundle must contain exactly one .${className} rule`,
+    );
+    assert.equal(
+      layerRules.length,
+      1,
+      `the final bundle must place .${className} in ${layer}`,
+    );
+    const finalRule = finalRules[0];
+    const layerRule = layerRules[0];
+    assert.ok(finalRule !== undefined && layerRule !== undefined);
+    assert.deepEqual(
+      finalRule,
+      layerRule,
+      `the ${layer} .${className} rule must be the unique final bundled rule`,
+    );
+    return { className, layer, ...finalRule };
+  });
+  for (const declaration of expectedDeclarations) {
+    assert.equal(
+      rules.filter((rule) => rule.declaration === declaration).length,
+      1,
+      `the final CheckboxField focus recipe must bind exactly one class to ${declaration}`,
+    );
+  }
+  const expectedDeclarationSet: ReadonlySet<string> = new Set(
+    expectedDeclarations,
+  );
+  assert.equal(
+    rules.every((rule) => expectedDeclarationSet.has(rule.declaration)),
+    true,
+    "the final CheckboxField focus recipe contains an unexpected declaration",
+  );
+  return { classNames, rules };
 }
 
 function exactConditionalCss(css: string, condition: string): string {
@@ -3695,7 +3843,11 @@ async function settleCardFamilyTransitions(page: Page): Promise<void> {
   });
 }
 
-async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
+async function verifyKeyboardPath(
+  page: Page,
+  id: string,
+  checkboxFocusContract: CheckboxFocusContract,
+): Promise<void> {
   await page.keyboard.press("Tab");
   const skipLink = page.locator('[data-slot="skip-link"]');
   await page.waitForFunction(() => {
@@ -3795,25 +3947,48 @@ async function verifyKeyboardPath(page: Page, id: string): Promise<void> {
     await checkbox.evaluate((element) => document.activeElement === element),
     `${id}: the checkbox is not reachable after the action`,
   );
-  const checkboxFocus = await checkbox.evaluate((element) => {
+  const checkboxFocus = await checkbox.evaluate((element, focusClassNames) => {
     const control = element.closest('[data-slot="checkbox-control"]');
     if (!(control instanceof HTMLLabelElement)) {
       throw new Error("The focused checkbox control label is missing");
     }
     const style = getComputedStyle(control);
+    const controlClassNames = [...control.classList];
+    const colorProbe = document.createElement("div");
+    colorProbe.style.setProperty("outline-color", "var(--ui-ring)");
+    document.body.append(colorProbe);
+    const expectedOutlineColor = getComputedStyle(colorProbe).outlineColor;
+    colorProbe.remove();
     return {
+      controlClassNames,
       dataFocusVisible: control.dataset.focusVisible ?? "",
+      expectedOutlineColor,
+      missingFocusClassNames: focusClassNames.filter(
+        (className) => !controlClassNames.includes(className),
+      ),
+      nativeFocusVisible: element.matches(":focus-visible"),
+      outlineColor: style.outlineColor,
       outlineOffset: Number.parseFloat(style.outlineOffset),
       outlineStyle: style.outlineStyle,
       outlineWidth: Number.parseFloat(style.outlineWidth),
     };
+  }, checkboxFocusContract.classNames);
+  const checkboxFocusDiagnostics = JSON.stringify({
+    ...checkboxFocus,
+    expectedFocusRules: checkboxFocusContract.rules,
   });
   invariant(
+    checkboxFocus.missingFocusClassNames.length === 0,
+    `${id}: CheckboxField focus classes are missing from the rendered control: ${checkboxFocusDiagnostics}`,
+  );
+  invariant(
     checkboxFocus.dataFocusVisible === "true"
+    && checkboxFocus.nativeFocusVisible
+    && checkboxFocus.outlineColor === checkboxFocus.expectedOutlineColor
     && checkboxFocus.outlineOffset === 3
     && checkboxFocus.outlineStyle === "solid"
     && checkboxFocus.outlineWidth === 2,
-    `${id}: CheckboxField keyboard focus is not visible: ${JSON.stringify(checkboxFocus)}`,
+    `${id}: CheckboxField focus classes do not win the final cascade: ${checkboxFocusDiagnostics}`,
   );
   await page.keyboard.press("Space");
   invariant(await checkbox.isChecked(), `${id}: Space did not select the native checkbox`);
@@ -4575,6 +4750,10 @@ try {
     buildServerRenderer(consumer, serverRendererDirectory),
   ]);
   requirePackedDefaultStylesheet(production.css, production.javaScript);
+  const checkboxFocusContract = requirePackedCheckboxFocusContract(
+    production.javaScript,
+    production.css,
+  );
   assert.throws(
     () => requirePackedDefaultStylesheet(
       negativeControl.css,
@@ -5061,7 +5240,7 @@ try {
             );
           }
 
-          await verifyKeyboardPath(page, layout.id);
+          await verifyKeyboardPath(page, layout.id, checkboxFocusContract);
           await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
