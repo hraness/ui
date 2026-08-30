@@ -1,5 +1,4 @@
-import "@hraness/ui/styles.css";
-import "./styles.css";
+import "./bundle.css";
 
 import { hydratePrimitiveGallery } from "./hydrate.js";
 

@@ -27,6 +27,8 @@ const CARD_DESCRIPTION_BRIDGE_PATTERN =
 const HUGEICONS_VERSION = "4.2.2";
 const PACKAGE_LAYER_PRELUDE =
   /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3/u;
+const STYLED_GALLERY_LAYER_PREFIX =
+  /^\s*@layer\s+base\s*,\s*components\s*;\s*@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*;/u;
 const REACT_VERSION = "19.2.3";
 
 interface BrowserEvidence {
@@ -621,6 +623,61 @@ function exactLayerCss(css: string, layer: string): string {
   return bodies.join("\n");
 }
 
+function requireFinalBundleLayerOrder(css: string): void {
+  const prefix = css.match(STYLED_GALLERY_LAYER_PREFIX)?.[0];
+  assert.ok(
+    prefix !== undefined,
+    "the final styled gallery bundle must begin with the canonical base and package layer preludes",
+  );
+
+  const firstBlockPositions = new Map<
+    "legacy" | "priority1" | "priority2" | "priority3",
+    number
+  >();
+  const packageLayerBlocks = [...css.matchAll(
+    /@layer\s+components\.hraness-ui\.(legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3)\s*\{/gu,
+  )];
+  assert.notEqual(
+    packageLayerBlocks.length,
+    0,
+    "the final styled gallery bundle must contain package named-layer blocks",
+  );
+  for (const match of packageLayerBlocks) {
+    const position = match.index ?? -1;
+    assert.ok(
+      position >= prefix.length,
+      "the canonical package layer prelude must precede every package named-layer block",
+    );
+    const matchedLayer = match[1];
+    assert.ok(matchedLayer !== undefined);
+    const layer = matchedLayer === "legacy" || matchedLayer.startsWith("legacy.")
+      ? "legacy"
+      : matchedLayer;
+    assert.ok(
+      layer === "legacy"
+      || layer === "priority1"
+      || layer === "priority2"
+      || layer === "priority3",
+      `the final styled gallery bundle contains an unknown package layer: ${layer}`,
+    );
+    if (!firstBlockPositions.has(layer)) firstBlockPositions.set(layer, position);
+  }
+
+  const orderedLayers = ["legacy", "priority1", "priority2", "priority3"] as const;
+  const positions = orderedLayers.map((layer) => {
+    const position = firstBlockPositions.get(layer);
+    assert.ok(
+      position !== undefined,
+      `the final styled gallery bundle must contain a ${layer} package layer block`,
+    );
+    return position;
+  });
+  assert.ok(
+    positions.every((position, index) => index === 0 || positions[index - 1]! < position),
+    "the first package named-layer blocks must be ordered legacy, priority1, priority2, then priority3",
+  );
+}
+
 function exactAtomicClassRules(
   css: string,
   className: string,
@@ -761,6 +818,7 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     PACKAGE_LAYER_PRELUDE,
     "the packed default stylesheet must freeze the package layer order",
   );
+  requireFinalBundleLayerOrder(css);
   assert.match(
     css,
     /\.hraness-button(?:__control)?(?=[\s,{:.])/u,
