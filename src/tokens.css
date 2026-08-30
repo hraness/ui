@@ -1,6 +1,3 @@
-@layer base, components;
-@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3;
-
 :root {
   color-scheme: light;
 

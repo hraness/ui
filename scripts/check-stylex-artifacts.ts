@@ -535,11 +535,11 @@ function requirePublicLayerContract(
   }
 }
 
-function requireEarliestLayerPrelude(tokensStylesheet: string): void {
+function requireEarliestLayerPrelude(resetStylesheet: string): void {
   const expectedPrefix = `${TOP_LEVEL_LAYER_PRELUDE}\n${LAYER_PRELUDE}\n`;
-  if (!tokensStylesheet.startsWith(expectedPrefix)) {
+  if (!resetStylesheet.startsWith(expectedPrefix)) {
     throw new Error(
-      "src/tokens.css must begin with the exact base < components and legacy < priority1 < priority2 < priority3 preludes",
+      "src/reset.css must begin with the exact base < components and legacy < priority1 < priority2 < priority3 preludes",
     );
   }
 }
@@ -1202,7 +1202,7 @@ const [
   toolbarSource,
   contentSource,
   fieldsSource,
-  tokensStylesheet,
+  resetStylesheet,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -1213,7 +1213,7 @@ const [
     readFile(resolve(repository, "src/toolbar.tsx"), "utf8"),
     readFile(resolve(repository, "src/content.tsx"), "utf8"),
     readFile(resolve(repository, "src/fields.tsx"), "utf8"),
-    readFile(resolve(repository, "src/tokens.css"), "utf8"),
+    readFile(resolve(repository, "src/reset.css"), "utf8"),
   ]);
 
 if (compiledCss.trim().length === 0) {
@@ -1322,7 +1322,7 @@ requireKeyHintContract(legacyComponents, compiledCss);
 requireKeyHintSourceContract(contentSource);
 requireCheckboxFieldContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCheckboxFieldSourceContract(fieldsSource);
-requireEarliestLayerPrelude(tokensStylesheet);
+requireEarliestLayerPrelude(resetStylesheet);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,

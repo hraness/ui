@@ -27,8 +27,8 @@ const CARD_DESCRIPTION_BRIDGE_PATTERN =
 const HUGEICONS_VERSION = "4.2.2";
 const PACKAGE_LAYER_PRELUDE =
   /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3/u;
-const STYLED_GALLERY_LAYER_PREFIX =
-  /^\s*@layer\s+base\s*,\s*components\s*;\s*@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*;/u;
+const STYLED_GALLERY_LAYER_PRELUDES =
+  /@layer\s+base\s*,\s*components\s*;\s*@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*;/u;
 const REACT_VERSION = "19.2.3";
 
 interface BrowserEvidence {
@@ -624,10 +624,28 @@ function exactLayerCss(css: string, layer: string): string {
 }
 
 function requireFinalBundleLayerOrder(css: string): void {
-  const prefix = css.match(STYLED_GALLERY_LAYER_PREFIX)?.[0];
+  const preludes = css.match(STYLED_GALLERY_LAYER_PRELUDES);
   assert.ok(
-    prefix !== undefined,
-    "the final styled gallery bundle must begin with the canonical base and package layer preludes",
+    preludes !== null,
+    "the final styled gallery bundle must contain the adjacent canonical base and package layer preludes",
+  );
+  const preludeStart = preludes.index ?? -1;
+  assert.ok(
+    preludeStart >= 0,
+    "the final styled gallery bundle must expose the canonical prelude position",
+  );
+  const preludeEnd = preludeStart + preludes[0].length;
+  const firstNamedLayerBlock = css.search(
+    /@layer\s+(?:base|components\.hraness-ui\.(?:legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3))\s*\{/u,
+  );
+  assert.notEqual(
+    firstNamedLayerBlock,
+    -1,
+    "the final styled gallery bundle must contain a named base or package layer block",
+  );
+  assert.ok(
+    preludeEnd <= firstNamedLayerBlock,
+    "the canonical base and package layer preludes must precede every named base and package layer block",
   );
 
   const firstBlockPositions = new Map<
@@ -645,7 +663,7 @@ function requireFinalBundleLayerOrder(css: string): void {
   for (const match of packageLayerBlocks) {
     const position = match.index ?? -1;
     assert.ok(
-      position >= prefix.length,
+      position >= preludeEnd,
       "the canonical package layer prelude must precede every package named-layer block",
     );
     const matchedLayer = match[1];
