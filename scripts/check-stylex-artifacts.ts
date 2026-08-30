@@ -146,6 +146,7 @@ const CHECKBOX_STYLE_KEYS = [
   "root",
   "selectedIndicator",
 ] as const;
+type CheckboxStyleKey = (typeof CHECKBOX_STYLE_KEYS)[number];
 
 function blockFromStatement(
   statement: string,
@@ -221,7 +222,7 @@ function balancedObject(
   throw new Error(`${description} contains an unterminated object`);
 }
 
-function checkboxStyleClassNames(compiledJavaScript: string): ReadonlySet<string> {
+function checkboxStyleMap(compiledJavaScript: string): string {
   const candidates: string[] = [];
   for (const match of compiledJavaScript.matchAll(
     /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*control\s*:\s*\{/gu,
@@ -244,32 +245,118 @@ function checkboxStyleClassNames(compiledJavaScript: string): ReadonlySet<string
       `dist/index.js must contain exactly one compiled checkboxFieldStyles class map; found ${String(candidates.length)}`,
     );
   }
+  return candidates[0]!;
+}
+
+function checkboxStyleObject(
+  compiledJavaScript: string,
+  key: CheckboxStyleKey,
+): string {
+  const map = checkboxStyleMap(compiledJavaScript);
+  const body = map.slice(1, -1);
+  const matches = [...body.matchAll(
+    new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+  )];
+  if (matches.length !== 1) {
+    throw new Error(
+      `the compiled checkboxFieldStyles map must contain exactly one ${key} object; found ${String(matches.length)}`,
+    );
+  }
+  const match = matches[0]!;
+  const open = 1 + (match.index ?? 0) + match[0].lastIndexOf("{");
+  return balancedObject(
+    map,
+    open,
+    `dist/index.js CheckboxField ${key} StyleX map`,
+  );
+}
+
+function generatedClassNames(
+  source: string,
+  description: string,
+): ReadonlySet<string> {
   const classNames = new Set<string>();
-  for (const match of candidates[0]!.matchAll(
+  for (const match of source.matchAll(
     /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
   )) {
     for (const className of match[1]!.split(/\s+/u)) classNames.add(className);
   }
   if (classNames.size === 0) {
-    throw new Error("the compiled checkboxFieldStyles class map has no generated classes");
+    throw new Error(`${description} has no generated classes`);
   }
   return classNames;
+}
+
+function checkboxStyleClassNames(
+  compiledJavaScript: string,
+  key?: CheckboxStyleKey,
+): ReadonlySet<string> {
+  return generatedClassNames(
+    key === undefined
+      ? checkboxStyleMap(compiledJavaScript)
+      : checkboxStyleObject(compiledJavaScript, key),
+    key === undefined
+      ? "the compiled checkboxFieldStyles class map"
+      : `the compiled checkboxFieldStyles ${key} class map`,
+  );
 }
 
 function checkboxStyleRules(
   compiledJavaScript: string,
   compiledCss: string,
+  key?: CheckboxStyleKey,
 ): CssRule[] {
-  const classNames = checkboxStyleClassNames(compiledJavaScript);
+  const classNames = checkboxStyleClassNames(compiledJavaScript, key);
   const rules = cssRules(compiledCss, "dist/stylex.css").filter((rule) =>
     [...classNames].some((className) =>
       new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
     )
   );
   if (rules.length === 0) {
-    throw new Error("dist/stylex.css has no rules owned by checkboxFieldStyles");
+    throw new Error(
+      key === undefined
+        ? "dist/stylex.css has no rules owned by checkboxFieldStyles"
+        : `dist/stylex.css has no rules owned by checkboxFieldStyles.${key}`,
+    );
   }
   return rules;
+}
+
+function replaceCheckboxStyleClassName(
+  compiledJavaScript: string,
+  key: CheckboxStyleKey,
+  target: string,
+  replacement: string,
+): string {
+  const map = checkboxStyleMap(compiledJavaScript);
+  const styleObject = checkboxStyleObject(compiledJavaScript, key);
+  if (styleObject.split(target).length !== 2) {
+    throw new Error(
+      `the compiled checkboxFieldStyles ${key} mutation must match ${target} exactly once`,
+    );
+  }
+  if (compiledJavaScript.includes(replacement)) {
+    throw new Error(
+      `the compiled checkboxFieldStyles mutation replacement already exists: ${replacement}`,
+    );
+  }
+  const styleIndex = map.indexOf(styleObject);
+  if (styleIndex < 0 || styleIndex !== map.lastIndexOf(styleObject)) {
+    throw new Error(
+      `the compiled checkboxFieldStyles map must contain one exact ${key} object`,
+    );
+  }
+  const mutatedStyleObject = styleObject.replace(target, replacement);
+  const mutatedMap = `${map.slice(0, styleIndex)}${mutatedStyleObject}${map.slice(
+    styleIndex + styleObject.length,
+  )}`;
+  const mapIndex = compiledJavaScript.indexOf(map);
+  if (mapIndex < 0 || mapIndex !== compiledJavaScript.lastIndexOf(map)) {
+    throw new Error("dist/index.js must contain one exact checkboxFieldStyles class map");
+  }
+  return `${compiledJavaScript.slice(0, mapIndex)}${mutatedMap}${compiledJavaScript.slice(
+    mapIndex + map.length,
+  )}`;
 }
 
 function normalizedHeader(header: string): string {
@@ -946,27 +1033,45 @@ function requireCheckboxFieldContract(
   );
   const rules = checkboxStyleRules(compiledJavaScript, compiledCss);
   const checkboxCss = rules.map((rule) => rule.body).join("\n");
+  const indicatorCss = checkboxStyleRules(
+    compiledJavaScript,
+    compiledCss,
+    "indicator",
+  ).map((rule) => rule.body).join("\n");
   const declarations = [
-    [
-      /--hraness-field-height:\s*var\(--interactive-target-compact\);/u,
-      "the CheckboxField field-height compatibility variable",
-    ],
-    [
-      /--hraness-field-surface:\s*var\(--ui-background\);/u,
-      "the CheckboxField surface variable",
-    ],
     [/display:\s*grid;/u, "the CheckboxField grid layout"],
     [/grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\);/u, "the CheckboxField control columns"],
     [/min-height:\s*var\(--interactive-target-compact\);/u, "the CheckboxField default target"],
-    [/height:\s*1\.25rem;/u, "the CheckboxField indicator height"],
-    [/width:\s*1\.25rem;/u, "the CheckboxField indicator width"],
     [/outline-offset:\s*3px;/u, "the CheckboxField focus-ring offset"],
-    [/transition-property:\s*background-color,\s*border-color;/u, "the CheckboxField indicator transitions"],
     [/font-size:\s*var\(--text-label\);/u, "the CheckboxField label size"],
     [/forced-color-adjust:\s*auto;/u, "the CheckboxField forced-colors adjustment"],
   ] as const;
   for (const [pattern, description] of declarations) {
     requireMatch(checkboxCss, pattern, description);
+  }
+  for (const [pattern, description] of [
+    [/align-items:\s*center;/u, "the CheckboxField indicator block-axis alignment"],
+    [
+      /background-color:\s*var\(--hraness-field-surface,\s*var\(--ui-background\)\);/u,
+      "the CheckboxField overridable surface fallback",
+    ],
+    [/height:\s*1\.25rem;/u, "the CheckboxField indicator height"],
+    [/justify-items:\s*center;/u, "the CheckboxField indicator inline-axis alignment"],
+    [
+      /transition-duration:\s*var\(--motion-duration-fast\);/u,
+      "the CheckboxField indicator transition duration",
+    ],
+    [
+      /transition-property:\s*background-color,\s*border-color;/u,
+      "the CheckboxField indicator transition properties",
+    ],
+    [
+      /transition-timing-function:\s*var\(--motion-easing-standard\);/u,
+      "the CheckboxField indicator transition timing",
+    ],
+    [/width:\s*1\.25rem;/u, "the CheckboxField indicator width"],
+  ] as const) {
+    requireMatch(indicatorCss, pattern, description);
   }
   requireCheckboxConditionalDeclaration(
     rules,
@@ -990,6 +1095,7 @@ function requireCheckboxFieldContract(
     [/background:\s*var\(--ui-primary\);/u, "a CheckboxField background shorthand"],
     [/border:\s*1px\s+solid/u, "a CheckboxField border shorthand"],
     [/outline:\s*2px\s+solid/u, "a CheckboxField outline shorthand"],
+    [/place-items:\s*center;/u, "an unsupported CheckboxField place-items shorthand"],
     [/transition:\s*background-color/u, "a CheckboxField transition shorthand"],
   ] as const) {
     forbid(checkboxCss, pattern, description);
@@ -1048,6 +1154,23 @@ function requireCheckboxFieldSourceContract(fieldsSource: string): void {
   ]) {
     requireMatch(checkboxSource, new RegExp(hook, "u"), `the ${hook} semantic hook`);
   }
+}
+
+function replaceCheckboxFieldSourceOnce(
+  fieldsSource: string,
+  target: string,
+  replacement: string,
+): string {
+  const start = fieldsSource.indexOf("export type CheckboxFieldProps");
+  const end = fieldsSource.indexOf("export type RadioGroupProps", start);
+  if (start < 0 || end < 0) {
+    throw new Error("src/fields.tsx must retain the bounded CheckboxField source family");
+  }
+  const checkboxSource = fieldsSource.slice(start, end);
+  if (checkboxSource.split(target).length !== 2) {
+    throw new Error(`the bounded CheckboxField mutation must match exactly once: ${target}`);
+  }
+  return `${fieldsSource.slice(0, start)}${checkboxSource.replace(target, replacement)}${fieldsSource.slice(end)}`;
 }
 
 function requireNoGallerySentinels(source: string): void {
@@ -1745,6 +1868,30 @@ const relocatedCheckboxForcedAdjustment = relocateCheckboxConditionalRule(
   /forced-color-adjust:\s*auto;/u,
   "CheckboxField forced-colors adjustment",
 );
+const indicatorAlignmentRules = checkboxStyleRules(
+  compiledJavaScript,
+  compiledCss,
+  "indicator",
+).filter((rule) => /align-items:\s*center;/u.test(rule.body));
+if (indicatorAlignmentRules.length !== 1) {
+  throw new Error("the CheckboxField indicator alignment mutation expected one rule");
+}
+const indicatorAlignmentClassNames = [...checkboxStyleClassNames(
+  compiledJavaScript,
+  "indicator",
+)].filter((className) =>
+  new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u")
+    .test(indicatorAlignmentRules[0]!.header)
+);
+if (indicatorAlignmentClassNames.length !== 1) {
+  throw new Error("the CheckboxField indicator alignment mutation expected one class");
+}
+const missingCheckboxIndicatorAlignment = replaceCheckboxStyleClassName(
+  compiledJavaScript,
+  "indicator",
+  indicatorAlignmentClassNames[0]!,
+  "xcheckboxindicatoralignmentmissing",
+);
 assert.throws(
   () =>
     requireCheckboxFieldContract(
@@ -1754,6 +1901,16 @@ assert.throws(
     ),
   /legacy CheckboxField recipe/u,
   "the CheckboxField guard must reject a restored legacy selector",
+);
+assert.throws(
+  () =>
+    requireCheckboxFieldContract(
+      legacyComponents,
+      compiledCss,
+      missingCheckboxIndicatorAlignment,
+    ),
+  /CheckboxField indicator block-axis alignment/u,
+  "the CheckboxField guard must reject indicator alignment owned only by the control",
 );
 assert.throws(
   () =>
@@ -1798,7 +1955,11 @@ assert.throws(
 assert.throws(
   () =>
     requireCheckboxFieldSourceContract(
-      fieldsSource.replace("showLabel = true", "showLabel = false"),
+      replaceCheckboxFieldSourceOnce(
+        fieldsSource,
+        "showLabel = true",
+        "showLabel = false",
+      ),
     ),
   /visible-by-default CheckboxField label/u,
   "the CheckboxField guard must reject hidden-by-default labels",

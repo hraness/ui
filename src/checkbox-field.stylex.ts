@@ -39,7 +39,8 @@ export const checkboxFieldStyles = stylex.create({
     outlineWidth: "2px",
   },
   indicator: {
-    backgroundColor: "var(--hraness-field-surface)",
+    alignItems: "center",
+    backgroundColor: "var(--hraness-field-surface, var(--ui-background))",
     borderColor: {
       default: "var(--ui-input)",
       [forcedColors]: "CanvasText",
@@ -55,8 +56,8 @@ export const checkboxFieldStyles = stylex.create({
       [forcedColors]: "auto",
     },
     height: "1.25rem",
+    justifyItems: "center",
     lineHeight: 1,
-    placeItems: "center",
     transitionDuration: "var(--motion-duration-fast)",
     transitionProperty: "background-color, border-color",
     transitionTimingFunction: "var(--motion-easing-standard)",
@@ -76,8 +77,6 @@ export const checkboxFieldStyles = stylex.create({
     width: "fit-content",
   },
   root: {
-    "--hraness-field-height": "var(--interactive-target-compact)",
-    "--hraness-field-surface": "var(--ui-background)",
     color: "var(--ui-foreground)",
     display: "grid",
     gap: "var(--space-2)",
