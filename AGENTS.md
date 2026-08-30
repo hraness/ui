@@ -1,7 +1,7 @@
 <!-- kb:context scopes/repository--cdb4ee2aea69 -->
 # Contents
 
-- `src/actions.tsx`, `src/fields.tsx`, `src/form.tsx`, `src/select-field.tsx`, and `src/checkbox-group.tsx` – accessible actions and complete form controls.
+- `src/actions.tsx`, `src/fields.tsx`, `src/checkbox-field.stylex.ts`, `src/form.tsx`, `src/select-field.tsx`, and `src/checkbox-group.tsx` – accessible actions and complete form controls, including the package-compiled CheckboxField recipe.
 - `src/collections.tsx`, `src/list-box.tsx`, `src/overlays.tsx`, and `src/toast.tsx` – collection and overlay behavior backed by React Aria Components.
 - `src/avatar.stylex.ts`, `src/badge.tsx`, `src/card.tsx`, `src/card.stylex.ts`, `src/content.tsx`, `src/data-display.tsx`, `src/feedback.tsx`, `src/icon.tsx`, `src/icon.stylex.ts`, `src/indicators.tsx`, `src/key-hint.stylex.ts`, and `src/status.stylex.ts` – status, surface, content, data, feedback, and shared icon, avatar, card, and key-hint primitives, including package-compiled StyleX recipes.
 - `src/ask-ai.tsx`, `src/ask-ai.stylex.ts`, `src/navigation.tsx`, `src/quiet-site.tsx`, `src/quiet-site.stylex.ts`, `src/router.tsx`, `src/skip-link.tsx`, `src/surfaces.tsx`, `src/surfaces.stylex.ts`, `src/toolbar.tsx`, and `src/toolbar.stylex.ts` – server-renderable AI handoff links, navigation, package-compiled quiet-site landmarks, structural surfaces, themed surfaces, and toolbars, plus framework-neutral router integration.
@@ -12,7 +12,7 @@
 - `kb/` – authored repository rationale, maintained synthesis, and durable plans.
 - `.agents/skills/` – portable KB and phased-execution workflows.
 - `WRITING.md` and `STYLE.md` – internal and public prose contracts.
-- `scripts/build-package.ts`, `scripts/stylex-config.ts`, and `scripts/check-stylex-*.ts` – the package-owned StyleX compiler and its artifact and absolute-root determinism gates.
+- `scripts/build-package.ts`, `scripts/stylex-config.ts`, `scripts/check-committed-dist.ts`, `scripts/check-committed-dist.test.ts`, and `scripts/check-stylex-*.ts` – the package-owned StyleX compiler, committed-output parity guard, and artifact and absolute-root determinism gates.
 - `package.json`, `tsconfig.json`, and `bun.lock` – built ESM runtime, source type, CSS export, and standalone verification configuration.
 - `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `LICENSE` – public usage, project policy, and terms.
 
@@ -29,6 +29,7 @@
 - Keep the combined Card root selector that maps `--hraness-card-description` to `--_hraness-card-description` as the sole migrated-family compatibility rule in `components.hraness-ui.legacy.base`. Card visual declarations remain in StyleX, and the private inline tone value must reset on every Card root so caller-owned public overrides do not leak into a nested Card.
 - Keep all Toolbar visual and orientation declarations in StyleX. Attach its native `:focus-visible` fallback only when `xstyle` is absent so caller focus recipes remain the final compiled authority.
 - Keep KeyHint a server-compatible native `kbd` without a client directive. Compose its semantic class, generated recipe, and caller class in that order, and merge dynamic StyleX values before caller-owned native styles.
+- Keep CheckboxField on React Aria's split field and button API. Its required `label` remains the native checkbox's accessible name even when `showLabel={false}` uses the shared visually-hidden helper. Apply root and control state recipes before their separate typed caller StyleX overrides; preserve the root's native `style`, context render, stable semantic hooks, 40-pixel default target, and 48-pixel coarse-pointer target without adding a compact variant.
 - Keep Tailwind utility names complete and statically detectable while the compatibility bridge exists. Preserve its internal `@source` integration, namespaced theme roles, `cn`, `tailwind-merge`, and documented import order until a separately evidenced release removes them.
 - Keep tokens and reset usable as standards-only CSS. Tailwind directives belong only in `tailwind.css`; remaining CSS retains coarse-pointer, forced-color, reduced-motion, and approved global-boundary behavior.
 - Keep semantic variant sets finite and render them as stable data attributes. Preserve documented semantic classes and `data-slot` values. Apply base StyleX recipes first, finite variant and state recipes next, and a typed caller `xstyle` last; keep caller `className` separate and compatible during the migration.

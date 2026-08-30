@@ -229,9 +229,11 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 `AskAiAboutThis`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `KeyHint`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
-`ViewportFrame`, `WrappingRow`, `ThemedSurface`, and `Toolbar` accept a typed StyleX
-override. Base declarations are applied first, finite size, tone, shape, and
-interaction recipes come next, and the caller recipe is applied last.
+`ViewportFrame`, `WrappingRow`, `ThemedSurface`, `Toolbar`, and `CheckboxField`
+accept a typed StyleX override. Base declarations are applied first, finite
+size, tone, shape, and interaction recipes come next, and the caller recipe is
+applied last. `CheckboxField` exposes `controlXstyle` separately for its
+semantic checkbox label.
 Quiet-site landmarks and these surfaces also preserve dynamic StyleX inline
 values when merging the native `style` prop, with caller inline declarations
 taking precedence.
@@ -286,6 +288,16 @@ slot, ref, attributes, and children remain stable while a typed caller `xstyle`
 recipe resolves after its compact presentation. Dynamic StyleX values merge
 before the native `style` prop, so native declarations remain final.
 
+`CheckboxField` keeps its required `label`, native checkbox input, form value,
+validation, description, React Aria context and render behavior, and stable
+field, control, indicator, and label slots. Set `showLabel={false}` to keep the
+required label as the accessible name through the shared visually-hidden
+helper. The field root accepts `xstyle`; the semantic checkbox control accepts
+`controlXstyle`. Both caller recipes resolve after their state recipes, while
+the field's native `style` declarations remain final. The control keeps a
+40-pixel minimum target and expands to 48 pixels for coarse pointers. Table and
+other product layout stays outside this portable primitive.
+
 ```tsx
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
@@ -293,6 +305,7 @@ import {
   Avatar,
   Card,
   CardDescription,
+  CheckboxField,
   Icon,
   KeyHint,
   PressableCard,
@@ -324,6 +337,12 @@ const styles = stylex.create({
   cardOverride: {
     borderRadius: "var(--radius-sm)",
     paddingInline: "var(--space-4)",
+  },
+  checkbox: {
+    gap: "var(--space-3)",
+  },
+  checkboxControl: {
+    backgroundColor: "var(--ui-secondary)",
   },
   structuralRow: {
     "inline-size": "16rem",
@@ -365,6 +384,12 @@ const styles = stylex.create({
 <ThemedSurface tone="accent" xstyle={styles.texturedSurface}>...</ThemedSurface>;
 <Toolbar aria-label="Editor actions" xstyle={styles.toolbar}>...</Toolbar>;
 <KeyHint xstyle={styles.keyHint}>⌘K</KeyHint>;
+<CheckboxField
+  controlXstyle={styles.checkboxControl}
+  label="Include archived projects"
+  showLabel={false}
+  xstyle={styles.checkbox}
+/>;
 ```
 
 Keep importing `@hraness/ui/styles.css` while legacy and StyleX recipes

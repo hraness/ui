@@ -2,7 +2,13 @@
 
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import * as stylex from "@stylexjs/stylex";
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   AppearanceIcon,
@@ -75,6 +81,19 @@ const galleryStyles = stylex.create({
     borderRadius: "var(--radius-sm)",
     height: "3rem",
     width: "3rem",
+  },
+  checkboxControlDynamicHeight: (height: string) => ({ minHeight: height }),
+  checkboxControlOverride: {
+    backgroundColor: "var(--ui-secondary)",
+    gap: "var(--space-4)",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+  },
+  checkboxRootDynamicWidth: (width: string) => ({ width }),
+  checkboxRootOverride: {
+    color: "var(--ui-primary)",
+    display: "flex",
+    gap: "var(--space-5)",
+    gridTemplateColumns: "none",
   },
   cardDynamicWidth: (width: string) => ({ width }),
   cardOverride: {
@@ -167,17 +186,27 @@ export function PrimitiveGallery() {
   const [pressCount, setPressCount] = useState(0);
   const [segment, setSegment] = useState<GallerySegment>("all");
   const [theme, setTheme] = useState<GalleryTheme>("light");
+  const checkboxFieldRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const captureCheckboxFieldRef = useCallback((node: HTMLDivElement | null) => {
+    checkboxFieldRef.current = node;
+  }, []);
 
   useEffect(() => {
     const root = document.querySelector<HTMLElement>("[data-gallery-hydration-root]");
     if (root === null) throw new Error("The primitive gallery hydration root is missing.");
+    const checkboxField = checkboxFieldRef.current;
+    if (checkboxField === null) {
+      throw new Error("The CheckboxField callback ref did not receive its native div.");
+    }
     const toolbar = toolbarRef.current;
     if (toolbar === null) throw new Error("The Toolbar ref did not receive its native div.");
     root.dataset.hydrated = "true";
+    checkboxField.dataset.galleryCheckboxFieldRef = "true";
     toolbar.dataset.galleryToolbarRef = "true";
     return () => {
       delete root.dataset.hydrated;
+      delete checkboxField.dataset.galleryCheckboxFieldRef;
       delete toolbar.dataset.galleryToolbarRef;
     };
   }, []);
@@ -235,11 +264,40 @@ export function PrimitiveGallery() {
             </output>
           </div>
 
-          <CheckboxField
-            data-gallery-checkbox="true"
-            description="The browser harness toggles this control with the Space key."
-            label="Preserve accessible interaction"
-          />
+          <div data-gallery-checkbox-row="true">
+            <CheckboxField
+              className="gallery-checkbox gallery-checkbox--default"
+              controlClassName="gallery-checkbox-control gallery-checkbox-control--default"
+              data-gallery-checkbox="default"
+              data-gallery-checkbox-field-layer-conflict="true"
+              description="The browser harness toggles this control with the Space key."
+              fieldRef={captureCheckboxFieldRef}
+              label="Preserve accessible interaction"
+              name="gallery-default-checkbox"
+            />
+            <CheckboxField
+              className="gallery-checkbox gallery-checkbox--override"
+              controlClassName="gallery-checkbox-control gallery-checkbox-control--override"
+              controlXstyle={[
+                galleryStyles.checkboxControlOverride,
+                galleryStyles.checkboxControlDynamicHeight("3.25rem"),
+              ]}
+              data-gallery-checkbox="override"
+              data-gallery-checkbox-field-layer-conflict="true"
+              description="The accessible name remains when visible label copy is hidden."
+              isDisabled
+              isInvalid
+              isSelected
+              label="Select archived projects"
+              name="gallery-override-checkbox"
+              showLabel={false}
+              style={{ width: "15rem" }}
+              xstyle={[
+                galleryStyles.checkboxRootOverride,
+                galleryStyles.checkboxRootDynamicWidth("14rem"),
+              ]}
+            />
+          </div>
           <SelectField
             className="gallery-select"
             data-gallery-select="true"

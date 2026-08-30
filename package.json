@@ -55,6 +55,7 @@
     "src/badge.tsx",
     "src/card.stylex.ts",
     "src/card.tsx",
+    "src/checkbox-field.stylex.ts",
     "src/checkbox-group.tsx",
     "src/collections.tsx",
     "src/components.css",
@@ -95,11 +96,12 @@
   ],
   "scripts": {
     "build": "bun run ./scripts/build-package.ts && bun run ./scripts/mark-react-client-package.ts",
+    "check:committed-dist": "bun run ./scripts/check-committed-dist.ts",
     "check:portfolio-inventory": "bun ./scripts/check-portfolio-inventory.ts",
     "check:stylex-artifacts": "bun run ./scripts/check-stylex-artifacts.ts",
     "check:stylex-determinism": "bun run ./scripts/check-stylex-determinism.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --preload ./scripts/register-stylex-test-transform.ts ./src",
+    "test": "bun test --preload ./scripts/register-stylex-test-transform.ts ./src ./scripts/check-committed-dist.test.ts",
     "test:browser": "bun run ./scripts/gallery-browser.ts",
     "test:package": "bun run ./scripts/package-smoke.ts",
     "test:packed-bun-browser": "bun run ./scripts/packed-bun-browser-smoke.ts",
@@ -107,7 +109,7 @@
     "kb:check:lane": "bunx --bun github:hraness/kb#v0.15.1 check --root kb --no-catalog",
     "kb:check": "bunx --bun github:hraness/kb#v0.15.1 check --root kb && bunx --bun github:hraness/kb#v0.15.1 agents check --root kb --repo .",
     "kb:catalog": "bunx --bun github:hraness/kb#v0.15.1 catalog --root kb",
-    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:stylex-artifacts && bun run check:stylex-determinism && bun run test:package && bun run test:packed-bun-browser && bun run test && bun run test:browser",
+    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-determinism && bun run test:package && bun run test:packed-bun-browser && bun run test && bun run test:browser",
     "prepack": "bun run check"
   },
   "dependencies": {

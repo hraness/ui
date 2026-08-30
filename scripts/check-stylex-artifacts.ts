@@ -17,6 +17,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-card-family-layer-conflict",
   "data-gallery-toolbar-layer-conflict",
   "data-gallery-key-hint-layer-conflict",
+  "data-gallery-checkbox-field-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -123,6 +124,234 @@ function topLevelStatements(source: string, description: string): string[] {
     throw new Error(`${description} contains an unterminated top-level statement`);
   }
   return statements;
+}
+
+interface CssBlock {
+  readonly body: string;
+  readonly header: string;
+  readonly source: string;
+}
+
+interface CssRule extends CssBlock {
+  readonly ancestors: readonly CssBlock[];
+}
+
+const CHECKBOX_STYLE_KEYS = [
+  "control",
+  "disabled",
+  "focusVisible",
+  "indicator",
+  "invalidIndicator",
+  "label",
+  "root",
+  "selectedIndicator",
+] as const;
+
+function blockFromStatement(
+  statement: string,
+  description: string,
+): CssBlock | undefined {
+  const open = statement.indexOf("{");
+  if (open < 0) return undefined;
+  if (!statement.endsWith("}")) {
+    throw new Error(`${description} contains an incomplete block`);
+  }
+  return {
+    body: statement.slice(open + 1, -1),
+    header: statement.slice(0, open).trim(),
+    source: statement,
+  };
+}
+
+function cssRules(
+  source: string,
+  description: string,
+  ancestors: readonly CssBlock[] = [],
+): CssRule[] {
+  const rules: CssRule[] = [];
+  for (const statement of topLevelStatements(source, description)) {
+    const block = blockFromStatement(statement, description);
+    if (block === undefined) continue;
+    if (block.header.startsWith("@")) {
+      rules.push(...cssRules(
+        block.body,
+        description,
+        [...ancestors, block],
+      ));
+    } else {
+      rules.push({ ...block, ancestors });
+    }
+  }
+  return rules;
+}
+
+function balancedObject(
+  source: string,
+  open: number,
+  description: string,
+): string {
+  let depth = 0;
+  let escaped = false;
+  let quote: "\"" | "'" | "`" | undefined;
+  for (let index = open; index < source.length; index += 1) {
+    const character = source[index];
+    const nextCharacter = source[index + 1];
+    if (character === undefined) continue;
+    if (quote !== undefined) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === "/" && nextCharacter === "*") {
+      const end = source.indexOf("*/", index + 2);
+      if (end < 0) throw new Error(`${description} contains an unterminated comment`);
+      index = end + 1;
+      continue;
+    }
+    if (character === "\"" || character === "'" || character === "`") {
+      quote = character;
+    } else if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, index + 1);
+    }
+  }
+  throw new Error(`${description} contains an unterminated object`);
+}
+
+function checkboxStyleClassNames(compiledJavaScript: string): ReadonlySet<string> {
+  const candidates: string[] = [];
+  for (const match of compiledJavaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*control\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedObject(
+      compiledJavaScript,
+      open,
+      "dist/index.js CheckboxField StyleX map",
+    );
+    if (CHECKBOX_STYLE_KEYS.every(
+      (key) => new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u")
+        .test(object.slice(1, -1)),
+    )) {
+      candidates.push(object);
+    }
+  }
+  if (candidates.length !== 1) {
+    throw new Error(
+      `dist/index.js must contain exactly one compiled checkboxFieldStyles class map; found ${String(candidates.length)}`,
+    );
+  }
+  const classNames = new Set<string>();
+  for (const match of candidates[0]!.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )) {
+    for (const className of match[1]!.split(/\s+/u)) classNames.add(className);
+  }
+  if (classNames.size === 0) {
+    throw new Error("the compiled checkboxFieldStyles class map has no generated classes");
+  }
+  return classNames;
+}
+
+function checkboxStyleRules(
+  compiledJavaScript: string,
+  compiledCss: string,
+): CssRule[] {
+  const classNames = checkboxStyleClassNames(compiledJavaScript);
+  const rules = cssRules(compiledCss, "dist/stylex.css").filter((rule) =>
+    [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+    )
+  );
+  if (rules.length === 0) {
+    throw new Error("dist/stylex.css has no rules owned by checkboxFieldStyles");
+  }
+  return rules;
+}
+
+function normalizedHeader(header: string): string {
+  return header.replace(/\s+/gu, "").toLowerCase();
+}
+
+function requireCheckboxConditionalDeclaration(
+  rules: readonly CssRule[],
+  condition: string,
+  declaration: RegExp,
+  description: string,
+): void {
+  const matches = rules.filter((rule) => declaration.test(rule.body));
+  if (matches.length === 0) {
+    throw new Error(`StyleX artifact is missing ${description}`);
+  }
+  if (matches.some(
+    (rule) => normalizedHeader(rule.ancestors.at(-1)?.header ?? "") !== condition,
+  )) {
+    throw new Error(`${description} must remain directly inside ${condition}`);
+  }
+}
+
+function relocateCheckboxConditionalRule(
+  compiledJavaScript: string,
+  compiledCss: string,
+  condition: string,
+  declaration: RegExp,
+  description: string,
+): string {
+  const matches = checkboxStyleRules(compiledJavaScript, compiledCss).filter(
+    (rule) =>
+      declaration.test(rule.body)
+      && normalizedHeader(rule.ancestors.at(-1)?.header ?? "") === condition,
+  );
+  if (matches.length !== 1) {
+    throw new Error(`${description} mutation expected one conditional rule`);
+  }
+  const rule = matches[0]!;
+  const conditional = rule.ancestors.at(-1)!;
+  const withoutRule = conditional.body.replace(rule.source, "");
+  if (withoutRule === conditional.body) {
+    throw new Error(`${description} mutation could not remove its exact rule`);
+  }
+  const replacement = `${conditional.header}{${withoutRule}}${rule.source}`;
+  const conditionalIndex = compiledCss.indexOf(conditional.source);
+  if (
+    conditionalIndex < 0
+    || conditionalIndex !== compiledCss.lastIndexOf(conditional.source)
+  ) {
+    throw new Error(`${description} mutation requires one exact conditional block`);
+  }
+  return `${compiledCss.slice(0, conditionalIndex)}${replacement}${compiledCss.slice(
+    conditionalIndex + conditional.source.length,
+  )}`;
+}
+
+function replaceCheckboxDeclaration(
+  compiledJavaScript: string,
+  compiledCss: string,
+  declaration: RegExp,
+  replacement: string,
+  description: string,
+): string {
+  const matches = checkboxStyleRules(compiledJavaScript, compiledCss).filter(
+    (rule) => declaration.test(rule.body),
+  );
+  if (matches.length !== 1) {
+    throw new Error(`${description} mutation expected one CheckboxField rule`);
+  }
+  const rule = matches[0]!;
+  const mutatedRule = rule.source.replace(declaration, replacement);
+  if (mutatedRule === rule.source) {
+    throw new Error(`${description} mutation did not change its exact rule`);
+  }
+  const ruleIndex = compiledCss.indexOf(rule.source);
+  if (ruleIndex < 0 || ruleIndex !== compiledCss.lastIndexOf(rule.source)) {
+    throw new Error(`${description} mutation requires one exact CheckboxField rule`);
+  }
+  return `${compiledCss.slice(0, ruleIndex)}${mutatedRule}${compiledCss.slice(
+    ruleIndex + rule.source.length,
+  )}`;
 }
 
 function requireOnlyLayerBlocks(
@@ -705,6 +934,122 @@ function requireKeyHintSourceContract(contentSource: string): void {
   );
 }
 
+function requireCheckboxFieldContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-checkbox-field(?:__(?:control|indicator|label))?(?![A-Za-z0-9_-])/u,
+    "a legacy CheckboxField recipe",
+  );
+  const rules = checkboxStyleRules(compiledJavaScript, compiledCss);
+  const checkboxCss = rules.map((rule) => rule.body).join("\n");
+  const declarations = [
+    [
+      /--hraness-field-height:\s*var\(--interactive-target-compact\);/u,
+      "the CheckboxField field-height compatibility variable",
+    ],
+    [
+      /--hraness-field-surface:\s*var\(--ui-background\);/u,
+      "the CheckboxField surface variable",
+    ],
+    [/display:\s*grid;/u, "the CheckboxField grid layout"],
+    [/grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\);/u, "the CheckboxField control columns"],
+    [/min-height:\s*var\(--interactive-target-compact\);/u, "the CheckboxField default target"],
+    [/height:\s*1\.25rem;/u, "the CheckboxField indicator height"],
+    [/width:\s*1\.25rem;/u, "the CheckboxField indicator width"],
+    [/outline-offset:\s*3px;/u, "the CheckboxField focus-ring offset"],
+    [/transition-property:\s*background-color,\s*border-color;/u, "the CheckboxField indicator transitions"],
+    [/font-size:\s*var\(--text-label\);/u, "the CheckboxField label size"],
+    [/forced-color-adjust:\s*auto;/u, "the CheckboxField forced-colors adjustment"],
+  ] as const;
+  for (const [pattern, description] of declarations) {
+    requireMatch(checkboxCss, pattern, description);
+  }
+  requireCheckboxConditionalDeclaration(
+    rules,
+    "@media(pointer:coarse)",
+    /min-height:\s*var\(--interactive-target-min\);/u,
+    "the CheckboxField coarse-pointer target",
+  );
+  requireCheckboxConditionalDeclaration(
+    rules,
+    "@media(forced-colors:active)",
+    /border-color:\s*canvastext;/u,
+    "the CheckboxField forced-colors border",
+  );
+  requireCheckboxConditionalDeclaration(
+    rules,
+    "@media(forced-colors:active)",
+    /forced-color-adjust:\s*auto;/u,
+    "the CheckboxField forced-colors adjustment",
+  );
+  for (const [pattern, description] of [
+    [/background:\s*var\(--ui-primary\);/u, "a CheckboxField background shorthand"],
+    [/border:\s*1px\s+solid/u, "a CheckboxField border shorthand"],
+    [/outline:\s*2px\s+solid/u, "a CheckboxField outline shorthand"],
+    [/transition:\s*background-color/u, "a CheckboxField transition shorthand"],
+  ] as const) {
+    forbid(checkboxCss, pattern, description);
+  }
+}
+
+function requireCheckboxFieldSourceContract(fieldsSource: string): void {
+  const start = fieldsSource.indexOf("export type CheckboxFieldProps");
+  const end = fieldsSource.indexOf("export type RadioGroupProps", start);
+  if (start < 0 || end < 0) {
+    throw new Error("src/fields.tsx must retain the bounded CheckboxField source family");
+  }
+  const checkboxSource = fieldsSource.slice(start, end);
+  requireMatch(
+    checkboxSource,
+    /label:\s*ReactNode;/u,
+    "the required CheckboxField label",
+  );
+  forbid(checkboxSource, /label\?:\s*ReactNode/u, "an optional CheckboxField label");
+  forbid(checkboxSource, /\bcompact\b/u, "a CheckboxField compact API");
+  requireMatch(
+    checkboxSource,
+    /showLabel\s*=\s*true/u,
+    "the visible-by-default CheckboxField label",
+  );
+  requireMatch(
+    checkboxSource,
+    /!showLabel\s*&&\s*["']hraness-visually-hidden["']/u,
+    "the shared visually-hidden CheckboxField label helper",
+  );
+  requireMatch(
+    checkboxSource,
+    /stylex\.props\(\s*checkboxFieldStyles\.root,[\s\S]*?state\.isDisabled\s*&&\s*checkboxFieldStyles\.disabled,[\s\S]*?xstyle,?\s*\)/u,
+    "the caller-last CheckboxField root xstyle merge",
+  );
+  requireMatch(
+    checkboxSource,
+    /stylex\.props\(\s*checkboxFieldStyles\.control,[\s\S]*?state\.isFocusVisible\s*&&\s*checkboxFieldStyles\.focusVisible,[\s\S]*?controlXstyle,?\s*\)/u,
+    "the caller-last CheckboxField controlXstyle merge",
+  );
+  requireMatch(
+    checkboxSource,
+    /mergeStylexInlineStyles\(presentation\.style,\s*domProps\.style\)/u,
+    "the CheckboxField StyleX-before-native root style merge",
+  );
+  requireMatch(
+    checkboxSource,
+    /useSlottedContext\(\s*CheckboxFieldContext,\s*props\.slot,?\s*\)\?\.render/u,
+    "the CheckboxField inherited context render seam",
+  );
+  for (const hook of [
+    "hraness-checkbox-field",
+    "hraness-checkbox-field__control",
+    "hraness-checkbox-field__indicator",
+    "hraness-checkbox-field__label",
+  ]) {
+    requireMatch(checkboxSource, new RegExp(hook, "u"), `the ${hook} semantic hook`);
+  }
+}
+
 function requireNoGallerySentinels(source: string): void {
   for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
     forbid(
@@ -724,6 +1069,7 @@ const [
   cardSource,
   toolbarSource,
   contentSource,
+  fieldsSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -733,6 +1079,7 @@ const [
     readFile(resolve(repository, "src/card.tsx"), "utf8"),
     readFile(resolve(repository, "src/toolbar.tsx"), "utf8"),
     readFile(resolve(repository, "src/content.tsx"), "utf8"),
+    readFile(resolve(repository, "src/fields.tsx"), "utf8"),
   ]);
 
 if (compiledCss.trim().length === 0) {
@@ -839,6 +1186,8 @@ requireToolbarContract(legacyComponents, compiledCss);
 requireToolbarCallerFallbackSeam(toolbarSource);
 requireKeyHintContract(legacyComponents, compiledCss);
 requireKeyHintSourceContract(contentSource);
+requireCheckboxFieldContract(legacyComponents, compiledCss, compiledJavaScript);
+requireCheckboxFieldSourceContract(fieldsSource);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,
@@ -858,7 +1207,7 @@ const physicalZeroMinimumWidths = [
 ];
 if (physicalZeroMinimumWidths.length !== 1) {
   throw new Error(
-    "dist/stylex.css must contain exactly one shared physical min-width zero declaration for the Tag label, PressableCard, and Toolbar without lowering a structural surface's logical minimum",
+    "dist/stylex.css must contain exactly one shared physical min-width zero declaration for the Tag label, PressableCard, Toolbar, and CheckboxField without lowering a structural surface's logical minimum",
   );
 }
 requireNoGallerySentinels(
@@ -931,6 +1280,10 @@ for (const [pattern, description] of [
   [/hraness-pressable-card/u, "the PressableCard semantic hook"],
   [/hraness-toolbar/u, "the Toolbar semantic hook"],
   [/hraness-key-hint/u, "the KeyHint semantic hook"],
+  [/hraness-checkbox-field/u, "the CheckboxField semantic hook"],
+  [/hraness-checkbox-field__control/u, "the CheckboxField control semantic hook"],
+  [/hraness-checkbox-field__indicator/u, "the CheckboxField indicator semantic hook"],
+  [/hraness-checkbox-field__label/u, "the CheckboxField label semantic hook"],
 ] as const) {
   requireMatch(compiledJavaScript, pattern, description);
 }
@@ -1363,6 +1716,111 @@ assert.throws(
     ),
   /gallery-only data-gallery-key-hint-layer-conflict sentinel/u,
   "the KeyHint guard must reject gallery sentinel leakage",
+);
+const changedCheckboxDefaultTarget = replaceCheckboxDeclaration(
+  compiledJavaScript,
+  compiledCss,
+  /min-height:\s*var\(--interactive-target-compact\);/u,
+  "min-height: 2rem;",
+  "CheckboxField default target",
+);
+const relocatedCheckboxCoarseTarget = relocateCheckboxConditionalRule(
+  compiledJavaScript,
+  compiledCss,
+  "@media(pointer:coarse)",
+  /min-height:\s*var\(--interactive-target-min\);/u,
+  "CheckboxField coarse-pointer target",
+);
+const relocatedCheckboxForcedBorder = relocateCheckboxConditionalRule(
+  compiledJavaScript,
+  compiledCss,
+  "@media(forced-colors:active)",
+  /border-color:\s*canvastext;/u,
+  "CheckboxField forced-colors border",
+);
+const relocatedCheckboxForcedAdjustment = relocateCheckboxConditionalRule(
+  compiledJavaScript,
+  compiledCss,
+  "@media(forced-colors:active)",
+  /forced-color-adjust:\s*auto;/u,
+  "CheckboxField forced-colors adjustment",
+);
+assert.throws(
+  () =>
+    requireCheckboxFieldContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-checkbox-field__control { display: grid; } }`,
+      compiledCss,
+      compiledJavaScript,
+    ),
+  /legacy CheckboxField recipe/u,
+  "the CheckboxField guard must reject a restored legacy selector",
+);
+assert.throws(
+  () =>
+    requireCheckboxFieldContract(
+      legacyComponents,
+      changedCheckboxDefaultTarget,
+      compiledJavaScript,
+    ),
+  /CheckboxField default target/u,
+  "the CheckboxField guard must reject changed default target geometry",
+);
+assert.throws(
+  () =>
+    requireCheckboxFieldContract(
+      legacyComponents,
+      relocatedCheckboxCoarseTarget,
+      compiledJavaScript,
+    ),
+  /coarse-pointer target must remain directly inside @media\(pointer:coarse\)/u,
+  "the CheckboxField guard must reject a coarse-pointer target relocated outside its exact media block",
+);
+assert.throws(
+  () =>
+    requireCheckboxFieldContract(
+      legacyComponents,
+      relocatedCheckboxForcedBorder,
+      compiledJavaScript,
+    ),
+  /forced-colors border must remain directly inside @media\(forced-colors:active\)/u,
+  "the CheckboxField guard must reject a forced-colors border relocated outside its exact media block",
+);
+assert.throws(
+  () =>
+    requireCheckboxFieldContract(
+      legacyComponents,
+      relocatedCheckboxForcedAdjustment,
+      compiledJavaScript,
+    ),
+  /forced-colors adjustment must remain directly inside @media\(forced-colors:active\)/u,
+  "the CheckboxField guard must reject a forced-colors adjustment relocated outside its exact media block",
+);
+assert.throws(
+  () =>
+    requireCheckboxFieldSourceContract(
+      fieldsSource.replace("showLabel = true", "showLabel = false"),
+    ),
+  /visible-by-default CheckboxField label/u,
+  "the CheckboxField guard must reject hidden-by-default labels",
+);
+assert.throws(
+  () =>
+    requireCheckboxFieldSourceContract(
+      fieldsSource.replace(
+        "mergeStylexInlineStyles(presentation.style, domProps.style)",
+        "mergeStylexInlineStyles(domProps.style, presentation.style)",
+      ),
+    ),
+  /StyleX-before-native root style merge/u,
+  "the CheckboxField guard must reject reversed native-style precedence",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-checkbox-field-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-checkbox-field-layer-conflict sentinel/u,
+  "the CheckboxField guard must reject gallery sentinel leakage",
 );
 
 console.log("StyleX package artifacts match the compiler contract");

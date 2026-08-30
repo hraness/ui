@@ -45,6 +45,181 @@ async function run(command: string[], cwd: string): Promise<void> {
   if (exitCode !== 0) throw new Error(`Command failed (${String(exitCode)}): ${command.join(" ")}`);
 }
 
+const CHECKBOX_STYLE_KEYS = [
+  "control",
+  "disabled",
+  "focusVisible",
+  "indicator",
+  "invalidIndicator",
+  "label",
+  "root",
+  "selectedIndicator",
+] as const;
+
+function balancedBlock(source: string, open: number, description: string): string {
+  let depth = 0;
+  let escaped = false;
+  let quote: "\"" | "'" | "`" | undefined;
+  for (let index = open; index < source.length; index += 1) {
+    const character = source[index];
+    const nextCharacter = source[index + 1];
+    if (character === undefined) continue;
+    if (quote !== undefined) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === "/" && nextCharacter === "*") {
+      const end = source.indexOf("*/", index + 2);
+      assert.notEqual(end, -1, `${description} contains an unterminated comment`);
+      index = end + 1;
+      continue;
+    }
+    if (character === "\"" || character === "'" || character === "`") {
+      quote = character;
+    } else if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, index + 1);
+    }
+  }
+  throw new Error(`${description} contains an unterminated block`);
+}
+
+interface CheckboxPrecedenceProbe {
+  readonly controlBaseClasses: readonly string[];
+  readonly controlProperty: string;
+  readonly rootBaseClasses: readonly string[];
+  readonly rootProperty: string;
+}
+
+interface PackageCheckboxStyleMap extends CheckboxPrecedenceProbe {
+  readonly classNames: ReadonlySet<string>;
+}
+
+function packageCheckboxStyleMap(javaScript: string): PackageCheckboxStyleMap {
+  const candidates: string[] = [];
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*control\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(javaScript, open, "packed CheckboxField JavaScript");
+    if (CHECKBOX_STYLE_KEYS.every(
+      (key) => new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u")
+        .test(object.slice(1, -1)),
+    )) {
+      candidates.push(object);
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "packed JavaScript must contain exactly one compiled checkboxFieldStyles class map",
+  );
+  const classNames = new Set<string>();
+  for (const match of candidates[0]!.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )) {
+    for (const className of match[1]!.split(/\s+/u)) classNames.add(className);
+  }
+  assert.notEqual(classNames.size, 0, "packed checkboxFieldStyles map must not be empty");
+  const entry = (key: "control" | "root") => {
+    const objectBody = candidates[0]!.slice(1, -1);
+    const match = new RegExp(
+      `(?:^|,)\\s*${key}\\s*:\\s*\\{`,
+      "u",
+    ).exec(objectBody);
+    assert.ok(match !== null, `packed checkboxFieldStyles must include ${key}`);
+    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+    return balancedBlock(objectBody, open, `packed checkboxFieldStyles.${key}`);
+  };
+  const propertyProbe = (key: "control" | "root") => {
+    const declaration = [...entry(key).matchAll(
+      /([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    )][0];
+    assert.ok(declaration !== undefined, `packed checkboxFieldStyles.${key} has no class property`);
+    return {
+      baseClasses: declaration[2]!.split(/\s+/u),
+      property: declaration[1]!,
+    };
+  };
+  const control = propertyProbe("control");
+  const root = propertyProbe("root");
+  return {
+    classNames,
+    controlBaseClasses: control.baseClasses,
+    controlProperty: control.property,
+    rootBaseClasses: root.baseClasses,
+    rootProperty: root.property,
+  };
+}
+
+function packageCheckboxRuleBodies(
+  css: string,
+  classNames: ReadonlySet<string>,
+): string[] {
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+    .filter((match) => [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(match[1]!)
+    ))
+    .map((match) => match[2]!);
+}
+
+function packageExactConditionalCss(css: string, condition: string): string {
+  const bodies: string[] = [];
+  for (const match of css.matchAll(/@media\s*\([^{}]+\)\s*\{/gu)) {
+    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+    const header = css.slice(match.index, open).replace(/\s+/gu, "")
+      .toLowerCase();
+    if (header === condition) {
+      const block = balancedBlock(css, open, `packed ${condition} CSS`);
+      bodies.push(block.slice(1, -1));
+    }
+  }
+  assert.notEqual(bodies.length, 0, `packed CSS must contain an exact ${condition} block`);
+  return bodies.join("\n");
+}
+
+function requirePackageCheckboxStyles(javaScript: string, css: string): void {
+  const { classNames } = packageCheckboxStyleMap(javaScript);
+  const familyCss = packageCheckboxRuleBodies(css, classNames).join("\n");
+  assert.match(
+    familyCss,
+    /min-height:\s*var\(--interactive-target-compact\)/u,
+    "checkboxFieldStyles must own the packed default target",
+  );
+  assert.match(
+    familyCss,
+    /transition-property:\s*background-color,\s*border-color/u,
+    "checkboxFieldStyles must own the packed indicator transitions",
+  );
+  const coarseCss = packageCheckboxRuleBodies(
+    packageExactConditionalCss(css, "@media(pointer:coarse)"),
+    classNames,
+  ).join("\n");
+  assert.match(
+    coarseCss,
+    /min-height:\s*var\(--interactive-target-min\)/u,
+    "checkboxFieldStyles must own the coarse target inside the exact conditional block",
+  );
+  const forcedColorsCss = packageCheckboxRuleBodies(
+    packageExactConditionalCss(css, "@media(forced-colors:active)"),
+    classNames,
+  ).join("\n");
+  assert.match(
+    forcedColorsCss,
+    /border-color:\s*canvastext/u,
+    "checkboxFieldStyles must own the forced-color border inside the exact conditional block",
+  );
+  assert.match(
+    forcedColorsCss,
+    /forced-color-adjust:\s*auto/u,
+    "checkboxFieldStyles must own the forced-color adjustment inside the exact conditional block",
+  );
+}
+
 function resolveGenuineNodeExecutable(): string {
   const executableName = process.platform === "win32" ? "node.exe" : "node";
   const identityProbe = [
@@ -79,7 +254,10 @@ function resolveGenuineNodeExecutable(): string {
   throw new Error("package smoke requires a genuine Node 24 executable on PATH");
 }
 
-function ssrProbe(release: ReactRelease): string {
+function ssrProbe(
+  release: ReactRelease,
+  checkboxProbe: CheckboxPrecedenceProbe,
+): string {
   return String.raw`import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -95,6 +273,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  CheckboxField,
   Icon,
   KeyHint,
   PressableCard,
@@ -113,6 +292,17 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 assert.equal(React.version, ${JSON.stringify(release.version)});
+
+const checkboxRootXstyle = {
+  ${JSON.stringify(checkboxProbe.rootProperty)}: "package-checkbox-root-xstyle",
+  $$css: true,
+};
+const checkboxControlXstyle = {
+  ${JSON.stringify(checkboxProbe.controlProperty)}: "package-checkbox-control-xstyle",
+  $$css: true,
+};
+const checkboxRootBaseClasses = ${JSON.stringify(checkboxProbe.rootBaseClasses)};
+const checkboxControlBaseClasses = ${JSON.stringify(checkboxProbe.controlBaseClasses)};
 
 const reactDomPackageUrl = import.meta.resolve("react-dom/package.json");
 const reactDomPackage = JSON.parse(await readFile(new URL(reactDomPackageUrl), "utf8"));
@@ -184,7 +374,7 @@ assert.equal(
 assert.equal(
   stylexCss.match(/(?:^|[\s{;])min-width:\s*0/gu)?.length,
   1,
-  "the packed CSS must contain exactly one shared physical zero min-width declaration for the Tag label, PressableCard, and Toolbar",
+  "the packed CSS must contain exactly one shared physical zero min-width declaration for the Tag label, PressableCard, Toolbar, and CheckboxField",
 );
 
 const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
@@ -206,6 +396,10 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(componentsCss, /\.hraness-toolbar(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-key-hint(?![A-Za-z0-9_-])/u);
+assert.doesNotMatch(
+  componentsCss,
+  /\.hraness-checkbox-field(?:__(?:control|indicator|label))?(?![A-Za-z0-9_-])/u,
+);
 assert.equal(
   componentsCss.match(
     /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu,
@@ -445,6 +639,50 @@ assert.match(keyHintMarkup, /style="width:2rem"/u);
 assert.match(keyHintMarkup, /title="Open command menu"/u);
 assert.match(keyHintMarkup, />⌘K<\/kbd>/u);
 
+const checkboxMarkup = renderToStaticMarkup(React.createElement(CheckboxField, {
+  className: "consumer-checkbox",
+  controlClassName: "consumer-checkbox-control",
+  controlXstyle: checkboxControlXstyle,
+  defaultSelected: true,
+  description: "Package checkbox description",
+  isInvalid: true,
+  label: "Package checkbox",
+  name: "package-checkbox",
+  showLabel: false,
+  style: { width: "15rem" },
+  xstyle: checkboxRootXstyle,
+}));
+assert.match(checkboxMarkup, /^<div/u);
+assert.match(checkboxMarkup, /class="hraness-checkbox-field [^"]+ consumer-checkbox"/u);
+assert.match(checkboxMarkup, /data-slot="checkbox-field"/u);
+assert.match(checkboxMarkup, /data-selected="true"/u);
+assert.match(checkboxMarkup, /data-invalid="true"/u);
+assert.match(checkboxMarkup, /<label[^>]*class="hraness-checkbox-field__control [^"]+ consumer-checkbox-control"/u);
+assert.match(checkboxMarkup, /<input[^>]*type="checkbox"[^>]*name="package-checkbox"/u);
+assert.match(checkboxMarkup, /hraness-checkbox-field__indicator/u);
+assert.match(checkboxMarkup, /hraness-checkbox-field__label [^"]+ hraness-visually-hidden/u);
+assert.match(checkboxMarkup, />Package checkbox<\/span>/u);
+assert.match(checkboxMarkup, /Package checkbox description/u);
+assert.match(checkboxMarkup, /style="width:15rem"/u);
+const checkboxRootTag = checkboxMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+const checkboxControlTag = checkboxMarkup.match(/<label[^>]*data-slot="checkbox-control"[^>]*>/u)?.[0] ?? "";
+assert.match(
+  checkboxRootTag,
+  /class="hraness-checkbox-field [^"]*package-checkbox-root-xstyle consumer-checkbox"/u,
+  "packed CheckboxField root xstyle must win before the caller class",
+);
+assert.match(
+  checkboxControlTag,
+  /class="hraness-checkbox-field__control [^"]*package-checkbox-control-xstyle consumer-checkbox-control"/u,
+  "packed CheckboxField controlXstyle must win before the caller class",
+);
+for (const baseClass of checkboxRootBaseClasses) {
+  assert.ok(!checkboxRootTag.split(/[\s"]/u).includes(baseClass), "root xstyle must replace its package property class");
+}
+for (const baseClass of checkboxControlBaseClasses) {
+  assert.ok(!checkboxControlTag.split(/[\s"]/u).includes(baseClass), "controlXstyle must replace its package property class");
+}
+
 const pageMarkup = renderToStaticMarkup(React.createElement(QuietSitePage, {
   "aria-label": "Package page",
   className: "consumer-page",
@@ -535,6 +773,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  CheckboxField,
   Icon,
   KeyHint,
   PressableCard,
@@ -569,6 +808,17 @@ const styles = stylex.create({
   cardPart: {
     paddingInline: "var(--space-2)",
   },
+  checkbox: {
+    color: "var(--ui-primary)",
+    display: "flex",
+    gap: "var(--space-5)",
+  },
+  checkboxControl: {
+    backgroundColor: "var(--ui-secondary)",
+    gap: "var(--space-4)",
+  },
+  checkboxDynamic: (width: string) => ({ width }),
+  checkboxControlDynamic: (height: string) => ({ minHeight: height }),
   camelInlineSize: { inlineSize: "100%" },
   camelMaxInlineSize: { maxInlineSize: "40rem" },
   camelMinInlineSize: { minInlineSize: 0 },
@@ -756,6 +1006,18 @@ const keyHintMarkup: string = renderToStaticMarkup(createElement(KeyHint, {
   title: "Open command menu",
   xstyle: [styles.keyHint, styles.keyHintDynamic("2rem")],
 }));
+const checkboxRef = createRef<HTMLDivElement>();
+const checkboxMarkup: string = renderToStaticMarkup(createElement(CheckboxField, {
+  className: "consumer-checkbox",
+  controlClassName: "consumer-checkbox-control",
+  controlXstyle: [styles.checkboxControl, styles.checkboxControlDynamic("3rem")],
+  fieldRef: checkboxRef,
+  label: "Package checkbox",
+  name: "package-checkbox",
+  showLabel: false,
+  style: ({ isSelected }) => ({ width: isSelected ? "15rem" : "13rem" }),
+  xstyle: [styles.checkbox, styles.checkboxDynamic("14rem")],
+}));
 const pageRef = createRef<HTMLElement>();
 const pageMarkup: string = renderToStaticMarkup(createElement(QuietSitePage, {
   "aria-label": "Package page",
@@ -857,6 +1119,10 @@ const multiplyNamedToolbarMarkup = renderToStaticMarkup(createElement(Toolbar, {
 const invalidToolbarClassMarkup = renderToStaticMarkup(createElement(Toolbar, { "aria-label": "Commands", className: () => "dynamic" }));
 // @ts-expect-error AskAiAboutThis requires one explicit canonical HTTPS URL.
 const missingAskAiUrlMarkup = renderToStaticMarkup(createElement(AskAiAboutThis, {}));
+// @ts-expect-error CheckboxField requires a label even when visible copy is hidden.
+const unnamedCheckboxMarkup = renderToStaticMarkup(createElement(CheckboxField, { showLabel: false }));
+// @ts-expect-error CheckboxField has one stable target size and no compact API.
+const compactCheckboxMarkup = renderToStaticMarkup(createElement(CheckboxField, { compact: true, label: "Compact" }));
 
 void markup;
 void askAiLinks;
@@ -871,6 +1137,7 @@ void cardMarkup;
 void pressableMarkup;
 void toolbarMarkup;
 void keyHintMarkup;
+void checkboxMarkup;
 void pageMarkup;
 void footerMarkup;
 void frameMarkup;
@@ -900,10 +1167,12 @@ void unnamedToolbarMarkup;
 void multiplyNamedToolbarMarkup;
 void invalidToolbarClassMarkup;
 void missingAskAiUrlMarkup;
+void unnamedCheckboxMarkup;
+void compactCheckboxMarkup;
 `;
 
 const viteClient = `import "@hraness/ui/styles.css";
-import { AskAiAboutThis, Card, CardDescription, KeyHint, PressableCard, Toolbar } from "@hraness/ui";
+import { AskAiAboutThis, Card, CardDescription, CheckboxField, KeyHint, PressableCard, Toolbar } from "@hraness/ui";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 
@@ -923,8 +1192,49 @@ createRoot(root).render(React.createElement(React.Fragment, null,
   }, React.createElement("button", { type: "button" }, "Save")),
   React.createElement(KeyHint, null, "⌘K"),
   React.createElement(AskAiAboutThis, { url: "https://hraness.com/stripe" }),
+  React.createElement(CheckboxField, {
+    label: "Vite checkbox",
+    name: "vite-checkbox",
+    showLabel: false,
+  }),
 ));
 `;
+
+function viteSsrProbe(checkboxProbe: CheckboxPrecedenceProbe): string {
+  return `import assert from "node:assert/strict";
+import { CheckboxField } from "@hraness/ui";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+const rootXstyle = {
+  ${JSON.stringify(checkboxProbe.rootProperty)}: "vite-checkbox-root-xstyle",
+  $$css: true,
+};
+const controlXstyle = {
+  ${JSON.stringify(checkboxProbe.controlProperty)}: "vite-checkbox-control-xstyle",
+  $$css: true,
+};
+const markup = renderToStaticMarkup(React.createElement(CheckboxField, {
+  className: "vite-checkbox-root-class",
+  controlClassName: "vite-checkbox-control-class",
+  controlXstyle,
+  label: "Vite runtime checkbox",
+  name: "vite-runtime-checkbox",
+  xstyle: rootXstyle,
+}));
+const rootTag = markup.match(/^<div[^>]*>/u)?.[0] ?? "";
+const controlTag = markup.match(/<label[^>]*data-slot="checkbox-control"[^>]*>/u)?.[0] ?? "";
+assert.match(rootTag, /class="hraness-checkbox-field [^"]*vite-checkbox-root-xstyle vite-checkbox-root-class"/u);
+assert.match(controlTag, /class="hraness-checkbox-field__control [^"]*vite-checkbox-control-xstyle vite-checkbox-control-class"/u);
+for (const baseClass of ${JSON.stringify(checkboxProbe.rootBaseClasses)}) {
+  assert.ok(!rootTag.split(/[\\s"]/u).includes(baseClass));
+}
+for (const baseClass of ${JSON.stringify(checkboxProbe.controlBaseClasses)}) {
+  assert.ok(!controlTag.split(/[\\s"]/u).includes(baseClass));
+}
+console.log("Vite CheckboxField xstyle runtime passed");
+`;
+}
 
 const viteHtml = `<!doctype html>
 <html lang="en">
@@ -939,6 +1249,9 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     outDir: "vite-dist",
+  },
+  ssr: {
+    noExternal: ["@hraness/ui", "@stylexjs/stylex"],
   },
 });
 `;
@@ -1007,8 +1320,23 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "key-hint.stylex.ts"),
   );
   await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "checkbox-field.stylex.ts"),
+  );
+  await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "lib", "stylex.ts"),
   );
+  const installedPackageRoot = join(
+    consumer,
+    "node_modules",
+    "@hraness",
+    "ui",
+  );
+  const [installedJavaScript, installedStylexCss] = await Promise.all([
+    readFile(join(installedPackageRoot, "dist", "index.js"), "utf8"),
+    readFile(join(installedPackageRoot, "dist", "stylex.css"), "utf8"),
+  ]);
+  const checkboxProbe = packageCheckboxStyleMap(installedJavaScript);
+  requirePackageCheckboxStyles(installedJavaScript, installedStylexCss);
 
   // A restored package-manager cache can retain this valid duplicate topology.
   // Public source types must remain portable when React Aria resolves through it.
@@ -1025,7 +1353,7 @@ async function verifyConsumer(
     { recursive: true },
   );
 
-  await writeFile(join(consumer, "ssr.mjs"), ssrProbe(release));
+  await writeFile(join(consumer, "ssr.mjs"), ssrProbe(release, checkboxProbe));
   await run([nodeExecutable, "./ssr.mjs"], consumer);
 
   await writeFile(join(consumer, "index.ts"), typeScriptProbe);
@@ -1041,6 +1369,10 @@ async function verifyConsumer(
   await Promise.all([
     writeFile(join(consumer, "index.html"), viteHtml),
     writeFile(join(consumer, "vite-client.ts"), viteClient),
+    writeFile(
+      join(consumer, "vite-ssr.ts"),
+      viteSsrProbe(checkboxProbe),
+    ),
     writeFile(join(consumer, "vite.config.ts"), viteConfig),
   ]);
   await run([
@@ -1060,6 +1392,7 @@ async function verifyConsumer(
     readFile(join(consumer, "vite-dist", "assets", viteJavaScriptPath), "utf8"),
     readFile(join(consumer, "vite-dist", "assets", viteCssPath), "utf8"),
   ]);
+  requirePackageCheckboxStyles(viteJavaScript, viteCss);
   assert.match(viteJavaScript, /hraness-pressable-card/u);
   assert.match(viteJavaScript, /hraness-toolbar/u);
   assert.match(viteJavaScript, /hraness-key-hint/u);
@@ -1087,6 +1420,52 @@ async function verifyConsumer(
   );
   assert.doesNotMatch(viteCss, /\.hraness-toolbar(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(viteCss, /\.hraness-key-hint(?![A-Za-z0-9_-])/u);
+
+  await run([
+    process.execPath,
+    "x",
+    "vite",
+    "build",
+    "--config",
+    "./vite.config.ts",
+    "--outDir",
+    "vite-ssr-dist",
+    "--ssr",
+    "./vite-ssr.ts",
+  ], consumer);
+  const viteSsrFiles = await readdir(join(consumer, "vite-ssr-dist"));
+  const viteSsrJavaScript = viteSsrFiles.find(
+    (file) => file.endsWith(".js") || file.endsWith(".mjs"),
+  );
+  assert.ok(viteSsrJavaScript !== undefined, "Vite SSR must emit package JavaScript");
+  const viteSsrBundle = await readFile(
+    join(consumer, "vite-ssr-dist", viteSsrJavaScript),
+    "utf8",
+  );
+  assert.match(
+    viteSsrBundle,
+    /hraness-checkbox-field/u,
+    "Vite SSR must bundle the CheckboxField implementation",
+  );
+  assert.match(
+    viteSsrBundle,
+    /vite-checkbox-root-xstyle/u,
+    "Vite SSR must bundle the caller root xstyle probe",
+  );
+  assert.match(
+    viteSsrBundle,
+    /vite-checkbox-control-xstyle/u,
+    "Vite SSR must bundle the caller controlXstyle probe",
+  );
+  assert.doesNotMatch(
+    viteSsrBundle,
+    /from\s*["']@hraness\/ui["']/u,
+    "Vite SSR must not leave @hraness/ui external",
+  );
+  await run([
+    nodeExecutable,
+    join(consumer, "vite-ssr-dist", viteSsrJavaScript),
+  ], consumer);
 }
 
 const repository = process.cwd();
