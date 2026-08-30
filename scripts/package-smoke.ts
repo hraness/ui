@@ -658,7 +658,15 @@ assert.match(checkboxMarkup, /data-slot="checkbox-field"/u);
 assert.match(checkboxMarkup, /data-selected="true"/u);
 assert.match(checkboxMarkup, /data-invalid="true"/u);
 assert.match(checkboxMarkup, /<label[^>]*class="hraness-checkbox-field__control [^"]+ consumer-checkbox-control"/u);
-assert.match(checkboxMarkup, /<input[^>]*type="checkbox"[^>]*name="package-checkbox"/u);
+const checkboxInputTags = [...checkboxMarkup.matchAll(/<input\b[^>]*>/gu)];
+assert.equal(
+  checkboxInputTags.length,
+  1,
+  "packed CheckboxField markup must contain exactly one input",
+);
+const checkboxInputTag = checkboxInputTags[0]?.[0] ?? "";
+assert.match(checkboxInputTag, /(?:^|\s)type="checkbox"(?:\s|\/?>)/u);
+assert.match(checkboxInputTag, /(?:^|\s)name="package-checkbox"(?:\s|\/?>)/u);
 assert.match(checkboxMarkup, /hraness-checkbox-field__indicator/u);
 assert.match(checkboxMarkup, /hraness-checkbox-field__label [^"]+ hraness-visually-hidden/u);
 assert.match(checkboxMarkup, />Package checkbox<\/span>/u);
