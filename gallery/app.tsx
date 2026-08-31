@@ -25,6 +25,7 @@ import {
   Icon,
   InlineAlert,
   KeyHint,
+  Link,
   Progress,
   PressableCard,
   QuietSiteFooter,
@@ -123,6 +124,20 @@ const galleryStyles = stylex.create({
     minWidth: "2rem",
     paddingInline: "var(--space-2)",
   },
+  linkDynamicLetterSpacing: (letterSpacing: string) => ({ letterSpacing }),
+  linkOverride: {
+    color: "var(--ui-foreground)",
+    textDecorationThickness: "3px",
+    ":focus-visible": {
+      outlineColor: "var(--ui-warning)",
+      outlineOffset: "6px",
+      outlineStyle: "dashed",
+      outlineWidth: "3px",
+    },
+    ":hover": {
+      textDecorationThickness: "4px",
+    },
+  },
   pressableCardOverride: {
     outlineColor: "var(--ui-warning)",
     outlineOffset: "7px",
@@ -187,6 +202,7 @@ export function PrimitiveGallery() {
   const [segment, setSegment] = useState<GallerySegment>("all");
   const [theme, setTheme] = useState<GalleryTheme>("light");
   const checkboxFieldRef = useRef<HTMLDivElement>(null);
+  const linkRef = useRef<HTMLAnchorElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const captureCheckboxFieldRef = useCallback((node: HTMLDivElement | null) => {
     checkboxFieldRef.current = node;
@@ -201,12 +217,16 @@ export function PrimitiveGallery() {
     }
     const toolbar = toolbarRef.current;
     if (toolbar === null) throw new Error("The Toolbar ref did not receive its native div.");
+    const link = linkRef.current;
+    if (link === null) throw new Error("The Link ref did not receive its native anchor.");
     root.dataset.hydrated = "true";
     checkboxField.dataset.galleryCheckboxFieldRef = "true";
+    link.dataset.galleryLinkRef = "true";
     toolbar.dataset.galleryToolbarRef = "true";
     return () => {
       delete root.dataset.hydrated;
       delete checkboxField.dataset.galleryCheckboxFieldRef;
+      delete link.dataset.galleryLinkRef;
       delete toolbar.dataset.galleryToolbarRef;
     };
   }, []);
@@ -262,6 +282,36 @@ export function PrimitiveGallery() {
             <output aria-live="polite" data-gallery-press-count="true">
               Runs: {pressCount}
             </output>
+          </div>
+
+          <div data-gallery-link-row="true">
+            <Link
+              className="gallery-link gallery-link--default"
+              data-gallery-link="default"
+              data-gallery-link-empty-xstyle="true"
+              data-gallery-link-layer-conflict="true"
+              href="/reference"
+              xstyle={[false, null, undefined, []]}
+            >
+              Default reference
+            </Link>
+            <Link
+              className="gallery-link gallery-link--override"
+              data-gallery-link="override"
+              data-gallery-link-layer-conflict="true"
+              data-gallery-link-native-style-last="true"
+              href="/reference?presentation=override"
+              linkRef={linkRef}
+              style={({ isHovered }) => ({
+                letterSpacing: isHovered ? "2px" : "1px",
+              })}
+              xstyle={[
+                galleryStyles.linkOverride,
+                galleryStyles.linkDynamicLetterSpacing("0.5px"),
+              ]}
+            >
+              Caller reference
+            </Link>
           </div>
 
           <div data-gallery-checkbox-row="true">

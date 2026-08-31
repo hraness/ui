@@ -21,6 +21,7 @@ test("the router provider preserves semantic links during server rendering", () 
   );
 
   expect(html).toContain("<a");
-  expect(html).toContain('class="hraness-link"');
+  expect(html).toMatch(/class="hraness-link [^"]+"/u);
+  expect(html).toContain('data-slot="link"');
   expect(html).toContain('href="/account"');
 });
