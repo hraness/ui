@@ -16,14 +16,19 @@ export type LogicalSizeStyleProperties = Omit<
   "min-inline-size"?: StyleXCSSProperties["minInlineSize"];
 }>;
 
+/** Whether compiled StyleX output contributes any actual presentation. */
+export function hasCompiledStylexPresentation(
+  presentation: ReturnType<typeof stylex.props>,
+): boolean {
+  return presentation.className !== undefined
+    || presentation.style !== undefined;
+}
+
 /** Whether a conditional StyleX value contributes any compiled presentation. */
 export function hasStylexPresentation(
   xstyle: StyleXStyles | undefined,
 ): boolean {
-  const presentation = stylex.props(xstyle);
-  return presentation.className !== undefined
-    || presentation.style !== undefined
-    || presentation["data-style-src"] !== undefined;
+  return hasCompiledStylexPresentation(stylex.props(xstyle));
 }
 
 /** Merge extracted dynamic StyleX values before caller-owned native styles. */

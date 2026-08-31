@@ -61,6 +61,7 @@ const LINK_STYLE_KEYS = [
   "nativeInteractionFallbacks",
   "root",
 ] as const;
+type LinkStyleKey = (typeof LINK_STYLE_KEYS)[number];
 
 function balancedBlock(source: string, open: number, description: string): string {
   let depth = 0;
@@ -112,6 +113,7 @@ interface LinkPrecedenceProbe {
 
 interface PackageLinkStyleMap extends LinkPrecedenceProbe {
   readonly classNames: ReadonlySet<string>;
+  readonly classNamesByKey: Readonly<Record<LinkStyleKey, ReadonlySet<string>>>;
 }
 
 function packageCheckboxStyleMap(javaScript: string): PackageCheckboxStyleMap {
@@ -198,10 +200,37 @@ function packageLinkStyleMap(javaScript: string): PackageLinkStyleMap {
   }
   assert.notEqual(classNames.size, 0, "packed linkStyles map must not be empty");
   const objectBody = candidates[0]!.slice(1, -1);
-  const rootMatch = /(?:^|,)\s*root\s*:\s*\{/u.exec(objectBody);
-  assert.ok(rootMatch !== null, "packed linkStyles must include root");
-  const rootOpen = (rootMatch.index ?? 0) + rootMatch[0].lastIndexOf("{");
-  const root = balancedBlock(objectBody, rootOpen, "packed linkStyles.root");
+  const entry = (key: LinkStyleKey) => {
+    const matches = [...objectBody.matchAll(
+      new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+    )];
+    assert.equal(
+      matches.length,
+      1,
+      `packed linkStyles must include exactly one ${key}`,
+    );
+    const match = matches[0]!;
+    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+    return balancedBlock(objectBody, open, `packed linkStyles.${key}`);
+  };
+  const classNamesFor = (key: LinkStyleKey): ReadonlySet<string> => {
+    const names = new Set<string>();
+    for (const match of entry(key).matchAll(
+      /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    )) {
+      for (const className of match[1]!.split(/\s+/u)) names.add(className);
+    }
+    assert.notEqual(
+      names.size,
+      0,
+      `packed linkStyles.${key} must not be empty`,
+    );
+    return names;
+  };
+  const classNamesByKey = Object.fromEntries(
+    LINK_STYLE_KEYS.map((key) => [key, classNamesFor(key)]),
+  ) as Record<LinkStyleKey, ReadonlySet<string>>;
+  const root = entry("root");
   const declaration = [...root.matchAll(
     /([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
   )][0];
@@ -209,6 +238,7 @@ function packageLinkStyleMap(javaScript: string): PackageLinkStyleMap {
   return {
     baseClasses: declaration[2]!.split(/\s+/u),
     classNames,
+    classNamesByKey,
     property: declaration[1]!,
   };
 }
@@ -222,6 +252,94 @@ function packageCheckboxRuleBodies(
       new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(match[1]!)
     ))
     .map((match) => match[2]!);
+}
+
+interface PackageStyleRule {
+  readonly body: string;
+  readonly header: string;
+  readonly source: string;
+}
+
+function packageSelectorList(header: string): readonly string[] {
+  const selectors: string[] = [];
+  let escaped = false;
+  let quote: "\"" | "'" | undefined;
+  let parentheses = 0;
+  let brackets = 0;
+  let start = 0;
+  for (let index = 0; index < header.length; index += 1) {
+    const character = header[index];
+    if (character === undefined) continue;
+    if (quote !== undefined) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === "\"" || character === "'") quote = character;
+    else if (character === "(") parentheses += 1;
+    else if (character === ")") parentheses -= 1;
+    else if (character === "[") brackets += 1;
+    else if (character === "]") brackets -= 1;
+    else if (character === "," && parentheses === 0 && brackets === 0) {
+      selectors.push(header.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  selectors.push(header.slice(start).trim());
+  return selectors.filter((selector) => selector.length > 0);
+}
+
+function packageStyleRules(
+  css: string,
+  classNames: ReadonlySet<string>,
+): PackageStyleRule[] {
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+    .filter((match) => [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(match[1]!)
+    ))
+    .map((match) => ({
+      body: match[2]!,
+      header: match[1]!.trim(),
+      source: match[0],
+    }));
+}
+
+function packageDeclarationSelectors(
+  rules: readonly PackageStyleRule[],
+  classNames: ReadonlySet<string>,
+  declaration: RegExp,
+  description: string,
+): readonly string[] {
+  const selectors = rules
+    .filter((rule) => declaration.test(rule.body))
+    .flatMap((rule) => packageSelectorList(rule.header))
+    .filter((selector) => [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
+    ));
+  assert.notEqual(
+    selectors.length,
+    0,
+    `${description} must have a class-owned selector`,
+  );
+  return selectors;
+}
+
+function requirePackagePositivePseudoSelector(
+  selector: string,
+  pseudo: "focus-visible" | "hover",
+  description: string,
+): void {
+  assert.doesNotMatch(
+    selector,
+    new RegExp(`:not\\([^)]*:${pseudo}(?![A-Za-z0-9_-])[^)]*\\)`, "u"),
+    `${description} must not negate :${pseudo}`,
+  );
+  assert.match(
+    selector,
+    new RegExp(`:${pseudo}(?![A-Za-z0-9_-])`, "u"),
+    description,
+  );
 }
 
 function packageExactConditionalCss(css: string, condition: string): string {
@@ -278,33 +396,121 @@ function requirePackageCheckboxStyles(javaScript: string, css: string): void {
 }
 
 function requirePackageLinkStyles(javaScript: string, css: string): void {
-  const { classNames } = packageLinkStyleMap(javaScript);
-  const familyCss = packageCheckboxRuleBodies(css, classNames).join("\n");
-  assert.match(
-    familyCss,
-    /color:\s*var\(--ui-primary\)/u,
-    "linkStyles must own the packed Link color",
+  const { classNamesByKey } = packageLinkStyleMap(javaScript);
+  const recipeRules = (key: LinkStyleKey) => packageStyleRules(
+    css,
+    classNamesByKey[key],
   );
+  const rootRules = recipeRules("root");
+  const hoveredRules = recipeRules("hovered");
+  const focusVisibleRules = recipeRules("focusVisible");
+  const nativeFallbackRules = recipeRules("nativeInteractionFallbacks");
+  const cssFor = (rules: readonly PackageStyleRule[]) =>
+    rules.map((rule) => rule.source).join("\n");
+  const rootCss = cssFor(rootRules);
+  const hoveredCss = cssFor(hoveredRules);
+  const focusVisibleCss = cssFor(focusVisibleRules);
+  const nativeFallbackCss = cssFor(nativeFallbackRules);
+  for (const [pattern, description] of [
+    [/color:\s*var\(--ui-primary\)/u, "Link color"],
+    [/text-decoration-thickness:\s*1px/u, "base underline thickness"],
+    [/text-underline-offset:\s*0?\.2em/u, "underline offset"],
+  ] as const) {
+    assert.match(
+      rootCss,
+      pattern,
+      `linkStyles.root must own the packed ${description}`,
+    );
+    for (const selector of packageDeclarationSelectors(
+      rootRules,
+      classNamesByKey.root,
+      pattern,
+      `linkStyles.root ${description}`,
+    )) {
+      assert.doesNotMatch(
+        selector,
+        /:(?:focus-visible|hover)(?![A-Za-z0-9_-])/u,
+        `linkStyles.root ${description} must remain unconditional`,
+      );
+    }
+  }
+  const hoveredDeclaration = /text-decoration-thickness:\s*2px/u;
   assert.match(
-    familyCss,
-    /text-decoration-thickness:\s*1px/u,
-    "linkStyles must own the packed base underline thickness",
+    hoveredCss,
+    hoveredDeclaration,
+    "linkStyles.hovered must own the packed hovered underline thickness",
   );
+  for (const selector of packageDeclarationSelectors(
+    hoveredRules,
+    classNamesByKey.hovered,
+    hoveredDeclaration,
+    "linkStyles.hovered underline thickness",
+  )) {
+    assert.doesNotMatch(
+      selector,
+      /:hover(?![A-Za-z0-9_-])/u,
+      "linkStyles.hovered must remain an unconditional explicit state recipe",
+    );
+  }
+  const focusDeclarations = [
+    [/outline-color:\s*var\(--ui-ring\)/u, "focus-ring color"],
+    [/outline-offset:\s*2px/u, "focus-ring offset"],
+    [/outline-style:\s*solid/u, "focus-ring style"],
+    [/outline-width:\s*2px/u, "focus-ring width"],
+  ] as const;
+  for (const [pattern, description] of focusDeclarations) {
+    assert.match(
+      focusVisibleCss,
+      pattern,
+      `linkStyles.focusVisible must own the packed ${description}`,
+    );
+    assert.match(
+      nativeFallbackCss,
+      pattern,
+      `linkStyles.nativeInteractionFallbacks must own the packed ${description}`,
+    );
+    for (const selector of packageDeclarationSelectors(
+      focusVisibleRules,
+      classNamesByKey.focusVisible,
+      pattern,
+      `linkStyles.focusVisible ${description}`,
+    )) {
+      assert.doesNotMatch(
+        selector,
+        /:focus-visible(?![A-Za-z0-9_-])/u,
+        `linkStyles.focusVisible ${description} must remain unconditional`,
+      );
+    }
+    for (const selector of packageDeclarationSelectors(
+      nativeFallbackRules,
+      classNamesByKey.nativeInteractionFallbacks,
+      pattern,
+      `linkStyles.nativeInteractionFallbacks ${description}`,
+    )) {
+      requirePackagePositivePseudoSelector(
+        selector,
+        "focus-visible",
+        `linkStyles.nativeInteractionFallbacks ${description} must keep its native focus selector`,
+      );
+    }
+  }
   assert.match(
-    familyCss,
-    /text-decoration-thickness:\s*2px/u,
-    "linkStyles must own the packed hovered underline thickness",
+    nativeFallbackCss,
+    hoveredDeclaration,
+    "linkStyles.nativeInteractionFallbacks must own the packed hover thickness",
   );
-  assert.match(
-    familyCss,
-    /outline-color:\s*var\(--ui-ring\)/u,
-    "linkStyles must own the packed focus-ring color",
-  );
-  assert.match(
-    familyCss,
-    /text-underline-offset:\s*0?\.2em/u,
-    "linkStyles must own the packed underline offset",
-  );
+  for (const selector of packageDeclarationSelectors(
+    nativeFallbackRules,
+    classNamesByKey.nativeInteractionFallbacks,
+    hoveredDeclaration,
+    "linkStyles.nativeInteractionFallbacks hover thickness",
+  )) {
+    requirePackagePositivePseudoSelector(
+      selector,
+      "hover",
+      "linkStyles.nativeInteractionFallbacks must keep its native hover selector",
+    );
+  }
 }
 
 function resolveGenuineNodeExecutable(): string {
