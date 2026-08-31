@@ -289,6 +289,8 @@ interface ForcedColorsEvidence {
   readonly forcedColorsActive: boolean;
   readonly keyHintContracts: boolean;
   readonly keyHintDiagnostics: string;
+  readonly linkContracts: boolean;
+  readonly linkDiagnostics: string;
   readonly selectedTabBackground: string;
   readonly selectedTabColor: string;
   readonly selectedSegmentBackground: string;
@@ -315,6 +317,12 @@ interface CheckboxFocusRuleEvidence {
 interface CheckboxFocusContract {
   readonly classNames: readonly string[];
   readonly rules: readonly CheckboxFocusRuleEvidence[];
+}
+
+interface LinkNativeFallbackContract {
+  readonly classNames: readonly string[];
+  readonly nativeInteractionFallbackClassNames: readonly string[];
+  readonly rootClassNames: readonly string[];
 }
 
 const layouts = [
@@ -492,6 +500,12 @@ const CHECKBOX_STYLE_KEYS = [
   "root",
   "selectedIndicator",
 ] as const;
+const LINK_STYLE_KEYS = [
+  "focusVisible",
+  "hovered",
+  "nativeInteractionFallbacks",
+  "root",
+] as const;
 
 function balancedBlock(source: string, open: number, description: string): string {
   let depth = 0;
@@ -598,6 +612,69 @@ function packedCheckboxClassNames(javaScript: string): ReadonlySet<string> {
     for (const className of match[1]!.split(/\s+/u)) classNames.add(className);
   }
   assert.notEqual(classNames.size, 0, "the packed checkboxFieldStyles map is empty");
+  return classNames;
+}
+
+function packedLinkStyleMap(javaScript: string): string {
+  const candidates: string[] = [];
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*focusVisible\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(javaScript, open, "packed Link JavaScript");
+    if (LINK_STYLE_KEYS.every(
+      (key) => new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u")
+        .test(object.slice(1, -1)),
+    )) {
+      candidates.push(object);
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "the packed JavaScript must contain exactly one compiled linkStyles class map",
+  );
+  const candidate = candidates[0];
+  assert.ok(candidate !== undefined);
+  return candidate;
+}
+
+function packedLinkStyleClassNames(
+  javaScript: string,
+  key: typeof LINK_STYLE_KEYS[number],
+): readonly string[] {
+  const styleMap = packedLinkStyleMap(javaScript);
+  const matches = [...styleMap.matchAll(
+    new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+  )];
+  assert.equal(
+    matches.length,
+    1,
+    `the packed linkStyles map must contain exactly one ${key} entry`,
+  );
+  const match = matches[0]!;
+  const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+  const nestedMap = balancedBlock(
+    styleMap,
+    open,
+    `packed Link ${key} JavaScript`,
+  );
+  const classNames: string[] = [];
+  for (const classMatch of nestedMap.slice(1, -1).matchAll(
+    /(?:^|,)\s*[A-Za-z_$][\w$]*\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )) {
+    classNames.push(...classMatch[1]!.split(/\s+/u));
+  }
+  assert.notEqual(
+    classNames.length,
+    0,
+    `the packed linkStyles ${key} entry has no generated classes`,
+  );
+  assert.equal(
+    new Set(classNames).size,
+    classNames.length,
+    `the packed linkStyles ${key} entry contains duplicate generated classes`,
+  );
   return classNames;
 }
 
@@ -800,6 +877,33 @@ function requirePackedCheckboxFocusContract(
     "the final CheckboxField focus recipe contains an unexpected declaration",
   );
   return { classNames, rules };
+}
+
+function requirePackedLinkNativeFallbackContract(
+  javaScript: string,
+  css: string,
+): LinkNativeFallbackContract {
+  const rootClassNames = packedLinkStyleClassNames(javaScript, "root");
+  const nativeInteractionFallbackClassNames = packedLinkStyleClassNames(
+    javaScript,
+    "nativeInteractionFallbacks",
+  );
+  const classNames = [...new Set([
+    ...rootClassNames,
+    ...nativeInteractionFallbackClassNames,
+  ])];
+  for (const className of classNames) {
+    assert.match(
+      css,
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u"),
+      `the final bundle must contain the Link native-fallback canary class .${className}`,
+    );
+  }
+  return {
+    classNames,
+    nativeInteractionFallbackClassNames,
+    rootClassNames,
+  };
 }
 
 function exactConditionalCss(css: string, condition: string): string {
@@ -4092,6 +4196,117 @@ async function settleCardFamilyTransitions(page: Page): Promise<void> {
   });
 }
 
+async function verifyLinkNativeFallbackCascadeIsolation(
+  page: Page,
+  id: string,
+  nativeFallbackContract: LinkNativeFallbackContract,
+): Promise<void> {
+  const canarySelector = '[data-gallery-link-native-fallback-canary="true"]';
+  await page.evaluate((contract) => {
+    const themeButton = document.querySelector(
+      '[data-gallery-theme-toggle="true"]',
+    );
+    if (!(themeButton instanceof HTMLButtonElement)) {
+      throw new Error("The Link native-fallback canary has no theme-button anchor");
+    }
+    const canary = document.createElement("a");
+    canary.dataset.galleryLinkLayerConflict = "true";
+    canary.dataset.galleryLinkNativeFallbackCanary = "true";
+    canary.dataset.slot = "link";
+    canary.href = "#primitive-gallery-main";
+    canary.textContent = "Native fallback canary";
+    canary.classList.add(...contract.classNames);
+    themeButton.after(canary);
+  }, nativeFallbackContract);
+
+  try {
+    const canary = page.locator(canarySelector);
+    await page.locator('[data-gallery-theme-toggle="true"]').focus();
+    await page.keyboard.press("Tab");
+    await page.waitForFunction((selector) => {
+      const element = document.querySelector(selector);
+      return element instanceof HTMLAnchorElement
+        && document.activeElement === element
+        && element.matches(":focus-visible");
+    }, canarySelector);
+    const focusEvidence = await canary.evaluate((element, contract) => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--ui-ring)";
+      document.body.append(probe);
+      const expectedOutlineColor = getComputedStyle(probe).color;
+      probe.remove();
+      const style = getComputedStyle(element);
+      const classNames = [...element.classList];
+      return {
+        classNames,
+        expectedOutlineColor,
+        focusVisible: element.matches(":focus-visible"),
+        hasReactAriaFocusState: element.hasAttribute("data-focus-visible"),
+        layerSentinel: style
+          .getPropertyValue("--gallery-link-layer-conflict")
+          .trim(),
+        missingClassNames: contract.classNames.filter(
+          (className) => !classNames.includes(className),
+        ),
+        outlineColor: style.outlineColor,
+        outlineOffset: Number.parseFloat(style.outlineOffset),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+        textDecorationLine: style.textDecorationLine,
+      };
+    }, nativeFallbackContract);
+    const focusDiagnostics = JSON.stringify({
+      ...focusEvidence,
+      nativeFallbackContract,
+    });
+    invariant(
+      focusEvidence.missingClassNames.length === 0
+      && !focusEvidence.hasReactAriaFocusState
+      && focusEvidence.layerSentinel === "legacy",
+      `${id}: the isolated Link canary is not limited to compiled native-fallback classes: ${focusDiagnostics}`,
+    );
+    invariant(
+      focusEvidence.focusVisible
+      && focusEvidence.outlineColor === focusEvidence.expectedOutlineColor
+      && focusEvidence.outlineOffset === 2
+      && focusEvidence.outlineStyle === "solid"
+      && focusEvidence.outlineWidth === 2
+      && focusEvidence.textDecorationLine.includes("underline"),
+      `${id}: the isolated Link native focus fallback does not win the final cascade: ${focusDiagnostics}`,
+    );
+
+    await canary.hover();
+    await page.waitForFunction((selector) => {
+      const element = document.querySelector(selector);
+      return element instanceof HTMLAnchorElement && element.matches(":hover");
+    }, canarySelector);
+    const hoverEvidence = await canary.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        hasReactAriaHoverState: element.hasAttribute("data-hovered"),
+        hovered: element.matches(":hover"),
+        thickness: Number.parseFloat(style.textDecorationThickness),
+      };
+    });
+    invariant(
+      hoverEvidence.hovered
+      && !hoverEvidence.hasReactAriaHoverState
+      && hoverEvidence.thickness === 2,
+      `${id}: the isolated Link native hover fallback does not win the final cascade: ${JSON.stringify(hoverEvidence)}`,
+    );
+  } finally {
+    await page.mouse.move(0, 0);
+    const canary = page.locator(canarySelector);
+    if (await canary.count() > 0) {
+      await canary.evaluate((element) => element.remove());
+    }
+    invariant(
+      await canary.count() === 0,
+      `${id}: the isolated Link native-fallback canary was not removed`,
+    );
+  }
+}
+
 async function verifyCheckboxFocusCascadeIsolation(
   page: Page,
   id: string,
@@ -4930,6 +5145,11 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     );
     const spinner = document.querySelector('[data-slot="spinner"]');
     const keyHint = document.querySelector('[data-gallery-key-hint="default"]');
+    const links = [
+      ...document.querySelectorAll<HTMLAnchorElement>(
+        '[data-gallery-link="default"], [data-gallery-link="override"]',
+      ),
+    ];
     const statusPills = [
       ...document.querySelectorAll<HTMLElement>(
         '[data-gallery-badge-tone], [data-gallery-tag-variant], [data-gallery-status-family-override="badge"], [data-gallery-status-family-override="tag"]',
@@ -4957,6 +5177,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       || !(selectedSegment instanceof HTMLElement)
       || !(spinner instanceof HTMLElement)
       || !(keyHint instanceof HTMLElement)
+      || links.length !== 2
       || statusPills.length !== 10
       || statusDots.length !== 6
       || cardFamily.length !== 11
@@ -4980,6 +5201,16 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     const keyHintStyle = getComputedStyle(keyHint);
     const canvas = normalize("backgroundColor", "Canvas");
     const canvasText = normalize("color", "CanvasText");
+    const linkText = normalize("color", "LinkText");
+    const linkEvidence = links.map((link) => {
+      const style = getComputedStyle(link);
+      return {
+        color: style.color,
+        forcedColorAdjust: style.forcedColorAdjust,
+        kind: link.dataset.galleryLink ?? "",
+        textDecorationLine: style.textDecorationLine,
+      };
+    });
     const statusPillEvidence = statusPills.map((pill) => {
       const style = getComputedStyle(pill);
       return {
@@ -5095,6 +5326,17 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
         color: keyHintStyle.color,
         display: keyHintStyle.display,
         forcedColorAdjust: keyHintStyle.forcedColorAdjust,
+      }),
+      linkContracts: linkEvidence.every(
+        (link) =>
+          link.color === linkText
+          && link.forcedColorAdjust === "auto"
+          && (link.kind === "default" || link.kind === "override")
+          && link.textDecorationLine.includes("underline"),
+      ),
+      linkDiagnostics: JSON.stringify({
+        linkText,
+        links: linkEvidence,
       }),
       selectedTabBackground: tabStyle.backgroundColor,
       selectedTabColor: tabStyle.color,
@@ -5321,6 +5563,10 @@ try {
   ]);
   requirePackedDefaultStylesheet(production.css, production.javaScript);
   const checkboxFocusContract = requirePackedCheckboxFocusContract(
+    production.javaScript,
+    production.css,
+  );
+  const linkNativeFallbackContract = requirePackedLinkNativeFallbackContract(
     production.javaScript,
     production.css,
   );
@@ -5834,6 +6080,11 @@ try {
             checkboxFocusContract,
           );
           await verifyKeyboardPath(page, layout.id, checkboxFocusContract);
+          await verifyLinkNativeFallbackCascadeIsolation(
+            page,
+            layout.id,
+            linkNativeFallbackContract,
+          );
           await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
@@ -6064,6 +6315,10 @@ try {
           `forced colors: KeyHint parity failed: ${forced.keyHintDiagnostics}`,
         );
         invariant(
+          forced.linkContracts,
+          `forced colors: Link parity failed: ${forced.linkDiagnostics}`,
+        );
+        invariant(
           forced.checkboxContracts,
           `forced colors: CheckboxField parity failed: ${forced.checkboxDiagnostics}`,
         );
@@ -6091,6 +6346,56 @@ try {
           && forcedOutline.width >= 2,
           `forced colors: focus outline is ${forcedOutline.width}px ${forcedOutline.style} ${forcedOutline.actual}, expected a visible ${forcedOutline.highlight} outline`,
         );
+        await page.keyboard.press("Tab");
+        const forcedPrimaryAction = page.getByRole("button", {
+          name: "Run primitive check",
+        });
+        invariant(
+          await forcedPrimaryAction.evaluate((element) =>
+            document.activeElement === element),
+          "forced colors: the primary action is not next after the theme action",
+        );
+        for (const selector of [
+          '[data-gallery-link="default"]',
+          '[data-gallery-link="override"]',
+        ] as const) {
+          await page.keyboard.press("Tab");
+          const focusedLink = page.locator(selector);
+          await page.waitForFunction((targetSelector) => {
+            const element = document.querySelector(targetSelector);
+            return element instanceof HTMLAnchorElement
+              && document.activeElement === element
+              && element.matches(":focus-visible");
+          }, selector);
+          const linkOutline = await focusedLink.evaluate((element) => {
+            const probe = document.createElement("span");
+            probe.style.color = "Highlight";
+            document.body.append(probe);
+            const highlight = getComputedStyle(probe).color;
+            probe.remove();
+            const style = getComputedStyle(element);
+            return {
+              active: document.activeElement === element,
+              actual: style.outlineColor,
+              dataFocusVisible: element.hasAttribute("data-focus-visible"),
+              focusVisible: element.matches(":focus-visible"),
+              forcedColorAdjust: style.forcedColorAdjust,
+              highlight,
+              style: style.outlineStyle,
+              width: Number.parseFloat(style.outlineWidth),
+            };
+          });
+          invariant(
+            linkOutline.active
+            && linkOutline.dataFocusVisible
+            && linkOutline.focusVisible
+            && linkOutline.forcedColorAdjust === "auto"
+            && linkOutline.actual === linkOutline.highlight
+            && linkOutline.style !== "none"
+            && linkOutline.width >= 2,
+            `forced colors: ${selector} focus is not a visible ${linkOutline.highlight} outline: ${JSON.stringify(linkOutline)}`,
+          );
+        }
         invariant(failures.length === 0, `forced colors: ${failures.join("; ")}`);
 
         await page.evaluate(() => {

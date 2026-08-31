@@ -8,6 +8,7 @@ import type { LinkRenderProps } from "react-aria-components";
 
 import { Link, type LinkProps } from "./actions.js";
 import { linkStyles } from "./actions.stylex.js";
+import { hasCompiledStylexPresentation } from "./lib/stylex.js";
 
 const consumerStyles = stylex.create({
   override: {
@@ -148,6 +149,18 @@ test("Link keeps native interaction fallbacks for empty conditional StyleX", () 
     }
     expect(className(linkState())).toBe(`hraness-link ${expectedFallback}`);
   }
+});
+
+test("StyleX presentation detection ignores null-only debug provenance", () => {
+  const debugNullOnly = {
+    "data-style-src": "src/link.test.tsx:debug-null-only",
+  } as ReturnType<typeof stylex.props>;
+  const productionNullOnly = {} as ReturnType<typeof stylex.props>;
+
+  expect(hasCompiledStylexPresentation(debugNullOnly)).toBe(false);
+  expect(hasCompiledStylexPresentation(productionNullOnly)).toBe(false);
+  expect(hasCompiledStylexPresentation({ className: "x-present" })).toBe(true);
+  expect(hasCompiledStylexPresentation({ style: { color: "purple" } })).toBe(true);
 });
 
 test("Link merges dynamic StyleX values before caller-owned native style", () => {
