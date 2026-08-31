@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
+import * as stylex from "@stylexjs/stylex";
 import type { CSSProperties as StyleXCSSProperties } from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 
 /**
  * StyleX 0.19 lowers camel-case logical size aliases to physical properties.
@@ -13,6 +15,16 @@ export type LogicalSizeStyleProperties = Omit<
   "max-inline-size"?: StyleXCSSProperties["maxInlineSize"];
   "min-inline-size"?: StyleXCSSProperties["minInlineSize"];
 }>;
+
+/** Whether a conditional StyleX value contributes any compiled presentation. */
+export function hasStylexPresentation(
+  xstyle: StyleXStyles | undefined,
+): boolean {
+  const presentation = stylex.props(xstyle);
+  return presentation.className !== undefined
+    || presentation.style !== undefined
+    || presentation["data-style-src"] !== undefined;
+}
 
 /** Merge extracted dynamic StyleX values before caller-owned native styles. */
 export function mergeStylexInlineStyles(

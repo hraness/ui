@@ -17,6 +17,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-card-family-layer-conflict",
   "data-gallery-toolbar-layer-conflict",
   "data-gallery-key-hint-layer-conflict",
+  "data-gallery-link-layer-conflict",
   "data-gallery-checkbox-field-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
@@ -145,6 +146,12 @@ const CHECKBOX_STYLE_KEYS = [
   "label",
   "root",
   "selectedIndicator",
+] as const;
+const LINK_STYLE_KEYS = [
+  "focusVisible",
+  "hovered",
+  "nativeInteractionFallbacks",
+  "root",
 ] as const;
 type CheckboxStyleKey = (typeof CHECKBOX_STYLE_KEYS)[number];
 
@@ -320,6 +327,78 @@ function checkboxStyleRules(
     );
   }
   return rules;
+}
+
+function linkStyleClassNames(compiledJavaScript: string): ReadonlySet<string> {
+  const candidates: string[] = [];
+  for (const match of compiledJavaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*focusVisible\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedObject(
+      compiledJavaScript,
+      open,
+      "dist/index.js Link StyleX map",
+    );
+    if (LINK_STYLE_KEYS.every(
+      (key) => new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u")
+        .test(object.slice(1, -1)),
+    )) {
+      candidates.push(object);
+    }
+  }
+  if (candidates.length !== 1) {
+    throw new Error(
+      `dist/index.js must contain exactly one compiled linkStyles class map; found ${String(candidates.length)}`,
+    );
+  }
+  return generatedClassNames(
+    candidates[0]!,
+    "the compiled linkStyles class map",
+  );
+}
+
+function linkStyleRules(
+  compiledJavaScript: string,
+  compiledCss: string,
+): CssRule[] {
+  const classNames = linkStyleClassNames(compiledJavaScript);
+  const rules = cssRules(compiledCss, "dist/stylex.css").filter((rule) =>
+    [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+    )
+  );
+  if (rules.length === 0) {
+    throw new Error("dist/stylex.css has no rules owned by linkStyles");
+  }
+  return rules;
+}
+
+function replaceLinkDeclaration(
+  compiledJavaScript: string,
+  compiledCss: string,
+  declaration: RegExp,
+  replacement: string,
+  description: string,
+): string {
+  const matches = linkStyleRules(compiledJavaScript, compiledCss).filter(
+    (rule) => declaration.test(rule.body),
+  );
+  if (matches.length !== 1) {
+    throw new Error(`${description} mutation expected one Link rule`);
+  }
+  const rule = matches[0]!;
+  const mutatedRule = rule.source.replace(declaration, replacement);
+  if (mutatedRule === rule.source) {
+    throw new Error(`${description} mutation did not change its exact rule`);
+  }
+  const ruleIndex = compiledCss.indexOf(rule.source);
+  if (ruleIndex < 0 || ruleIndex !== compiledCss.lastIndexOf(rule.source)) {
+    throw new Error(`${description} mutation requires one exact Link rule`);
+  }
+  return `${compiledCss.slice(0, ruleIndex)}${mutatedRule}${compiledCss.slice(
+    ruleIndex + rule.source.length,
+  )}`;
 }
 
 function replaceCheckboxStyleClassName(
@@ -885,11 +964,11 @@ function requireCardFamilyContract(
 
 function requireCardFamilyCallerFallbackSeam(cardSource: string): void {
   const seams = cardSource.match(
-    /xstyle\s*===\s*undefined\s*&&\s*cardStyles\.nativeInteractionFallbacks/gu,
+    /!hasStylexPresentation\(xstyle\)\s*&&\s*cardStyles\.nativeInteractionFallbacks/gu,
   ) ?? [];
   if (seams.length !== 1) {
     throw new Error(
-      "src/card.tsx must omit native PressableCard pseudo fallbacks exactly when caller xstyle is present",
+      "src/card.tsx must omit native PressableCard pseudo fallbacks exactly when caller xstyle contributes presentation",
     );
   }
 }
@@ -957,11 +1036,11 @@ function requireToolbarContract(
 
 function requireToolbarCallerFallbackSeam(toolbarSource: string): void {
   const seams = toolbarSource.match(
-    /xstyle\s*===\s*undefined\s*&&\s*toolbarStyles\.nativeFocusFallback/gu,
+    /!hasStylexPresentation\(xstyle\)\s*&&\s*toolbarStyles\.nativeFocusFallback/gu,
   ) ?? [];
   if (seams.length !== 1) {
     throw new Error(
-      "src/toolbar.tsx must omit the native Toolbar focus fallback exactly when caller xstyle is present",
+      "src/toolbar.tsx must omit the native Toolbar focus fallback exactly when caller xstyle contributes presentation",
     );
   }
 }
@@ -1028,6 +1107,84 @@ function requireKeyHintSourceContract(contentSource: string): void {
     /mergeStylexInlineStyles\(presentation\.style,\s*style\)/u,
     "the KeyHint StyleX-before-native inline merge",
   );
+}
+
+function requireLinkContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-link(?![A-Za-z0-9_-])/u,
+    "a legacy Link recipe",
+  );
+  const rules = linkStyleRules(compiledJavaScript, compiledCss);
+  const linkCss = rules.map((rule) => rule.source).join("\n");
+  const declarations = [
+    [/border-radius:\s*var\(--radius-sm\);/u, "the Link radius"],
+    [/color:\s*var\(--ui-primary\);/u, "the Link color"],
+    [/text-decoration:\s*underline;/u, "the Link underline"],
+    [/text-decoration-thickness:\s*1px;/u, "the Link base underline thickness"],
+    [/text-decoration-thickness:\s*2px;/u, "the Link hovered underline thickness"],
+    [/text-underline-offset:\s*0?\.2em;/u, "the Link underline offset"],
+    [/outline-color:\s*var\(--ui-ring\);/u, "the Link focus-ring color"],
+    [/outline-offset:\s*2px;/u, "the Link focus-ring offset"],
+    [/outline-style:\s*solid;/u, "the Link focus-ring style"],
+    [/outline-width:\s*2px;/u, "the Link focus-ring width"],
+  ] as const;
+  for (const [pattern, description] of declarations) {
+    requireMatch(linkCss, pattern, description);
+  }
+  requireMatch(linkCss, /:hover\s*\{/u, "the native Link hover fallback");
+  requireMatch(
+    linkCss,
+    /:focus-visible\s*\{/u,
+    "the native Link focus-visible fallback",
+  );
+  forbid(
+    linkCss,
+    /outline:\s*2px\s+solid\s+var\(--ui-ring\)/u,
+    "a Link outline shorthand",
+  );
+}
+
+function requireLinkSourceContract(actionsSource: string): void {
+  const start = actionsSource.indexOf("export type LinkProps");
+  const end = actionsSource.indexOf("export type LinkButtonProps", start);
+  if (start < 0 || end < 0) {
+    throw new Error("src/actions.tsx must retain the bounded Link source family");
+  }
+  const linkSource = actionsSource.slice(start, end);
+  requireMatch(linkSource, /href:\s*RequiredHref;/u, "the required Link href");
+  requireMatch(linkSource, /xstyle\?:\s*StyleXStyles;/u, "the typed Link xstyle seam");
+  requireMatch(
+    linkSource,
+    /!hasStylexPresentation\(xstyle\)\s*&&\s*linkStyles\.nativeInteractionFallbacks/u,
+    "the conditional native Link interaction fallbacks",
+  );
+  requireMatch(
+    linkSource,
+    /state\.isHovered\s*&&\s*linkStyles\.hovered/u,
+    "the explicit React Aria Link hover recipe",
+  );
+  requireMatch(
+    linkSource,
+    /state\.isFocusVisible\s*&&\s*linkStyles\.focusVisible/u,
+    "the explicit React Aria Link focus recipe",
+  );
+  requireMatch(
+    linkSource,
+    /stylex\.props\(\s*linkStyles\.root,\s*!hasStylexPresentation\(xstyle\)\s*&&\s*linkStyles\.nativeInteractionFallbacks,\s*state\.isHovered\s*&&\s*linkStyles\.hovered,\s*state\.isFocusVisible\s*&&\s*linkStyles\.focusVisible,\s*xstyle,?\s*\)/u,
+    "the caller-last Link state and xstyle merge",
+  );
+  requireMatch(
+    linkSource,
+    /mergeStylexInlineStyles\(presentation\.style,\s*callerStyle\)/u,
+    "the Link StyleX-before-native inline merge",
+  );
+  requireMatch(linkSource, /["']hraness-link["']/u, "the Link semantic hook");
+  requireMatch(linkSource, /data-slot=["']link["']/u, "the Link semantic slot");
 }
 
 function requireCheckboxFieldContract(
@@ -1201,6 +1358,7 @@ const [
   cardSource,
   toolbarSource,
   contentSource,
+  actionsSource,
   fieldsSource,
   resetStylesheet,
 ] =
@@ -1212,6 +1370,7 @@ const [
     readFile(resolve(repository, "src/card.tsx"), "utf8"),
     readFile(resolve(repository, "src/toolbar.tsx"), "utf8"),
     readFile(resolve(repository, "src/content.tsx"), "utf8"),
+    readFile(resolve(repository, "src/actions.tsx"), "utf8"),
     readFile(resolve(repository, "src/fields.tsx"), "utf8"),
     readFile(resolve(repository, "src/reset.css"), "utf8"),
   ]);
@@ -1320,6 +1479,8 @@ requireToolbarContract(legacyComponents, compiledCss);
 requireToolbarCallerFallbackSeam(toolbarSource);
 requireKeyHintContract(legacyComponents, compiledCss);
 requireKeyHintSourceContract(contentSource);
+requireLinkContract(legacyComponents, compiledCss, compiledJavaScript);
+requireLinkSourceContract(actionsSource);
 requireCheckboxFieldContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCheckboxFieldSourceContract(fieldsSource);
 requireEarliestLayerPrelude(resetStylesheet);
@@ -1415,6 +1576,7 @@ for (const [pattern, description] of [
   [/hraness-pressable-card/u, "the PressableCard semantic hook"],
   [/hraness-toolbar/u, "the Toolbar semantic hook"],
   [/hraness-key-hint/u, "the KeyHint semantic hook"],
+  [/hraness-link/u, "the Link semantic hook"],
   [/hraness-checkbox-field/u, "the CheckboxField semantic hook"],
   [/hraness-checkbox-field__control/u, "the CheckboxField control semantic hook"],
   [/hraness-checkbox-field__indicator/u, "the CheckboxField indicator semantic hook"],
@@ -1605,9 +1767,9 @@ assert.throws(
 assert.throws(
   () =>
     requireCardFamilyCallerFallbackSeam(
-      cardSource.replace("xstyle === undefined && ", ""),
+      cardSource.replace("!hasStylexPresentation(xstyle) && ", ""),
     ),
-  /omit native PressableCard pseudo fallbacks exactly when caller xstyle is present/u,
+  /omit native PressableCard pseudo fallbacks exactly when caller xstyle contributes presentation/u,
   "the Card-family guard must reject unconditional native pseudo fallbacks",
 );
 assert.throws(
@@ -1782,9 +1944,9 @@ assert.throws(
 assert.throws(
   () =>
     requireToolbarCallerFallbackSeam(
-      toolbarSource.replace("xstyle === undefined && ", ""),
+      toolbarSource.replace("!hasStylexPresentation(xstyle) && ", ""),
     ),
-  /omit the native Toolbar focus fallback exactly when caller xstyle is present/u,
+  /omit the native Toolbar focus fallback exactly when caller xstyle contributes presentation/u,
   "the Toolbar guard must reject an unconditional native focus fallback",
 );
 assert.throws(
@@ -1851,6 +2013,93 @@ assert.throws(
     ),
   /gallery-only data-gallery-key-hint-layer-conflict sentinel/u,
   "the KeyHint guard must reject gallery sentinel leakage",
+);
+const changedLinkUnderlineOffset = replaceLinkDeclaration(
+  compiledJavaScript,
+  compiledCss,
+  /text-underline-offset:\s*0?\.2em;/u,
+  "text-underline-offset: 1em;",
+  "Link underline offset",
+);
+const nativeLinkHoverRules = linkStyleRules(compiledJavaScript, compiledCss).filter(
+  (rule) => /:hover(?![A-Za-z0-9_-])/u.test(rule.header),
+);
+if (nativeLinkHoverRules.length !== 1) {
+  throw new Error("the Link guard requires one exact native hover fallback rule");
+}
+const nativeLinkHoverRule = nativeLinkHoverRules[0]!;
+const linkWithoutNativeHover = compiledCss.replace(
+  nativeLinkHoverRule.source,
+  nativeLinkHoverRule.source.replace(":hover", ":not(:hover)"),
+);
+
+assert.throws(
+  () =>
+    requireLinkContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-link[data-restored] { color: red; } }`,
+      compiledCss,
+      compiledJavaScript,
+    ),
+  /legacy Link recipe/u,
+  "the Link guard must reject a restored compound legacy selector",
+);
+assert.throws(
+  () =>
+    requireLinkContract(
+      legacyComponents,
+      changedLinkUnderlineOffset,
+      compiledJavaScript,
+    ),
+  /Link underline offset/u,
+  "the Link guard must reject a changed underline offset",
+);
+assert.throws(
+  () =>
+    requireLinkContract(
+      legacyComponents,
+      linkWithoutNativeHover,
+      compiledJavaScript,
+    ),
+  /native Link hover fallback/u,
+  "the Link guard must reject a missing native hover fallback",
+);
+assert.throws(
+  () =>
+    requireLinkSourceContract(
+      actionsSource.replace("!hasStylexPresentation(xstyle) && ", ""),
+    ),
+  /conditional native Link interaction fallbacks/u,
+  "the Link guard must reject unconditional native interaction fallbacks",
+);
+assert.throws(
+  () =>
+    requireLinkSourceContract(
+      actionsSource.replace(
+        "    state.isFocusVisible && linkStyles.focusVisible,\n    xstyle,",
+        "    xstyle,\n    state.isFocusVisible && linkStyles.focusVisible,",
+      ),
+    ),
+  /caller-last Link state and xstyle merge/u,
+  "the Link guard must reject caller xstyle before a state recipe",
+);
+assert.throws(
+  () =>
+    requireLinkSourceContract(
+      actionsSource.replace(
+        "mergeStylexInlineStyles(presentation.style, callerStyle)",
+        "mergeStylexInlineStyles(callerStyle, presentation.style)",
+      ),
+    ),
+  /Link StyleX-before-native inline merge/u,
+  "the Link guard must reject reversed native-style precedence",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-link-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-link-layer-conflict sentinel/u,
+  "the Link guard must reject gallery sentinel leakage",
 );
 const changedCheckboxDefaultTarget = replaceCheckboxDeclaration(
   compiledJavaScript,

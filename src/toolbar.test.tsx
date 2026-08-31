@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 import type { CSSProperties } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -217,6 +218,22 @@ test("Toolbar applies caller StyleX last and omits its native focus fallback on 
   expect(callerClasses).not.toHaveLength(0);
   for (const callerClass of callerClasses) {
     expect(overrideClasses).toContain(callerClass);
+  }
+
+  const emptyOverrides: readonly StyleXStyles[] = [
+    false,
+    null,
+    undefined,
+    [],
+    [false, null, undefined],
+  ];
+  for (const xstyle of emptyOverrides) {
+    const emptyClasses = classes(renderToStaticMarkup(
+      <Toolbar aria-label="Conditional toolbar" xstyle={xstyle} />,
+    ));
+    for (const fallbackClass of fallbackClasses) {
+      expect(emptyClasses).toContain(fallbackClass);
+    }
   }
 });
 

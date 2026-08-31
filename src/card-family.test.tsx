@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 import type {
   CSSProperties,
   ReactElement,
@@ -412,6 +413,31 @@ test("PressableCard composes React Aria state recipes and caller style callbacks
     transform: "none",
     width: "8rem",
   });
+});
+
+test("PressableCard keeps native fallbacks for empty conditional StyleX", () => {
+  const emptyOverrides: readonly StyleXStyles[] = [
+    false,
+    null,
+    undefined,
+    [],
+    [false, null, undefined],
+  ];
+  const fallbackClasses = stylex
+    .props(cardStyles.nativeInteractionFallbacks)
+    .className?.split(" ") ?? [];
+
+  expect(fallbackClasses).not.toHaveLength(0);
+  for (const xstyle of emptyOverrides) {
+    const rendered = renderPressableForTest({
+      children: "Conditional card",
+      xstyle,
+    });
+    const renderedClasses = rendered.props.className(buttonState()).split(" ");
+    for (const fallbackClass of fallbackClasses) {
+      expect(renderedClasses).toContain(fallbackClass);
+    }
+  }
 });
 
 test("PressableCard preserves disabled and pending React Aria semantics", () => {

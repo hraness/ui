@@ -20,7 +20,14 @@ import {
   type ToggleButtonProps as AriaToggleButtonProps,
   type ToggleButtonRenderProps,
 } from "react-aria-components";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 
+import { linkStyles } from "./actions.stylex.js";
+import {
+  hasStylexPresentation,
+  mergeStylexInlineStyles,
+} from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 import { Tooltip } from "./overlays.js";
 import { useLinkPrefetch } from "./router.js";
@@ -520,17 +527,51 @@ export type LinkProps = Omit<AriaLinkProps, "className" | "href"> &
     className?: string;
     href: RequiredHref;
     linkRef?: Ref<HTMLAnchorElement>;
+    /** Typed StyleX presentation applied after the Link interaction recipes. */
+    xstyle?: StyleXStyles;
   }>;
 
+function linkPresentation(
+  state: LinkRenderProps,
+  xstyle: StyleXStyles | undefined,
+) {
+  return stylex.props(
+    linkStyles.root,
+    !hasStylexPresentation(xstyle) && linkStyles.nativeInteractionFallbacks,
+    state.isHovered && linkStyles.hovered,
+    state.isFocusVisible && linkStyles.focusVisible,
+    xstyle,
+  );
+}
+
 /** An ordinary semantic destination. Use Button for actions. */
-export function Link({ className, href, linkRef, ...props }: LinkProps) {
+export function Link({
+  className,
+  href,
+  linkRef,
+  style,
+  xstyle,
+  ...props
+}: LinkProps) {
   return (
     <PrefetchingLink
       {...props}
-      className={cn("hraness-link", className)}
+      className={(state) => {
+        const presentation = linkPresentation(state, xstyle);
+        return cn(
+          "hraness-link",
+          presentation.className,
+          className,
+        );
+      }}
       data-slot="link"
       href={href}
       ref={linkRef}
+      style={(state) => {
+        const presentation = linkPresentation(state, xstyle);
+        const callerStyle = typeof style === "function" ? style(state) : style;
+        return mergeStylexInlineStyles(presentation.style, callerStyle);
+      }}
     />
   );
 }
