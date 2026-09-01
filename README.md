@@ -1,12 +1,12 @@
-# hraness/ui
+# @hraness/ui
 
-`@hraness/ui` is a set of accessible React primitives and shared styles for web applications. It combines React Aria Components behavior, semantic data-attribute variants, package-compiled StyleX recipes, portable theme tokens, and a restrained application baseline. A Tailwind CSS v4 bridge remains available while existing consumers migrate.
+Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.
 
-The package publishes a built ESM runtime and ships its TypeScript and TSX source for types, inspection, and contribution. Package-owned StyleX compilation extracts static rules to `stylex.css` without runtime CSS injection. The remaining CSS exports provide the complete default theme and separate token, reset, legacy component, and Tailwind compatibility layers.
+`@hraness/ui` gives Hraness web products one shared interaction and theme layer. The package owns accessible primitives, finite semantic variants, public styling hooks, and framework-neutral composition seams. Each product keeps control of its content, state, data, layout, and visual identity.
 
-## Install
+## First render
 
-Pin an immutable release from GitHub:
+Pin the current immutable release:
 
 ```json
 {
@@ -16,17 +16,13 @@ Pin an immutable release from GitHub:
 }
 ```
 
-Then install with Bun:
+Install it with Bun:
 
 ```sh
 bun install
 ```
 
-React 18 or 19 and React DOM 18 or 19 are peer dependencies.
-
-## Import the shared style
-
-Import Tailwind once, then import the complete UI stylesheet before product-specific rules:
+Import Tailwind once, then import the complete package stylesheet before product rules:
 
 ```css
 @import "tailwindcss";
@@ -35,11 +31,80 @@ Import Tailwind once, then import the complete UI stylesheet before product-spec
 /* Optional product-level token overrides and styles follow. */
 ```
 
-`styles.css` defines the shared light and dark themes, applies the portable reset, and includes both legacy CSS and extracted StyleX component recipes. Before those imports it keeps the reset `base` below `components`, then freezes the package component sublayers from lowest to highest as `legacy`, `priority1`, `priority2`, and `priority3`. Migrated StyleX declarations therefore win over remaining package recipes without depending on generated class names or import timing. The stylesheet also registers the package source with Tailwind while the compatibility bridge exists. Consumers do not need a fragile `node_modules`-relative `@source` path. The stylesheet expects Tailwind CSS v4 processing during this transition; it deliberately does not import Tailwind itself, which prevents duplicate Preflight and utility output.
+```tsx
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  CopyButton,
+} from "@hraness/ui";
 
-Set `data-theme="dark"` or the `dark` class on a root element to select the dark recipe. Set `data-theme="light"` for an explicit light island. Product themes override the namespaced roles such as `--ui-background`, `--ui-primary`, and `--ui-ring` after the imports; Tailwind's familiar `bg-background`, `text-muted-foreground`, and related utilities remain available through the included bridge.
+export function PreviewCard() {
+  return (
+    <Card tone="card">
+      <CardHeader>
+        <CardTitle>Local preview</CardTitle>
+        <CardDescription>A Vite application running on this computer.</CardDescription>
+      </CardHeader>
+      <CardContent><code>http://localhost:5173</code></CardContent>
+      <CardFooter>
+        <CopyButton
+          copyLabel="Copy preview URL"
+          value="http://localhost:5173"
+        />
+      </CardFooter>
+    </Card>
+  );
+}
+```
 
-For a narrower integration, import any static layer directly:
+That render uses one semantic card tree and one React Aria button. `CopyButton` writes the exact URL, announces success through a live region, and reserves enough width for both its idle and copied labels. The default stylesheet supplies light and dark tokens, focus treatment, coarse-pointer sizing, reduced-motion behavior, and forced-color fallbacks.
+
+React 18 or 19 and React DOM 18 or 19 are peer dependencies.
+
+## Proof in the package
+
+| Contract | Checked package fact | Public authority |
+| --- | --- | --- |
+| Runtime and types | ESM consumers load `dist/index.js`; TypeScript reads `src/index.ts` | `package.json` exports |
+| Style delivery | Six public CSS entry points cover the complete theme and each narrower layer | `package.json` exports |
+| Theme surface | 37 namespaced theme roles cover surfaces, text, actions, status, charts, typography, and radius | `src/tokens.css` |
+| Interaction states | Components expose semantic `data-slot` hooks and React Aria state attributes | Source types and server-rendered tests |
+| Compatibility | React and React DOM 18 through 19; StyleX 0.19 for caller-authored `xstyle` | Peer and package dependencies |
+
+The package also exports portable spacing, typography, target-size, motion, elevation, layer, and breakpoint scales. Theme the system through roles such as `--ui-background`, `--ui-primary`, and `--ui-ring`; product code does not need generated StyleX class names.
+
+## Composable interface map
+
+| Reader task | Public interfaces | Composition boundary |
+| --- | --- | --- |
+| Trigger an action or navigate | `Button`, `CopyButton`, `IconButton`, `Link`, `LinkButton`, `IconLink`, `ToggleButton` | React Aria owns input semantics; the caller owns the action and destination |
+| Collect and validate input | `Form`, fields, checkbox and radio groups, switches, native and React Aria selects, file fields | The caller owns values, validation policy, and submission |
+| Select from a collection | Tabs, disclosures, accordions, toggle groups, segmented controls, list boxes, menus | The primitive owns keyboard behavior; the caller owns the items and state |
+| Show status or data | Tags, badges, status dots, alerts, spinners, skeletons, progress, meters, sliders, knobs, avatars, tables | The primitive renders state; the caller supplies the state and meaning |
+| Structure a surface | Cards, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, viewport frames, wrapping rows, quiet-site landmarks | The package supplies bounded structure; the product owns page layout and content |
+| Connect application seams | `RouterProvider`, `ToastProvider`, `AskAiAboutThis`, icons | The package stays framework-neutral and does not own application data |
+| Apply presentation | Tokens, reset, legacy CSS, compiled StyleX CSS, Tailwind bridge, typed `xstyle` | Product tokens, caller recipes, and native styles remain explicit override layers |
+
+## Style delivery
+
+`@hraness/ui` publishes one JavaScript entry point and six public CSS entry points:
+
+- `@hraness/ui/styles.css` provides the complete theme, reset, legacy recipes, compiled StyleX recipes, and Tailwind bridge.
+- `@hraness/ui/tokens.css` provides standards-only light and dark tokens.
+- `@hraness/ui/reset.css` provides the standards-only baseline and layer order.
+- `@hraness/ui/components.css` provides the remaining legacy component recipes.
+- `@hraness/ui/stylex.css` provides package-compiled StyleX recipes.
+- `@hraness/ui/tailwind.css` provides Tailwind source detection, the dark variant, and semantic utility mappings.
+
+`styles.css` keeps the reset `base` below `components`, then fixes the component sublayers from lowest to highest as `legacy`, `priority1`, `priority2`, and `priority3`. Migrated StyleX declarations win over remaining package recipes without depending on generated class names or import timing. The complete stylesheet expects Tailwind CSS v4 processing during this transition, but it does not import Tailwind itself. This prevents duplicate Preflight and utility output.
+
+Set `data-theme="dark"` or the `dark` class on a root element to select the dark recipe. Set `data-theme="light"` for an explicit light island. Override namespaced roles after the imports to apply a product theme.
+
+For a standards-only or narrower integration, import the required layers directly:
 
 ```css
 @import "@hraness/ui/tokens.css";
@@ -48,58 +113,9 @@ For a narrower integration, import any static layer directly:
 @import "@hraness/ui/stylex.css";
 ```
 
-`tokens.css` and `reset.css` are standards-only CSS and do not require Tailwind. `components.css` contains only the remaining `components.hraness-ui.legacy` recipes. `stylex.css` is generated by the package build and contains migrated recipes in the higher-priority `components.hraness-ui.priority1`, `priority2`, and `priority3` sublayers. `tailwind.css` owns only source detection, the dark variant, and semantic Tailwind mappings.
+The built-in recipes are already compiled. Consumers do not need a StyleX compiler to render them. Applications that author local StyleX declarations or pass a typed `xstyle` override must compile their own source with the matching StyleX 0.19 contract. The package disables runtime CSS injection and uses property-specificity resolution. Tailwind utilities and unlayered product CSS retain their existing override authority.
 
-The built-in recipes are already compiled, so consumers do not need a StyleX compiler merely to render the package. Applications that author local StyleX declarations or pass a typed `xstyle` override must compile their own source with the matching StyleX 0.19 compiler contract. The package disables runtime CSS injection and uses property-specificity resolution. Tailwind utilities and unlayered product CSS retain their existing ability to override package defaults.
-
-## Use the primitives
-
-```tsx
-import {
-  Badge,
-  Button,
-  CopyButton,
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-  Tag,
-  TextField,
-} from "@hraness/ui";
-
-export function ProjectCard() {
-  return (
-    <Card className="max-w-md" tone="card">
-      <CardHeader>
-        <Badge tone="success">Local</Badge>
-        <Tag accentColor="#D97706" icon="🧭" variant="outline">
-          agent tools
-        </Tag>
-        <CardTitle>Local preview</CardTitle>
-        <CardDescription>A Vite application running on this computer.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <TextField
-          description="Used for development notices."
-          label="Email"
-          placeholder="you@example.com"
-          type="email"
-        />
-      </CardContent>
-      <CardFooter>
-        <CopyButton
-          copyLabel="Copy URL"
-          onCopyError={() => console.log("Copy failed")}
-          value="https://example.com/preview"
-          variant="primary"
-        />
-      </CardFooter>
-    </Card>
-  );
-}
-```
+## Composition patterns
 
 Quiet personal and project sites can share the same centered page and footer
 measure without copying layout rules:
@@ -189,21 +205,21 @@ import { RouterProvider } from "@hraness/ui";
 </RouterProvider>
 ```
 
-## Component coverage
+## Compatibility and authority boundaries
 
-The public barrel includes:
+| Boundary | Package authority | Consumer authority |
+| --- | --- | --- |
+| Interaction | Native elements and React Aria behavior for names, focus, keyboard, pointer, disabled, pending, selected, and invalid states | Business rules, values, validation policy, and side effects |
+| Presentation | Portable tokens, finite component recipes, semantic classes, and `data-slot` values | Product token overrides, page layout, local composition, and intentional caller styles |
+| Routing | A framework-neutral bridge for navigation and intent prefetching | Router choice, route ownership, loading, and error behavior |
+| Data | None | Application state, persistence, providers, and access policy |
+| Composition | Small primitives and bounded structural surfaces | Product content and higher-level patterns, optionally through `@hraness/design-kit` |
 
-- Actions: `Button`, `CopyButton`, `IconButton`, `IconLink`, `ToggleButton`, `Link`, and `LinkButton`.
-- Forms: `Form`, text and text-area fields, search and number fields, checkbox and radio groups, switches, native and React Aria selects, and file fields.
-- Collections: tabs, disclosures and accordions, toggle groups, segmented controls, list boxes, and separators.
-- Overlays: menus, dialogs, popovers, tooltips, and an isolated toast provider and queue.
-- Feedback and data: tags, badges, status dots, alerts, spinners, skeletons, progress, meters, sliders, knobs, avatars, and data tables.
-- Content and layout: cards, pressable and themed surfaces, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, skip links, viewport frames, wrapping rows, quiet-site page and footer landmarks, and the server-renderable `AskAiAboutThis` outbound link group.
-- Icons: the current-color HugeIcons renderer plus finite social-profile and appearance glyphs.
+`@hraness/ui` is ESM-only and supports React 18 or 19 with the matching React DOM range. It has no dependency on a framework, `@hraness/design-kit`, or a product repository. Consumers upgrade on their own validation schedule.
 
-Interactive primitives preserve React Aria state through `data-hovered`, `data-pressed`, `data-selected`, `data-invalid`, `data-focus-visible`, and related attributes. The shared CSS includes pointer-coarse target sizing, reduced-motion fallbacks, forced-color support, and visible focus treatment.
+Documented package exports, semantic component classes, `data-slot` values, and public custom properties are the supported integration surface. Generated StyleX class names are implementation details. Base recipes apply first, finite variants and states apply next, a typed caller `xstyle` applies after them where supported, and a caller's native `style` remains final.
 
-Collapsed disclosure panels remain available to browser find-in-page behavior without retaining the expanded panel inset in the page layout. The `compact` size keeps the same panel-content spacing while the disclosure is open.
+Interactive primitives preserve React Aria state through `data-hovered`, `data-pressed`, `data-selected`, `data-invalid`, `data-focus-visible`, and related attributes. Collapsed disclosure panels remain available to browser find-in-page behavior without retaining expanded-panel inset in the page layout. The shared CSS covers coarse pointers, reduced motion, forced colors, and visible focus.
 
 ## Customize safely
 
@@ -398,6 +414,47 @@ recipes. A release remains gated on downstream consumers proving this CSS
 delivery path; generated declarations are not duplicated into `components.css`.
 
 The package exports `cn` for Tailwind-era consumer class composition. Treat documented component classes and `data-slot` values as stable styling hooks; prefer token overrides for system-wide changes. Generated StyleX class names are implementation details.
+
+## Evidence
+
+These claims were reviewed on September 1, 2026 against the package manifest, public barrel, token stylesheet, component tests, and checked build scripts.
+
+| Claim | Source of truth | Executable evidence |
+| --- | --- | --- |
+| Package identity, version, peers, and entry points | `package.json` and `portfolio-inventory.json` | `bun run check:portfolio-inventory`, `bun run test:package` |
+| Public component and type surface | `src/index.ts` and exported source modules | `bun run typecheck`, `bun run test` |
+| Token names, accessibility fallbacks, and layer order | `src/tokens.css`, `src/reset.css`, compiled recipes | `bun run check:stylex-artifacts`, `bun run test` |
+| Deterministic package-compiled CSS and JavaScript | Build scripts and committed `dist` | `bun run build`, `bun run check:committed-dist`, `bun run check:stylex-determinism` |
+| Packed consumer behavior | Packed Bun and browser fixtures | `bun run test:package`, `bun run test:packed-bun-browser` |
+| Pointer, keyboard, writing-mode, and browser cascade behavior | Real gallery scenarios | `bun run test:browser` |
+
+`bun run check` runs the complete required sequence. A passing Markdown contract proves that this README matches checked repository facts; it does not replace package, browser, or consumer validation.
+
+## Frequently asked questions
+
+### Do I need Tailwind CSS?
+
+The complete `@hraness/ui/styles.css` entry expects Tailwind CSS v4 processing while the compatibility bridge exists. A standards-only consumer can import `tokens.css`, `reset.css`, `components.css`, and `stylex.css` directly.
+
+### Do I need a StyleX compiler?
+
+Built-in recipes are already compiled, so ordinary consumers do not. Compile your application with the matching StyleX 0.19 contract only when you author local StyleX declarations or pass `xstyle` recipes.
+
+### Which parts can a product theme?
+
+Override public roles such as `--ui-background`, `--ui-primary`, `--ui-ring`, typography roles, and `--ui-radius` after the package imports. Products can also add local layout and component composition without changing the shared primitive APIs.
+
+### Which hooks are stable?
+
+Use documented exports, semantic classes, `data-slot` values, public custom properties, and typed props. Do not depend on generated StyleX class names.
+
+### Where should application state and product layout live?
+
+Keep them in the product. `@hraness/ui` owns portable primitives and tokens, optional `@hraness/design-kit` owns shared presentation compositions, and each product owns content, state, data, access policy, and local layout.
+
+## Next action
+
+To consume the package, pin the release shown above, import the complete stylesheet, and render `PreviewCard`. To propose a primitive or compatibility change, read [CONTRIBUTING.md](./CONTRIBUTING.md) before editing the public surface.
 
 ## Migrating from 0.1
 
