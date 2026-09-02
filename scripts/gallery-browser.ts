@@ -4520,32 +4520,45 @@ async function verifyKeyboardPath(
     await checkbox.evaluate((element) => document.activeElement === element),
     `${id}: the checkbox is not reachable after the Links`,
   );
-  await page.waitForFunction(() => {
-    const element = document.activeElement;
-    if (
-      !(element instanceof HTMLInputElement)
-      || element.type !== "checkbox"
-      || !element.matches(":focus-visible")
-    ) {
-      return false;
-    }
-    const control = element.closest('[data-slot="checkbox-control"]');
-    if (
-      !(control instanceof HTMLLabelElement)
-      || control.dataset.focusVisible !== "true"
-    ) {
-      return false;
-    }
-    const style = getComputedStyle(control);
+  await page.waitForFunction(async () => {
     const colorProbe = document.createElement("div");
     colorProbe.style.setProperty("outline-color", "var(--ui-ring)");
     document.body.append(colorProbe);
     const expectedOutlineColor = getComputedStyle(colorProbe).outlineColor;
     colorProbe.remove();
-    return style.outlineColor === expectedOutlineColor
-      && Number.parseFloat(style.outlineOffset) === 3
-      && style.outlineStyle === "solid"
-      && Number.parseFloat(style.outlineWidth) === 2;
+    const isSettled = () => {
+      const element = document.activeElement;
+      if (
+        !(element instanceof HTMLInputElement)
+        || element.type !== "checkbox"
+        || !element.matches(":focus-visible")
+      ) {
+        return false;
+      }
+      const control = element.closest('[data-slot="checkbox-control"]');
+      if (
+        !(control instanceof HTMLLabelElement)
+        || control.dataset.focusVisible !== "true"
+      ) {
+        return false;
+      }
+      const style = getComputedStyle(control);
+      const hasRunningCssAnimation = control.getAnimations({ subtree: true })
+        .some((animation) =>
+          (animation.constructor.name === "CSSAnimation"
+            || animation.constructor.name === "CSSTransition")
+          && animation.playState !== "finished"
+          && animation.playState !== "idle"
+        );
+      return style.outlineColor === expectedOutlineColor
+        && Number.parseFloat(style.outlineOffset) === 3
+        && style.outlineStyle === "solid"
+        && Number.parseFloat(style.outlineWidth) === 2
+        && !hasRunningCssAnimation;
+    };
+    if (!isSettled()) return false;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    return isSettled();
   }, undefined, { polling: "raf", timeout: 2_000 }).catch(() => undefined);
   const checkboxTransitionSettlement = await checkbox.evaluate(async (element) => {
     const control = element.closest('[data-slot="checkbox-control"]');
