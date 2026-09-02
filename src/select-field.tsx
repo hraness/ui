@@ -164,6 +164,12 @@ export function SelectField<Id extends string>({
                   presentation.className,
                 );
               }}
+              render={(buttonProps) => (
+                <button
+                  {...buttonProps}
+                  aria-invalid={selectState.isInvalid || undefined}
+                />
+              )}
               style={(buttonState) => stylex.props(
                 selectFieldStyles.trigger,
                 selectTriggerSizeStyles[size],

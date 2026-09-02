@@ -194,6 +194,18 @@ export const selectFieldStyles = stylex.create({
       default: "var(--ui-destructive)",
       [forcedColors]: "CanvasText",
     },
+    ":focus-visible": {
+      borderColor: {
+        default: "var(--ui-destructive)",
+        [forcedColors]: "CanvasText",
+      },
+    },
+    ":hover": {
+      borderColor: {
+        default: "var(--ui-destructive)",
+        [forcedColors]: "CanvasText",
+      },
+    },
   },
   triggerLarge: {
     minHeight: {

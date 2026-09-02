@@ -3220,6 +3220,55 @@ function requireCompiledUnconditionalDeclaration(
   }
 }
 
+interface ExactBaseDeclaration {
+  readonly condition?: string;
+  readonly declaration: RegExp;
+}
+
+function exactBaseDeclarationOwners(
+  rules: readonly CssRule[],
+  classNames: ReadonlySet<string>,
+  { condition, declaration }: ExactBaseDeclaration,
+): readonly string[] {
+  const matchingRules = rules.filter((rule) => {
+    if (!declaration.test(rule.body)) return false;
+    const directAncestor = normalizedHeader(rule.ancestors.at(-1)?.header ?? "");
+    const conditionalAncestors = rule.ancestors.filter((ancestor) =>
+      /^@(?:container|media|supports)/u.test(normalizedHeader(ancestor.header))
+    );
+    return condition === undefined
+      ? conditionalAncestors.length === 0
+      : directAncestor === condition && conditionalAncestors.length === 1;
+  });
+  const owners: string[] = [];
+  for (const selector of matchingRules.flatMap((rule) =>
+    cssSelectorList(rule.header)
+  )) {
+    const owningClasses = [...classNames].filter((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
+    );
+    if (owningClasses.length !== 1) continue;
+    const owner = owningClasses[0]!;
+    if (selector.replaceAll(`.${owner}`, "") === "") owners.push(owner);
+  }
+  return owners;
+}
+
+function requireExactBaseDeclarations(
+  rules: readonly CssRule[],
+  classNames: ReadonlySet<string>,
+  declarations: readonly ExactBaseDeclaration[],
+  description: string,
+): void {
+  for (const contract of declarations) {
+    if (exactBaseDeclarationOwners(rules, classNames, contract).length === 0) {
+      throw new Error(
+        `StyleX artifact is missing the exact ${description} base selector for ${contract.declaration.source}`,
+      );
+    }
+  }
+}
+
 function mutateCompiledRule(
   compiledCss: string,
   map: NamedCompiledStyleMap,
@@ -3256,26 +3305,46 @@ function mutateCompiledRule(
 function requireExactPseudoDeclarations(
   rules: readonly CssRule[],
   classNames: ReadonlySet<string>,
-  pseudo: "focus-visible" | "focus-within",
+  pseudo:
+    | "focus-visible"
+    | "focus-within"
+    | "has(input:focus-visible)"
+    | "hover",
   declarations: readonly RegExp[],
   description: string,
 ): void {
   for (const declaration of declarations) {
-    for (const selector of declarationSelectors(
+    const suffix = `:${pseudo}`;
+    const selectors = declarationSelectors(
       rules,
       classNames,
       declaration,
       description,
-    )) {
+    ).filter((selector) => selector.endsWith(suffix));
+    if (selectors.length === 0) {
+      throw new Error(
+        `StyleX artifact is missing the exact ${description} selector for ${declaration.source}`,
+      );
+    }
+    for (const selector of selectors) {
       const owningClasses = [...classNames].filter((className) =>
         new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
       );
       if (
         owningClasses.length !== 1
-        || !new RegExp(
-          `^(?:\\.${owningClasses[0]})+:${pseudo}$`,
-          "u",
-        ).test(selector)
+        || !/^[A-Za-z0-9_-]+$/u.test(owningClasses[0] ?? "")
+      ) {
+        throw new Error(
+          `StyleX artifact is missing the exact ${description} selector for ${declaration.source}`,
+        );
+      }
+      const ownerSelector = `.${owningClasses[0]}`;
+      const ownerPrefix = selector.endsWith(suffix)
+        ? selector.slice(0, -suffix.length)
+        : "";
+      if (
+        ownerPrefix.length === 0
+        || ownerPrefix.replaceAll(ownerSelector, "") !== ""
       ) {
         throw new Error(
           `StyleX artifact is missing the exact ${description} selector for ${declaration.source}`,
@@ -3432,6 +3501,11 @@ function requireFieldAndSelectContract(
       "Select trigger React Aria focus bindings",
     ],
     [
+      /selectState\.isInvalid\s*&&\s*selectFieldStyles\.triggerInvalid/gu,
+      2,
+      "Select trigger invalid-state bindings",
+    ],
+    [
       /popoverState\.isEntering\s*&&\s*selectFieldStyles\.popoverEntering/gu,
       2,
       "Select popover entering bindings",
@@ -3446,6 +3520,7 @@ function requireFieldAndSelectContract(
   }
   for (const [key, count, description] of [
     ["triggerNativeInteractions", 2, "compiled Select trigger native-interaction bindings"],
+    ["triggerInvalid", 2, "compiled Select trigger invalid-state bindings"],
     ["popoverEntering", 2, "compiled Select popover entering bindings"],
     ["popoverExiting", 2, "compiled Select popover exiting bindings"],
   ] as const) {
@@ -3542,20 +3617,54 @@ function requireFieldAndSelectContract(
     "field control :focus-within",
   );
 
+  const fieldInvalidRules = compiledStyleRules(
+    compiledCss,
+    fieldMap,
+    "controlInvalid",
+  );
+  const fieldInvalidClassNames = generatedClassNames(
+    fieldMap.properties.get("controlInvalid")?.value ?? "",
+    "compiled controlInvalid entry",
+  );
+  requireExactBaseDeclarations(
+    fieldInvalidRules,
+    fieldInvalidClassNames,
+    [
+      { declaration: /border-color:\s*var\(--ui-destructive\);/u },
+      {
+        condition: "@media(forced-colors:active)",
+        declaration: /border-color:\s*canvastext;/u,
+      },
+    ],
+    "invalid field control",
+  );
+  requireExactPseudoDeclarations(
+    fieldInvalidRules.filter((rule) =>
+      /:focus-within(?![A-Za-z0-9_-])/u.test(rule.header)
+    ),
+    fieldInvalidClassNames,
+    "focus-within",
+    [
+      /border-color:\s*var\(--ui-destructive\);/u,
+      /border-color:\s*canvastext;/u,
+    ],
+    "invalid field control :focus-within",
+  );
+
   requireExactPseudoDeclarations(
     compiledStyleRules(compiledCss, fieldMap, "radioSwitchNativeFocus"),
     generatedClassNames(
       fieldMap.properties.get("radioSwitchNativeFocus")?.value ?? "",
       "compiled radioSwitchNativeFocus entry",
     ),
-    "focus-visible",
+    "has(input:focus-visible)",
     [
       /outline-color:\s*var\(--ui-ring\);/u,
       /outline-offset:\s*3px;/u,
       /outline-style:\s*solid;/u,
       /outline-width:\s*2px;/u,
     ],
-    "native RadioOption/SwitchField :focus-visible",
+    "native RadioOption/SwitchField :has(input:focus-visible)",
   );
   requireExactPseudoDeclarations(
     compiledStyleRules(compiledCss, selectMap, "triggerNativeInteractions"),
@@ -3565,6 +3674,7 @@ function requireFieldAndSelectContract(
     ),
     "focus-visible",
     [
+      /border-color:\s*canvastext;/u,
       /border-color:\s*var\(--ui-ring\);/u,
       /box-shadow:\s*0 0 0 3px color-mix\(in oklch,\s*var\(--ui-ring\) 24%,\s*transparent\);/u,
       /outline-color:\s*var\(--ui-ring\);/u,
@@ -3574,6 +3684,44 @@ function requireFieldAndSelectContract(
     ],
     "native Select trigger :focus-visible",
   );
+  const selectInvalidRules = compiledStyleRules(
+    compiledCss,
+    selectMap,
+    "triggerInvalid",
+  );
+  const selectInvalidClassNames = generatedClassNames(
+    selectMap.properties.get("triggerInvalid")?.value ?? "",
+    "compiled triggerInvalid entry",
+  );
+  requireExactBaseDeclarations(
+    selectInvalidRules,
+    selectInvalidClassNames,
+    [
+      { declaration: /border-color:\s*var\(--ui-destructive\);/u },
+      {
+        condition: "@media(forced-colors:active)",
+        declaration: /border-color:\s*canvastext;/u,
+      },
+    ],
+    "invalid Select trigger",
+  );
+  for (const [pseudo, description] of [
+    ["focus-visible", "invalid Select trigger :focus-visible"],
+    ["hover", "invalid Select trigger :hover"],
+  ] as const) {
+    requireExactPseudoDeclarations(
+      selectInvalidRules.filter((rule) =>
+        new RegExp(`:${pseudo}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+      ),
+      selectInvalidClassNames,
+      pseudo,
+      [
+        /border-color:\s*var\(--ui-destructive\);/u,
+        /border-color:\s*canvastext;/u,
+      ],
+      description,
+    );
+  }
 
   for (const key of ["numberStepFocusVisible", "numberStepNativeInteractions"] as const) {
     const rules = compiledStyleRules(compiledCss, fieldMap, key);
@@ -4192,6 +4340,75 @@ const selectGuardMap = namedCompiledStyleMap(
   sourceStyleKeys(selectFieldStyleSource, "selectFieldStyles"),
   "selectFieldStyles class map",
 );
+const invalidBaseContract = {
+  declaration: /border-color:\s*var\(--ui-destructive\);/u,
+} as const;
+const fieldInvalidBaseClass = exactBaseDeclarationOwners(
+  compiledStyleRules(compiledCss, fieldGuardMap, "controlInvalid"),
+  generatedClassNames(
+    fieldGuardMap.properties.get("controlInvalid")?.value ?? "",
+    "compiled controlInvalid entry",
+  ),
+  invalidBaseContract,
+)[0];
+if (fieldInvalidBaseClass === undefined) {
+  throw new Error("negative control cannot find the invalid base class");
+}
+const replaceEntryClassOnce = (
+  source: string,
+  map: NamedCompiledStyleMap,
+  key: string,
+  className: string,
+  replacement: string,
+): string => {
+  const property = map.properties.get(key);
+  if (
+    property === undefined
+    || property.source.split(className).length !== 2
+    || source.split(property.source).length !== 2
+  ) {
+    throw new Error(`negative control cannot isolate ${key} class ${className}`);
+  }
+  return source.replace(
+    property.source,
+    property.source.replace(className, replacement),
+  );
+};
+for (const [map, key, description] of [
+  [fieldGuardMap, "controlInvalid", "invalid field control"],
+  [selectGuardMap, "triggerInvalid", "invalid Select trigger"],
+] as const) {
+  const entryInvalidBaseClass = exactBaseDeclarationOwners(
+    compiledStyleRules(compiledCss, map, key),
+    generatedClassNames(
+      map.properties.get(key)?.value ?? "",
+      `compiled ${key} entry`,
+    ),
+    invalidBaseContract,
+  )[0];
+  if (entryInvalidBaseClass === undefined) {
+    throw new Error(`negative control cannot find the ${key} base class`);
+  }
+  assert.throws(
+    () => requireFieldAndSelectContract(
+      legacyComponents,
+      compiledCss,
+      replaceEntryClassOnce(
+        compiledJavaScript,
+        map,
+        key,
+        entryInvalidBaseClass,
+        `xmissing${entryInvalidBaseClass.slice(1)}`,
+      ),
+      fieldsSource,
+      fieldStyleSource,
+      selectFieldSource,
+      selectFieldStyleSource,
+    ),
+    new RegExp(`exact ${description} base selector`, "u"),
+    `the Fields/Select guard must reject ${description} without its base atom`,
+  );
+}
 const assertFieldSelectMutationRejected = (
   map: NamedCompiledStyleMap,
   key: string,
@@ -4359,27 +4576,194 @@ assert.throws(
   /exact field control :focus-within selector/u,
   "the Fields/Select guard must reject an extra-restricted field focus-within selector",
 );
-for (const [map, key, description] of [
-  [fieldGuardMap, "radioSwitchNativeFocus", "RadioOption/SwitchField"],
-  [selectGuardMap, "triggerNativeInteractions", "Select trigger"],
+const fieldInvalidFocusRule = compiledStyleRules(
+  compiledCss,
+  fieldGuardMap,
+  "controlInvalid",
+).find((rule) =>
+  /border-color:\s*var\(--ui-destructive\);/u.test(rule.body)
+  && /:focus-within(?![A-Za-z0-9_-])/u.test(rule.header)
+);
+if (fieldInvalidFocusRule === undefined) {
+  throw new Error("negative control cannot find the invalid field focus-within rule");
+}
+assert.throws(
+  () => requireFieldAndSelectContract(
+    legacyComponents,
+    compiledCss.replace(
+      fieldInvalidFocusRule.source,
+      fieldInvalidFocusRule.source.replaceAll(
+        ":focus-within",
+        "[data-never]:focus-within",
+      ),
+    ),
+    compiledJavaScript,
+    fieldsSource,
+    fieldStyleSource,
+    selectFieldSource,
+    selectFieldStyleSource,
+  ),
+  /exact invalid field control :focus-within selector/u,
+  "the Fields/Select guard must reject an extra-restricted invalid focus-within selector",
+);
+const invalidBaseRule = compiledStyleRules(
+  compiledCss,
+  fieldGuardMap,
+  "controlInvalid",
+).find((rule) =>
+  /border-color:\s*var\(--ui-destructive\);/u.test(rule.body)
+  && rule.ancestors.every((ancestor) =>
+    !/^@(?:container|media|supports)/u.test(normalizedHeader(ancestor.header))
+  )
+  && cssSelectorList(rule.header).some((selector) =>
+    selector.replaceAll(`.${fieldInvalidBaseClass}`, "") === ""
+  )
+);
+if (invalidBaseRule === undefined) {
+  throw new Error("negative control cannot find the invalid base rule");
+}
+const invalidBaseSelector = cssSelectorList(invalidBaseRule.header).find((selector) =>
+  selector.replaceAll(`.${fieldInvalidBaseClass}`, "") === ""
+);
+if (invalidBaseSelector === undefined) {
+  throw new Error("negative control cannot find the invalid base selector");
+}
+assert.throws(
+  () => requireFieldAndSelectContract(
+    legacyComponents,
+    compiledCss.replace(
+      invalidBaseRule.source,
+      invalidBaseRule.source.replace(
+        invalidBaseSelector,
+        `${invalidBaseSelector}[data-never]`,
+      ),
+    ),
+    compiledJavaScript,
+    fieldsSource,
+    fieldStyleSource,
+    selectFieldSource,
+    selectFieldStyleSource,
+  ),
+  /exact invalid field control base selector/u,
+  "the Fields/Select guard must reject an extra-restricted invalid base selector",
+);
+for (const pseudo of ["focus-visible", "hover"] as const) {
+  const invalidSelectRule = compiledStyleRules(
+    compiledCss,
+    selectGuardMap,
+    "triggerInvalid",
+  ).find((rule) =>
+    /border-color:\s*var\(--ui-destructive\);/u.test(rule.body)
+    && new RegExp(`:${pseudo}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+  );
+  if (invalidSelectRule === undefined) {
+    throw new Error(
+      `negative control cannot find the invalid Select trigger :${pseudo} rule`,
+    );
+  }
+  assert.throws(
+    () => requireFieldAndSelectContract(
+      legacyComponents,
+      compiledCss.replace(
+        invalidSelectRule.source,
+        invalidSelectRule.source.replaceAll(
+          `:${pseudo}`,
+          `[data-never]:${pseudo}`,
+        ),
+      ),
+      compiledJavaScript,
+      fieldsSource,
+      fieldStyleSource,
+      selectFieldSource,
+      selectFieldStyleSource,
+    ),
+    new RegExp(`exact invalid Select trigger :${pseudo} selector`, "u"),
+    `the Fields/Select guard must reject an extra-restricted invalid Select trigger :${pseudo} selector`,
+  );
+}
+const nativeSelectFocusClasses = generatedClassNames(
+  selectGuardMap.properties.get("triggerNativeInteractions")?.value ?? "",
+  "compiled triggerNativeInteractions entry",
+);
+const nativeSelectForcedFocusRule = compiledStyleRules(
+  compiledCss,
+  selectGuardMap,
+  "triggerNativeInteractions",
+).find((rule) =>
+  /border-color:\s*canvastext;/u.test(rule.body)
+  && normalizedHeader(rule.ancestors.at(-1)?.header ?? "")
+    === "@media(forced-colors:active)"
+  && /:focus-visible(?![A-Za-z0-9_-])/u.test(rule.header)
+);
+const nativeSelectForcedFocusSelector = nativeSelectForcedFocusRule === undefined
+  ? undefined
+  : cssSelectorList(nativeSelectForcedFocusRule.header).find((selector) =>
+      selector.endsWith(":focus-visible")
+      && [...nativeSelectFocusClasses].some((className) =>
+        new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
+      )
+    );
+if (
+  nativeSelectForcedFocusRule === undefined
+  || nativeSelectForcedFocusSelector === undefined
+) {
+  throw new Error("negative control cannot find the forced native Select focus rule");
+}
+assert.throws(
+  () => requireFieldAndSelectContract(
+    legacyComponents,
+    compiledCss.replace(
+      nativeSelectForcedFocusRule.source,
+      nativeSelectForcedFocusRule.source.replace(
+        nativeSelectForcedFocusSelector,
+        nativeSelectForcedFocusSelector.replace(
+          ":focus-visible",
+          "[data-never]:focus-visible",
+        ),
+      ),
+    ),
+    compiledJavaScript,
+    fieldsSource,
+    fieldStyleSource,
+    selectFieldSource,
+    selectFieldStyleSource,
+  ),
+  /exact native Select trigger :focus-visible selector/u,
+  "the Fields/Select guard must reject an extra-restricted forced native Select focus selector",
+);
+for (const [map, key, description, pseudo] of [
+  [
+    fieldGuardMap,
+    "radioSwitchNativeFocus",
+    "RadioOption/SwitchField",
+    "has(input:focus-visible)",
+  ],
+  [selectGuardMap, "triggerNativeInteractions", "Select trigger", "focus-visible"],
 ] as const) {
+  const pseudoSelector = `:${pseudo}`;
   const focusRule = compiledStyleRules(compiledCss, map, key).find((rule) =>
     /outline-width:\s*2px;/u.test(rule.body)
-    && /:focus-visible(?![A-Za-z0-9_-])/u.test(rule.header)
+    && rule.header.includes(pseudoSelector)
   );
   if (focusRule === undefined) {
     throw new Error(`negative control cannot find the native ${description} focus rule`);
   }
-  for (const [replacement, mutation] of [
-    [":not(:focus-visible)", "negated"],
-    ["[data-never]:focus-visible", "extra-restricted"],
-  ] as const) {
+  const mutations = pseudo === "focus-visible"
+    ? [
+        [":not(:focus-visible)", "negated"],
+        ["[data-never]:focus-visible", "extra-restricted"],
+      ] as const
+    : [
+        [":has(input:not(:focus-visible))", "negated descendant"],
+        [":has(input[data-never]:focus-visible)", "extra-restricted descendant"],
+      ] as const;
+  for (const [replacement, mutation] of mutations) {
     assert.throws(
       () => requireFieldAndSelectContract(
         legacyComponents,
         compiledCss.replace(
           focusRule.source,
-          focusRule.source.replaceAll(":focus-visible", replacement),
+          focusRule.source.replaceAll(pseudoSelector, replacement),
         ),
         compiledJavaScript,
         fieldsSource,
@@ -4387,7 +4771,7 @@ for (const [map, key, description] of [
         selectFieldSource,
         selectFieldStyleSource,
       ),
-      /exact native .* :focus-visible selector/u,
+      /exact native .* selector/u,
       `the Fields/Select guard must reject a ${mutation} native ${description} focus selector`,
     );
   }

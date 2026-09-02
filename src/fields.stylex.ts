@@ -70,6 +70,12 @@ export const fieldStyles = stylex.create({
       default: "var(--ui-destructive)",
       [forcedColors]: "CanvasText",
     },
+    ":focus-within": {
+      borderColor: {
+        default: "var(--ui-destructive)",
+        [forcedColors]: "CanvasText",
+      },
+    },
   },
   controlLarge: {
     minHeight: {
@@ -357,7 +363,7 @@ export const fieldStyles = stylex.create({
     outlineWidth: "2px",
   },
   radioSwitchNativeFocus: {
-    ":focus-visible": {
+    ":has(input:focus-visible)": {
       outlineColor: "var(--ui-ring)",
       outlineOffset: "3px",
       outlineStyle: "solid",

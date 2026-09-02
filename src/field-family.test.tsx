@@ -247,6 +247,7 @@ test("SelectField preserves native submission and compiled trigger geometry", ()
     <SelectField
       className="consumer-select"
       defaultValue="daily"
+      isInvalid
       label="Digest cadence"
       name="cadence"
       options={[
@@ -255,6 +256,7 @@ test("SelectField preserves native submission and compiled trigger geometry", ()
       ]}
       style={{ display: "block" }}
       triggerXstyle={consumerStyles.controlOverride}
+      validationBehavior="aria"
       xstyle={consumerStyles.rootOverride}
     />,
   );
@@ -267,7 +269,9 @@ test("SelectField preserves native submission and compiled trigger geometry", ()
 
   expect(classNames(root)[0]).toBe("hraness-select-field");
   expect(classNames(root).at(-1)).toBe("consumer-select");
+  expect(root).toContain('data-invalid="true"');
   expect(root).toContain('style="display:block"');
+  expect(trigger).toContain('aria-invalid="true"');
   expect(classNames(trigger).some((name) => name.startsWith("x"))).toBe(true);
   expect(indicator).toContain('viewBox="0 0 12 12"');
   expect(html).toContain('d="M2.25 4.25 6 7.75 9.75 4.25"');

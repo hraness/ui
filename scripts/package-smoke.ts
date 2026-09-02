@@ -727,7 +727,11 @@ function requirePackagePositivePseudoSelector(
 function requirePackageExactClassPseudoSelector(
   selector: string,
   classNames: ReadonlySet<string>,
-  pseudo: "focus-visible" | "hover",
+  pseudo:
+    | "focus-visible"
+    | "focus-within"
+    | "has(input:focus-visible)"
+    | "hover",
   description: string,
 ): void {
   const owners = [...classNames].filter((className) =>
@@ -740,10 +744,41 @@ function requirePackageExactClassPseudoSelector(
   );
   const owner = owners[0]!;
   assert.match(owner, /^[A-Za-z0-9_-]+$/u);
-  assert.match(
-    selector,
-    new RegExp(`^(?:\\.${owner})+:${pseudo}$`, "u"),
+  const ownerSelector = `.${owner}`;
+  const suffix = `:${pseudo}`;
+  const ownerPrefix = selector.endsWith(suffix)
+    ? selector.slice(0, -suffix.length)
+    : "";
+  assert.ok(
+    ownerPrefix.length > 0
+      && ownerPrefix.replaceAll(ownerSelector, "") === "",
     `${description} must use only the owning generated class and :${pseudo}`,
+  );
+}
+
+function requirePackageExactBaseDeclaration(
+  css: string,
+  classNames: ReadonlySet<string>,
+  declaration: RegExp,
+  description: string,
+): void {
+  const selectors = packageDeclarationSelectors(
+    packageStyleRules(css, classNames),
+    classNames,
+    declaration,
+    description,
+  );
+  const exactSelectors = selectors.filter((selector) => {
+    const owners = [...classNames].filter((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
+    );
+    return owners.length === 1
+      && selector.replaceAll(`.${owners[0]!}`, "") === "";
+  });
+  assert.notEqual(
+    exactSelectors.length,
+    0,
+    `${description} must have an exact owner-only base selector`,
   );
 }
 
@@ -1033,14 +1068,15 @@ function requirePackageFieldSelectStyles(javaScript: string, css: string): void 
       assert.match(keyCss, declaration, `packed ${key} must retain its ordinary focus contract`);
     }
   }
-  for (const [map, key, declarations] of [
-    [field, "radioSwitchNativeFocus", [
+  for (const [map, key, pseudo, declarations] of [
+    [field, "radioSwitchNativeFocus", "has(input:focus-visible)", [
       /outline-color:\s*var\(--ui-ring\)/u,
       /outline-offset:\s*3px/u,
       /outline-style:\s*solid/u,
       /outline-width:\s*2px/u,
     ]],
-    [select, "triggerNativeInteractions", [
+    [select, "triggerNativeInteractions", "focus-visible", [
+      /border-color:\s*canvastext/u,
       /box-shadow:\s*0 0 0 3px color-mix\(in oklch,\s*var\(--ui-ring\) 24%,\s*transparent\)/u,
       /outline-color:\s*var\(--ui-ring\)/u,
       /outline-offset:\s*2px/u,
@@ -1051,31 +1087,125 @@ function requirePackageFieldSelectStyles(javaScript: string, css: string): void 
     const classNames = packageEntryClassNames(map, key);
     const rules = packageStyleRules(css, classNames);
     for (const declaration of declarations) {
+      const suffix = `:${pseudo}`;
       const selectors = packageDeclarationSelectors(
         rules,
         classNames,
         declaration,
         `packed ${key} ${String(declaration)}`,
+      ).filter((selector) => selector.endsWith(suffix));
+      assert.notEqual(
+        selectors.length,
+        0,
+        `packed ${key} ${String(declaration)} must have an exact :${pseudo} selector`,
       );
       for (const selector of selectors) {
         requirePackageExactClassPseudoSelector(
           selector,
           classNames,
-          "focus-visible",
+          pseudo,
           `packed ${key} ${String(declaration)} selector`,
         );
       }
     }
   }
-  for (const [map, key] of [
-    [field, "radioSwitchNativeFocus"],
-    [select, "triggerNativeInteractions"],
+  const invalidClasses = packageEntryClassNames(field, "controlInvalid");
+  requirePackageExactBaseDeclaration(
+    css,
+    invalidClasses,
+    /border-color:\s*var\(--ui-destructive\)/u,
+    "packed controlInvalid ordinary border",
+  );
+  requirePackageExactBaseDeclaration(
+    forcedConditionalCss,
+    invalidClasses,
+    /border-color:\s*canvastext/u,
+    "packed controlInvalid forced-colors border",
+  );
+  const invalidFocusRules = packageStyleRules(css, invalidClasses).filter(
+    (rule) => /:focus-within(?![A-Za-z0-9_-])/u.test(rule.header),
+  );
+  for (const declaration of [
+    /border-color:\s*var\(--ui-destructive\)/u,
+    /border-color:\s*canvastext/u,
+  ]) {
+    for (const selector of packageDeclarationSelectors(
+      invalidFocusRules,
+      invalidClasses,
+      declaration,
+      `packed controlInvalid ${String(declaration)}`,
+    )) {
+      requirePackageExactClassPseudoSelector(
+        selector,
+        invalidClasses,
+        "focus-within",
+        `packed controlInvalid ${String(declaration)} selector`,
+      );
+    }
+  }
+  const selectInvalidClasses = packageEntryClassNames(select, "triggerInvalid");
+  requirePackageExactBaseDeclaration(
+    css,
+    selectInvalidClasses,
+    /border-color:\s*var\(--ui-destructive\)/u,
+    "packed triggerInvalid ordinary border",
+  );
+  requirePackageExactBaseDeclaration(
+    forcedConditionalCss,
+    selectInvalidClasses,
+    /border-color:\s*canvastext/u,
+    "packed triggerInvalid forced-colors border",
+  );
+  for (const pseudo of ["focus-visible", "hover"] as const) {
+    const selectInvalidRules = packageStyleRules(css, selectInvalidClasses)
+      .filter((rule) =>
+        new RegExp(`:${pseudo}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+      );
+    for (const declaration of [
+      /border-color:\s*var\(--ui-destructive\)/u,
+      /border-color:\s*canvastext/u,
+    ]) {
+      const suffix = `:${pseudo}`;
+      const selectors = packageDeclarationSelectors(
+        selectInvalidRules,
+        selectInvalidClasses,
+        declaration,
+        `packed triggerInvalid :${pseudo} ${String(declaration)}`,
+      ).filter((selector) => selector.endsWith(suffix));
+      assert.notEqual(
+        selectors.length,
+        0,
+        `packed triggerInvalid :${pseudo} ${String(declaration)} must have an exact pseudo selector`,
+      );
+      for (const selector of selectors) {
+        requirePackageExactClassPseudoSelector(
+          selector,
+          selectInvalidClasses,
+          pseudo,
+          `packed triggerInvalid :${pseudo} ${String(declaration)} selector`,
+        );
+      }
+    }
+  }
+  for (const [map, key, positiveSelector, description] of [
+    [
+      field,
+      "radioSwitchNativeFocus",
+      /:has\(input:focus-visible\)/u,
+      "native descendant :focus-visible selector",
+    ],
+    [
+      select,
+      "triggerNativeInteractions",
+      /:focus-visible(?![A-Za-z0-9_-])/u,
+      "native :focus-visible selector",
+    ],
   ] as const) {
     const keyCss = entryCss(map, key);
     assert.match(
       keyCss,
-      /:focus-visible(?![A-Za-z0-9_-])/u,
-      `packed ${key} must retain a positive native :focus-visible selector`,
+      positiveSelector,
+      `packed ${key} must retain its positive ${description}`,
     );
     assert.doesNotMatch(
       keyCss,

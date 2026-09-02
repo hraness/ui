@@ -524,6 +524,7 @@ export function PrimitiveGallery() {
             data-gallery-select="true"
             data-gallery-visually-hidden-layer-conflict="true"
             defaultValue="followers"
+            isInvalid
             label="Profile metric"
             options={gallerySelectOptions}
             showLabel={false}
@@ -611,6 +612,7 @@ export function PrimitiveGallery() {
                 label="Caller project"
                 name="caller-project"
                 style={{ width: "15rem" }}
+                validationBehavior="aria"
                 xstyle={[
                   galleryStyles.fieldRootOverride,
                   galleryStyles.fieldRootDynamicWidth("14rem"),
@@ -724,11 +726,13 @@ export function PrimitiveGallery() {
                 data-gallery-field="select"
                 defaultValue="followers"
                 description="The disabled option must never receive hover presentation."
+                isInvalid
                 label="Metric"
                 name="metric"
                 options={gallerySelectOptions}
                 selectRef={selectFieldRef}
                 triggerXstyle={galleryStyles.selectTriggerOverride}
+                validationBehavior="aria"
               />
             </div>
             <div

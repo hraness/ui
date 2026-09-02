@@ -5066,6 +5066,35 @@ async function settleFieldPresentation(page: Page): Promise<void> {
   });
 }
 
+async function settleOwnedAnimations(target: Locator): Promise<void> {
+  await target.evaluate(async (element) => {
+    await Promise.all(
+      element.getAnimations({ subtree: true }).map(async (animation) => {
+        try {
+          await animation.finished;
+        } catch {
+          // A superseded animation may cancel before the final presentation check.
+        }
+      }),
+    );
+  });
+}
+
+async function resetKeyboardFocusToDocumentStart(
+  page: Page,
+  id: string,
+): Promise<void> {
+  const reset = await page.evaluate(() => {
+    const previousTabIndex = document.body.getAttribute("tabindex");
+    document.body.tabIndex = -1;
+    document.body.focus({ preventScroll: true });
+    if (previousTabIndex === null) document.body.removeAttribute("tabindex");
+    else document.body.setAttribute("tabindex", previousTabIndex);
+    return document.activeElement === document.body;
+  });
+  invariant(reset, `${id}: the keyboard path did not reset to document start`);
+}
+
 async function verifyNativeFieldFocusFallback(
   page: Page,
   id: string,
@@ -5073,6 +5102,7 @@ async function verifyNativeFieldFocusFallback(
   contract: Readonly<{
     borderUsesRing?: boolean;
     label: string;
+    nativeFocusSelector: ":focus-visible" | ":has(input:focus-visible)";
     outlineOffset: number;
     selector: string;
   }>,
@@ -5081,48 +5111,67 @@ async function verifyNativeFieldFocusFallback(
     await target.count() === 1,
     `${id}: the ${contract.label} native-focus specimen is not unique`,
   );
+  const presentation = page.locator(contract.selector);
   invariant(
-    await target.evaluate((element, selector) => element.matches(selector), contract.selector),
-    `${id}: the ${contract.label} accessible target does not match ${contract.selector}`,
+    await presentation.count() === 1,
+    `${id}: the ${contract.label} focus presentation is not unique`,
+  );
+  invariant(
+    await target.evaluate((element, selector) => {
+      const presentationElement = document.querySelector(selector);
+      return presentationElement instanceof HTMLElement
+        && (presentationElement === element || presentationElement.contains(element));
+    }, contract.selector),
+    `${id}: the ${contract.label} accessible target is not owned by ${contract.selector}`,
   );
 
   await target.focus();
   await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Tab");
-  await page.waitForFunction((selector) => {
+  await page.waitForFunction(({ nativeFocusSelector, selector }) => {
     const element = document.querySelector(selector);
+    const activeElement = document.activeElement;
     return element instanceof HTMLElement
-      && document.activeElement === element
-      && element.matches(":focus-visible")
+      && activeElement instanceof HTMLElement
+      && (element === activeElement || element.contains(activeElement))
+      && activeElement.matches(":focus-visible")
+      && element.matches(nativeFocusSelector)
       && element.hasAttribute("data-focus-visible");
-  }, contract.selector, { polling: "raf", timeout: 2_000 });
+  }, {
+    nativeFocusSelector: contract.nativeFocusSelector,
+    selector: contract.selector,
+  }, { polling: "raf", timeout: 2_000 });
   await settleFieldPresentation(page);
 
-  const evidence = await target.evaluate((element) => {
+  const evidence = await presentation.evaluate((element, nativeFocusSelector) => {
     const probe = document.createElement("span");
     probe.style.setProperty("outline-color", "var(--ui-ring)");
     document.body.append(probe);
     const ring = getComputedStyle(probe).outlineColor;
     probe.remove();
     const style = getComputedStyle(element);
+    const activeElement = document.activeElement;
     return {
-      active: document.activeElement === element,
+      active: activeElement instanceof HTMLElement
+        && (activeElement === element || element.contains(activeElement)),
+      activeFocusVisible: activeElement?.matches(":focus-visible") ?? false,
       borderColor: style.borderColor,
       dataFocusVisible: element.getAttribute("data-focus-visible"),
-      focusVisible: element.matches(":focus-visible"),
       forcedColorsActive: matchMedia("(forced-colors: active)").matches,
+      nativeFocusMatch: element.matches(nativeFocusSelector),
       outlineColor: style.outlineColor,
       outlineOffset: Number.parseFloat(style.outlineOffset),
       outlineStyle: style.outlineStyle,
       outlineWidth: Number.parseFloat(style.outlineWidth),
       ring,
     };
-  });
+  }, contract.nativeFocusSelector);
   invariant(
     evidence.active
+    && evidence.activeFocusVisible
     && evidence.dataFocusVisible !== null
-    && evidence.focusVisible
     && !evidence.forcedColorsActive
+    && evidence.nativeFocusMatch
     && evidence.outlineColor === evidence.ring
     && nearlyEqual(evidence.outlineOffset, contract.outlineOffset)
     && evidence.outlineStyle === "solid"
@@ -5413,6 +5462,8 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
         && indicatorBox.height >= 10
         && indicatorBox.width >= 10,
       selectRef: selectField.dataset.galleryFieldRef === "true",
+      selectInvalid: selectField.hasAttribute("data-invalid")
+        && selectTrigger.getAttribute("aria-invalid") === "true",
       selectTriggerBackground: selectTriggerStyle.backgroundColor,
       selectTriggerBorder: selectTriggerStyle.borderColor,
       switchRef: switchField.dataset.galleryFieldRef === "true",
@@ -5462,7 +5513,9 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
   invariant(
     evidence.backgroundResetContracts
     && evidence.nativeArrow
-    && evidence.selectIndicator,
+    && evidence.selectIndicator
+    && evidence.selectInvalid
+    && evidence.selectTriggerBorder === evidence.expectedWarning,
     `${id}: Fields background or SVG parity changed: ${JSON.stringify(evidence)}`,
   );
   invariant(
@@ -5548,6 +5601,7 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     page.getByRole("radio", { exact: true, name: "Calm" }),
     {
       label: "default Calm RadioOption",
+      nativeFocusSelector: ":has(input:focus-visible)",
       outlineOffset: 3,
       selector:
         '[data-gallery-field="radio-group"] [data-slot="radio-control"][data-selected]',
@@ -5559,6 +5613,7 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     page.getByRole("switch", { exact: true, name: "Digest" }),
     {
       label: "default Digest SwitchField",
+      nativeFocusSelector: ":has(input:focus-visible)",
       outlineOffset: 3,
       selector:
         '[data-gallery-field="switch-unselected"] [data-slot="switch-control"]',
@@ -5573,6 +5628,7 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     {
       borderUsesRing: true,
       label: "default synthetic Select trigger",
+      nativeFocusSelector: ":focus-visible",
       outlineOffset: 2,
       selector:
         '[data-gallery-field="synthetic-select"] .hraness-select-field__trigger',
@@ -5616,6 +5672,89 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       && getComputedStyle(select).backgroundImage.includes("linear-gradient");
   }, undefined, { polling: "raf", timeout: 2_000 });
 
+  const invalidSelectTrigger = page.locator(
+    '[data-gallery-select="true"] .hraness-select-field__trigger',
+  );
+  await page.mouse.move(0, 0);
+  await settleFieldPresentation(page);
+  const invalidRestingEvidence = await invalidSelectTrigger.evaluate((trigger) => {
+    const root = trigger.closest('[data-slot="select-field"]');
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-destructive)";
+    document.body.append(probe);
+    const destructive = getComputedStyle(probe).color;
+    probe.remove();
+    return {
+      ariaInvalid: trigger.getAttribute("aria-invalid"),
+      borderColor: getComputedStyle(trigger).borderColor,
+      destructive,
+      rootInvalid: root?.hasAttribute("data-invalid") ?? false,
+    };
+  });
+  invariant(
+    invalidRestingEvidence.ariaInvalid === "true"
+    && invalidRestingEvidence.rootInvalid
+    && invalidRestingEvidence.borderColor === invalidRestingEvidence.destructive,
+    `${id}: invalid Select resting presentation changed: ${JSON.stringify(invalidRestingEvidence)}`,
+  );
+  await invalidSelectTrigger.hover();
+  await page.waitForFunction(() => {
+    const trigger = document.querySelector(
+      '[data-gallery-select="true"] .hraness-select-field__trigger',
+    );
+    if (!(trigger instanceof HTMLButtonElement)) return false;
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-destructive)";
+    document.body.append(probe);
+    const destructive = getComputedStyle(probe).color;
+    probe.remove();
+    return trigger.hasAttribute("data-hovered")
+      && getComputedStyle(trigger).borderColor === destructive;
+  }, undefined, { polling: "raf", timeout: 2_000 });
+  await page.mouse.move(0, 0);
+  await invalidSelectTrigger.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await settleFieldPresentation(page);
+  const invalidFocusEvidence = await invalidSelectTrigger.evaluate((trigger) => {
+    const resolveColor = (value: string): string => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const destructive = resolveColor("var(--ui-destructive)");
+    const ring = resolveColor("var(--ui-ring)");
+    const style = getComputedStyle(trigger);
+    return {
+      active: document.activeElement === trigger,
+      borderColor: style.borderColor,
+      boxShadow: style.boxShadow,
+      dataFocusVisible: trigger.hasAttribute("data-focus-visible"),
+      destructive,
+      focusVisible: trigger.matches(":focus-visible"),
+      outlineColor: style.outlineColor,
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+      ring,
+    };
+  });
+  invariant(
+    invalidFocusEvidence.active
+    && invalidFocusEvidence.dataFocusVisible
+    && invalidFocusEvidence.focusVisible
+    && invalidFocusEvidence.borderColor === invalidFocusEvidence.destructive
+    && invalidFocusEvidence.boxShadow !== "none"
+    && invalidFocusEvidence.outlineColor === invalidFocusEvidence.ring
+    && invalidFocusEvidence.outlineOffset === 2
+    && invalidFocusEvidence.outlineStyle === "solid"
+    && invalidFocusEvidence.outlineWidth === 2,
+    `${id}: invalid Select focus presentation changed: ${JSON.stringify(invalidFocusEvidence)}`,
+  );
+
   const selectTrigger = page.locator(
     '[data-gallery-field="select"] .hraness-select-field__trigger',
   );
@@ -5630,7 +5769,10 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     document.body.append(probe);
     const primary = getComputedStyle(probe).color;
     probe.remove();
-    return trigger.hasAttribute("data-hovered")
+    return trigger.closest('[data-slot="select-field"]')
+        ?.hasAttribute("data-invalid")
+      && trigger.getAttribute("aria-invalid") === "true"
+      && trigger.hasAttribute("data-hovered")
       && getComputedStyle(trigger).borderColor === primary;
   }, undefined, { polling: "raf", timeout: 2_000 });
   await page.mouse.move(0, 0);
@@ -5647,6 +5789,7 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       && trigger.hasAttribute("data-focus-visible")
       && trigger.matches(":focus-visible");
   }, undefined, { polling: "raf", timeout: 2_000 });
+  await settleFieldPresentation(page);
   const focusEvidence = await selectTrigger.evaluate((trigger) => {
     const probe = document.createElement("span");
     probe.style.color = "var(--ui-warning)";
@@ -5655,17 +5798,23 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     probe.remove();
     const style = getComputedStyle(trigger);
     return {
+      ariaInvalid: trigger.getAttribute("aria-invalid"),
       borderColor: style.borderColor,
+      className: trigger.className,
       focusVisible: trigger.matches(":focus-visible"),
       outlineColor: style.outlineColor,
       outlineOffset: Number.parseFloat(style.outlineOffset),
       outlineStyle: style.outlineStyle,
       outlineWidth: Number.parseFloat(style.outlineWidth),
+      rootInvalid: trigger.closest('[data-slot="select-field"]')
+        ?.hasAttribute("data-invalid") ?? false,
       warning,
     };
   });
   invariant(
-    focusEvidence.focusVisible
+    focusEvidence.ariaInvalid === "true"
+    && focusEvidence.focusVisible
+    && focusEvidence.rootInvalid
     && focusEvidence.borderColor === focusEvidence.warning
     && focusEvidence.outlineColor === focusEvidence.warning
     && focusEvidence.outlineOffset === 5
@@ -5739,7 +5888,9 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     });
     invariant(
       reducedMotionEvidence.animationName === "none"
-      && seconds(reducedMotionEvidence.animationDuration).every((value) => value === 0)
+      && seconds(reducedMotionEvidence.animationDuration).every(
+        (value) => value <= 0.000_01,
+      )
       && reducedMotionEvidence.running === 0,
       `${id}: reduced-motion Select did not settle: ${JSON.stringify(reducedMotionEvidence)}`,
     );
@@ -5766,6 +5917,7 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     );
     const syntheticOptions = syntheticPopover.getByRole("option");
     await syntheticOptions.first().waitFor();
+    await settleOwnedAnimations(syntheticPopover);
     const syntheticOptionHeights = await syntheticOptions.evaluateAll(
       (options) => options.map((option) => option.getBoundingClientRect().height),
     );
@@ -5814,13 +5966,22 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
   );
 
   await page.locator('select[data-gallery-field="native-select"]').selectOption("pacific");
-  await page.getByRole("radio", { exact: true, name: "Focus" }).click();
-  const switchControl = page.getByRole("switch", { exact: true, name: "Alerts" });
+  const focusRadio = page.getByRole("radio", { exact: true, name: "Focus" });
+  await page
+    .locator('[data-gallery-field="radio-group"] [data-slot="radio-control"]')
+    .filter({ hasText: /^Focus$/u })
+    .click();
+  invariant(await focusRadio.isChecked(), `${id}: the visible RadioOption did not select Focus`);
+  const switchInput = page.getByRole("switch", { exact: true, name: "Alerts" });
+  const switchControl = page.locator(
+    '[data-gallery-field="switch"] [data-slot="switch-control"]',
+  );
   await switchControl.click();
-  const unselectedSwitchEvidence = await switchControl.evaluate((control) => ({
+  const unselectedSwitchEvidence = await switchInput.evaluate((control) => ({
     ariaChecked: control.getAttribute("aria-checked"),
     checked: control instanceof HTMLInputElement ? control.checked : null,
-    selected: control.hasAttribute("data-selected"),
+    selected: control.closest('[data-slot="switch-control"]')
+      ?.hasAttribute("data-selected") ?? false,
   }));
   invariant(
     !unselectedSwitchEvidence.selected
@@ -5829,10 +5990,11 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     `${id}: the Switch did not become unselected: ${JSON.stringify(unselectedSwitchEvidence)}`,
   );
   await switchControl.click();
-  const selectedSwitchEvidence = await switchControl.evaluate((control) => ({
+  const selectedSwitchEvidence = await switchInput.evaluate((control) => ({
     ariaChecked: control.getAttribute("aria-checked"),
     checked: control instanceof HTMLInputElement ? control.checked : null,
-    selected: control.hasAttribute("data-selected"),
+    selected: control.closest('[data-slot="switch-control"]')
+      ?.hasAttribute("data-selected") ?? false,
   }));
   invariant(
     selectedSwitchEvidence.selected
@@ -6198,6 +6360,7 @@ async function verifyKeyboardPath(
   id: string,
   checkboxFocusContract: CheckboxFocusContract,
 ): Promise<void> {
+  await resetKeyboardFocusToDocumentStart(page, id);
   await page.keyboard.press("Tab");
   const skipLink = page.locator('[data-slot="skip-link"]');
   invariant(
@@ -7778,6 +7941,7 @@ async function verifyFieldFamilyCoarsePointer(page: Page): Promise<void> {
   );
   const options = popover.locator('[role="option"]');
   await options.first().waitFor();
+  await settleOwnedAnimations(popover);
   const optionEvidence = await options.evaluateAll((items) => items.map((item) => ({
     disabled: item.hasAttribute("data-disabled") || item.getAttribute("aria-disabled") === "true",
     height: item.getBoundingClientRect().height,
@@ -7842,9 +8006,25 @@ async function verifyFieldFamilyForcedColors(page: Page): Promise<void> {
   for (const contract of focusContracts) {
     const target = page.locator(contract.selector);
     await target.focus();
-    await page.keyboard.press("Shift+Tab");
-    await page.keyboard.press("Tab");
+    if (contract.presentation === "self") {
+      // React Aria intentionally excludes NumberField step buttons from the tab order.
+      // Establish keyboard modality, then mirror assistive technology's direct focus.
+      await page.keyboard.press("Tab");
+      await target.focus();
+    } else {
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Tab");
+    }
     await settleFieldPresentation(page);
+    if (contract.presentation === "self") {
+      await page.waitForFunction((selector) => {
+        const focused = document.querySelector(selector);
+        return focused instanceof HTMLButtonElement
+          && document.activeElement === focused
+          && focused.matches(":focus-visible")
+          && focused.hasAttribute("data-focus-visible");
+      }, contract.selector, { polling: "raf", timeout: 2_000 });
+    }
     focusEvidence.push(await target.evaluate((focused, contract) => {
       const presentation = contract.presentation === "self"
         ? focused
@@ -7861,6 +8041,8 @@ async function verifyFieldFamilyForcedColors(page: Page): Promise<void> {
       return {
         active: document.activeElement === focused,
         boxShadow: style.boxShadow,
+        dataFocusVisible: focused.hasAttribute("data-focus-visible"),
+        directFocus: contract.presentation === "self",
         focusState: contract.presentation === "self"
           ? focused.matches(":focus-visible")
           : presentation.matches(":focus-within"),
@@ -7871,6 +8053,7 @@ async function verifyFieldFamilyForcedColors(page: Page): Promise<void> {
         outlineOffset: Number.parseFloat(style.outlineOffset),
         outlineStyle: style.outlineStyle,
         outlineWidth: Number.parseFloat(style.outlineWidth),
+        tabIndex: focused.tabIndex,
       };
     }, contract));
   }
@@ -7878,6 +8061,7 @@ async function verifyFieldFamilyForcedColors(page: Page): Promise<void> {
     focusEvidence.every((item) =>
       item.active
       && item.focusState
+      && (!item.directFocus || (item.dataFocusVisible && item.tabIndex === -1))
       && item.boxShadow === "none"
       && item.outlineColor === item.highlight
       && nearlyEqual(item.outlineOffset, item.offset)
@@ -8506,7 +8690,7 @@ try {
   );
   assert.match(
     html,
-    /<span[^>]*class="hraness-select-field__label hraness-visually-hidden x[^"]+"[^>]*>Profile metric<\/span>/u,
+    /<span[^>]*class="hraness-select-field__label(?: x[A-Za-z0-9_-]+)+ hraness-visually-hidden(?: x[A-Za-z0-9_-]+)+"[^>]*>Profile metric<\/span>/u,
   );
   assert.match(
     html,
@@ -9172,6 +9356,7 @@ try {
         );
         await verifyFieldFamilyForcedColors(page);
 
+        await resetKeyboardFocusToDocumentStart(page, "forced colors");
         await page.keyboard.press("Tab");
         await page.keyboard.press("Enter");
         await page.keyboard.press("Tab");
