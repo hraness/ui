@@ -261,7 +261,10 @@ const styles = stylex.create({
 `LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `KeyHint`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
-`SkipLink`, `Separator`, `Form`, `ViewportFrame`, `WrappingRow`, `ThemedSurface`, `Toolbar`, and `CheckboxField`
+`SkipLink`, `Separator`, `Form`, `FieldDescription`, `FieldError`, `TextField`,
+`TextAreaField`, `SearchField`, `NumberField`, `CheckboxField`, `CheckboxGroup`,
+`RadioGroup`, `RadioOption`, `SwitchField`, `NativeSelectField`, `FileField`,
+`SelectField`, `ViewportFrame`, `WrappingRow`, `ThemedSurface`, and `Toolbar`
 accept a typed StyleX override. Base declarations are applied first, finite
 size, tone, shape, and interaction recipes come next, and the caller recipe is
 applied last. `CheckboxField` exposes `controlXstyle` separately for its
@@ -292,6 +295,35 @@ submission handler, ref, and inherited context or caller DOM renderer intact.
 Its grid recipe keeps a physical zero minimum width and `var(--space-6)` gap.
 Caller `xstyle` resolves after that recipe, and native `style` declarations
 remain final.
+
+The field family keeps native inputs, textareas, selects, file controls, and
+form submission intact while React Aria continues to own field, group, radio,
+switch, number-stepper, and SelectField behavior. Each field root accepts
+`xstyle`. Text, textarea, search, number, native-select, and file controls expose
+`controlXstyle` plus their input-specific StyleX seam; checkbox, radio, and
+switch controls expose `controlXstyle`; checkbox and radio groups expose
+`optionsXstyle`; and SelectField exposes `triggerXstyle`. Field descriptions
+and errors also accept a typed `xstyle`. Base, finite size and surface, and
+explicit React Aria state recipes resolve before the corresponding caller
+recipe, while native `style` declarations remain final. Field and number-control
+focus-within defaults resolve before `controlXstyle`, so an ordinary caller
+override keeps visible focus and a caller pseudo recipe can replace it.
+RadioOption, SwitchField, and SelectField condition their native focus fallback
+when React Aria focus state or an effective caller recipe is authoritative.
+Internal search-clear and number-stepper controls, plus enabled SelectField
+options, keep native hover and focus fallbacks because they expose no caller
+StyleX seam.
+
+Compact, default, and large fields preserve their intended geometry under both
+the real coarse-pointer media query and the synthetic
+`--hraness-field-coarse-min` verification seam. This includes number-stepper
+columns, search clear buttons, radio and switch controls, SelectField triggers
+and options, and the native file button. Migrated recipes use explicit
+background color and image declarations: ordinary controls clear inherited
+images, `NativeSelectField` retains its two-gradient arrow, and `SelectField`
+retains its SVG chevron. Only the native input placeholder and
+`::file-selector-button` presentation remain in legacy CSS because those
+pseudo-elements are not owned by the compiled component recipes.
 Quiet-site landmarks and these surfaces also preserve dynamic StyleX inline
 values when merging the native `style` prop, with caller inline declarations
 taking precedence.
@@ -482,7 +514,7 @@ The package exports `cn` for Tailwind-era consumer class composition. Treat docu
 
 ## Evidence
 
-These claims were reviewed on September 1, 2026 against the package manifest, public barrel, token stylesheet, component tests, and checked build scripts.
+These claims were reviewed on September 2, 2026 against the package manifest, public barrel, token stylesheet, component tests, and checked build scripts.
 
 | Claim | Source of truth | Executable evidence |
 | --- | --- | --- |

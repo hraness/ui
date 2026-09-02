@@ -16,6 +16,7 @@ import { basename, join, relative, resolve } from "node:path";
 import {
   chromium,
   type BrowserContextOptions,
+  type Locator,
   type Page,
 } from "playwright-core";
 
@@ -1549,6 +1550,38 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     css,
     /data-gallery-action-family-layer-conflict/u,
     "the harness bundle must include its action-family legacy conflict",
+  );
+  assert.match(
+    css,
+    /data-gallery-fields-layer-conflict/u,
+    "the harness bundle must include its Fields and Select legacy conflicts",
+  );
+  const fieldRootConflict = css.match(
+    /\[data-gallery-fields-layer-conflict=(?:"true"|true)\]\s+:where\([^}]+\)\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    fieldRootConflict !== undefined
+    && /--gallery-fields-root-conflict:\s*legacy/u.test(fieldRootConflict)
+    && /display:\s*block/u.test(fieldRootConflict)
+    && /gap:\s*7rem/u.test(fieldRootConflict)
+    && /grid-template-columns:\s*8rem 9rem/u.test(fieldRootConflict),
+    `the gallery Fields root conflict is incomplete: ${String(fieldRootConflict)}`,
+  );
+  const fieldControlConflict = css.match(
+    /\[data-gallery-fields-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"field-control"|field-control)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    fieldControlConflict !== undefined
+    && /--gallery-fields-control-conflict:\s*legacy/u.test(fieldControlConflict)
+    && /background-image:\s*linear-gradient/u.test(fieldControlConflict)
+    && /border(?:[^:]*):\s*7px dashed/u.test(fieldControlConflict)
+    && /min-height:\s*9rem/u.test(fieldControlConflict),
+    `the gallery Fields control conflict is incomplete: ${String(fieldControlConflict)}`,
+  );
+  assert.match(
+    css,
+    /\[data-gallery-select-option-layer-conflict=(?:"true"|true)\]\{(?=[^}]*--gallery-fields-select-option-conflict:\s*legacy)(?=[^}]*min-height:\s*9rem)(?=[^}]*padding:\s*5rem)[^}]*\}/u,
+    "the gallery Select option conflict must carry its finite-geometry counterexamples",
   );
   const actionRootConflict = css.match(
     /\[data-gallery-action-family-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"button"|button)\]\{[^}]*\}/u,
@@ -5025,6 +5058,1089 @@ async function verifyFormPresentation(page: Page, id: string): Promise<void> {
   );
 }
 
+async function settleFieldPresentation(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await new Promise<void>((resolveFrame) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+    });
+  });
+}
+
+async function settleOwnedAnimations(target: Locator): Promise<void> {
+  await target.evaluate(async (element) => {
+    await Promise.all(
+      element.getAnimations({ subtree: true }).map(async (animation) => {
+        try {
+          await animation.finished;
+        } catch {
+          // A superseded animation may cancel before the final presentation check.
+        }
+      }),
+    );
+  });
+}
+
+async function resetKeyboardFocusToDocumentStart(
+  page: Page,
+  id: string,
+): Promise<void> {
+  const reset = await page.evaluate(() => {
+    const previousTabIndex = document.body.getAttribute("tabindex");
+    document.body.tabIndex = -1;
+    document.body.focus({ preventScroll: true });
+    if (previousTabIndex === null) document.body.removeAttribute("tabindex");
+    else document.body.setAttribute("tabindex", previousTabIndex);
+    return document.activeElement === document.body;
+  });
+  invariant(reset, `${id}: the keyboard path did not reset to document start`);
+}
+
+async function verifyNativeFieldFocusFallback(
+  page: Page,
+  id: string,
+  target: Locator,
+  contract: Readonly<{
+    borderUsesRing?: boolean;
+    label: string;
+    nativeFocusSelector: ":focus-visible" | ":has(input:focus-visible)";
+    outlineOffset: number;
+    selector: string;
+  }>,
+): Promise<void> {
+  invariant(
+    await target.count() === 1,
+    `${id}: the ${contract.label} native-focus specimen is not unique`,
+  );
+  const presentation = page.locator(contract.selector);
+  invariant(
+    await presentation.count() === 1,
+    `${id}: the ${contract.label} focus presentation is not unique`,
+  );
+  invariant(
+    await target.evaluate((element, selector) => {
+      const presentationElement = document.querySelector(selector);
+      return presentationElement instanceof HTMLElement
+        && (presentationElement === element || presentationElement.contains(element));
+    }, contract.selector),
+    `${id}: the ${contract.label} accessible target is not owned by ${contract.selector}`,
+  );
+
+  await target.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(({ nativeFocusSelector, selector }) => {
+    const element = document.querySelector(selector);
+    const activeElement = document.activeElement;
+    return element instanceof HTMLElement
+      && activeElement instanceof HTMLElement
+      && (element === activeElement || element.contains(activeElement))
+      && activeElement.matches(":focus-visible")
+      && element.matches(nativeFocusSelector)
+      && element.hasAttribute("data-focus-visible");
+  }, {
+    nativeFocusSelector: contract.nativeFocusSelector,
+    selector: contract.selector,
+  }, { polling: "raf", timeout: 2_000 });
+  await settleFieldPresentation(page);
+
+  const evidence = await presentation.evaluate((element, nativeFocusSelector) => {
+    const probe = document.createElement("span");
+    probe.style.setProperty("outline-color", "var(--ui-ring)");
+    document.body.append(probe);
+    const ring = getComputedStyle(probe).outlineColor;
+    probe.remove();
+    const style = getComputedStyle(element);
+    const activeElement = document.activeElement;
+    return {
+      active: activeElement instanceof HTMLElement
+        && (activeElement === element || element.contains(activeElement)),
+      activeFocusVisible: activeElement?.matches(":focus-visible") ?? false,
+      borderColor: style.borderColor,
+      dataFocusVisible: element.getAttribute("data-focus-visible"),
+      forcedColorsActive: matchMedia("(forced-colors: active)").matches,
+      nativeFocusMatch: element.matches(nativeFocusSelector),
+      outlineColor: style.outlineColor,
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+      ring,
+    };
+  }, contract.nativeFocusSelector);
+  invariant(
+    evidence.active
+    && evidence.activeFocusVisible
+    && evidence.dataFocusVisible !== null
+    && !evidence.forcedColorsActive
+    && evidence.nativeFocusMatch
+    && evidence.outlineColor === evidence.ring
+    && nearlyEqual(evidence.outlineOffset, contract.outlineOffset)
+    && evidence.outlineStyle === "solid"
+    && nearlyEqual(evidence.outlineWidth, 2)
+    && (!contract.borderUsesRing || evidence.borderColor === evidence.ring),
+    `${id}: ${contract.label} native keyboard-focus fallback changed: ${JSON.stringify(evidence)}`,
+  );
+}
+
+async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<void> {
+  const evidence = await page.evaluate(() => {
+    const required = <ElementType extends Element>(
+      selector: string,
+      guard: (element: Element) => element is ElementType,
+    ): ElementType => {
+      const element = document.querySelector(selector);
+      if (element === null || !guard(element)) {
+        throw new Error(`The Fields gallery is missing ${selector}.`);
+      }
+      return element;
+    };
+    const isHtml = (element: Element): element is HTMLElement =>
+      element instanceof HTMLElement;
+    const textDefault = required(
+      '[data-gallery-field="text-default"]',
+      isHtml,
+    );
+    const textOverride = required(
+      '[data-gallery-field="text-override"]',
+      isHtml,
+    );
+    const textAreaRoot = required(
+      '[data-gallery-field="textarea"]',
+      isHtml,
+    );
+    const checkboxGroup = required(
+      '[data-gallery-field="checkbox-group"]',
+      isHtml,
+    );
+    const search = required('[data-gallery-field="search"]', isHtml);
+    const number = required('[data-gallery-field="number"]', isHtml);
+    const nativeSelect = required(
+      'select[data-gallery-field="native-select"]',
+      (element): element is HTMLSelectElement => element instanceof HTMLSelectElement,
+    );
+    const file = required(
+      'input[data-gallery-field="file"]',
+      (element): element is HTMLInputElement => element instanceof HTMLInputElement,
+    );
+    const radioGroup = required(
+      '[data-gallery-field="radio-group"]',
+      isHtml,
+    );
+    const switchField = required('[data-gallery-field="switch"]', isHtml);
+    const selectField = required('[data-gallery-field="select"]', isHtml);
+    const nativeRoot = nativeSelect.closest('[data-slot="native-select-field"]');
+    const fileRoot = file.closest('[data-slot="file-field"]');
+    const textInput = textDefault.querySelector('[data-slot="field-input"]');
+    const overrideControl = textOverride.querySelector('[data-slot="field-control"]');
+    const overrideInput = textOverride.querySelector('[data-slot="field-input"]');
+    const textAreaControl = textAreaRoot.querySelector('[data-slot="field-control"]');
+    const textArea = textAreaRoot.querySelector('[data-slot="field-textarea"]');
+    const checkboxGroupOptions = checkboxGroup.querySelector(
+      ".hraness-checkbox-group__options",
+    );
+    const checkboxGroupControls = [
+      ...checkboxGroup.querySelectorAll('[data-slot="checkbox-control"]'),
+    ];
+    const searchControl = search.querySelector('[data-slot="field-control"]');
+    const searchClear = search.querySelector('[aria-label="Clear search"]');
+    const numberControl = number.querySelector('[data-slot="field-control"]');
+    const decrement = number.querySelector('[data-slot="number-decrement"]');
+    const increment = number.querySelector('[data-slot="number-increment"]');
+    const nativeControl = nativeRoot?.querySelector('[data-slot="field-control"]');
+    const fileControl = fileRoot?.querySelector('[data-slot="field-control"]');
+    const selectedRadio = radioGroup.querySelector(
+      '[data-slot="radio-control"][data-selected]',
+    );
+    const radioIndicator = selectedRadio?.querySelector('[data-slot="radio-indicator"]');
+    const switchControl = switchField.querySelector('[data-slot="switch-control"]');
+    const switchTrack = switchField.querySelector('[data-slot="switch-track"]');
+    const switchThumb = switchField.querySelector('[data-slot="switch-thumb"]');
+    const selectTrigger = selectField.querySelector(
+      '.hraness-select-field__trigger',
+    );
+    const selectIndicator = selectField.querySelector(
+      '[data-slot="select-field-indicator"]',
+    );
+    const syntheticSearch = required(
+      '[data-gallery-field="synthetic-search"]',
+      isHtml,
+    );
+    const syntheticNumber = required(
+      '[data-gallery-field="synthetic-number"]',
+      isHtml,
+    );
+    const syntheticSelect = required(
+      '[data-gallery-field="synthetic-select"]',
+      isHtml,
+    );
+    const syntheticClear = syntheticSearch.querySelector(
+      '[aria-label="Clear search"]',
+    );
+    const syntheticDecrement = syntheticNumber.querySelector(
+      '[data-slot="number-decrement"]',
+    );
+    const syntheticIncrement = syntheticNumber.querySelector(
+      '[data-slot="number-increment"]',
+    );
+    const syntheticTrigger = syntheticSelect.querySelector(
+      '.hraness-select-field__trigger',
+    );
+    const elements = [
+      nativeRoot,
+      fileRoot,
+      textInput,
+      overrideControl,
+      overrideInput,
+      textAreaControl,
+      textArea,
+      checkboxGroupOptions,
+      ...checkboxGroupControls,
+      searchControl,
+      searchClear,
+      numberControl,
+      decrement,
+      increment,
+      nativeControl,
+      fileControl,
+      selectedRadio,
+      radioIndicator,
+      switchControl,
+      switchTrack,
+      switchThumb,
+      selectTrigger,
+      selectIndicator,
+      syntheticClear,
+      syntheticDecrement,
+      syntheticIncrement,
+      syntheticTrigger,
+    ];
+    if (elements.some((element) => !(element instanceof HTMLElement || element instanceof SVGElement))) {
+      throw new Error("The Fields gallery has an incomplete control structure.");
+    }
+    if (
+      !(nativeRoot instanceof HTMLElement)
+      || !(fileRoot instanceof HTMLElement)
+      || !(textInput instanceof HTMLInputElement)
+      || !(overrideControl instanceof HTMLElement)
+      || !(overrideInput instanceof HTMLInputElement)
+      || !(textAreaControl instanceof HTMLElement)
+      || !(textArea instanceof HTMLTextAreaElement)
+      || !(checkboxGroupOptions instanceof HTMLElement)
+      || checkboxGroupControls.length !== 2
+      || checkboxGroupControls.some((control) => !(control instanceof HTMLElement))
+      || !(searchControl instanceof HTMLElement)
+      || !(searchClear instanceof HTMLButtonElement)
+      || !(numberControl instanceof HTMLElement)
+      || !(decrement instanceof HTMLButtonElement)
+      || !(increment instanceof HTMLButtonElement)
+      || !(nativeControl instanceof HTMLElement)
+      || !(fileControl instanceof HTMLElement)
+      || !(selectedRadio instanceof HTMLElement)
+      || !(radioIndicator instanceof HTMLElement)
+      || !(switchControl instanceof HTMLElement)
+      || !(switchTrack instanceof HTMLElement)
+      || !(switchThumb instanceof HTMLElement)
+      || !(selectTrigger instanceof HTMLButtonElement)
+      || !(selectIndicator instanceof SVGSVGElement)
+      || !(syntheticClear instanceof HTMLButtonElement)
+      || !(syntheticDecrement instanceof HTMLButtonElement)
+      || !(syntheticIncrement instanceof HTMLButtonElement)
+      || !(syntheticTrigger instanceof HTMLButtonElement)
+    ) {
+      throw new Error("The Fields gallery contains an unexpected native boundary.");
+    }
+    const resolveColor = (value: string): string => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const rootEvidence = [
+      textDefault,
+      textOverride,
+      search,
+      number,
+      nativeRoot,
+      fileRoot,
+      radioGroup,
+      switchField,
+      selectField,
+    ].map((root) => ({
+      display: getComputedStyle(root).display,
+      generated: [...root.classList].some((name) => name.startsWith("x")),
+      sentinel: getComputedStyle(root)
+        .getPropertyValue("--gallery-fields-root-conflict")
+        .trim(),
+      slot: root.dataset.slot ?? "",
+    }));
+    const overrideRootStyle = getComputedStyle(textOverride);
+    const overrideControlStyle = getComputedStyle(overrideControl);
+    const overrideInputStyle = getComputedStyle(overrideInput);
+    const textAreaRootStyle = getComputedStyle(textAreaRoot);
+    const textAreaControlStyle = getComputedStyle(textAreaControl);
+    const textAreaStyle = getComputedStyle(textArea);
+    const checkboxGroupStyle = getComputedStyle(checkboxGroup);
+    const checkboxGroupOptionsStyle = getComputedStyle(checkboxGroupOptions);
+    const selectTriggerStyle = getComputedStyle(selectTrigger);
+    const nativeSelectStyle = getComputedStyle(nativeSelect);
+    const indicatorBox = selectIndicator.getBoundingClientRect();
+    const switchTrackBox = switchTrack.getBoundingClientRect();
+    const radioIndicatorBox = radioIndicator.getBoundingClientRect();
+    return {
+      backgroundResetContracts: [
+        textInput,
+        overrideControl,
+        textAreaControl,
+        textArea,
+        searchControl,
+        searchClear,
+        numberControl,
+        decrement,
+        increment,
+        nativeControl,
+        fileControl,
+        selectedRadio,
+        radioIndicator,
+        switchControl,
+        switchTrack,
+        switchThumb,
+        selectTrigger,
+      ].every((element) => getComputedStyle(element).backgroundImage === "none"),
+      callerClassLast:
+        textOverride.classList.item(textOverride.classList.length - 1)
+          === "gallery-field--override"
+        && overrideInput.classList.item(overrideInput.classList.length - 1)
+          === "gallery-field-input--override",
+      callerControlBackground: overrideControlStyle.backgroundColor,
+      callerControlBorder: overrideControlStyle.borderColor,
+      callerDisplay: overrideRootStyle.display,
+      callerInputColor: overrideInputStyle.color,
+      callerInputLetterSpacing: Number.parseFloat(overrideInputStyle.letterSpacing),
+      callerStyle: textOverride.style.cssText,
+      callerWidth: textOverride.getBoundingClientRect().width,
+      checkboxGroup: {
+        ariaDescribedBy: checkboxGroup.getAttribute("aria-describedby") ?? "",
+        ariaLabelledBy: checkboxGroup.getAttribute("aria-labelledby") ?? "",
+        callerClassLast:
+          checkboxGroup.classList.item(checkboxGroup.classList.length - 1)
+            === "gallery-checkbox-group--override",
+        checkboxCount: checkboxGroupControls.length,
+        display: checkboxGroupStyle.display,
+        gap: Number.parseFloat(checkboxGroupStyle.gap),
+        generated: [...checkboxGroup.classList].some((name) => name.startsWith("x")),
+        optionsAlignItems: checkboxGroupOptionsStyle.alignItems,
+        optionsCallerClassLast:
+          checkboxGroupOptions.classList.item(
+            checkboxGroupOptions.classList.length - 1,
+          ) === "gallery-checkbox-group-options--override",
+        optionsDisplay: checkboxGroupOptionsStyle.display,
+        optionsFlexWrap: checkboxGroupOptionsStyle.flexWrap,
+        optionsGap: Number.parseFloat(checkboxGroupOptionsStyle.gap),
+        role: checkboxGroup.getAttribute("role") ?? "",
+        slot: checkboxGroup.dataset.slot ?? "",
+        style: checkboxGroup.style.cssText,
+        width: checkboxGroup.getBoundingClientRect().width,
+      },
+      expectedPrimary: resolveColor("var(--ui-primary)"),
+      expectedSecondary: resolveColor("var(--ui-secondary)"),
+      expectedWarning: resolveColor("var(--ui-warning)"),
+      fileRef: file.dataset.galleryFieldRef === "true",
+      nativeArrow:
+        nativeSelectStyle.backgroundImage.includes("linear-gradient")
+        && nativeSelectStyle.backgroundImage !== "none",
+      nativeRef: nativeSelect.dataset.galleryFieldRef === "true",
+      radioIndicatorHeight: radioIndicatorBox.height,
+      radioIndicatorWidth: radioIndicatorBox.width,
+      radioRef: radioGroup.dataset.galleryFieldRef === "true",
+      roots: rootEvidence,
+      selectIndicator:
+        selectIndicator.getAttribute("aria-hidden") === "true"
+        && selectIndicator.dataset.slot === "select-field-indicator"
+        && selectIndicator.querySelectorAll(":scope > path").length === 1
+        && selectIndicator.getAttribute("viewBox") === "0 0 12 12"
+        && indicatorBox.height >= 10
+        && indicatorBox.width >= 10,
+      selectRef: selectField.dataset.galleryFieldRef === "true",
+      selectInvalid: selectField.hasAttribute("data-invalid")
+        && selectTrigger.getAttribute("aria-invalid") === "true",
+      selectTriggerBackground: selectTriggerStyle.backgroundColor,
+      selectTriggerBorder: selectTriggerStyle.borderColor,
+      switchRef: switchField.dataset.galleryFieldRef === "true",
+      switchTrackHeight: switchTrackBox.height,
+      switchTrackWidth: switchTrackBox.width,
+      syntheticClearHeight: syntheticClear.getBoundingClientRect().height,
+      syntheticClearWidth: syntheticClear.getBoundingClientRect().width,
+      syntheticDecrementWidth: syntheticDecrement.getBoundingClientRect().width,
+      syntheticIncrementWidth: syntheticIncrement.getBoundingClientRect().width,
+      syntheticTriggerHeight: syntheticTrigger.getBoundingClientRect().height,
+      textArea: {
+        callerClassLast:
+          textAreaRoot.classList.item(textAreaRoot.classList.length - 1)
+            === "gallery-field--textarea-override"
+          && textArea.classList.item(textArea.classList.length - 1)
+            === "gallery-field-textarea--override",
+        color: textAreaStyle.color,
+        controlBackground: textAreaControlStyle.backgroundColor,
+        controlBorder: textAreaControlStyle.borderColor,
+        display: textAreaRootStyle.display,
+        generated: [...textAreaRoot.classList].some((name) => name.startsWith("x"))
+          && [...textArea.classList].some((name) => name.startsWith("x")),
+        letterSpacing: Number.parseFloat(textAreaStyle.letterSpacing),
+        minHeight: Number.parseFloat(textAreaStyle.minHeight),
+        name: textArea.name,
+        paddingLeft: Number.parseFloat(textAreaStyle.paddingLeft),
+        paddingRight: Number.parseFloat(textAreaStyle.paddingRight),
+        resize: textAreaStyle.resize,
+        rootSlot: textAreaRoot.dataset.slot ?? "",
+        slot: textArea.dataset.slot ?? "",
+        style: textAreaRoot.style.cssText,
+        value: textArea.value,
+        width: textAreaRoot.getBoundingClientRect().width,
+      },
+      textRef: textDefault.dataset.galleryFieldRef === "true",
+    };
+  });
+
+  invariant(
+    evidence.roots.every((root) =>
+      root.generated
+      && root.sentinel === "legacy"
+      && root.display !== "block"
+    ),
+    `${id}: Fields roots lost their compiled recipes: ${JSON.stringify(evidence.roots)}`,
+  );
+  invariant(
+    evidence.backgroundResetContracts
+    && evidence.nativeArrow
+    && evidence.selectIndicator
+    && evidence.selectInvalid
+    && evidence.selectTriggerBorder === evidence.expectedWarning,
+    `${id}: Fields background or SVG parity changed: ${JSON.stringify(evidence)}`,
+  );
+  invariant(
+    evidence.callerClassLast
+    && evidence.callerDisplay === "flex"
+    && nearlyEqual(evidence.callerWidth, 240)
+    && evidence.callerControlBackground === evidence.expectedSecondary
+    && evidence.callerControlBorder === evidence.expectedWarning
+    && evidence.callerInputColor === evidence.expectedPrimary
+    && nearlyEqual(evidence.callerInputLetterSpacing, 1)
+    && /--[^:]+:\s*14rem/u.test(evidence.callerStyle)
+    && /width:\s*15rem/u.test(evidence.callerStyle),
+    `${id}: caller-last Fields presentation changed: ${JSON.stringify(evidence)}`,
+  );
+  invariant(
+    evidence.textArea.callerClassLast
+    && evidence.textArea.generated
+    && evidence.textArea.rootSlot === "text-area-field"
+    && evidence.textArea.slot === "field-textarea"
+    && evidence.textArea.display === "flex"
+    && nearlyEqual(evidence.textArea.width, 240)
+    && /--[^:]+:\s*14rem/u.test(evidence.textArea.style)
+    && /width:\s*15rem/u.test(evidence.textArea.style)
+    && evidence.textArea.controlBackground === evidence.expectedSecondary
+    && evidence.textArea.controlBorder === evidence.expectedWarning
+    && evidence.textArea.color === evidence.expectedPrimary
+    && nearlyEqual(evidence.textArea.letterSpacing, 1)
+    && evidence.textArea.minHeight >= 120
+    && evidence.textArea.paddingLeft > 0
+    && nearlyEqual(evidence.textArea.paddingLeft, evidence.textArea.paddingRight)
+    && evidence.textArea.resize === "vertical"
+    && evidence.textArea.name === "notes"
+    && evidence.textArea.value === "Bathymetry",
+    `${id}: TextAreaField structure or caller-last presentation changed: ${JSON.stringify(evidence.textArea)}`,
+  );
+  invariant(
+    evidence.checkboxGroup.ariaDescribedBy.length > 0
+    && evidence.checkboxGroup.ariaLabelledBy.length > 0
+    && evidence.checkboxGroup.callerClassLast
+    && evidence.checkboxGroup.checkboxCount === 2
+    && evidence.checkboxGroup.display === "flex"
+    && evidence.checkboxGroup.generated
+    && evidence.checkboxGroup.optionsAlignItems === "flex-start"
+    && evidence.checkboxGroup.optionsCallerClassLast
+    && evidence.checkboxGroup.optionsDisplay === "flex"
+    && evidence.checkboxGroup.optionsFlexWrap === "wrap"
+    && nearlyEqual(evidence.checkboxGroup.optionsGap, evidence.checkboxGroup.gap)
+    && evidence.checkboxGroup.role === "group"
+    && evidence.checkboxGroup.slot === "checkbox-group"
+    && /--[^:]+:\s*14rem/u.test(evidence.checkboxGroup.style)
+    && /width:\s*15rem/u.test(evidence.checkboxGroup.style)
+    && nearlyEqual(evidence.checkboxGroup.width, 240),
+    `${id}: CheckboxGroup structure or caller-last options presentation changed: ${JSON.stringify(evidence.checkboxGroup)}`,
+  );
+  invariant(
+    evidence.fileRef
+    && evidence.nativeRef
+    && evidence.radioRef
+    && evidence.selectRef
+    && evidence.switchRef
+    && evidence.textRef,
+    `${id}: a Fields ref stopped at a wrapper: ${JSON.stringify(evidence)}`,
+  );
+  invariant(
+    nearlyEqual(evidence.radioIndicatorHeight, 20)
+    && nearlyEqual(evidence.radioIndicatorWidth, 20)
+    && nearlyEqual(evidence.switchTrackHeight, 24)
+    && nearlyEqual(evidence.switchTrackWidth, 40),
+    `${id}: Radio or Switch finite geometry changed: ${JSON.stringify(evidence)}`,
+  );
+  invariant(
+    evidence.syntheticClearHeight >= 40
+    && evidence.syntheticClearWidth >= 40
+    && evidence.syntheticDecrementWidth >= 48
+    && evidence.syntheticIncrementWidth >= 48
+    && evidence.syntheticTriggerHeight >= 48,
+    `${id}: synthetic coarse Fields geometry changed: ${JSON.stringify(evidence)}`,
+  );
+
+  await verifyNativeFieldFocusFallback(
+    page,
+    id,
+    page.getByRole("radio", { exact: true, name: "Calm" }),
+    {
+      label: "default Calm RadioOption",
+      nativeFocusSelector: ":has(input:focus-visible)",
+      outlineOffset: 3,
+      selector:
+        '[data-gallery-field="radio-group"] [data-slot="radio-control"][data-selected]',
+    },
+  );
+  await verifyNativeFieldFocusFallback(
+    page,
+    id,
+    page.getByRole("switch", { exact: true, name: "Digest" }),
+    {
+      label: "default Digest SwitchField",
+      nativeFocusSelector: ":has(input:focus-visible)",
+      outlineOffset: 3,
+      selector:
+        '[data-gallery-field="switch-unselected"] [data-slot="switch-control"]',
+    },
+  );
+  await verifyNativeFieldFocusFallback(
+    page,
+    id,
+    page.locator(
+      '[data-gallery-field="synthetic-select"] .hraness-select-field__trigger',
+    ),
+    {
+      borderUsesRing: true,
+      label: "default synthetic Select trigger",
+      nativeFocusSelector: ":focus-visible",
+      outlineOffset: 2,
+      selector:
+        '[data-gallery-field="synthetic-select"] .hraness-select-field__trigger',
+    },
+  );
+
+  const file = page.locator('input[data-gallery-field="file"]');
+  await file.focus();
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[data-gallery-field="file"]');
+    const control = input?.closest('[data-slot="field-control"]');
+    if (!(input instanceof HTMLInputElement) || !(control instanceof HTMLElement)) {
+      return false;
+    }
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-ring)";
+    document.body.append(probe);
+    const ring = getComputedStyle(probe).color;
+    probe.remove();
+    return control.matches(":focus-within")
+      && getComputedStyle(control).borderColor === ring;
+  }, undefined, { polling: "raf", timeout: 2_000 });
+
+  await page.locator('select[data-gallery-field="native-select"]').focus();
+  await page.waitForFunction(() => {
+    const select = document.querySelector(
+      'select[data-gallery-field="native-select"]',
+    );
+    const control = select?.closest('[data-slot="native-select-field"]')
+      ?.querySelector('[data-slot="field-control"]');
+    if (!(select instanceof HTMLSelectElement) || !(control instanceof HTMLElement)) {
+      return false;
+    }
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-destructive)";
+    document.body.append(probe);
+    const destructive = getComputedStyle(probe).color;
+    probe.remove();
+    return control.matches(":focus-within")
+      && getComputedStyle(control).borderColor === destructive
+      && getComputedStyle(select).backgroundImage.includes("linear-gradient");
+  }, undefined, { polling: "raf", timeout: 2_000 });
+
+  const invalidSelectTrigger = page.locator(
+    '[data-gallery-select="true"] .hraness-select-field__trigger',
+  );
+  await page.mouse.move(0, 0);
+  await settleFieldPresentation(page);
+  const invalidRestingEvidence = await invalidSelectTrigger.evaluate((trigger) => {
+    const root = trigger.closest('[data-slot="select-field"]');
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-destructive)";
+    document.body.append(probe);
+    const destructive = getComputedStyle(probe).color;
+    probe.remove();
+    return {
+      ariaInvalid: trigger.getAttribute("aria-invalid"),
+      borderColor: getComputedStyle(trigger).borderColor,
+      destructive,
+      rootInvalid: root?.hasAttribute("data-invalid") ?? false,
+    };
+  });
+  invariant(
+    invalidRestingEvidence.ariaInvalid === "true"
+    && invalidRestingEvidence.rootInvalid
+    && invalidRestingEvidence.borderColor === invalidRestingEvidence.destructive,
+    `${id}: invalid Select resting presentation changed: ${JSON.stringify(invalidRestingEvidence)}`,
+  );
+  await invalidSelectTrigger.hover();
+  await page.waitForFunction(() => {
+    const trigger = document.querySelector(
+      '[data-gallery-select="true"] .hraness-select-field__trigger',
+    );
+    if (!(trigger instanceof HTMLButtonElement)) return false;
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-destructive)";
+    document.body.append(probe);
+    const destructive = getComputedStyle(probe).color;
+    probe.remove();
+    return trigger.hasAttribute("data-hovered")
+      && getComputedStyle(trigger).borderColor === destructive;
+  }, undefined, { polling: "raf", timeout: 2_000 });
+  await page.mouse.move(0, 0);
+  await invalidSelectTrigger.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await settleFieldPresentation(page);
+  const invalidFocusEvidence = await invalidSelectTrigger.evaluate((trigger) => {
+    const resolveColor = (value: string): string => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const destructive = resolveColor("var(--ui-destructive)");
+    const ring = resolveColor("var(--ui-ring)");
+    const style = getComputedStyle(trigger);
+    return {
+      active: document.activeElement === trigger,
+      borderColor: style.borderColor,
+      boxShadow: style.boxShadow,
+      dataFocusVisible: trigger.hasAttribute("data-focus-visible"),
+      destructive,
+      focusVisible: trigger.matches(":focus-visible"),
+      outlineColor: style.outlineColor,
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+      ring,
+    };
+  });
+  invariant(
+    invalidFocusEvidence.active
+    && invalidFocusEvidence.dataFocusVisible
+    && invalidFocusEvidence.focusVisible
+    && invalidFocusEvidence.borderColor === invalidFocusEvidence.destructive
+    && invalidFocusEvidence.boxShadow !== "none"
+    && invalidFocusEvidence.outlineColor === invalidFocusEvidence.ring
+    && invalidFocusEvidence.outlineOffset === 2
+    && invalidFocusEvidence.outlineStyle === "solid"
+    && invalidFocusEvidence.outlineWidth === 2,
+    `${id}: invalid Select focus presentation changed: ${JSON.stringify(invalidFocusEvidence)}`,
+  );
+
+  const selectTrigger = page.locator(
+    '[data-gallery-field="select"] .hraness-select-field__trigger',
+  );
+  await selectTrigger.hover();
+  await page.waitForFunction(() => {
+    const trigger = document.querySelector(
+      '[data-gallery-field="select"] .hraness-select-field__trigger',
+    );
+    if (!(trigger instanceof HTMLButtonElement)) return false;
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-primary)";
+    document.body.append(probe);
+    const primary = getComputedStyle(probe).color;
+    probe.remove();
+    return trigger.closest('[data-slot="select-field"]')
+        ?.hasAttribute("data-invalid")
+      && trigger.getAttribute("aria-invalid") === "true"
+      && trigger.hasAttribute("data-hovered")
+      && getComputedStyle(trigger).borderColor === primary;
+  }, undefined, { polling: "raf", timeout: 2_000 });
+  await page.mouse.move(0, 0);
+
+  await selectTrigger.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(() => {
+    const trigger = document.querySelector(
+      '[data-gallery-field="select"] .hraness-select-field__trigger',
+    );
+    return trigger instanceof HTMLButtonElement
+      && document.activeElement === trigger
+      && trigger.hasAttribute("data-focus-visible")
+      && trigger.matches(":focus-visible");
+  }, undefined, { polling: "raf", timeout: 2_000 });
+  await settleFieldPresentation(page);
+  const focusEvidence = await selectTrigger.evaluate((trigger) => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-warning)";
+    document.body.append(probe);
+    const warning = getComputedStyle(probe).color;
+    probe.remove();
+    const style = getComputedStyle(trigger);
+    return {
+      ariaInvalid: trigger.getAttribute("aria-invalid"),
+      borderColor: style.borderColor,
+      className: trigger.className,
+      focusVisible: trigger.matches(":focus-visible"),
+      outlineColor: style.outlineColor,
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+      rootInvalid: trigger.closest('[data-slot="select-field"]')
+        ?.hasAttribute("data-invalid") ?? false,
+      warning,
+    };
+  });
+  invariant(
+    focusEvidence.ariaInvalid === "true"
+    && focusEvidence.focusVisible
+    && focusEvidence.rootInvalid
+    && focusEvidence.borderColor === focusEvidence.warning
+    && focusEvidence.outlineColor === focusEvidence.warning
+    && focusEvidence.outlineOffset === 5
+    && focusEvidence.outlineStyle === "dashed"
+    && focusEvidence.outlineWidth === 3,
+    `${id}: caller Select focus presentation changed: ${JSON.stringify(focusEvidence)}`,
+  );
+
+  await page.keyboard.press("Enter");
+  const callerPopover = page.locator(".hraness-select-field__popover");
+  await callerPopover.waitFor();
+  invariant(
+    await callerPopover.count() === 1,
+    `${id}: the caller Select must own exactly one open portal`,
+  );
+  const disabledOption = callerPopover.getByRole("option", {
+    exact: true,
+    name: "archived",
+  });
+  await disabledOption.waitFor();
+  await callerPopover.getByRole("option").evaluateAll((options) => {
+    for (const option of options) {
+      if (option instanceof HTMLElement) {
+        option.dataset.gallerySelectOptionLayerConflict = "true";
+      }
+    }
+  });
+  const disabledRestingEvidence = await disabledOption.evaluate((option) => {
+    const style = getComputedStyle(option);
+    return {
+      backgroundColor: style.backgroundColor,
+      color: style.color,
+    };
+  });
+  await disabledOption.hover();
+  await settleFieldPresentation(page);
+  const disabledEvidence = await disabledOption.evaluate((option) => {
+    const style = getComputedStyle(option);
+    return {
+      backgroundColor: style.backgroundColor,
+      color: style.color,
+      disabled: option.hasAttribute("data-disabled") || option.getAttribute("aria-disabled") === "true",
+      hovered: option.hasAttribute("data-hovered"),
+      minHeight: Number.parseFloat(style.minHeight),
+      paddingTop: Number.parseFloat(style.paddingTop),
+      sentinel: style
+        .getPropertyValue("--gallery-fields-select-option-conflict")
+        .trim(),
+    };
+  });
+  invariant(
+    disabledEvidence.disabled
+    && !disabledEvidence.hovered
+    && disabledEvidence.backgroundColor === disabledRestingEvidence.backgroundColor
+    && disabledEvidence.color === disabledRestingEvidence.color
+    && disabledEvidence.minHeight < 100
+    && disabledEvidence.paddingTop < 40
+    && disabledEvidence.sentinel === "legacy",
+    `${id}: disabled Select option accepted native hover or legacy geometry: ${JSON.stringify(disabledEvidence)}`,
+  );
+  if (await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+    const reducedMotionEvidence = await callerPopover.evaluate((popover) => {
+      const style = getComputedStyle(popover);
+      return {
+        animationDuration: style.animationDuration,
+        animationName: style.animationName,
+        running: popover.getAnimations({ subtree: true }).filter((animation) =>
+          animation.playState !== "finished" && animation.playState !== "idle"
+        ).length,
+      };
+    });
+    invariant(
+      reducedMotionEvidence.animationName === "none"
+      && seconds(reducedMotionEvidence.animationDuration).every(
+        (value) => value <= 0.000_01,
+      )
+      && reducedMotionEvidence.running === 0,
+      `${id}: reduced-motion Select did not settle: ${JSON.stringify(reducedMotionEvidence)}`,
+    );
+  }
+  await callerPopover.getByRole("option", { exact: true, name: "following" }).click();
+  await callerPopover.waitFor({ state: "detached" });
+
+  await page.evaluate(() => {
+    document.documentElement.dataset.galleryFieldSyntheticCoarse = "true";
+    document.documentElement.style.setProperty(
+      "--hraness-field-coarse-min",
+      "3rem",
+    );
+  });
+  try {
+    await page.locator(
+      '[data-gallery-field="synthetic-select"] .hraness-select-field__trigger',
+    ).click();
+    const syntheticPopover = page.locator(".hraness-select-field__popover");
+    await syntheticPopover.waitFor();
+    invariant(
+      await syntheticPopover.count() === 1,
+      `${id}: the synthetic Select must own exactly one open portal`,
+    );
+    const syntheticOptions = syntheticPopover.getByRole("option");
+    await syntheticOptions.first().waitFor();
+    await settleOwnedAnimations(syntheticPopover);
+    const syntheticOptionHeights = await syntheticOptions.evaluateAll(
+      (options) => options.map((option) => option.getBoundingClientRect().height),
+    );
+    invariant(
+      syntheticOptionHeights.length === 3
+      && syntheticOptionHeights.every((height) => height >= 48),
+      `${id}: synthetic coarse Select options changed: ${JSON.stringify(syntheticOptionHeights)}`,
+    );
+    await page.keyboard.press("Escape");
+    await syntheticPopover.waitFor({ state: "detached" });
+  } finally {
+    await page.evaluate(() => {
+      delete document.documentElement.dataset.galleryFieldSyntheticCoarse;
+      document.documentElement.style.removeProperty(
+        "--hraness-field-coarse-min",
+      );
+    });
+  }
+
+  const textArea = page.getByRole("textbox", {
+    exact: true,
+    name: "Project notes",
+  });
+  const emailChannel = page.getByRole("checkbox", {
+    exact: true,
+    name: "Email alerts",
+  });
+  const securityChannel = page.getByRole("checkbox", {
+    exact: true,
+    name: "Security alerts",
+  });
+  invariant(
+    !(await emailChannel.isChecked()) && await securityChannel.isChecked(),
+    `${id}: CheckboxGroup default selection changed`,
+  );
+  await textArea.focus();
+  await page.keyboard.press("Tab");
+  invariant(
+    await emailChannel.evaluate((element) => document.activeElement === element),
+    `${id}: the first CheckboxGroup option is not next after TextAreaField`,
+  );
+  await page.keyboard.press("Space");
+  invariant(
+    await emailChannel.isChecked() && await securityChannel.isChecked(),
+    `${id}: Space did not extend the CheckboxGroup selection`,
+  );
+
+  await page.locator('select[data-gallery-field="native-select"]').selectOption("pacific");
+  const focusRadio = page.getByRole("radio", { exact: true, name: "Focus" });
+  await page
+    .locator('[data-gallery-field="radio-group"] [data-slot="radio-control"]')
+    .filter({ hasText: /^Focus$/u })
+    .click();
+  invariant(await focusRadio.isChecked(), `${id}: the visible RadioOption did not select Focus`);
+  const switchInput = page.getByRole("switch", { exact: true, name: "Alerts" });
+  const switchControl = page.locator(
+    '[data-gallery-field="switch"] [data-slot="switch-control"]',
+  );
+  await switchControl.click();
+  const unselectedSwitchEvidence = await switchInput.evaluate((control) => ({
+    ariaChecked: control.getAttribute("aria-checked"),
+    checked: control instanceof HTMLInputElement ? control.checked : null,
+    selected: control.closest('[data-slot="switch-control"]')
+      ?.hasAttribute("data-selected") ?? false,
+  }));
+  invariant(
+    !unselectedSwitchEvidence.selected
+    && unselectedSwitchEvidence.ariaChecked !== "true"
+    && unselectedSwitchEvidence.checked !== true,
+    `${id}: the Switch did not become unselected: ${JSON.stringify(unselectedSwitchEvidence)}`,
+  );
+  await switchControl.click();
+  const selectedSwitchEvidence = await switchInput.evaluate((control) => ({
+    ariaChecked: control.getAttribute("aria-checked"),
+    checked: control instanceof HTMLInputElement ? control.checked : null,
+    selected: control.closest('[data-slot="switch-control"]')
+      ?.hasAttribute("data-selected") ?? false,
+  }));
+  invariant(
+    selectedSwitchEvidence.selected
+    && (
+      selectedSwitchEvidence.ariaChecked === "true"
+      || selectedSwitchEvidence.checked === true
+    ),
+    `${id}: the Switch did not become selected: ${JSON.stringify(selectedSwitchEvidence)}`,
+  );
+  await page.locator('[data-gallery-field-submit="true"]').click();
+  await page.waitForFunction(() => {
+    const output = document.querySelector('[data-gallery-field-submission="true"]');
+    return (output?.textContent ?? "").length > 0;
+  }, undefined, { polling: "raf", timeout: 2_000 });
+  const submissionEntries = (
+    await page.locator('[data-gallery-field-submission="true"]').textContent()
+    ?? ""
+  ).split("&").sort();
+  const expectedSubmissionEntries = [
+    "alerts=on",
+    "caller-project=Trench",
+    "channels=email",
+    "channels=security",
+    "cover=[object File]",
+    "metric=following",
+    "mode=focus",
+    "notes=Bathymetry",
+    "ocean=pacific",
+    "project=Seamount",
+    "query=ocean",
+    "retries=2",
+  ].sort();
+  invariant(
+    JSON.stringify(submissionEntries) === JSON.stringify(expectedSubmissionEntries),
+    `${id}: submitted field entries do not match the exact selected values: ${JSON.stringify(submissionEntries)}`,
+  );
+
+  const rtlEvidence = await page.evaluate(async () => {
+    const root = document.documentElement;
+    const previousDirection = root.getAttribute("dir");
+    const previousLanguage = root.getAttribute("lang");
+    const thumb = document.querySelector(
+      '[data-gallery-field="switch"] [data-slot="switch-thumb"]',
+    );
+    const nativeSelect = document.querySelector(
+      'select[data-gallery-field="native-select"]',
+    );
+    if (
+      !(thumb instanceof HTMLElement)
+      || !(nativeSelect instanceof HTMLSelectElement)
+    ) {
+      throw new Error("The RTL Fields affordances are incomplete.");
+    }
+    const previousSelectDirection = nativeSelect.getAttribute("dir");
+    const previousSelectLanguage = nativeSelect.getAttribute("lang");
+    const selectEvidence = () => {
+      const style = getComputedStyle(nativeSelect);
+      return {
+        backgroundImage: style.backgroundImage,
+        backgroundPosition: style.backgroundPosition,
+        direction: style.direction,
+        paddingInlineEnd: Number.parseFloat(style.paddingInlineEnd),
+        paddingLeft: Number.parseFloat(style.paddingLeft),
+        paddingRight: Number.parseFloat(style.paddingRight),
+      };
+    };
+    const ltrSelect = selectEvidence();
+    let rtlTransform: string | undefined;
+    let rtlSelect: ReturnType<typeof selectEvidence> | undefined;
+    try {
+      root.lang = "ar";
+      root.dir = "rtl";
+      nativeSelect.lang = "ar";
+      nativeSelect.dir = "rtl";
+      for (const animation of thumb.getAnimations()) animation.finish();
+      await new Promise<void>((resolveFrame) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+      });
+      rtlTransform = getComputedStyle(thumb).transform;
+      rtlSelect = selectEvidence();
+    } finally {
+      if (previousLanguage === null) root.removeAttribute("lang");
+      else root.setAttribute("lang", previousLanguage);
+      if (previousDirection === null) root.removeAttribute("dir");
+      else root.setAttribute("dir", previousDirection);
+      if (previousSelectLanguage === null) nativeSelect.removeAttribute("lang");
+      else nativeSelect.setAttribute("lang", previousSelectLanguage);
+      if (previousSelectDirection === null) nativeSelect.removeAttribute("dir");
+      else nativeSelect.setAttribute("dir", previousSelectDirection);
+      for (const animation of thumb.getAnimations()) animation.finish();
+      await new Promise<void>((resolveFrame) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+      });
+    }
+    if (rtlTransform === undefined || rtlSelect === undefined) {
+      throw new Error("The RTL Fields affordances did not settle.");
+    }
+    return {
+      ltrSelect,
+      restoredSelect: selectEvidence(),
+      rtlSelect,
+      rtlTransform,
+    };
+  });
+  invariant(
+    rtlEvidence.rtlTransform === "matrix(1, 0, 0, 1, -16, 0)"
+    || rtlEvidence.rtlTransform === "matrix(1, 0, 0, 1, -16, -0)",
+    `${id}: RTL Switch thumb transform changed: ${JSON.stringify(rtlEvidence)}`,
+  );
+  invariant(
+    rtlEvidence.ltrSelect.backgroundImage.includes("linear-gradient")
+    && rtlEvidence.rtlSelect.backgroundImage.includes("linear-gradient")
+    && rtlEvidence.ltrSelect.direction === "ltr"
+    && rtlEvidence.rtlSelect.direction === "rtl"
+    && /calc\(100% - (?:16px|1rem)\).*calc\(100% - (?:12px|0\.75rem)\)/u.test(
+      rtlEvidence.ltrSelect.backgroundPosition,
+    )
+    && /(?:12px|0\.75rem) 50%, (?:16px|1rem) 50%/u.test(
+      rtlEvidence.rtlSelect.backgroundPosition,
+    )
+    && nearlyEqual(rtlEvidence.ltrSelect.paddingInlineEnd, 40)
+    && nearlyEqual(rtlEvidence.rtlSelect.paddingInlineEnd, 40)
+    && nearlyEqual(rtlEvidence.ltrSelect.paddingLeft, 12)
+    && nearlyEqual(rtlEvidence.ltrSelect.paddingRight, 40)
+    && nearlyEqual(rtlEvidence.rtlSelect.paddingLeft, 40)
+    && nearlyEqual(rtlEvidence.rtlSelect.paddingRight, 12)
+    && rtlEvidence.restoredSelect.backgroundPosition
+      === rtlEvidence.ltrSelect.backgroundPosition
+    && rtlEvidence.restoredSelect.direction === rtlEvidence.ltrSelect.direction
+    && nearlyEqual(
+      rtlEvidence.restoredSelect.paddingLeft,
+      rtlEvidence.ltrSelect.paddingLeft,
+    )
+    && nearlyEqual(
+      rtlEvidence.restoredSelect.paddingRight,
+      rtlEvidence.ltrSelect.paddingRight,
+    ),
+    `${id}: NativeSelectField logical arrow or padding changed: ${JSON.stringify(rtlEvidence)}`,
+  );
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+}
+
 async function settleCardFamilyTransitions(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const cardFamily = [
@@ -5256,6 +6372,7 @@ async function verifyKeyboardPath(
   id: string,
   checkboxFocusContract: CheckboxFocusContract,
 ): Promise<void> {
+  await resetKeyboardFocusToDocumentStart(page, id);
   await page.keyboard.press("Tab");
   const skipLink = page.locator('[data-slot="skip-link"]');
   invariant(
@@ -5657,10 +6774,28 @@ async function verifyKeyboardPath(
   );
 
   await page.keyboard.press("Tab");
-  const semanticsTab = page.getByRole("tab", { name: "Semantics" });
+  const projectName = page.getByRole("textbox", { name: "Project name" });
   invariant(
-    await semanticsTab.evaluate((element) => document.activeElement === element),
-    `${id}: the selected tab is not in the keyboard path`,
+    await projectName.evaluate((element) => document.activeElement === element),
+    `${id}: the first Fields keyboard stop is not Project name`,
+  );
+
+  const semanticsTab = page.getByRole("tab", { name: "Semantics" });
+  let reachedSemantics = false;
+  for (let step = 0; step < 32; step += 1) {
+    await page.keyboard.press("Tab");
+    if (await semanticsTab.evaluate((element) => document.activeElement === element)) {
+      reachedSemantics = true;
+      break;
+    }
+    invariant(
+      !await skipLink.evaluate((element) => document.activeElement === element),
+      `${id}: the Fields keyboard path wrapped before reaching Semantics`,
+    );
+  }
+  invariant(
+    reachedSemantics,
+    `${id}: Semantics is not reachable through the bounded Fields keyboard path`,
   );
   await page.keyboard.press("ArrowRight");
   const statesTab = page.getByRole("tab", { name: "States" });
@@ -6737,6 +7872,375 @@ async function actionCoarsePointerEvidence(page: Page) {
   });
 }
 
+async function verifyFieldFamilyCoarsePointer(page: Page): Promise<void> {
+  const evidence = await page.evaluate(() => {
+    const search = document.querySelector('[data-gallery-field="search"]');
+    const number = document.querySelector('[data-gallery-field="number"]');
+    const select = document.querySelector('[data-gallery-field="select"]');
+    const clear = search?.querySelector('[aria-label="Clear search"]');
+    const decrement = number?.querySelector('[data-slot="number-decrement"]');
+    const increment = number?.querySelector('[data-slot="number-increment"]');
+    const trigger = select?.querySelector('.hraness-select-field__trigger');
+    const fileButtons = [
+      ["file-compact", "compact"],
+      ["file", "default"],
+      ["file-large", "large"],
+    ].map(([name, expectedSize]) => {
+      const input = document.querySelector(`input[data-gallery-field="${name}"]`);
+      const root = input?.closest('[data-slot="file-field"]');
+      if (!(input instanceof HTMLInputElement) || !(root instanceof HTMLElement)) {
+        throw new Error(`The ${name} coarse FileField fixture is incomplete.`);
+      }
+      const style = getComputedStyle(input, "::file-selector-button");
+      return {
+        borderInlineEndWidth: Number.parseFloat(style.borderInlineEndWidth),
+        expectedSize,
+        marginInlineEnd: Number.parseFloat(style.marginInlineEnd),
+        minHeight: Number.parseFloat(style.minHeight),
+        name,
+        paddingInlineEnd: Number.parseFloat(style.paddingInlineEnd),
+        paddingInlineStart: Number.parseFloat(style.paddingInlineStart),
+        size: root.dataset.size ?? "",
+      };
+    });
+    if (
+      !(clear instanceof HTMLButtonElement)
+      || !(decrement instanceof HTMLButtonElement)
+      || !(increment instanceof HTMLButtonElement)
+      || !(trigger instanceof HTMLButtonElement)
+    ) {
+      throw new Error("The real coarse-pointer Fields structure is incomplete.");
+    }
+    return {
+      clearHeight: clear.getBoundingClientRect().height,
+      clearWidth: clear.getBoundingClientRect().width,
+      coarsePointer: matchMedia("(pointer: coarse)").matches,
+      decrementWidth: decrement.getBoundingClientRect().width,
+      fileButtons,
+      incrementWidth: increment.getBoundingClientRect().width,
+      triggerHeight: trigger.getBoundingClientRect().height,
+      verificationOverride:
+        document.documentElement.dataset.verificationPointer ?? "",
+    };
+  });
+  invariant(
+    evidence.coarsePointer
+    && evidence.clearHeight >= 40
+    && evidence.clearWidth >= 40
+    && evidence.decrementWidth >= 48
+    && evidence.incrementWidth >= 48
+    && evidence.fileButtons.every((button) =>
+      button.size === button.expectedSize
+      && nearlyEqual(button.minHeight, 46)
+      && nearlyEqual(button.marginInlineEnd, 12)
+      && nearlyEqual(button.paddingInlineStart, 12)
+      && nearlyEqual(button.paddingInlineEnd, 12)
+      && nearlyEqual(button.borderInlineEndWidth, 1)
+    )
+    && evidence.triggerHeight >= 48
+    && evidence.verificationOverride === "",
+    `real coarse-pointer Fields geometry changed: ${JSON.stringify(evidence)}`,
+  );
+
+  await page.locator(
+    '[data-gallery-field="select"] .hraness-select-field__trigger',
+  ).click();
+  const popover = page.locator(".hraness-select-field__popover");
+  await popover.waitFor();
+  invariant(
+    await popover.count() === 1,
+    "real coarse-pointer Select must own exactly one open portal",
+  );
+  const options = popover.locator('[role="option"]');
+  await options.first().waitFor();
+  await settleOwnedAnimations(popover);
+  const optionEvidence = await options.evaluateAll((items) => items.map((item) => ({
+    disabled: item.hasAttribute("data-disabled") || item.getAttribute("aria-disabled") === "true",
+    height: item.getBoundingClientRect().height,
+    text: item.textContent?.trim() ?? "",
+  })));
+  invariant(
+    optionEvidence.length === 3
+    && optionEvidence.every((option) => option.height >= 48)
+    && optionEvidence.some((option) => option.disabled && option.text === "archived"),
+    `real coarse-pointer Select options changed: ${JSON.stringify(optionEvidence)}`,
+  );
+  await page.keyboard.press("Escape");
+  await popover.waitFor({ state: "detached" });
+}
+
+async function verifyFieldFamilyForcedColors(page: Page): Promise<void> {
+  const focusContracts = [
+    {
+      id: "TextField",
+      offset: 2,
+      presentation: "control",
+      selector: '[data-gallery-field="text-default"] [data-slot="field-input"]',
+    },
+    {
+      id: "SearchField",
+      offset: 2,
+      presentation: "control",
+      selector: '[data-gallery-field="search"] [data-slot="field-input"]',
+    },
+    {
+      id: "NumberField",
+      offset: 2,
+      presentation: "control",
+      selector: '[data-gallery-field="number"] [data-slot="field-input"]',
+    },
+    {
+      id: "NativeSelectField",
+      offset: 2,
+      presentation: "control",
+      selector: 'select[data-gallery-field="native-select"]',
+    },
+    {
+      id: "FileField",
+      offset: 2,
+      presentation: "control",
+      selector: 'input[data-gallery-field="file"]',
+    },
+    {
+      id: "NumberField decrement",
+      offset: -2,
+      presentation: "self",
+      selector: '[data-gallery-field="number"] [data-slot="number-decrement"]',
+    },
+    {
+      id: "NumberField increment",
+      offset: -2,
+      presentation: "self",
+      selector: '[data-gallery-field="number"] [data-slot="number-increment"]',
+    },
+  ] as const;
+  const focusEvidence = [];
+  for (const contract of focusContracts) {
+    const target = page.locator(contract.selector);
+    await target.focus();
+    if (contract.presentation === "self") {
+      // React Aria intentionally excludes NumberField step buttons from the tab order.
+      // Establish keyboard modality, then mirror assistive technology's direct focus.
+      await page.keyboard.press("Tab");
+      await target.focus();
+    } else {
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Tab");
+    }
+    await settleFieldPresentation(page);
+    if (contract.presentation === "self") {
+      await page.waitForFunction((selector) => {
+        const focused = document.querySelector(selector);
+        return focused instanceof HTMLButtonElement
+          && document.activeElement === focused
+          && focused.matches(":focus-visible")
+          && focused.hasAttribute("data-focus-visible");
+      }, contract.selector, { polling: "raf", timeout: 2_000 });
+    }
+    focusEvidence.push(await target.evaluate((focused, contract) => {
+      const presentation = contract.presentation === "self"
+        ? focused
+        : focused.closest('[data-slot="field-control"]');
+      if (!(presentation instanceof HTMLElement)) {
+        throw new Error(`${contract.id} has no forced-colors focus presentation.`);
+      }
+      const probe = document.createElement("span");
+      probe.style.color = "Highlight";
+      document.body.append(probe);
+      const highlight = getComputedStyle(probe).color;
+      probe.remove();
+      const style = getComputedStyle(presentation);
+      return {
+        active: document.activeElement === focused,
+        boxShadow: style.boxShadow,
+        dataFocusVisible: focused.hasAttribute("data-focus-visible"),
+        directFocus: contract.presentation === "self",
+        focusState: contract.presentation === "self"
+          ? focused.matches(":focus-visible")
+          : presentation.matches(":focus-within"),
+        highlight,
+        id: contract.id,
+        offset: contract.offset,
+        outlineColor: style.outlineColor,
+        outlineOffset: Number.parseFloat(style.outlineOffset),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+        tabIndex: focused.tabIndex,
+      };
+    }, contract));
+  }
+  invariant(
+    focusEvidence.every((item) =>
+      item.active
+      && item.focusState
+      && (!item.directFocus || (item.dataFocusVisible && item.tabIndex === -1))
+      && item.boxShadow === "none"
+      && item.outlineColor === item.highlight
+      && nearlyEqual(item.outlineOffset, item.offset)
+      && item.outlineStyle === "solid"
+      && nearlyEqual(item.outlineWidth, 2)
+    ),
+    `forced colors: a Fields focus outline changed: ${JSON.stringify(focusEvidence)}`,
+  );
+
+  const evidence = await page.evaluate(() => {
+    const nativeSelect = document.querySelector(
+      'select[data-gallery-field="native-select"]',
+    );
+    const selectedRadioControl = document.querySelector(
+      '[data-gallery-field="radio-group"] [data-slot="radio-control"][data-selected]',
+    );
+    const unselectedRadioControl = document.querySelector(
+      '[data-gallery-field="radio-group"] [data-slot="radio-control"]:not([data-selected])',
+    );
+    const selectedRadioIndicator = selectedRadioControl?.querySelector(
+      '[data-slot="radio-indicator"]',
+    );
+    const unselectedRadioIndicator = unselectedRadioControl?.querySelector(
+      '[data-slot="radio-indicator"]',
+    );
+    const selectedRadioDot = selectedRadioIndicator?.querySelector(
+      '[data-slot="radio-indicator-dot"]',
+    );
+    const selectedSwitchControl = document.querySelector(
+      '[data-gallery-field="switch"] [data-slot="switch-control"]',
+    );
+    const unselectedSwitchControl = document.querySelector(
+      '[data-gallery-field="switch-unselected"] [data-slot="switch-control"]',
+    );
+    const selectedSwitchTrack = selectedSwitchControl?.querySelector(
+      '[data-slot="switch-track"]',
+    );
+    const unselectedSwitchTrack = unselectedSwitchControl?.querySelector(
+      '[data-slot="switch-track"]',
+    );
+    const selectedSwitchThumb = selectedSwitchTrack?.querySelector(
+      '[data-slot="switch-thumb"]',
+    );
+    const unselectedSwitchThumb = unselectedSwitchTrack?.querySelector(
+      '[data-slot="switch-thumb"]',
+    );
+    const selectTrigger = document.querySelector(
+      '[data-gallery-field="select"] .hraness-select-field__trigger',
+    );
+    const nativeControl = nativeSelect?.closest('[data-slot="native-select-field"]')
+      ?.querySelector('[data-slot="field-control"]');
+    if (
+      !(nativeSelect instanceof HTMLSelectElement)
+      || !(nativeControl instanceof HTMLElement)
+      || !(selectedRadioControl instanceof HTMLElement)
+      || !(unselectedRadioControl instanceof HTMLElement)
+      || !(selectedRadioIndicator instanceof HTMLElement)
+      || !(unselectedRadioIndicator instanceof HTMLElement)
+      || !(selectedRadioDot instanceof HTMLElement)
+      || !(selectedSwitchControl instanceof HTMLElement)
+      || !(unselectedSwitchControl instanceof HTMLElement)
+      || !(selectedSwitchTrack instanceof HTMLElement)
+      || !(unselectedSwitchTrack instanceof HTMLElement)
+      || !(selectedSwitchThumb instanceof HTMLElement)
+      || !(unselectedSwitchThumb instanceof HTMLElement)
+      || !(selectTrigger instanceof HTMLButtonElement)
+    ) {
+      throw new Error("The forced-colors Fields structure is incomplete.");
+    }
+    const systemColor = (value: string): string => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const canvas = systemColor("Canvas");
+    const canvasText = systemColor("CanvasText");
+    const highlight = systemColor("Highlight");
+    const highlightText = systemColor("HighlightText");
+    const selectedRadioStyle = getComputedStyle(selectedRadioIndicator);
+    const unselectedRadioStyle = getComputedStyle(unselectedRadioIndicator);
+    const selectedSwitchTrackStyle = getComputedStyle(selectedSwitchTrack);
+    const unselectedSwitchTrackStyle = getComputedStyle(unselectedSwitchTrack);
+    const selectedSwitchThumbStyle = getComputedStyle(selectedSwitchThumb);
+    const unselectedSwitchThumbStyle = getComputedStyle(unselectedSwitchThumb);
+    const nativeSelectStyle = getComputedStyle(nativeSelect);
+    return {
+      canvas,
+      canvasText,
+      forcedColors: matchMedia("(forced-colors: active)").matches,
+      highlight,
+      highlightText,
+      nativeAppearance: nativeSelectStyle.appearance,
+      nativeBackgroundImage: nativeSelectStyle.backgroundImage,
+      nativeBorder: getComputedStyle(nativeControl).borderColor,
+      nativeInvalid: nativeSelect.getAttribute("aria-invalid") === "true",
+      selectBorder: getComputedStyle(selectTrigger).borderColor,
+      selectedRadio: {
+        background: selectedRadioStyle.backgroundColor,
+        border: selectedRadioStyle.borderColor,
+        dot: getComputedStyle(selectedRadioDot).backgroundColor,
+        forcedColorAdjust: selectedRadioStyle.forcedColorAdjust,
+        selected: selectedRadioControl.hasAttribute("data-selected"),
+      },
+      selectedSwitch: {
+        background: selectedSwitchTrackStyle.backgroundColor,
+        border: selectedSwitchTrackStyle.borderColor,
+        forcedColorAdjust: selectedSwitchTrackStyle.forcedColorAdjust,
+        selected: selectedSwitchControl.hasAttribute("data-selected"),
+        thumb: selectedSwitchThumbStyle.backgroundColor,
+        thumbShadow: selectedSwitchThumbStyle.boxShadow,
+      },
+      unselectedRadio: {
+        background: unselectedRadioStyle.backgroundColor,
+        border: unselectedRadioStyle.borderColor,
+        forcedColorAdjust: unselectedRadioStyle.forcedColorAdjust,
+        selected: unselectedRadioControl.hasAttribute("data-selected"),
+      },
+      unselectedSwitch: {
+        background: unselectedSwitchTrackStyle.backgroundColor,
+        border: unselectedSwitchTrackStyle.borderColor,
+        forcedColorAdjust: unselectedSwitchTrackStyle.forcedColorAdjust,
+        selected: unselectedSwitchControl.hasAttribute("data-selected"),
+        thumb: unselectedSwitchThumbStyle.backgroundColor,
+        thumbShadow: unselectedSwitchThumbStyle.boxShadow,
+      },
+    };
+  });
+  invariant(
+    evidence.forcedColors
+    && evidence.nativeInvalid
+    && evidence.nativeBorder === evidence.canvasText
+    && evidence.selectBorder === evidence.canvasText
+    && evidence.nativeAppearance === "auto"
+    && evidence.nativeBackgroundImage === "none"
+    && evidence.selectedRadio.selected
+    && evidence.selectedRadio.background === evidence.highlight
+    && evidence.selectedRadio.border === evidence.highlight
+    && evidence.selectedRadio.dot === evidence.highlightText
+    && evidence.selectedRadio.forcedColorAdjust === "none"
+    && !evidence.unselectedRadio.selected
+    && evidence.unselectedRadio.background === evidence.canvas
+    && evidence.unselectedRadio.border === evidence.canvasText
+    && evidence.unselectedRadio.forcedColorAdjust === "none"
+    && evidence.selectedSwitch.selected
+    && evidence.selectedSwitch.background === evidence.highlight
+    && evidence.selectedSwitch.border === evidence.highlight
+    && evidence.selectedSwitch.thumb === evidence.highlightText
+    && evidence.selectedSwitch.thumbShadow === "none"
+    && evidence.selectedSwitch.forcedColorAdjust === "none"
+    && !evidence.unselectedSwitch.selected
+    && evidence.unselectedSwitch.background === evidence.canvas
+    && evidence.unselectedSwitch.border === evidence.canvasText
+    && evidence.unselectedSwitch.thumb === evidence.canvasText
+    && evidence.unselectedSwitch.thumbShadow === "none"
+    && evidence.unselectedSwitch.forcedColorAdjust === "none",
+    `forced colors: Fields focus/state/affordance colors changed: ${JSON.stringify(evidence)}`,
+  );
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+}
+
 function verifyActionCoarsePointerEvidence(
   evidence: Awaited<ReturnType<typeof actionCoarsePointerEvidence>>,
 ): void {
@@ -6946,7 +8450,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|form|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|fields|form|key-hint|link|select-option|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -7079,6 +8583,33 @@ try {
   assert.match(html, /data-slot="viewport-frame"/u);
   assert.match(html, /data-gallery-select="true"/u);
   assert.match(html, /data-slot="select-field-indicator"/u);
+  assert.match(html, /data-gallery-section="fields"/u);
+  assert.match(html, /data-gallery-field-form="true"/u);
+  assert.match(html, /data-gallery-field="text-default"/u);
+  assert.match(html, /data-gallery-field="text-override"/u);
+  assert.match(html, /data-gallery-field="textarea"/u);
+  assert.match(html, /data-gallery-field="checkbox-group"/u);
+  assert.match(html, /data-slot="text-area-field"/u);
+  assert.match(html, /data-slot="field-textarea"/u);
+  assert.match(html, /data-slot="checkbox-group"/u);
+  assert.match(html, /data-gallery-field="search"/u);
+  assert.match(html, /data-gallery-field="number"/u);
+  assert.match(html, /data-gallery-field="native-select"/u);
+  assert.match(html, /data-gallery-field="file"/u);
+  assert.match(html, /data-gallery-field="file-compact"/u);
+  assert.match(html, /data-gallery-field="file-large"/u);
+  assert.match(html, /data-gallery-field="radio-group"/u);
+  assert.match(html, /data-gallery-field="switch"/u);
+  assert.match(html, /data-gallery-field="switch-unselected"/u);
+  assert.match(html, /data-gallery-field="select"/u);
+  assert.match(html, /data-gallery-synthetic-coarse="true"/u);
+  assert.match(html, /name="project"/u);
+  assert.match(html, /name="notes"/u);
+  assert.match(html, /name="channels"/u);
+  assert.match(html, /name="ocean"/u);
+  assert.match(html, /name="mode"/u);
+  assert.match(html, /name="alerts"/u);
+  assert.match(html, /name="metric"/u);
   assert.equal(
     html.match(/data-gallery-form-layer-conflict="true"/gu)?.length,
     2,
@@ -7171,7 +8702,7 @@ try {
   );
   assert.match(
     html,
-    /<span[^>]*class="hraness-select-field__label hraness-visually-hidden x[^"]+"[^>]*>Profile metric<\/span>/u,
+    /<span[^>]*class="hraness-select-field__label(?: x[A-Za-z0-9_-]+)+ hraness-visually-hidden(?: x[A-Za-z0-9_-]+)+"[^>]*>Profile metric<\/span>/u,
   );
   assert.match(
     html,
@@ -7241,6 +8772,7 @@ try {
 
           const light = await browserEvidence(page);
           await verifyFormPresentation(page, layout.id);
+          await verifyFieldFamilyPresentation(page, layout.id);
           const lightSelect = await selectFieldIndicatorEvidence(page);
           verifySelectFieldIndicator(lightSelect, layout.id);
           const lightSegmented = await segmentedControlEvidence(page);
@@ -7717,7 +9249,7 @@ try {
           page,
           failures,
           requestedPaths,
-          "coarse-pointer action and CheckboxField matrix",
+          "coarse-pointer action, CheckboxField, and Fields matrix",
         );
         const coarseActions = await actionCoarsePointerEvidence(page);
         verifyActionCoarsePointerEvidence(coarseActions);
@@ -7730,9 +9262,10 @@ try {
           && coarse.verificationOverride === "",
           `coarse-pointer CheckboxField geometry changed: ${JSON.stringify(coarse)}`,
         );
+        await verifyFieldFamilyCoarsePointer(page);
         invariant(
           failures.length === 0,
-          `coarse-pointer action and CheckboxField matrix: ${failures.join("; ")}`,
+          `coarse-pointer action, CheckboxField, and Fields matrix: ${failures.join("; ")}`,
         );
       } finally {
         await coarsePointerContext.close();
@@ -7833,7 +9366,9 @@ try {
           forced.checkboxContracts,
           `forced colors: CheckboxField parity failed: ${forced.checkboxDiagnostics}`,
         );
+        await verifyFieldFamilyForcedColors(page);
 
+        await resetKeyboardFocusToDocumentStart(page, "forced colors");
         await page.keyboard.press("Tab");
         await page.keyboard.press("Enter");
         await page.keyboard.press("Tab");
@@ -7957,7 +9492,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

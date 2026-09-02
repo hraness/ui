@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactNode, Ref } from "react";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 import {
   CheckboxGroup as AriaCheckboxGroup,
   type CheckboxGroupProps as AriaCheckboxGroupProps,
@@ -12,6 +14,8 @@ import {
   FieldError,
   type FieldErrorMessage,
 } from "./fields.js";
+import { fieldStyles } from "./fields.stylex.js";
+import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 
 export type CheckboxGroupProps = Omit<
@@ -25,6 +29,8 @@ export type CheckboxGroupProps = Omit<
   readonly groupRef?: Ref<HTMLDivElement>;
   readonly label: ReactNode;
   readonly optionsClassName?: string;
+  readonly optionsXstyle?: StyleXStyles;
+  readonly xstyle?: StyleXStyles;
 };
 
 /** A labelled multi-selection group composed from CheckboxField children. */
@@ -36,17 +42,57 @@ export function CheckboxGroup({
   groupRef,
   label,
   optionsClassName,
+  optionsXstyle,
+  style,
+  xstyle,
   ...props
 }: CheckboxGroupProps) {
+  const optionsPresentation = stylex.props(fieldStyles.options, optionsXstyle);
+  const labelPresentation = stylex.props(fieldStyles.label);
   return (
     <AriaCheckboxGroup
       {...props}
-      className={cn("hraness-checkbox-group", className)}
+      className={(state) => {
+        const presentation = stylex.props(
+          fieldStyles.root,
+          state.isDisabled && fieldStyles.disabled,
+          xstyle,
+        );
+        return cn(
+          "hraness-checkbox-group",
+          presentation.className,
+          className,
+        );
+      }}
       data-slot="checkbox-group"
       ref={groupRef}
+      style={(state) => {
+        const presentation = stylex.props(
+          fieldStyles.root,
+          state.isDisabled && fieldStyles.disabled,
+          xstyle,
+        );
+        const callerStyle = typeof style === "function" ? style(state) : style;
+        return mergeStylexInlineStyles(presentation.style, callerStyle);
+      }}
     >
-      <Label className="hraness-checkbox-group__label">{label}</Label>
-      <div className={cn("hraness-checkbox-group__options", optionsClassName)}>
+      <Label
+        className={cn(
+          "hraness-checkbox-group__label",
+          labelPresentation.className,
+        )}
+        style={labelPresentation.style}
+      >
+        {label}
+      </Label>
+      <div
+        {...optionsPresentation}
+        className={cn(
+          "hraness-checkbox-group__options",
+          optionsPresentation.className,
+          optionsClassName,
+        )}
+      >
         {children}
       </div>
       {description === undefined ? null : (

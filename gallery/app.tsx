@@ -22,6 +22,8 @@ import {
   CardHeader,
   CardTitle,
   CheckboxField,
+  CheckboxGroup,
+  FileField,
   Form,
   Icon,
   IconButton,
@@ -30,10 +32,15 @@ import {
   KeyHint,
   Link,
   LinkButton,
+  NativeSelectField,
+  NumberField,
   Progress,
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
+  RadioGroup,
+  RadioOption,
+  SearchField,
   SegmentedControl,
   SelectField,
   Skeleton,
@@ -41,9 +48,12 @@ import {
   SocialIcon,
   Spinner,
   StatusDot,
+  SwitchField,
   Tabs,
   Tag,
   ThemedSurface,
+  TextAreaField,
+  TextField,
   Toolbar,
   ToggleButton,
   ViewportFrame,
@@ -73,6 +83,18 @@ const gallerySegments = [
 const gallerySelectOptions = [
   { id: "followers", label: "followers", textValue: "followers" },
   { id: "following", label: "following", textValue: "following" },
+  {
+    disabled: true,
+    id: "archived",
+    label: "archived",
+    textValue: "archived",
+  },
+] as const;
+
+const galleryNativeSelectOptions = [
+  { id: "atlantic", label: "Atlantic" },
+  { id: "pacific", label: "Pacific" },
+  { disabled: true, id: "archived", label: "Archived" },
 ] as const;
 
 const galleryActionSizes = ["compact", "default", "large", "transport"] as const;
@@ -130,6 +152,27 @@ const galleryStyles = stylex.create({
     gap: "var(--space-5)",
     gridTemplateColumns: "none",
   },
+  checkboxGroupOptionsOverride: {
+    alignItems: "flex-start",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "var(--space-4)",
+  },
+  fieldControlOverride: {
+    backgroundColor: "var(--ui-secondary)",
+    backgroundImage: "none",
+    borderColor: "var(--ui-warning)",
+    borderRadius: "var(--radius-sm)",
+  },
+  fieldInputOverride: {
+    color: "var(--ui-primary)",
+    paddingInline: "var(--space-5)",
+  },
+  fieldRootDynamicWidth: (width: string) => ({ width }),
+  fieldRootOverride: {
+    display: "flex",
+    gap: "var(--space-4)",
+  },
   formDynamicWidth: (width: string) => ({ width }),
   formOverride: {
     display: "flex",
@@ -176,6 +219,30 @@ const galleryStyles = stylex.create({
     },
     ":hover": {
       textDecorationThickness: "4px",
+    },
+  },
+  radioSwitchControlOverride: {
+    backgroundColor: "var(--ui-secondary)",
+    backgroundImage: "none",
+    gap: "var(--space-5)",
+    minHeight: "3.25rem",
+    paddingInline: "var(--space-2)",
+  },
+  selectTriggerOverride: {
+    backgroundColor: "var(--ui-secondary)",
+    backgroundImage: "none",
+    borderColor: "var(--ui-warning)",
+    minHeight: "3.25rem",
+    width: "15rem",
+    ":focus-visible": {
+      borderColor: "var(--ui-warning)",
+      outlineColor: "var(--ui-warning)",
+      outlineOffset: "5px",
+      outlineStyle: "dashed",
+      outlineWidth: "3px",
+    },
+    ":hover": {
+      borderColor: "var(--ui-primary)",
     },
   },
   pressableCardOverride: {
@@ -244,9 +311,16 @@ export function PrimitiveGallery() {
   const [pressCount, setPressCount] = useState(0);
   const [segment, setSegment] = useState<GallerySegment>("all");
   const [theme, setTheme] = useState<GalleryTheme>("light");
+  const [fieldSubmission, setFieldSubmission] = useState("");
   const checkboxFieldRef = useRef<HTMLDivElement>(null);
+  const fileFieldRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const linkRef = useRef<HTMLAnchorElement>(null);
+  const nativeSelectRef = useRef<HTMLSelectElement>(null);
+  const radioGroupRef = useRef<HTMLDivElement>(null);
+  const selectFieldRef = useRef<HTMLDivElement>(null);
+  const switchFieldRef = useRef<HTMLDivElement>(null);
+  const textFieldRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const captureCheckboxFieldRef = useCallback((node: HTMLDivElement | null) => {
     checkboxFieldRef.current = node;
@@ -265,16 +339,44 @@ export function PrimitiveGallery() {
     if (link === null) throw new Error("The Link ref did not receive its native anchor.");
     const form = formRef.current;
     if (form === null) throw new Error("The Form ref did not receive its native form.");
+    const file = fileFieldRef.current;
+    const nativeSelect = nativeSelectRef.current;
+    const radioGroup = radioGroupRef.current;
+    const selectField = selectFieldRef.current;
+    const switchField = switchFieldRef.current;
+    const textField = textFieldRef.current;
+    if (
+      file === null
+      || nativeSelect === null
+      || radioGroup === null
+      || selectField === null
+      || switchField === null
+      || textField === null
+    ) {
+      throw new Error("The Fields gallery refs did not reach their native elements.");
+    }
     root.dataset.hydrated = "true";
     checkboxField.dataset.galleryCheckboxFieldRef = "true";
     link.dataset.galleryLinkRef = "true";
     form.dataset.galleryFormRef = "true";
+    file.dataset.galleryFieldRef = "true";
+    nativeSelect.dataset.galleryFieldRef = "true";
+    radioGroup.dataset.galleryFieldRef = "true";
+    selectField.dataset.galleryFieldRef = "true";
+    switchField.dataset.galleryFieldRef = "true";
+    textField.dataset.galleryFieldRef = "true";
     toolbar.dataset.galleryToolbarRef = "true";
     return () => {
       delete root.dataset.hydrated;
       delete checkboxField.dataset.galleryCheckboxFieldRef;
       delete link.dataset.galleryLinkRef;
       delete form.dataset.galleryFormRef;
+      delete file.dataset.galleryFieldRef;
+      delete nativeSelect.dataset.galleryFieldRef;
+      delete radioGroup.dataset.galleryFieldRef;
+      delete selectField.dataset.galleryFieldRef;
+      delete switchField.dataset.galleryFieldRef;
+      delete textField.dataset.galleryFieldRef;
       delete toolbar.dataset.galleryToolbarRef;
     };
   }, []);
@@ -422,6 +524,7 @@ export function PrimitiveGallery() {
             data-gallery-select="true"
             data-gallery-visually-hidden-layer-conflict="true"
             defaultValue="followers"
+            isInvalid
             label="Profile metric"
             options={gallerySelectOptions}
             showLabel={false}
@@ -460,6 +563,207 @@ export function PrimitiveGallery() {
               <button type="button">Caller form canary</button>
             </Form>
           </div>
+        </section>
+
+        <section aria-labelledby="gallery-fields-heading" data-gallery-section="fields">
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-fields-heading">Fields and selection</h2>
+              <p>
+                Native semantics, caller-last StyleX, coarse targets, and React Aria
+                states share one packed-browser contract.
+              </p>
+            </div>
+          </div>
+          <form
+            data-gallery-field-form="true"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              setFieldSubmission(
+                [...data.entries()]
+                  .map(([name, value]) => `${name}=${String(value)}`)
+                  .join("&"),
+              );
+            }}
+          >
+            <div
+              data-gallery-field-grid="true"
+              data-gallery-fields-layer-conflict="true"
+            >
+              <TextField
+                data-gallery-field="text-default"
+                defaultValue="Seamount"
+                description="A native input with stable help copy."
+                label="Project name"
+                name="project"
+                ref={textFieldRef}
+              />
+              <TextField
+                className="gallery-field gallery-field--override"
+                controlXstyle={galleryStyles.fieldControlOverride}
+                data-gallery-field="text-override"
+                defaultValue="Trench"
+                errorMessage="Caller-invalid canary"
+                inputClassName="gallery-field-input gallery-field-input--override"
+                inputProps={{ style: { letterSpacing: "1px" } }}
+                inputXstyle={galleryStyles.fieldInputOverride}
+                isInvalid
+                label="Caller project"
+                name="caller-project"
+                style={{ width: "15rem" }}
+                validationBehavior="aria"
+                xstyle={[
+                  galleryStyles.fieldRootOverride,
+                  galleryStyles.fieldRootDynamicWidth("14rem"),
+                ]}
+              />
+              <TextAreaField
+                className="gallery-field gallery-field--textarea-override"
+                controlXstyle={galleryStyles.fieldControlOverride}
+                data-gallery-field="textarea"
+                defaultValue="Bathymetry"
+                description="The multiline value remains a native form entry."
+                label="Project notes"
+                name="notes"
+                resize="vertical"
+                style={{ width: "15rem" }}
+                textAreaClassName="gallery-field-textarea gallery-field-textarea--override"
+                textAreaProps={{ style: { letterSpacing: "1px" } }}
+                textAreaXstyle={galleryStyles.fieldInputOverride}
+                xstyle={[
+                  galleryStyles.fieldRootOverride,
+                  galleryStyles.fieldRootDynamicWidth("14rem"),
+                ]}
+              />
+              <CheckboxGroup
+                className="gallery-checkbox-group gallery-checkbox-group--override"
+                data-gallery-field="checkbox-group"
+                defaultValue={["security"]}
+                description="Keyboard selection contributes each checked value."
+                label="Notification channels"
+                name="channels"
+                optionsClassName="gallery-checkbox-group-options gallery-checkbox-group-options--override"
+                optionsXstyle={galleryStyles.checkboxGroupOptionsOverride}
+                style={{ width: "15rem" }}
+                xstyle={[
+                  galleryStyles.fieldRootOverride,
+                  galleryStyles.fieldRootDynamicWidth("14rem"),
+                ]}
+              >
+                <CheckboxField label="Email alerts" value="email" />
+                <CheckboxField label="Security alerts" value="security" />
+              </CheckboxGroup>
+              <SearchField
+                data-gallery-field="search"
+                defaultValue="ocean"
+                label="Search projects"
+                name="query"
+              />
+              <NumberField
+                data-gallery-field="number"
+                defaultValue={2}
+                label="Retries"
+                name="retries"
+              />
+              <NativeSelectField
+                data-gallery-field="native-select"
+                defaultValue="atlantic"
+                description="The native arrow remains visible after background reset."
+                isInvalid
+                errorMessage="Review the selected ocean."
+                label="Ocean"
+                name="ocean"
+                options={galleryNativeSelectOptions}
+                selectRef={nativeSelectRef}
+              />
+              <FileField
+                data-gallery-field="file"
+                description="The platform file button remains native."
+                inputRef={fileFieldRef}
+                label="Cover"
+                name="cover"
+              />
+              <FileField
+                data-gallery-field="file-compact"
+                label="Compact attachment"
+                size="compact"
+              />
+              <FileField
+                data-gallery-field="file-large"
+                label="Large attachment"
+                size="large"
+              />
+              <RadioGroup
+                data-gallery-field="radio-group"
+                defaultValue="calm"
+                groupRef={radioGroupRef}
+                label="Mode"
+                name="mode"
+              >
+                <RadioOption label="Calm" value="calm" />
+                <RadioOption
+                  controlXstyle={galleryStyles.radioSwitchControlOverride}
+                  label="Focus"
+                  value="focus"
+                />
+              </RadioGroup>
+              <SwitchField
+                controlXstyle={galleryStyles.radioSwitchControlOverride}
+                data-gallery-field="switch"
+                defaultSelected
+                fieldRef={switchFieldRef}
+                label="Alerts"
+                name="alerts"
+              />
+              <SwitchField
+                data-gallery-field="switch-unselected"
+                label="Digest"
+                name="digest"
+              />
+              <SelectField
+                className="gallery-field-select"
+                data-gallery-field="select"
+                defaultValue="followers"
+                description="The disabled option must never receive hover presentation."
+                isInvalid
+                label="Metric"
+                name="metric"
+                options={gallerySelectOptions}
+                selectRef={selectFieldRef}
+                triggerXstyle={galleryStyles.selectTriggerOverride}
+                validationBehavior="aria"
+              />
+            </div>
+            <div
+              data-gallery-field-grid="true"
+              data-gallery-synthetic-coarse="true"
+              style={{ "--hraness-field-coarse-min": "3rem" } as CSSProperties}
+            >
+              <SearchField
+                data-gallery-field="synthetic-search"
+                defaultValue="coarse"
+                label="Synthetic search"
+              />
+              <NumberField
+                data-gallery-field="synthetic-number"
+                defaultValue={3}
+                label="Synthetic retries"
+              />
+              <SelectField
+                data-gallery-field="synthetic-select"
+                defaultValue="following"
+                label="Synthetic metric"
+                options={gallerySelectOptions}
+              />
+            </div>
+            <button data-gallery-field-submit="true" type="submit">
+              Submit field canary
+            </button>
+            <output aria-live="polite" data-gallery-field-submission="true">
+              {fieldSubmission}
+            </output>
+          </form>
         </section>
 
         <section aria-labelledby="gallery-key-hint-heading" data-gallery-section="key-hints">

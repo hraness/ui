@@ -103,8 +103,6 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   ]) expect(tokens).toContain(role);
 
   for (const contract of [
-    ".hraness-field__control",
-    ".hraness-select-field__popover",
     ".hraness-dialog-overlay",
     ".hraness-toast-region",
     '[data-tone="success"]',
@@ -128,20 +126,7 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
       .startsWith("@layer components.hraness-ui.legacy.base {"),
   ).toBe(true);
   expect(components).not.toContain('[data-slot="');
-  expect(
-    declarationBlock(components, ".hraness-select-field__trigger {"),
-  ).toContain("background: var(--hraness-field-surface);");
-  const selectIndicator = declarationBlock(
-    components,
-    ".hraness-select-field__indicator {",
-  );
-  expect(selectIndicator).toContain("display: block;");
-  expect(selectIndicator).toContain("width: 1em;");
-  expect(selectIndicator).toContain("height: 1em;");
-  expect(selectIndicator).toContain("transform-origin: center;");
-  expect(components).toContain('.hraness-radio-group[data-orientation="horizontal"]');
   expect(components).toContain('.hraness-list-box[data-orientation="horizontal"]');
-  expect(components).toContain(":dir(rtl)[data-selected]");
   const cardBridgePattern =
     /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
   expect(components.match(cardBridgePattern)).toHaveLength(1);
@@ -174,6 +159,176 @@ test("forced-colors field placeholders use unfaded system text", async () => {
 
   expect(placeholder).toContain("color: CanvasText;");
   expect(placeholder).toContain("opacity: 1;");
+});
+
+test("field families compile presentation while legacy CSS keeps only native pseudo seams", async () => {
+  const [components, fields, fieldComponents, select, selectComponent] =
+    await Promise.all([
+      stylesheet("./components.css"),
+      stylesheet("./fields.stylex.ts"),
+      stylesheet("./fields.tsx"),
+      stylesheet("./select-field.stylex.ts"),
+      stylesheet("./select-field.tsx"),
+    ]);
+  const fieldHookPattern =
+    /\.hraness-(?:(?:field|text-area-field|text-field|search-field|number-field|checkbox-group|radio-group|radio-option|switch-field|native-select-field|file-field|select-field)(?:__[A-Za-z0-9_-]+)?)(?:::[A-Za-z-]+)?/gu;
+  const remainingLegacyHooks = [
+    ...new Set(components.match(fieldHookPattern) ?? []),
+  ].sort();
+
+  expect(remainingLegacyHooks).toEqual([
+    ".hraness-field__file::file-selector-button",
+    ".hraness-field__input::placeholder",
+    ".hraness-file-field",
+  ]);
+  expect(components.match(/\.hraness-field__input::placeholder/gu)).toHaveLength(2);
+  expect(
+    components.match(/\.hraness-field__file::file-selector-button/gu),
+  ).toHaveLength(4);
+  expect(components).toContain(
+    "--hraness-field-coarse-min: var(--interactive-target-min);",
+  );
+  expect(components).toContain("@media (pointer: coarse)");
+  expect(components).toContain(
+    ':where(.hraness-file-field[data-size="compact"])\n    .hraness-field__file::file-selector-button {',
+  );
+  expect(components).toContain(
+    ':where(.hraness-file-field[data-size="large"])\n    .hraness-field__file::file-selector-button {',
+  );
+  const coarseFileButton = components.slice(
+    components.indexOf("@media (pointer: coarse)"),
+    components.indexOf("/* WebKit scrollbar pseudo-elements"),
+  );
+  expect(coarseFileButton).toContain(
+    ".hraness-field__file::file-selector-button {",
+  );
+  expect(coarseFileButton).toContain(
+    "min-height: calc(var(--interactive-target-min) - 2px);",
+  );
+
+  for (const source of [fields, select]) {
+    expect(source).toContain('const coarsePointer = "@media(pointer: coarse)"');
+    expect(source).toContain(
+      'const syntheticCoarseMinimum = "var(--hraness-field-coarse-min, 0px)"',
+    );
+    expect(source).toContain('[coarsePointer]: "var(--interactive-target-min)"');
+    expect(source).not.toMatch(/^\s*background:/mu);
+  }
+  for (const fallback of [
+    "controlFocusWithinFallback",
+    "numberStepNativeInteractions",
+    "radioSwitchNativeFocus",
+    "searchClearNativeInteractions",
+  ]) expect(fields).toContain(`${fallback}: {`);
+  expect(fieldComponents).toMatch(
+    /function fieldControlPresentation[\s\S]*?fieldStyles\.controlFocusWithinFallback,[\s\S]*?state\.isInvalid && fieldStyles\.controlInvalid,[\s\S]*?controlXstyle/u,
+  );
+  expect(fieldComponents).not.toContain("state.isFocused");
+  expect(fields).toContain('":dir(rtl)": {');
+  expect(fields).toContain('transform: "translateX(-1rem)"');
+  expect(fieldComponents).toContain(
+    "!hasStylexPresentation(controlXstyle)",
+  );
+  expect(select).toContain("triggerNativeInteractions: {");
+  expect(select).toContain("optionNativeInteraction: {");
+  expect(select).toContain('[forcedColors]: "CanvasText"');
+  expect(select).toContain('backgroundImage: "none"');
+  expect(selectComponent).toContain(
+    "!hasStylexPresentation(triggerXstyle)",
+  );
+  expect(selectComponent).toMatch(
+    /!optionState\.isDisabled[\s\S]*?selectFieldStyles\.optionNativeInteraction/u,
+  );
+
+  const nativeSelect = fields.slice(
+    fields.indexOf("nativeSelect: {"),
+    fields.indexOf("numberControl: {"),
+  );
+  expect(nativeSelect).toContain('":dir(rtl)": {');
+  expect(nativeSelect).toContain(
+    'backgroundPosition: "0.75rem 50%, 1rem 50%"',
+  );
+  expect(nativeSelect).toContain('appearance: {');
+  expect(nativeSelect).toContain('default: "none"');
+  expect(nativeSelect).toContain('[forcedColors]: "auto"');
+  expect(nativeSelect).toContain('backgroundImage: {');
+  expect(nativeSelect).toContain(
+    '"linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%)"',
+  );
+  expect(nativeSelect).toContain('[forcedColors]: "none"');
+  expect(nativeSelect).toContain(
+    '"calc(100% - 1rem) 50%, calc(100% - 0.75rem) 50%"',
+  );
+  expect(nativeSelect).toContain(
+    'backgroundSize: "0.25rem 0.25rem, 0.25rem 0.25rem"',
+  );
+  expect(nativeSelect).toContain('paddingInlineEnd: "2.5rem"');
+
+  const fieldFocus = fields.slice(
+    fields.indexOf("controlFocusWithinFallback: {"),
+    fields.indexOf("controlInvalid: {"),
+  );
+  expect(fieldFocus).toContain('[forcedColors]: "none"');
+  expect(fieldFocus).toContain('[forcedColors]: "Highlight"');
+  expect(fieldFocus).toContain('outlineOffset: "2px"');
+  expect(fieldFocus).toContain('outlineStyle: "solid"');
+  expect(fieldFocus).toContain('outlineWidth: "2px"');
+
+  for (const numberFocus of [
+    fields.slice(
+      fields.indexOf("numberStepFocusVisible: {"),
+      fields.indexOf("numberStepHovered: {"),
+    ),
+    fields.slice(
+      fields.indexOf("numberStepNativeInteractions: {"),
+      fields.indexOf("options: {"),
+    ),
+  ]) {
+    expect(numberFocus).toContain('[forcedColors]: "none"');
+    expect(numberFocus).toContain('[forcedColors]: "Highlight"');
+    expect(numberFocus).toContain('outlineOffset: "-2px"');
+    expect(numberFocus).toContain('outlineStyle: "solid"');
+    expect(numberFocus).toContain('outlineWidth: "2px"');
+  }
+
+  const radioSurfaces = fields.slice(
+    fields.indexOf("radioDot: {"),
+    fields.indexOf("radioSwitchControl: {"),
+  );
+  expect(radioSurfaces).toContain('[forcedColors]: "Canvas"');
+  expect(radioSurfaces).toContain('[forcedColors]: "CanvasText"');
+  expect(radioSurfaces).toContain('[forcedColors]: "Highlight"');
+  expect(radioSurfaces).toContain('[forcedColors]: "HighlightText"');
+  expect(radioSurfaces).toContain('[forcedColors]: "none"');
+
+  const switchSurfaces = fields.slice(
+    fields.indexOf("switchThumb: {"),
+    fields.indexOf("textArea: {"),
+  );
+  expect(switchSurfaces).toContain('[forcedColors]: "Canvas"');
+  expect(switchSurfaces).toContain('[forcedColors]: "CanvasText"');
+  expect(switchSurfaces).toContain('[forcedColors]: "Highlight"');
+  expect(switchSurfaces).toContain('[forcedColors]: "HighlightText"');
+  expect(switchSurfaces).toContain('[forcedColors]: "none"');
+
+  const selectIndicator = select.slice(
+    select.indexOf("indicator: {"),
+    select.indexOf("listBox: {"),
+  );
+  expect(selectIndicator).toContain('display: "block"');
+  expect(selectIndicator).toContain('height: "1em"');
+  expect(selectIndicator).toContain('transformOrigin: "center"');
+  expect(selectIndicator).toContain('transform: "rotate(180deg)"');
+  expect(selectIndicator).toContain('width: "1em"');
+
+  const selectTrigger = select.slice(
+    select.indexOf("trigger: {"),
+    select.indexOf("triggerCard: {"),
+  );
+  expect(selectTrigger).toContain(
+    'backgroundColor: "var(--hraness-field-surface, var(--ui-background))"',
+  );
+  expect(selectTrigger).toContain('backgroundImage: "none"');
 });
 
 test("segmented controls keep one compact selection surface without item dividers", async () => {

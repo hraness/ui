@@ -73,6 +73,29 @@
   gap: var(--space-3);
 }
 
+[data-gallery-field-form="true"],
+[data-gallery-field-grid="true"] {
+  display: grid;
+  gap: var(--space-4);
+}
+
+[data-gallery-field-grid="true"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  align-items: start;
+}
+
+[data-gallery-field-submit="true"] {
+  justify-self: start;
+}
+
+[data-gallery-field-submission="true"] {
+  min-block-size: 1.5rem;
+  overflow-wrap: anywhere;
+  color: var(--ui-muted-foreground);
+  font-family: var(--ui-font-mono);
+  font-size: var(--text-caption);
+}
+
 [data-gallery-coarse-action-matrix="true"] {
   display: grid;
   gap: var(--space-3);
@@ -233,6 +256,88 @@
     gap: 5rem;
     min-width: 11rem;
     width: 18rem;
+  }
+
+  html body [data-gallery-fields-layer-conflict="true"] :where(
+    [data-slot="text-field"],
+    [data-slot="search-field"],
+    [data-slot="number-field"],
+    [data-slot="native-select-field"],
+    [data-slot="file-field"],
+    [data-slot="radio-group"],
+    [data-slot="radio-option"],
+    [data-slot="switch-field"],
+    [data-slot="select-field"]
+  ) {
+    --gallery-fields-root-conflict: legacy;
+    display: block;
+    gap: 7rem;
+    grid-template-columns: 8rem 9rem;
+    min-width: 13rem;
+  }
+
+  html body [data-gallery-fields-layer-conflict="true"] [data-slot="field-control"] {
+    --gallery-fields-control-conflict: legacy;
+    background-color: rgb(1 2 3);
+    background-image: linear-gradient(red, blue);
+    border: 7px dashed rgb(255 0 255);
+    border-radius: 99px;
+    min-height: 9rem;
+    overflow: visible;
+  }
+
+  html body [data-gallery-fields-layer-conflict="true"] [data-slot="number-decrement"],
+  html body [data-gallery-fields-layer-conflict="true"] [data-slot="number-increment"],
+  html body [data-gallery-fields-layer-conflict="true"] [aria-label="Clear search"] {
+    background-color: rgb(1 2 3);
+    background-image: linear-gradient(red, blue);
+    border: 7px dashed rgb(255 0 255);
+    min-height: 9rem;
+    min-width: 9rem;
+  }
+
+  html body [data-gallery-fields-layer-conflict="true"] [data-slot="radio-control"],
+  html body [data-gallery-fields-layer-conflict="true"] [data-slot="switch-control"] {
+    --gallery-fields-choice-conflict: legacy;
+    background-color: rgb(1 2 3);
+    background-image: linear-gradient(red, blue);
+    display: block;
+    gap: 7rem;
+    min-height: 9rem;
+    outline: 7px dashed rgb(255 0 255);
+  }
+
+  html body [data-gallery-fields-layer-conflict="true"] [data-slot="radio-indicator"],
+  html body [data-gallery-fields-layer-conflict="true"] [data-slot="switch-track"] {
+    background-color: rgb(1 2 3);
+    background-image: linear-gradient(red, blue);
+    border: 7px dashed rgb(255 0 255);
+    border-radius: 0;
+    height: 7rem;
+    width: 8rem;
+  }
+
+  html body [data-gallery-fields-layer-conflict="true"] [data-slot="switch-thumb"] {
+    background-color: rgb(255 0 255);
+    background-image: linear-gradient(red, blue);
+    height: 6rem;
+    transform: translateX(7rem);
+    width: 6rem;
+  }
+
+  html body [data-gallery-fields-layer-conflict="true"] .hraness-select-field__trigger {
+    --gallery-fields-select-trigger-conflict: legacy;
+    background-color: rgb(1 2 3);
+    background-image: linear-gradient(red, blue);
+    border: 7px dashed rgb(255 0 255);
+    min-height: 9rem;
+    width: 18rem;
+  }
+
+  html body [data-gallery-select-option-layer-conflict="true"] {
+    --gallery-fields-select-option-conflict: legacy;
+    min-height: 9rem;
+    padding: 5rem;
   }
 
   html body [data-gallery-quiet-site-layer-conflict="true"][data-slot="quiet-site-page"] {
