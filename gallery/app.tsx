@@ -22,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
   CheckboxField,
+  Form,
   Icon,
   IconButton,
   IconLink,
@@ -128,6 +129,12 @@ const galleryStyles = stylex.create({
     display: "flex",
     gap: "var(--space-5)",
     gridTemplateColumns: "none",
+  },
+  formDynamicWidth: (width: string) => ({ width }),
+  formOverride: {
+    display: "flex",
+    gap: "var(--space-2)",
+    minWidth: "7rem",
   },
   cardDynamicWidth: (width: string) => ({ width }),
   cardOverride: {
@@ -238,6 +245,7 @@ export function PrimitiveGallery() {
   const [segment, setSegment] = useState<GallerySegment>("all");
   const [theme, setTheme] = useState<GalleryTheme>("light");
   const checkboxFieldRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const linkRef = useRef<HTMLAnchorElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const captureCheckboxFieldRef = useCallback((node: HTMLDivElement | null) => {
@@ -255,14 +263,18 @@ export function PrimitiveGallery() {
     if (toolbar === null) throw new Error("The Toolbar ref did not receive its native div.");
     const link = linkRef.current;
     if (link === null) throw new Error("The Link ref did not receive its native anchor.");
+    const form = formRef.current;
+    if (form === null) throw new Error("The Form ref did not receive its native form.");
     root.dataset.hydrated = "true";
     checkboxField.dataset.galleryCheckboxFieldRef = "true";
     link.dataset.galleryLinkRef = "true";
+    form.dataset.galleryFormRef = "true";
     toolbar.dataset.galleryToolbarRef = "true";
     return () => {
       delete root.dataset.hydrated;
       delete checkboxField.dataset.galleryCheckboxFieldRef;
       delete link.dataset.galleryLinkRef;
+      delete form.dataset.galleryFormRef;
       delete toolbar.dataset.galleryToolbarRef;
     };
   }, []);
@@ -415,6 +427,39 @@ export function PrimitiveGallery() {
             showLabel={false}
             size="compact"
           />
+          <div data-gallery-form-row="true">
+            <Form
+              action="/gallery-form-default"
+              className="gallery-form gallery-form--default"
+              data-gallery-form="default"
+              data-gallery-form-layer-conflict="true"
+              method="post"
+              onSubmit={(event) => event.preventDefault()}
+            >
+              <button type="button">Default form canary</button>
+            </Form>
+            <Form
+              acceptCharset="utf-8"
+              action="/gallery-form-override"
+              className="gallery-form gallery-form--override"
+              data-gallery-form="override"
+              data-gallery-form-layer-conflict="true"
+              method="post"
+              onSubmit={(event) => event.preventDefault()}
+              ref={formRef}
+              render={(props) => (
+                <form {...props} data-gallery-form-render="true" />
+              )}
+              style={{ width: "15rem" }}
+              validationBehavior="aria"
+              xstyle={[
+                galleryStyles.formOverride,
+                galleryStyles.formDynamicWidth("14rem"),
+              ]}
+            >
+              <button type="button">Caller form canary</button>
+            </Form>
+          </div>
         </section>
 
         <section aria-labelledby="gallery-key-hint-heading" data-gallery-section="key-hints">

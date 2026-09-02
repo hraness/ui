@@ -695,6 +695,58 @@ function checkboxRuleBodies(
     .map((match) => match[2]!);
 }
 
+function packedFormClassNames(
+  javaScript: string,
+  css: string,
+): ReadonlySet<string> {
+  const expectedDeclarations = new Set([
+    "display:grid;",
+    "gap:var(--space-6);",
+    "min-width:0;",
+  ]);
+  const candidates: ReadonlySet<string>[] = [];
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*root\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(javaScript, open, "packed Form JavaScript");
+    const objectBody = object.slice(1, -1);
+    const rootMatch = /(?:^|,)\s*root\s*:\s*\{/u.exec(objectBody);
+    if (rootMatch === null) continue;
+    const rootOpen = (rootMatch.index ?? 0) + rootMatch[0].lastIndexOf("{");
+    const root = balancedBlock(objectBody, rootOpen, "packed formStyles.root");
+    const rootEnd = rootOpen + root.length;
+    if (objectBody.slice(rootEnd).replace(/^\s*,?\s*/u, "").length !== 0) {
+      continue;
+    }
+    const classNames = new Set<string>();
+    for (const classMatch of root.matchAll(
+      /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    )) {
+      for (const className of classMatch[1]!.split(/\s+/u)) {
+        classNames.add(className);
+      }
+    }
+    if (classNames.size !== 3) continue;
+    const declarations = new Set(
+      checkboxRuleBodies(css, classNames)
+        .map((body) => normalizedAtomicDeclaration(body)),
+    );
+    if (
+      declarations.size === expectedDeclarations.size
+      && [...expectedDeclarations].every((value) => declarations.has(value))
+    ) {
+      candidates.push(classNames);
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "the packed JavaScript must contain exactly one compiled formStyles class map",
+  );
+  return candidates[0]!;
+}
+
 function normalizedAtomicDeclaration(body: string): string {
   return body
     .toLowerCase()
@@ -1129,7 +1181,26 @@ function requirePackedCheckboxStyles(javaScript: string, css: string): void {
   );
 }
 
+function requirePackedFormStyles(javaScript: string, css: string): void {
+  const classNames = packedFormClassNames(javaScript, css);
+  assert.equal(
+    classNames.size,
+    3,
+    "formStyles.root must preserve exactly three packed atomic classes",
+  );
+  const declarations = new Set(
+    checkboxRuleBodies(css, classNames)
+      .map((body) => normalizedAtomicDeclaration(body)),
+  );
+  assert.deepEqual(
+    [...declarations].sort(),
+    ["display:grid;", "gap:var(--space-6);", "min-width:0;"],
+    "formStyles.root must preserve the exact packed declaration set",
+  );
+}
+
 function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
+  requirePackedFormStyles(javaScript, css);
   assert.match(
     css,
     /@layer components\.hraness-ui\.priority[12]/u,
@@ -1162,6 +1233,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     css,
     /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not include the legacy visually-hidden recipe",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-form(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not include the legacy Form recipe",
   );
   assert.match(
     css,
@@ -1523,6 +1599,23 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
       )
     ),
     `the gallery action focus conflict is incomplete: ${String(actionFocusConflict)}`,
+  );
+  assert.match(
+    css,
+    /data-gallery-form-layer-conflict/u,
+    "the harness bundle must include its Form legacy conflict",
+  );
+  const formConflict = css.match(
+    /\[data-gallery-form-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"form"|form)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    formConflict !== undefined
+    && /--gallery-form-layer-conflict:\s*legacy/u.test(formConflict)
+    && /display:\s*block/u.test(formConflict)
+    && /gap:\s*5rem/u.test(formConflict)
+    && /min-width:\s*11rem/u.test(formConflict)
+    && /width:\s*18rem/u.test(formConflict),
+    `the gallery Form conflict is incomplete: ${String(formConflict)}`,
   );
   assert.match(
     css,
@@ -4847,6 +4940,91 @@ function nearlyEqual(actual: number, expected: number): boolean {
   return Number.isFinite(actual) && Math.abs(actual - expected) <= 0.5;
 }
 
+async function verifyFormPresentation(page: Page, id: string): Promise<void> {
+  const evidence = await page.evaluate(() => {
+    const defaultForm = document.querySelector('[data-gallery-form="default"]');
+    const overrideForm = document.querySelector('[data-gallery-form="override"]');
+    if (!(defaultForm instanceof HTMLFormElement) || !(overrideForm instanceof HTMLFormElement)) {
+      throw new Error("The gallery Form specimens are incomplete.");
+    }
+    const read = (form: HTMLFormElement) => {
+      const style = getComputedStyle(form);
+      const classes = [...form.classList];
+      const button = form.querySelector("button");
+      const submit = new SubmitEvent("submit", { bubbles: true, cancelable: true });
+      form.dispatchEvent(submit);
+      return {
+        acceptCharset: form.getAttribute("accept-charset"),
+        action: form.getAttribute("action"),
+        callerClassLast: classes.at(-1)?.startsWith("gallery-form--") ?? false,
+        customRender: form.getAttribute("data-gallery-form-render"),
+        display: style.display,
+        gap: Number.parseFloat(style.gap),
+        hasGeneratedClass: classes.some((name) => name.startsWith("x")),
+        legacySentinel: style
+          .getPropertyValue("--gallery-form-layer-conflict")
+          .trim(),
+        method: form.getAttribute("method"),
+        minWidth: Number.parseFloat(style.minWidth),
+        noValidate: form.noValidate,
+        refReachedNativeForm: form.dataset.galleryFormRef === "true",
+        semanticClassFirst: classes[0] === "hraness-form",
+        slot: form.getAttribute("data-slot"),
+        styleAttribute: form.getAttribute("style") ?? "",
+        submitButtonType: button?.getAttribute("type") ?? null,
+        submitPrevented: submit.defaultPrevented,
+        tagName: form.tagName,
+        width: form.getBoundingClientRect().width,
+      };
+    };
+    return {
+      defaultForm: read(defaultForm),
+      overrideForm: read(overrideForm),
+    };
+  });
+
+  invariant(
+    evidence.defaultForm.tagName === "FORM"
+    && evidence.defaultForm.action === "/gallery-form-default"
+    && evidence.defaultForm.method === "post"
+    && evidence.defaultForm.noValidate === false
+    && evidence.defaultForm.slot === "form"
+    && evidence.defaultForm.semanticClassFirst
+    && evidence.defaultForm.hasGeneratedClass
+    && evidence.defaultForm.callerClassLast
+    && evidence.defaultForm.legacySentinel === "legacy"
+    && evidence.defaultForm.display === "grid"
+    && nearlyEqual(evidence.defaultForm.gap, 24)
+    && nearlyEqual(evidence.defaultForm.minWidth, 0)
+    && evidence.defaultForm.submitButtonType === "button"
+    && evidence.defaultForm.submitPrevented,
+    `${id}: default Form parity failed: ${JSON.stringify(evidence.defaultForm)}`,
+  );
+  invariant(
+    evidence.overrideForm.tagName === "FORM"
+    && evidence.overrideForm.acceptCharset === "utf-8"
+    && evidence.overrideForm.action === "/gallery-form-override"
+    && evidence.overrideForm.method === "post"
+    && evidence.overrideForm.noValidate
+    && evidence.overrideForm.slot === "form"
+    && evidence.overrideForm.customRender === "true"
+    && evidence.overrideForm.refReachedNativeForm
+    && evidence.overrideForm.semanticClassFirst
+    && evidence.overrideForm.hasGeneratedClass
+    && evidence.overrideForm.callerClassLast
+    && evidence.overrideForm.legacySentinel === "legacy"
+    && evidence.overrideForm.display === "flex"
+    && nearlyEqual(evidence.overrideForm.gap, 8)
+    && nearlyEqual(evidence.overrideForm.minWidth, 112)
+    && nearlyEqual(evidence.overrideForm.width, 240)
+    && evidence.overrideForm.submitButtonType === "button"
+    && evidence.overrideForm.submitPrevented
+    && /--[^:]+:\s*14rem/u.test(evidence.overrideForm.styleAttribute)
+    && /width:\s*15rem/u.test(evidence.overrideForm.styleAttribute),
+    `${id}: caller Form parity failed: ${JSON.stringify(evidence.overrideForm)}`,
+  );
+}
+
 async function settleCardFamilyTransitions(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const cardFamily = [
@@ -5454,6 +5632,28 @@ async function verifyKeyboardPath(
   invariant(
     await selectTrigger.evaluate((element) => document.activeElement === element),
     `${id}: the compact select is not reachable after the checkbox`,
+  );
+
+  await page.keyboard.press("Tab");
+  const defaultFormCanary = page.getByRole("button", {
+    name: "Default form canary",
+  });
+  invariant(
+    await defaultFormCanary.evaluate((element) =>
+      document.activeElement === element
+    ),
+    `${id}: the default Form canary is not reachable after the compact select`,
+  );
+
+  await page.keyboard.press("Tab");
+  const callerFormCanary = page.getByRole("button", {
+    name: "Caller form canary",
+  });
+  invariant(
+    await callerFormCanary.evaluate((element) =>
+      document.activeElement === element
+    ),
+    `${id}: the caller-rendered Form canary is not reachable after the default Form`,
   );
 
   await page.keyboard.press("Tab");
@@ -6730,6 +6930,7 @@ try {
     access(resolve(installedRoot, "src/checkbox-field.stylex.ts")),
     access(resolve(installedRoot, "src/skip-link.stylex.ts")),
     access(resolve(installedRoot, "src/visually-hidden.stylex.ts")),
+    access(resolve(installedRoot, "src/form.stylex.ts")),
   ]);
   await assert.rejects(
     access(resolve(installedRoot, "gallery/styles.css")),
@@ -6745,7 +6946,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|form|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -6798,6 +6999,11 @@ try {
     /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate visually-hidden declarations in legacy CSS",
   );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-form(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate Form declarations in legacy CSS",
+  );
 
   const productionDirectory = resolve(consumer, "dist/browser");
   const negativeDirectory = resolve(consumer, "dist/unstyled-negative-control");
@@ -6816,13 +7022,10 @@ try {
     production.javaScript,
     production.css,
   );
-  assert.throws(
-    () => requirePackedDefaultStylesheet(
-      negativeControl.css,
-      negativeControl.javaScript,
-    ),
-    /must keep reset styles below components/u,
-    "the stylesheet delivery oracle must reject the unstyled negative-control consumer",
+  assert.doesNotMatch(
+    negativeControl.css,
+    STYLED_GALLERY_LAYER_PRELUDES,
+    "the unstyled negative control must omit the package delivery layer preludes",
   );
   assert.match(production.javaScript, /__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__/u);
   assert.match(production.javaScript, /hydrateRoot/u);
@@ -6876,6 +7079,30 @@ try {
   assert.match(html, /data-slot="viewport-frame"/u);
   assert.match(html, /data-gallery-select="true"/u);
   assert.match(html, /data-slot="select-field-indicator"/u);
+  assert.equal(
+    html.match(/data-gallery-form-layer-conflict="true"/gu)?.length,
+    2,
+    "SSR must include the default and caller Form specimens",
+  );
+  assert.match(html, /data-gallery-form="default"/u);
+  assert.match(html, /data-gallery-form="override"/u);
+  assert.match(html, /data-gallery-form-render="true"/u);
+  assert.match(html, /data-slot="form"/u);
+  assert.match(html, /action="\/gallery-form-default"/u);
+  assert.match(html, /action="\/gallery-form-override"/u);
+  assert.match(html, /accept-charset="utf-8"/u);
+  assert.match(html, /method="post"/u);
+  assert.match(html, /no[Vv]alidate=""/u);
+  assert.match(
+    html,
+    /class="hraness-form [^"]+ gallery-form gallery-form--default"/u,
+  );
+  assert.match(
+    html,
+    /class="hraness-form [^"]+ gallery-form gallery-form--override"/u,
+  );
+  assert.match(html, /<button type="button">Default form canary<\/button>/u);
+  assert.match(html, /<button type="button">Caller form canary<\/button>/u);
   assert.match(html, /data-gallery-themed-surface-tone="card"/u);
   assert.match(html, /data-gallery-themed-surface-tone="accent"/u);
   assert.match(html, /data-gallery-themed-surface-tone="secondary"/u);
@@ -7013,6 +7240,7 @@ try {
           await waitForHydration(page, failures, requestedPaths, layout.id);
 
           const light = await browserEvidence(page);
+          await verifyFormPresentation(page, layout.id);
           const lightSelect = await selectFieldIndicatorEvidence(page);
           verifySelectFieldIndicator(lightSelect, layout.id);
           const lightSegmented = await segmentedControlEvidence(page);
@@ -7729,7 +7957,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

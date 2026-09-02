@@ -116,6 +116,15 @@ interface PackageLinkStyleMap extends LinkPrecedenceProbe {
   readonly classNamesByKey: Readonly<Record<LinkStyleKey, ReadonlySet<string>>>;
 }
 
+interface FormPrecedenceProbe {
+  readonly baseClasses: readonly string[];
+  readonly property: string;
+}
+
+interface PackageFormStyleMap extends FormPrecedenceProbe {
+  readonly classNames: ReadonlySet<string>;
+}
+
 interface PackageVisuallyHiddenStyleMap {
   readonly classNames: ReadonlySet<string>;
 }
@@ -256,6 +265,77 @@ function packageCheckboxRuleBodies(
       new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(match[1]!)
     ))
     .map((match) => match[2]!);
+}
+
+function packageFormStyleMap(
+  javaScript: string,
+  css: string,
+): PackageFormStyleMap {
+  const expectedDeclarations = new Set([
+    "display:grid;",
+    "gap:var(--space-6);",
+    "min-width:0;",
+  ]);
+  const candidates: Array<Readonly<{ classNames: ReadonlySet<string>; root: string }>> = [];
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*root\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(javaScript, open, "packed Form JavaScript");
+    const objectBody = object.slice(1, -1);
+    const rootMatch = /(?:^|,)\s*root\s*:\s*\{/u.exec(objectBody);
+    if (rootMatch === null) continue;
+    const rootOpen = (rootMatch.index ?? 0) + rootMatch[0].lastIndexOf("{");
+    const root = balancedBlock(objectBody, rootOpen, "packed formStyles.root");
+    const rootEnd = rootOpen + root.length;
+    if (objectBody.slice(rootEnd).replace(/^\s*,?\s*/u, "").length !== 0) {
+      continue;
+    }
+    const classNames = new Set<string>();
+    for (const classMatch of root.matchAll(
+      /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    )) {
+      for (const className of classMatch[1]!.split(/\s+/u)) {
+        classNames.add(className);
+      }
+    }
+    if (classNames.size !== 3) continue;
+    const declarations = new Set(
+      packageCheckboxRuleBodies(css, classNames)
+        .map((body) => normalizedAtomicDeclaration(body)),
+    );
+    if (
+      declarations.size === expectedDeclarations.size
+      && [...expectedDeclarations].every((value) => declarations.has(value))
+    ) {
+      candidates.push({ classNames, root });
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "packed JavaScript must contain exactly one compiled formStyles class map",
+  );
+  const candidate = candidates[0]!;
+  const displayEntries = [...candidate.root.slice(1, -1).matchAll(
+    /(?:^|,)\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )].filter((entry) => {
+    const entryClasses = new Set(entry[2]!.split(/\s+/u));
+    return packageCheckboxRuleBodies(css, entryClasses)
+      .map((body) => normalizedAtomicDeclaration(body))
+      .includes("display:grid;");
+  });
+  assert.equal(
+    displayEntries.length,
+    1,
+    "packed formStyles.root must bind exactly one compiled key to display:grid",
+  );
+  const display = displayEntries[0]!;
+  return {
+    baseClasses: display[2]!.split(/\s+/u),
+    classNames: candidate.classNames,
+    property: display[1]!,
+  };
 }
 
 function normalizedAtomicDeclaration(body: string): string {
@@ -522,6 +602,23 @@ function requirePackageCheckboxStyles(javaScript: string, css: string): void {
   );
 }
 
+function requirePackageFormStyles(javaScript: string, css: string): void {
+  const { classNames } = packageFormStyleMap(javaScript, css);
+  assert.equal(
+    classNames.size,
+    3,
+    "formStyles.root must preserve exactly three packed atomic classes",
+  );
+  const declarations = new Set(
+    packageCheckboxRuleBodies(css, classNames)
+      .map((body) => normalizedAtomicDeclaration(body)),
+  );
+  assert.deepEqual(
+    [...declarations].sort(),
+    ["display:grid;", "gap:var(--space-6);", "min-width:0;"],
+    "formStyles.root must preserve the exact packed declaration set",
+  );
+}
 function requirePackageVisuallyHiddenStyles(
   javaScript: string,
   css: string,
@@ -719,6 +816,7 @@ function resolveGenuineNodeExecutable(): string {
 function ssrProbe(
   release: ReactRelease,
   checkboxProbe: CheckboxPrecedenceProbe,
+  formProbe: FormPrecedenceProbe,
   linkProbe: LinkPrecedenceProbe,
   visuallyHiddenClasses: readonly string[],
 ): string {
@@ -738,6 +836,7 @@ import {
   CardHeader,
   CardTitle,
   CheckboxField,
+  Form,
   Icon,
   KeyHint,
   Link,
@@ -753,6 +852,7 @@ import {
   WrappingRow,
   buildAskAiProviderLinks,
 } from "@hraness/ui";
+import { FormContext } from "react-aria-components";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -768,6 +868,11 @@ const checkboxControlXstyle = {
 };
 const checkboxRootBaseClasses = ${JSON.stringify(checkboxProbe.rootBaseClasses)};
 const checkboxControlBaseClasses = ${JSON.stringify(checkboxProbe.controlBaseClasses)};
+const formXstyle = {
+  ${JSON.stringify(formProbe.property)}: "package-form-xstyle",
+  $$css: true,
+};
+const formBaseClasses = ${JSON.stringify(formProbe.baseClasses)};
 const linkXstyle = {
   ${JSON.stringify(linkProbe.property)}: "package-link-xstyle",
   $$css: true,
@@ -879,13 +984,15 @@ assert.equal(
 assert.equal(
   stylexCss.match(/(?:^|[\s{;])min-width:\s*0/gu)?.length,
   1,
-  "the packed CSS must contain exactly one shared physical zero min-width declaration for the Tag label, PressableCard, Toolbar, and CheckboxField",
+  "the packed CSS must contain exactly one shared physical zero min-width declaration for the Tag label, PressableCard, Toolbar, CheckboxField, and Form",
 );
 
 const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
 const componentsCss = await readFile(new URL(componentsCssUrl), "utf8");
 await access(new URL("./skip-link.stylex.ts", componentsCssUrl));
 await access(new URL("./visually-hidden.stylex.ts", componentsCssUrl));
+await access(new URL("./form.stylex.ts", componentsCssUrl));
+assert.doesNotMatch(componentsCss, /\.hraness-form(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-themed-surface(?![A-Za-z0-9_-])/u);
@@ -1181,6 +1288,57 @@ for (const baseClass of linkBaseClasses) {
   );
 }
 
+const formSubmit = () => undefined;
+const formMarkup = renderToStaticMarkup(React.createElement(Form, {
+  acceptCharset: "utf-8",
+  action: "/preferences",
+  className: "consumer-form",
+  method: "post",
+  onSubmit: formSubmit,
+  render: (props, state) => {
+    assert.equal(state, undefined);
+    assert.equal(props.action, "/preferences");
+    assert.equal(props.method, "post");
+    assert.equal(props.onSubmit, formSubmit);
+    return React.createElement("form", { ...props, "data-package-render": "true" });
+  },
+  style: { display: "block", width: "15rem" },
+  validationBehavior: "aria",
+  xstyle: formXstyle,
+}, React.createElement("button", { type: "button" }, "Save locally")));
+const formTag = formMarkup.match(/^<form[^>]*>/u)?.[0] ?? "";
+assert.match(formTag, /accept-charset="utf-8"/u);
+assert.match(formTag, /action="\/preferences"/u);
+assert.match(formTag, /class="hraness-form [^"]*package-form-xstyle consumer-form"/u);
+assert.match(formTag, /data-package-render="true"/u);
+assert.match(formTag, /data-slot="form"/u);
+assert.match(formTag, /method="post"/u);
+assert.match(formTag, /no[Vv]alidate=""/u);
+assert.match(formTag, /style="display:block;width:15rem"/u);
+for (const baseClass of formBaseClasses) {
+  assert.ok(!formTag.split(/[\s"]/u).includes(baseClass), "Form xstyle must replace its package property class");
+}
+assert.match(formMarkup, /<button type="button">Save locally<\/button>/u);
+const inheritedFormMarkup = renderToStaticMarkup(
+  React.createElement(FormContext.Provider, {
+    value: {
+      className: "package-context-form",
+      render: (props) => React.createElement("form", {
+        ...props,
+        "data-package-context-render": "true",
+      }),
+    },
+  }, React.createElement(Form, {
+    className: "consumer-context-form",
+  }, React.createElement("button", { type: "button" }, "Save from context"))),
+);
+const inheritedFormTag = inheritedFormMarkup.match(/^<form[^>]*>/u)?.[0] ?? "";
+assert.match(inheritedFormTag, /data-package-context-render="true"/u);
+assert.match(
+  inheritedFormTag,
+  /class="package-context-form hraness-form [^"]+ consumer-context-form"/u,
+);
+assert.match(inheritedFormMarkup, /<button type="button">Save from context<\/button>/u);
 const checkboxMarkup = renderToStaticMarkup(React.createElement(CheckboxField, {
   className: "consumer-checkbox",
   controlClassName: "consumer-checkbox-control",
@@ -1336,6 +1494,7 @@ import {
   CardHeader,
   CardTitle,
   CheckboxField,
+  Form,
   Icon,
   KeyHint,
   Link,
@@ -1382,6 +1541,12 @@ const styles = stylex.create({
   },
   checkboxDynamic: (width: string) => ({ width }),
   checkboxControlDynamic: (height: string) => ({ minHeight: height }),
+  form: {
+    display: "flex",
+    gap: "var(--space-2)",
+    minWidth: "7rem",
+  },
+  formDynamic: (width: string) => ({ width }),
   camelInlineSize: { inlineSize: "100%" },
   camelMaxInlineSize: { maxInlineSize: "40rem" },
   camelMinInlineSize: { minInlineSize: 0 },
@@ -1602,6 +1767,23 @@ const checkboxMarkup: string = renderToStaticMarkup(createElement(CheckboxField,
   style: ({ isSelected }) => ({ width: isSelected ? "15rem" : "13rem" }),
   xstyle: [styles.checkbox, styles.checkboxDynamic("14rem")],
 }));
+const formRef = createRef<HTMLFormElement>();
+const formMarkup: string = renderToStaticMarkup(createElement(Form, {
+  acceptCharset: "utf-8",
+  action: "/preferences",
+  children: createElement("button", { type: "button" }, "Save locally"),
+  className: "consumer-form",
+  method: "post",
+  onSubmit: (event) => event.preventDefault(),
+  ref: formRef,
+  render: (props, state) => createElement("form", {
+    ...props,
+    "data-custom-render": state === undefined ? "true" : "false",
+  }),
+  style: { display: "block", width: "15rem" },
+  validationBehavior: "aria",
+  xstyle: [styles.form, styles.formDynamic("14rem")],
+}));
 const pageRef = createRef<HTMLElement>();
 const pageMarkup: string = renderToStaticMarkup(createElement(QuietSitePage, {
   "aria-label": "Package page",
@@ -1713,6 +1895,8 @@ const missingAskAiUrlMarkup = renderToStaticMarkup(createElement(AskAiAboutThis,
 const unnamedCheckboxMarkup = renderToStaticMarkup(createElement(CheckboxField, { showLabel: false }));
 // @ts-expect-error CheckboxField has one stable target size and no compact API.
 const compactCheckboxMarkup = renderToStaticMarkup(createElement(CheckboxField, { compact: true, label: "Compact" }));
+// @ts-expect-error Form accepts compiled StyleX recipes rather than raw CSS objects.
+const invalidFormXstyleMarkup = renderToStaticMarkup(createElement(Form, { xstyle: { display: "flex" } }));
 
 void markup;
 void askAiLinks;
@@ -1729,6 +1913,7 @@ void toolbarMarkup;
 void keyHintMarkup;
 void linkMarkup;
 void checkboxMarkup;
+void formMarkup;
 void pageMarkup;
 void footerMarkup;
 void frameMarkup;
@@ -1763,10 +1948,11 @@ void invalidLinkXstyleMarkup;
 void missingAskAiUrlMarkup;
 void unnamedCheckboxMarkup;
 void compactCheckboxMarkup;
+void invalidFormXstyleMarkup;
 `;
 
 const viteClient = `import "@hraness/ui/styles.css";
-import { AskAiAboutThis, Card, CardDescription, CheckboxField, KeyHint, Link, PressableCard, Toolbar } from "@hraness/ui";
+import { AskAiAboutThis, Card, CardDescription, CheckboxField, Form, KeyHint, Link, PressableCard, Toolbar } from "@hraness/ui";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 
@@ -1792,16 +1978,22 @@ createRoot(root).render(React.createElement(React.Fragment, null,
     name: "vite-checkbox",
     showLabel: false,
   }),
+  React.createElement(Form, {
+    action: "/preferences",
+    method: "post",
+    onSubmit: (event) => event.preventDefault(),
+  }, React.createElement("button", { type: "button" }, "Save locally")),
 ));
 `;
 
 function viteSsrProbe(
   checkboxProbe: CheckboxPrecedenceProbe,
+  formProbe: FormPrecedenceProbe,
   linkProbe: LinkPrecedenceProbe,
   visuallyHiddenClasses: readonly string[],
 ): string {
   return `import assert from "node:assert/strict";
-import { CheckboxField, Link } from "@hraness/ui";
+import { CheckboxField, Form, Link } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -1811,6 +2003,10 @@ const rootXstyle = {
 };
 const controlXstyle = {
   ${JSON.stringify(checkboxProbe.controlProperty)}: "vite-checkbox-control-xstyle",
+  $$css: true,
+};
+const formXstyle = {
+  ${JSON.stringify(formProbe.property)}: "vite-form-xstyle",
   $$css: true,
 };
 const linkXstyle = {
@@ -1845,6 +2041,24 @@ for (const baseClass of ${JSON.stringify(checkboxProbe.rootBaseClasses)}) {
 for (const baseClass of ${JSON.stringify(checkboxProbe.controlBaseClasses)}) {
   assert.ok(!controlTag.split(/[\\s"]/u).includes(baseClass));
 }
+const formMarkup = renderToStaticMarkup(React.createElement(Form, {
+  action: "/preferences",
+  className: "vite-form-class",
+  method: "post",
+  style: { display: "block" },
+  validationBehavior: "aria",
+  xstyle: formXstyle,
+}, React.createElement("button", { type: "button" }, "Save locally")));
+const formTag = formMarkup.match(/^<form[^>]*>/u)?.[0] ?? "";
+assert.match(formTag, /action="\\/preferences"/u);
+assert.match(formTag, /class="hraness-form [^"]*vite-form-xstyle vite-form-class"/u);
+assert.match(formTag, /data-slot="form"/u);
+assert.match(formTag, /method="post"/u);
+assert.match(formTag, /no[Vv]alidate=""/u);
+assert.match(formTag, /style="display:block"/u);
+for (const baseClass of ${JSON.stringify(formProbe.baseClasses)}) {
+  assert.ok(!formTag.split(/[\\s"]/u).includes(baseClass));
+}
 const linkMarkup = renderToStaticMarkup(React.createElement(Link, {
   className: "vite-link-class",
   href: "/reference",
@@ -1855,7 +2069,7 @@ assert.match(linkTag, /class="hraness-link [^"]*vite-link-xstyle vite-link-class
 for (const baseClass of ${JSON.stringify(linkProbe.baseClasses)}) {
   assert.ok(!linkTag.split(/[\\s"]/u).includes(baseClass));
 }
-console.log("Vite CheckboxField xstyle runtime passed");
+console.log("Vite CheckboxField, Form, and Link xstyle runtime passed");
 `;
 }
 
@@ -1952,6 +2166,9 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "actions.stylex.ts"),
   );
   await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "form.stylex.ts"),
+  );
+  await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "lib", "stylex.ts"),
   );
   const installedPackageRoot = join(
@@ -1965,6 +2182,7 @@ async function verifyConsumer(
     readFile(join(installedPackageRoot, "dist", "stylex.css"), "utf8"),
   ]);
   const checkboxProbe = packageCheckboxStyleMap(installedJavaScript);
+  const formProbe = packageFormStyleMap(installedJavaScript, installedStylexCss);
   const linkProbe = packageLinkStyleMap(installedJavaScript);
   requirePackageCheckboxStyles(installedJavaScript, installedStylexCss);
   requirePackageLinkStyles(installedJavaScript, installedStylexCss);
@@ -1972,6 +2190,7 @@ async function verifyConsumer(
     installedJavaScript,
     installedStylexCss,
   );
+  requirePackageFormStyles(installedJavaScript, installedStylexCss);
 
   // A restored package-manager cache can retain this valid duplicate topology.
   // Public source types must remain portable when React Aria resolves through it.
@@ -1990,7 +2209,13 @@ async function verifyConsumer(
 
   await writeFile(
     join(consumer, "ssr.mjs"),
-    ssrProbe(release, checkboxProbe, linkProbe, visuallyHiddenClasses),
+    ssrProbe(
+      release,
+      checkboxProbe,
+      formProbe,
+      linkProbe,
+      visuallyHiddenClasses,
+    ),
   );
   await run([nodeExecutable, "./ssr.mjs"], consumer);
 
@@ -2009,7 +2234,12 @@ async function verifyConsumer(
     writeFile(join(consumer, "vite-client.ts"), viteClient),
     writeFile(
       join(consumer, "vite-ssr.ts"),
-      viteSsrProbe(checkboxProbe, linkProbe, visuallyHiddenClasses),
+      viteSsrProbe(
+        checkboxProbe,
+        formProbe,
+        linkProbe,
+        visuallyHiddenClasses,
+      ),
     ),
     writeFile(join(consumer, "vite.config.ts"), viteConfig),
   ]);
@@ -2032,11 +2262,13 @@ async function verifyConsumer(
   ]);
   requirePackageCheckboxStyles(viteJavaScript, viteCss);
   requirePackageLinkStyles(viteJavaScript, viteCss);
+  requirePackageFormStyles(viteJavaScript, viteCss);
   requirePackageVisuallyHiddenStyles(viteJavaScript, viteCss);
   assert.match(viteJavaScript, /hraness-pressable-card/u);
   assert.match(viteJavaScript, /hraness-toolbar/u);
   assert.match(viteJavaScript, /hraness-key-hint/u);
   assert.match(viteJavaScript, /hraness-link/u);
+  assert.match(viteJavaScript, /hraness-form/u);
   assert.match(viteJavaScript, /--_hraness-card-description/u);
   assert.match(viteCss, /color:var\(--hraness-card-description\)/u);
   assert.match(viteCss, /:hover\{/u);
@@ -2063,6 +2295,7 @@ async function verifyConsumer(
   assert.doesNotMatch(viteCss, /\.hraness-key-hint(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(viteCss, /\.hraness-link(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(viteCss, /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u);
+  assert.doesNotMatch(viteCss, /\.hraness-form(?![A-Za-z0-9_-])/u);
 
   await run([
     process.execPath,
@@ -2109,6 +2342,16 @@ async function verifyConsumer(
     viteSsrBundle,
     /vite-link-xstyle/u,
     "Vite SSR must bundle the caller Link xstyle probe",
+  );
+  assert.match(
+    viteSsrBundle,
+    /hraness-form/u,
+    "Vite SSR must bundle the Form implementation",
+  );
+  assert.match(
+    viteSsrBundle,
+    /vite-form-xstyle/u,
+    "Vite SSR must bundle the caller Form xstyle probe",
   );
   assert.doesNotMatch(
     viteSsrBundle,

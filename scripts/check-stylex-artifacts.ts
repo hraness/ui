@@ -22,6 +22,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-action-family-layer-conflict",
   "data-gallery-skip-link-layer-conflict",
   "data-gallery-visually-hidden-layer-conflict",
+  "data-gallery-form-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -364,6 +365,13 @@ interface VisuallyHiddenArtifact {
   readonly rules: readonly CssRule[];
 }
 
+interface FormArtifact {
+  readonly classNames: ReadonlySet<string>;
+  readonly identifier: string;
+  readonly rules: readonly CssRule[];
+  readonly styleMap: CompiledStyleMap;
+}
+
 interface VisuallyHiddenSources {
   readonly actions: string;
   readonly fields: string;
@@ -625,6 +633,65 @@ function rulesForClassNames(
       new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header),
     ),
   );
+}
+
+function formArtifact(
+  compiledJavaScript: string,
+  compiledCss: string,
+): FormArtifact {
+  const allRules = cssRules(compiledCss, "dist/stylex.css");
+  const expectedDeclarations = new Set([
+    "display:grid;",
+    "gap:var(--space-6);",
+    "min-width:0;",
+  ]);
+  const candidates: FormArtifact[] = [];
+
+  for (const match of compiledJavaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*root\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedObject(
+      compiledJavaScript,
+      open,
+      "dist/index.js formStyles class map",
+    );
+    const properties = compiledObjectProperties(
+      object,
+      "dist/index.js formStyles class map",
+    );
+    const root = properties.get("root");
+    if (properties.size !== 1 || root === undefined || !root.value.startsWith("{")) {
+      continue;
+    }
+    const classNames = generatedClassNames(
+      root.value,
+      "the compiled formStyles.root class map",
+    );
+    if (classNames.size !== 3) continue;
+    const rules = rulesForClassNames(allRules, classNames);
+    const declarations = new Set(
+      rules.map((rule) => normalizedAtomicDeclaration(rule.body)),
+    );
+    if (
+      declarations.size === expectedDeclarations.size
+      && [...expectedDeclarations].every((value) => declarations.has(value))
+    ) {
+      candidates.push({
+        classNames,
+        identifier: match[1]!,
+        rules,
+        styleMap: { object, properties },
+      });
+    }
+  }
+
+  if (candidates.length !== 1) {
+    throw new Error(
+      `dist/index.js must contain exactly one compiled formStyles class map; found ${String(candidates.length)}`,
+    );
+  }
+  return candidates[0]!;
 }
 
 function normalizedAtomicDeclaration(body: string): string {
@@ -940,6 +1007,76 @@ function linkStyleRules(
     );
   }
   return rules;
+}
+
+function replaceFormDeclaration(
+  compiledJavaScript: string,
+  compiledCss: string,
+  declaration: RegExp,
+  replacement: string,
+  description: string,
+): string {
+  const matches = formArtifact(compiledJavaScript, compiledCss).rules.filter(
+    (rule) => declaration.test(rule.body),
+  );
+  if (matches.length !== 1) {
+    throw new Error(`${description} mutation expected one Form rule`);
+  }
+  const rule = matches[0]!;
+  const mutatedRule = rule.source.replace(declaration, replacement);
+  if (mutatedRule === rule.source) {
+    throw new Error(`${description} mutation did not change its exact rule`);
+  }
+  const ruleIndex = compiledCss.indexOf(rule.source);
+  if (ruleIndex < 0 || ruleIndex !== compiledCss.lastIndexOf(rule.source)) {
+    throw new Error(`${description} mutation requires one exact Form rule`);
+  }
+  return `${compiledCss.slice(0, ruleIndex)}${mutatedRule}${compiledCss.slice(
+    ruleIndex + rule.source.length,
+  )}`;
+}
+
+function wrapFormDeclarationInCondition(
+  compiledJavaScript: string,
+  compiledCss: string,
+  declaration: RegExp,
+  condition: string,
+  description: string,
+): string {
+  const matches = formArtifact(compiledJavaScript, compiledCss).rules.filter(
+    (rule) => declaration.test(rule.body),
+  );
+  if (matches.length !== 1) {
+    throw new Error(`${description} mutation expected one Form rule`);
+  }
+  const rule = matches[0]!;
+  const ruleIndex = compiledCss.indexOf(rule.source);
+  if (ruleIndex < 0 || ruleIndex !== compiledCss.lastIndexOf(rule.source)) {
+    throw new Error(`${description} mutation requires one exact Form rule`);
+  }
+  const conditionalRule = `${condition} { ${rule.source} }`;
+  return `${compiledCss.slice(0, ruleIndex)}${conditionalRule}${compiledCss.slice(
+    ruleIndex + rule.source.length,
+  )}`;
+}
+
+function disconnectFormCompiledBinding(
+  compiledJavaScript: string,
+  compiledCss: string,
+): string {
+  const artifact = formArtifact(compiledJavaScript, compiledCss);
+  const matches = formCompiledBindingMatches(
+    compiledJavaScript,
+    artifact.identifier,
+  );
+  const match = matches[0];
+  const matchIndex = match?.index;
+  if (matches.length !== 1 || match === undefined || matchIndex === undefined) {
+    throw new Error("Form binding mutation expected one compiled StyleX props call");
+  }
+  return `${compiledJavaScript.slice(0, matchIndex)}.props(unrelatedFormStyles.root,${compiledJavaScript.slice(
+    matchIndex + match[0].length,
+  )}`;
 }
 
 function replaceLinkDeclaration(
@@ -2482,6 +2619,148 @@ function requireSkipLinkContract(
   }
 }
 
+function requireFormStyleSourceContract(formStyleSource: string): void {
+  requireMatch(
+    formStyleSource,
+    /^\s*import \* as stylex from ["']@stylexjs\/stylex["'];\s*export const formStyles = stylex\.create\(\{\s*root:\s*\{\s*display:\s*["']grid["'],\s*gap:\s*["']var\(--space-6\)["'],\s*minWidth:\s*0,?\s*\},?\s*\}\);\s*$/u,
+    "the exact formStyles source recipe",
+  );
+}
+
+function formCompiledBindingMatches(
+  compiledJavaScript: string,
+  identifier: string,
+): RegExpMatchArray[] {
+  const escapedIdentifier = identifier.replace(
+    /[.*+?^${}()|[\]\\]/gu,
+    "\\$&",
+  );
+  return [...compiledJavaScript.matchAll(
+    new RegExp(`\\.props\\(\\s*${escapedIdentifier}\\.root\\s*,`, "gu"),
+  )];
+}
+
+function requireFormContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+  formSource: string,
+  formStyleSource: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-form(?![A-Za-z0-9_-])/u,
+    "a legacy Form recipe",
+  );
+  const artifact = formArtifact(compiledJavaScript, compiledCss);
+  requireFormStyleSourceContract(formStyleSource);
+  const compiledBindings = formCompiledBindingMatches(
+    compiledJavaScript,
+    artifact.identifier,
+  );
+  if (compiledBindings.length !== 1) {
+    throw new Error(
+      `compiled formStyles map must be bound to exactly one StyleX props call; found ${String(compiledBindings.length)}`,
+    );
+  }
+  const stableHooks = [...compiledJavaScript.matchAll(/["']hraness-form["']/gu)];
+  const semanticSlots = [
+    ...compiledJavaScript.matchAll(/["']data-slot["']\s*:\s*["']form["']/gu),
+  ];
+  if (stableHooks.length !== 1 || semanticSlots.length !== 1) {
+    throw new Error(
+      "compiled Form must preserve exactly one stable hook and semantic slot",
+    );
+  }
+  const bindingIndex = compiledBindings[0]!.index!;
+  const hookIndex = stableHooks[0]!.index!;
+  const slotIndex = semanticSlots[0]!.index!;
+  const componentStart = Math.max(0, hookIndex - 1_500);
+  const componentEnd = Math.min(compiledJavaScript.length, hookIndex + 2_500);
+  if (
+    bindingIndex < componentStart
+    || bindingIndex >= componentEnd
+    || slotIndex < componentStart
+    || slotIndex >= componentEnd
+  ) {
+    throw new Error(
+      "compiled formStyles map is not linked to the compiled Form component",
+    );
+  }
+  if (artifact.classNames.size !== 3 || artifact.rules.length !== 3) {
+    throw new Error(
+      "StyleX Form recipe must preserve exactly three unconditional atomic rules",
+    );
+  }
+  const declarations = new Set(
+    artifact.rules.map((rule) => normalizedAtomicDeclaration(rule.body)),
+  );
+  const expectedDeclarations = new Set([
+    "display:grid;",
+    "gap:var(--space-6);",
+    "min-width:0;",
+  ]);
+  if (
+    declarations.size !== expectedDeclarations.size
+    || [...expectedDeclarations].some((value) => !declarations.has(value))
+  ) {
+    throw new Error("StyleX Form recipe does not match its exact declaration set");
+  }
+  for (const className of artifact.classNames) {
+    const ownedRules = artifact.rules.filter((rule) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+    );
+    if (ownedRules.length !== 1) {
+      throw new Error(`StyleX Form atom ${className} must own exactly one rule`);
+    }
+    const rule = ownedRules[0]!;
+    if (rule.header.includes(":")) {
+      throw new Error(`StyleX Form atom ${className} must remain unconditional`);
+    }
+    if (
+      rule.ancestors.length !== 1
+      || !STYLEX_LAYERS.some(
+        (layer) => rule.ancestors[0]!.header === `@layer ${layer}`,
+      )
+    ) {
+      throw new Error(
+        `StyleX Form atom ${className} must remain unconditional in the package priority layers`,
+      );
+    }
+  }
+  for (const [pattern, description] of [
+    [/import \{ formStyles \} from ["']\.\/form\.stylex\.js["'];/u, "the formStyles source import"],
+    [/FormContext,/u, "the React Aria Form context import"],
+    [/useSlottedContext,/u, "the React Aria slotted-context helper import"],
+    [/Omit<AriaFormProps,\s*["']className["']>/u, "the static Form className boundary"],
+    [/Pick<FormHTMLAttributes<HTMLFormElement>,\s*["']acceptCharset["']>/u, "the native Form acceptCharset seam"],
+    [/slot\?:\s*string\s*\|\s*null;/u, "the nullable Form context slot"],
+    [/xstyle\?:\s*StyleXStyles;/u, "the typed Form xstyle seam"],
+    [/\{ className,\s*render,\s*style,\s*xstyle,\s*\.\.\.props \}/u, "the Form presentation prop split"],
+    [/const inheritedRender\s*=\s*useSlottedContext\(FormContext,\s*props\.slot\)\?\.render;/u, "the inherited Form context renderer"],
+    [/const resolvedRender\s*=\s*render\s*\?\?\s*inheritedRender;/u, "the caller-before-context Form renderer precedence"],
+    [/stylex\.props\(formStyles\.root,\s*xstyle\)/u, "the Form base-before-caller StyleX order"],
+    [/const composedProps\s*=\s*\{\s*\.\.\.domProps,/u, "the Form DOM prop and ref retention"],
+    [/className=["']hraness-form["']/u, "the Form stable semantic hook"],
+    [/cn\(\s*domProps\.className,\s*presentation\.className,\s*className,?\s*\)/u, "the Form stable, generated, and caller class order"],
+    [/mergeStylexInlineStyles\(\s*presentation\.style,\s*domProps\.style,?\s*\)/u, "the Form StyleX-before-native inline merge"],
+    [/<form\s+\{\.\.\.composedProps\}\s*\/>/u, "the default native Form element"],
+    [/resolvedRender\s*===\s*undefined/u, "the Form default-render branch"],
+    [/resolvedRender\(composedProps,\s*undefined\)/u, "the resolved Form custom renderer"],
+    [/data-slot=["']form["']/u, "the Form semantic slot"],
+    [/ref=\{ref\}/u, "the Form native ref"],
+    [/Form\.displayName\s*=\s*["']Form["']/u, "the Form display name"],
+  ] as const) {
+    requireMatch(formSource, pattern, description);
+  }
+  requireExactSourceMatches(
+    formSource,
+    /\bformStyles\b/gu,
+    2,
+    "formStyles source bindings",
+  );
+}
+
 function requireExactSourceMatches(
   source: string,
   pattern: RegExp,
@@ -2848,6 +3127,8 @@ const [
   selectFieldSource,
   resetStylesheet,
   skipLinkSource,
+  formSource,
+  formStyleSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -2865,6 +3146,8 @@ const [
     readFile(resolve(repository, "src/select-field.tsx"), "utf8"),
     readFile(resolve(repository, "src/reset.css"), "utf8"),
     readFile(resolve(repository, "src/skip-link.tsx"), "utf8"),
+    readFile(resolve(repository, "src/form.tsx"), "utf8"),
+    readFile(resolve(repository, "src/form.stylex.ts"), "utf8"),
   ]);
 
 const visuallyHiddenSources: VisuallyHiddenSources = {
@@ -2994,6 +3277,13 @@ requireActionFamilyContract(
   actionsSource,
 );
 requireSkipLinkContract(legacyComponents, compiledCss, skipLinkSource);
+requireFormContract(
+  legacyComponents,
+  compiledCss,
+  compiledJavaScript,
+  formSource,
+  formStyleSource,
+);
 requireVisuallyHiddenContract(
   legacyComponents,
   compiledCss,
@@ -3022,7 +3312,7 @@ const physicalZeroMinimumWidths = [
 ];
 if (physicalZeroMinimumWidths.length !== 1) {
   throw new Error(
-    "dist/stylex.css must contain exactly one shared physical min-width zero declaration for the Tag label, PressableCard, Toolbar, and CheckboxField without lowering a structural surface's logical minimum",
+    "dist/stylex.css must contain exactly one shared physical min-width zero declaration for the Tag label, PressableCard, Toolbar, CheckboxField, and Form without lowering a structural surface's logical minimum",
   );
 }
 requireNoGallerySentinels(
@@ -3097,6 +3387,7 @@ for (const [pattern, description] of [
   [/hraness-key-hint/u, "the KeyHint semantic hook"],
   [/hraness-link/u, "the Link semantic hook"],
   [/hraness-skip-link/u, "the SkipLink semantic hook"],
+  [/hraness-form/u, "the Form semantic hook"],
   [/hraness-visually-hidden/u, "the shared visually-hidden semantic hook"],
   [/hraness-checkbox-field/u, "the CheckboxField semantic hook"],
   [/hraness-checkbox-field__control/u, "the CheckboxField control semantic hook"],
@@ -3974,6 +4265,218 @@ assert.throws(
     ),
   /gallery-only data-gallery-skip-link-layer-conflict sentinel/u,
   "the SkipLink guard must reject gallery sentinel leakage",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-form { display: grid; } }`,
+      compiledCss,
+      compiledJavaScript,
+      formSource,
+      formStyleSource,
+    ),
+  /legacy Form recipe/u,
+  "the Form guard must reject a restored legacy selector",
+);
+const changedFormGap = replaceFormDeclaration(
+  compiledJavaScript,
+  compiledCss,
+  /gap:\s*var\(--space-6\);/u,
+  "gap: var(--space-5);",
+  "Form gap",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      changedFormGap,
+      compiledJavaScript,
+      formSource,
+      formStyleSource,
+    ),
+  /compiled formStyles class map/u,
+  "the Form guard must reject a changed spacing recipe",
+);
+const changedFormMinimumWidth = replaceFormDeclaration(
+  compiledJavaScript,
+  compiledCss,
+  /min-width:\s*0;/u,
+  "min-width: 2rem;",
+  "Form minimum width",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      changedFormMinimumWidth,
+      compiledJavaScript,
+      formSource,
+      formStyleSource,
+    ),
+  /compiled formStyles class map/u,
+  "the Form guard must reject changed physical shrink behavior",
+);
+const conditionalFormDisplay = wrapFormDeclarationInCondition(
+  compiledJavaScript,
+  compiledCss,
+  /display:\s*grid;/u,
+  "@media (min-width: 1px)",
+  "Form display",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      conditionalFormDisplay,
+      compiledJavaScript,
+      formSource,
+      formStyleSource,
+    ),
+  /remain unconditional/u,
+  "the Form guard must reject a conditionally emitted base atom",
+);
+const disconnectedFormJavaScript = disconnectFormCompiledBinding(
+  compiledJavaScript,
+  compiledCss,
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      compiledCss,
+      disconnectedFormJavaScript,
+      formSource,
+      formStyleSource,
+    ),
+  /compiled formStyles map must be bound/u,
+  "the Form guard must reject an unconsumed compiled recipe map",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      replaceExactlyOnce(
+        formSource,
+        /from ["']\.\/form\.stylex\.js["']/u,
+        () => 'from "./unrelated.stylex.js"',
+        "Form style source import",
+      ),
+      formStyleSource,
+    ),
+  /formStyles source import/u,
+  "the Form guard must reject a changed source recipe binding",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      formSource,
+      replaceExactlyOnce(
+        formStyleSource,
+        /gap:\s*["']var\(--space-6\)["']/u,
+        () => 'gap: "var(--space-5)"',
+        "Form style source recipe",
+      ),
+    ),
+  /exact formStyles source recipe/u,
+  "the Form guard must reject source recipe drift before compilation",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      replaceExactlyOnce(
+        formSource,
+        /render\s*\?\?\s*inheritedRender/u,
+        () => "inheritedRender ?? render",
+        "Form renderer precedence",
+      ),
+      formStyleSource,
+    ),
+  /caller-before-context Form renderer precedence/u,
+  "the Form guard must reject context rendering before the caller override",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      replaceExactlyOnce(
+        formSource,
+        /resolvedRender\(composedProps,\s*undefined\)/u,
+        () => "render?.(composedProps, undefined)",
+        "Form inherited renderer",
+      ),
+      formStyleSource,
+    ),
+  /resolved Form custom renderer/u,
+  "the Form guard must reject bypassing the inherited renderer",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      replaceExactlyOnce(
+        formSource,
+        /stylex\.props\(formStyles\.root,\s*xstyle\)/u,
+        () => "stylex.props(xstyle, formStyles.root)",
+        "Form StyleX precedence",
+      ),
+      formStyleSource,
+    ),
+  /base-before-caller StyleX order/u,
+  "the Form guard must reject a package recipe after caller xstyle",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      replaceExactlyOnce(
+        formSource,
+        /mergeStylexInlineStyles\(\s*presentation\.style,\s*domProps\.style,?\s*\)/u,
+        () => "mergeStylexInlineStyles(domProps.style, presentation.style)",
+        "Form native inline-style precedence",
+      ),
+      formStyleSource,
+    ),
+  /StyleX-before-native inline merge/u,
+  "the Form guard must reject reversed native-style precedence",
+);
+assert.throws(
+  () =>
+    requireFormContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      replaceExactlyOnce(
+        formSource,
+        /cn\(\s*domProps\.className,\s*presentation\.className,\s*className,?\s*\)/u,
+        () => "cn(presentation.className, domProps.className, className)",
+        "Form class precedence",
+      ),
+      formStyleSource,
+    ),
+  /stable, generated, and caller class order/u,
+  "the Form guard must reject generated classes before its stable hook",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-form-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-form-layer-conflict sentinel/u,
+  "the Form guard must reject gallery sentinel leakage",
 );
 const changedVisuallyHiddenWidth = replaceVisuallyHiddenDeclaration(
   compiledJavaScript,
