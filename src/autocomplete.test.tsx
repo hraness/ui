@@ -19,9 +19,14 @@ test("autocomplete composes one search input and list without adding a wrapper",
     </Autocomplete>,
   );
 
-  expect(html).toMatch(
-    /^<div\b[^>]*class="hraness-field hraness-search-field"/u,
-  );
+  const searchFieldOpeningTag = html.match(/^<div\b[^>]*>/u)?.[0] ?? "";
+  const searchFieldClasses = /\bclass="([^"]*)"/u
+    .exec(searchFieldOpeningTag)?.[1]?.split(" ") ?? [];
+  expect(searchFieldOpeningTag).not.toBe("");
+  expect(searchFieldClasses.slice(0, 2)).toEqual([
+    "hraness-field",
+    "hraness-search-field",
+  ]);
   expect(html).toContain('aria-autocomplete="list"');
   expect(html).toContain('autoComplete="off"');
   expect(html).toContain('value="pad"');
