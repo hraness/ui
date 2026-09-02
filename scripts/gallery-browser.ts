@@ -4202,6 +4202,37 @@ async function verifyLinkNativeFallbackCascadeIsolation(
   nativeFallbackContract: LinkNativeFallbackContract,
 ): Promise<void> {
   const canarySelector = '[data-gallery-link-native-fallback-canary="true"]';
+
+  async function settleNativeFallbackPresentation(
+    state: "focus" | "hover",
+  ): Promise<void> {
+    await page.waitForFunction(
+      (contract) => {
+        const element = document.querySelector(contract.selector);
+        if (!(element instanceof HTMLAnchorElement)) return false;
+        const style = getComputedStyle(element);
+        if (contract.state === "hover") {
+          return element.matches(":hover")
+            && Number.parseFloat(style.textDecorationThickness) === 2;
+        }
+        const probe = document.createElement("span");
+        probe.style.color = "var(--ui-ring)";
+        document.body.append(probe);
+        const expectedOutlineColor = getComputedStyle(probe).color;
+        probe.remove();
+        return document.activeElement === element
+          && element.matches(":focus-visible")
+          && style.outlineColor === expectedOutlineColor
+          && Number.parseFloat(style.outlineOffset) === 2
+          && style.outlineStyle === "solid"
+          && Number.parseFloat(style.outlineWidth) === 2
+          && style.textDecorationLine.includes("underline");
+      },
+      { selector: canarySelector, state },
+      { polling: "raf", timeout: 2_000 },
+    ).catch(() => undefined);
+  }
+
   await page.evaluate((contract) => {
     const themeButton = document.querySelector(
       '[data-gallery-theme-toggle="true"]',
@@ -4223,12 +4254,7 @@ async function verifyLinkNativeFallbackCascadeIsolation(
     const canary = page.locator(canarySelector);
     await page.locator('[data-gallery-theme-toggle="true"]').focus();
     await page.keyboard.press("Tab");
-    await page.waitForFunction((selector) => {
-      const element = document.querySelector(selector);
-      return element instanceof HTMLAnchorElement
-        && document.activeElement === element
-        && element.matches(":focus-visible");
-    }, canarySelector);
+    await settleNativeFallbackPresentation("focus");
     const focusEvidence = await canary.evaluate((element, contract) => {
       const probe = document.createElement("span");
       probe.style.color = "var(--ui-ring)";
@@ -4276,10 +4302,7 @@ async function verifyLinkNativeFallbackCascadeIsolation(
     );
 
     await canary.hover();
-    await page.waitForFunction((selector) => {
-      const element = document.querySelector(selector);
-      return element instanceof HTMLAnchorElement && element.matches(":hover");
-    }, canarySelector);
+    await settleNativeFallbackPresentation("hover");
     const hoverEvidence = await canary.evaluate((element) => {
       const style = getComputedStyle(element);
       return {
@@ -4723,7 +4746,72 @@ async function verifyLinkCallerStatePrecedence(
     });
   }
 
+  type SettlementContract =
+    | Readonly<{
+      expectedColor: string;
+      expectedOffset: number;
+      expectedStyle: string;
+      expectedWidth: number;
+      selector: string;
+      state: "focus";
+    }>
+    | Readonly<{
+      expectedLetterSpacing?: number;
+      expectedThickness: number;
+      selector: string;
+      state: "hover";
+    }>;
+
+  async function settlePresentation(
+    contract: SettlementContract,
+  ): Promise<void> {
+    await page.waitForFunction(
+      (contract) => {
+        const element = document.querySelector(contract.selector);
+        if (!(element instanceof HTMLAnchorElement)) return false;
+        const style = getComputedStyle(element);
+        if (contract.state === "hover") {
+          return element.matches(":hover")
+            && element.hasAttribute("data-hovered")
+            && Number.parseFloat(style.textDecorationThickness)
+              === contract.expectedThickness
+            && (
+              contract.expectedLetterSpacing === undefined
+              || (
+                element.style.letterSpacing
+                  === `${String(contract.expectedLetterSpacing)}px`
+                && Number.parseFloat(style.letterSpacing)
+                  === contract.expectedLetterSpacing
+              )
+            );
+        }
+        const probe = document.createElement("span");
+        probe.style.color = contract.expectedColor;
+        document.body.append(probe);
+        const expectedOutlineColor = getComputedStyle(probe).color;
+        probe.remove();
+        return document.activeElement === element
+          && element.matches(":focus-visible")
+          && element.hasAttribute("data-focus-visible")
+          && style.outlineColor === expectedOutlineColor
+          && Number.parseFloat(style.outlineOffset) === contract.expectedOffset
+          && style.outlineStyle === contract.expectedStyle
+          && Number.parseFloat(style.outlineWidth) === contract.expectedWidth;
+      },
+      contract,
+      { polling: "raf", timeout: 2_000 },
+    ).catch(() => undefined);
+  }
+
   await reachByKeyboard(defaultSelector);
+  await settlePresentation({
+    expectedColor: "var(--ui-ring)",
+    expectedOffset: 2,
+    expectedStyle: "solid",
+    expectedWidth: 2,
+    selector: defaultSelector,
+    state: "focus",
+  });
   const defaultFocused = await focusEvidence(defaultSelector);
   invariant(
     defaultFocused.dataFocusVisible
@@ -4742,6 +4830,11 @@ async function verifyLinkCallerStatePrecedence(
       && element.matches(":hover")
       && element.hasAttribute("data-hovered");
   }, defaultSelector);
+  await settlePresentation({
+    expectedThickness: 2,
+    selector: defaultSelector,
+    state: "hover",
+  });
   const defaultHovered = await defaultLink.evaluate((element) => ({
     dataHovered: element.hasAttribute("data-hovered"),
     hovered: element.matches(":hover"),
@@ -4758,6 +4851,14 @@ async function verifyLinkCallerStatePrecedence(
 
   await page.mouse.move(0, 0);
   await reachByKeyboard(overrideSelector);
+  await settlePresentation({
+    expectedColor: "var(--ui-warning)",
+    expectedOffset: 6,
+    expectedStyle: "dashed",
+    expectedWidth: 3,
+    selector: overrideSelector,
+    state: "focus",
+  });
   const overrideFocused = await focusEvidence(overrideSelector);
   invariant(
     overrideFocused.dataFocusVisible
@@ -4776,6 +4877,12 @@ async function verifyLinkCallerStatePrecedence(
       && element.matches(":hover")
       && element.hasAttribute("data-hovered");
   }, overrideSelector);
+  await settlePresentation({
+    expectedLetterSpacing: 2,
+    expectedThickness: 4,
+    selector: overrideSelector,
+    state: "hover",
+  });
   const overrideHovered = await overrideLink.evaluate((element) => ({
     dataHovered: element.hasAttribute("data-hovered"),
     dynamicInlineValue: [...element.style].some(
