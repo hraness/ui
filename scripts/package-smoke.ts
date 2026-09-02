@@ -129,6 +129,21 @@ interface PackageVisuallyHiddenStyleMap {
   readonly classNames: ReadonlySet<string>;
 }
 
+interface PackageFieldSelectProbe {
+  readonly fieldControlBaseClasses: readonly string[];
+  readonly fieldControlProperty: string;
+  readonly fieldRootBaseClasses: readonly string[];
+  readonly fieldRootProperty: string;
+  readonly selectTriggerBaseClasses: readonly string[];
+  readonly selectTriggerProperty: string;
+}
+
+interface PackageNamedStyleMap {
+  readonly classNames: ReadonlySet<string>;
+  readonly entries: ReadonlyMap<string, string>;
+  readonly object: string;
+}
+
 function packageCheckboxStyleMap(javaScript: string): PackageCheckboxStyleMap {
   const candidates: string[] = [];
   for (const match of javaScript.matchAll(
@@ -335,6 +350,142 @@ function packageFormStyleMap(
     baseClasses: display[2]!.split(/\s+/u),
     classNames: candidate.classNames,
     property: display[1]!,
+  };
+}
+
+function packageNamedStyleMap(
+  javaScript: string,
+  requiredKeys: readonly string[],
+  description: string,
+): PackageNamedStyleMap {
+  const candidates: PackageNamedStyleMap[] = [];
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+    const object = balancedBlock(javaScript, open, `packed ${description}`);
+    const body = object.slice(1, -1);
+    const entries = new Map<string, string>();
+    for (const key of requiredKeys) {
+      const keyMatch = new RegExp(
+        `(?:^|,)\\s*${key}\\s*:\\s*\\{`,
+        "u",
+      ).exec(body);
+      if (keyMatch === null) break;
+      const keyOpen = (keyMatch.index ?? 0) + keyMatch[0].lastIndexOf("{");
+      entries.set(key, balancedBlock(body, keyOpen, `packed ${description}.${key}`));
+    }
+    if (entries.size !== requiredKeys.length) continue;
+    const classNames = new Set<string>();
+    for (const classMatch of object.matchAll(
+      /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    )) {
+      for (const className of classMatch[1]!.split(/\s+/u)) classNames.add(className);
+    }
+    if (classNames.size === 0) continue;
+    candidates.push({ classNames, entries, object });
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    `packed JavaScript must contain exactly one compiled ${description}`,
+  );
+  return candidates[0]!;
+}
+
+function packageEntryProbe(entry: string, description: string): Readonly<{
+  baseClasses: readonly string[];
+  property: string;
+}> {
+  const declaration = [...entry.matchAll(
+    /([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )][0];
+  assert.ok(declaration !== undefined, `${description} has no compiled class property`);
+  return {
+    baseClasses: declaration[2]!.split(/\s+/u),
+    property: declaration[1]!,
+  };
+}
+
+const PACKAGE_FIELD_STYLE_KEYS = [
+  "control",
+  "controlCompact",
+  "controlDefault",
+  "controlFocusWithinFallback",
+  "controlInvalid",
+  "controlLarge",
+  "inputCompact",
+  "inputDefault",
+  "inputLarge",
+  "nativeSelect",
+  "numberControl",
+  "numberControlCompact",
+  "numberControlDefault",
+  "numberControlLarge",
+  "numberStepFocusVisible",
+  "numberStepNativeInteractions",
+  "radioDot",
+  "radioIndicator",
+  "radioIndicatorInvalid",
+  "radioIndicatorSelected",
+  "radioSwitchControl",
+  "radioSwitchFocusVisible",
+  "radioSwitchNativeFocus",
+  "root",
+  "searchClearCompact",
+  "searchClearDefault",
+  "searchClearLarge",
+  "searchClearFocusVisible",
+  "searchClearNativeInteractions",
+  "switchThumb",
+  "switchThumbSelected",
+  "switchTrack",
+  "switchTrackInvalid",
+  "switchTrackSelected",
+] as const;
+const PACKAGE_SELECT_STYLE_KEYS = [
+  "option",
+  "optionFocused",
+  "optionNativeInteraction",
+  "popoverEntering",
+  "popoverExiting",
+  "trigger",
+  "triggerCompact",
+  "triggerDefault",
+  "triggerFocusVisible",
+  "triggerHovered",
+  "triggerInvalid",
+  "triggerLarge",
+  "triggerNativeInteractions",
+] as const;
+
+function packageFieldSelectProbe(javaScript: string): PackageFieldSelectProbe {
+  const field = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_FIELD_STYLE_KEYS,
+    "fieldStyles class map",
+  );
+  const select = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_SELECT_STYLE_KEYS,
+    "selectFieldStyles class map",
+  );
+  const fieldRoot = packageEntryProbe(field.entries.get("root")!, "fieldStyles.root");
+  const fieldControl = packageEntryProbe(
+    field.entries.get("control")!,
+    "fieldStyles.control",
+  );
+  const selectTrigger = packageEntryProbe(
+    select.entries.get("trigger")!,
+    "selectFieldStyles.trigger",
+  );
+  return {
+    fieldControlBaseClasses: fieldControl.baseClasses,
+    fieldControlProperty: fieldControl.property,
+    fieldRootBaseClasses: fieldRoot.baseClasses,
+    fieldRootProperty: fieldRoot.property,
+    selectTriggerBaseClasses: selectTrigger.baseClasses,
+    selectTriggerProperty: selectTrigger.property,
   };
 }
 
@@ -619,6 +770,231 @@ function requirePackageFormStyles(javaScript: string, css: string): void {
     "formStyles.root must preserve the exact packed declaration set",
   );
 }
+
+function packageEntryClassNames(
+  map: PackageNamedStyleMap,
+  key: string,
+): ReadonlySet<string> {
+  const names = new Set<string>();
+  const entry = map.entries.get(key);
+  assert.ok(entry !== undefined, `packed StyleX map must contain ${key}`);
+  for (const match of entry.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )) {
+    for (const name of match[1]!.split(/\s+/u)) names.add(name);
+  }
+  assert.notEqual(names.size, 0, `packed StyleX map entry ${key} must not be empty`);
+  return names;
+}
+
+function requirePackageFieldSelectStyles(javaScript: string, css: string): void {
+  const field = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_FIELD_STYLE_KEYS,
+    "fieldStyles class map",
+  );
+  const select = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_SELECT_STYLE_KEYS,
+    "selectFieldStyles class map",
+  );
+  const familyClassNames = new Set([...field.classNames, ...select.classNames]);
+  const familyCss = packageStyleRules(
+    css,
+    familyClassNames,
+  ).map((rule) => rule.source).join("\n");
+  for (const [pattern, description] of [
+    [/:focus-within/u, "field focus-within fallback"],
+    [/background-image:\s*none/u, "explicit background reset"],
+    [/linear-gradient\(45deg,[\s\S]*linear-gradient\(135deg,/u, "native-select arrow"],
+    [/var\(--hraness-field-coarse-min,\s*0px\)/u, "synthetic coarse geometry"],
+    [/:is\(\s*:lang\(ae\),[^{}]*:lang\(yi\)\s*\)/u, "native RTL switch seam"],
+  ] as const) {
+    assert.match(familyCss, pattern, `packed field/select recipes must retain ${description}`);
+  }
+  const optionStateCss = packageCheckboxRuleBodies(
+    css,
+    new Set([
+      ...packageEntryClassNames(select, "optionFocused"),
+      ...packageEntryClassNames(select, "optionNativeInteraction"),
+    ]),
+  ).join("\n");
+  assert.match(
+    optionStateCss,
+    /background-image:\s*none/u,
+    "packed Select option states must reset background images",
+  );
+  const entryCss = (
+    map: PackageNamedStyleMap,
+    key: string,
+    conditionalCss = css,
+  ) => packageStyleRules(
+    conditionalCss,
+    packageEntryClassNames(map, key),
+  ).map((rule) => rule.source).join("\n");
+  const coarseConditionalCss = packageExactConditionalCss(
+    css,
+    "@media(pointer:coarse)",
+  );
+  const coarseGeometry = [
+    [field, "controlCompact", [/min-height:\s*var\(--interactive-target-min\)/u]],
+    [field, "controlDefault", [/min-height:\s*var\(--interactive-target-min\)/u]],
+    [field, "controlLarge", [/min-height:\s*var\(--interactive-target-min\)/u]],
+    [field, "inputCompact", [/min-height:\s*calc\(var\(--interactive-target-min\)\s*-\s*2px\)/u]],
+    [field, "inputDefault", [/min-height:\s*calc\(var\(--interactive-target-min\)\s*-\s*2px\)/u]],
+    [field, "inputLarge", [/min-height:\s*calc\(var\(--interactive-target-min\)\s*-\s*2px\)/u]],
+    [field, "numberControlCompact", [
+      /min-height:\s*var\(--interactive-target-min\)/u,
+      /grid-template-columns:\s*var\(--interactive-target-min\)\s+minmax\(3rem,\s*1fr\)\s+var\(--interactive-target-min\)/u,
+    ]],
+    [field, "numberControlDefault", [
+      /min-height:\s*var\(--interactive-target-min\)/u,
+      /grid-template-columns:\s*var\(--interactive-target-min\)\s+minmax\(3rem,\s*1fr\)\s+var\(--interactive-target-min\)/u,
+    ]],
+    [field, "numberControlLarge", [
+      /min-height:\s*var\(--interactive-target-min\)/u,
+      /grid-template-columns:\s*var\(--interactive-target-min\)\s+minmax\(3rem,\s*1fr\)\s+var\(--interactive-target-min\)/u,
+    ]],
+    [field, "searchClearCompact", [
+      /min-height:\s*calc\(var\(--interactive-target-min\)\s*-\s*0?\.5rem\)/u,
+      /min-width:\s*calc\(var\(--interactive-target-min\)\s*-\s*0?\.5rem\)/u,
+    ]],
+    [field, "searchClearDefault", [
+      /min-height:\s*calc\(var\(--interactive-target-min\)\s*-\s*0?\.5rem\)/u,
+      /min-width:\s*calc\(var\(--interactive-target-min\)\s*-\s*0?\.5rem\)/u,
+    ]],
+    [field, "searchClearLarge", [
+      /min-height:\s*calc\(var\(--interactive-target-min\)\s*-\s*0?\.5rem\)/u,
+      /min-width:\s*calc\(var\(--interactive-target-min\)\s*-\s*0?\.5rem\)/u,
+    ]],
+    [field, "radioSwitchControl", [/min-height:\s*var\(--interactive-target-min\)/u]],
+    [select, "triggerCompact", [/min-height:\s*var\(--interactive-target-min\)/u]],
+    [select, "triggerDefault", [/min-height:\s*var\(--interactive-target-min\)/u]],
+    [select, "triggerLarge", [/min-height:\s*var\(--interactive-target-min\)/u]],
+    [select, "option", [/min-height:\s*var\(--interactive-target-min\)/u]],
+  ] as const;
+  for (const [map, key, declarations] of coarseGeometry) {
+    const keyCss = entryCss(map, key, coarseConditionalCss);
+    for (const declaration of declarations) {
+      assert.match(keyCss, declaration, `packed ${key} must retain its exact coarse geometry`);
+    }
+  }
+
+  const forcedConditionalCss = packageExactConditionalCss(
+    css,
+    "@media(forced-colors:active)",
+  );
+  const forcedContracts = [
+    [field, "controlFocusWithinFallback", [
+      /border-color:\s*canvastext/u,
+      /box-shadow:\s*none/u,
+      /outline-color:\s*highlight/u,
+    ]],
+    [field, "numberStepFocusVisible", [
+      /box-shadow:\s*none/u,
+      /outline-color:\s*highlight/u,
+    ]],
+    [field, "numberStepNativeInteractions", [
+      /box-shadow:\s*none/u,
+      /outline-color:\s*highlight/u,
+    ]],
+    [field, "nativeSelect", [/appearance:\s*auto/u, /background-image:\s*none/u]],
+    [field, "radioIndicator", [
+      /background-color:\s*canvas/u,
+      /border-color:\s*canvastext/u,
+      /forced-color-adjust:\s*none/u,
+    ]],
+    [field, "radioIndicatorSelected", [/background-color:\s*highlight/u, /border-color:\s*highlight/u]],
+    [field, "radioDot", [/background-color:\s*highlighttext/u]],
+    [field, "switchTrack", [
+      /background-color:\s*canvas/u,
+      /border-color:\s*canvastext/u,
+      /forced-color-adjust:\s*none/u,
+    ]],
+    [field, "switchTrackSelected", [/background-color:\s*highlight/u, /border-color:\s*highlight/u]],
+    [field, "switchThumb", [/background-color:\s*canvastext/u, /box-shadow:\s*none/u]],
+    [field, "switchThumbSelected", [/background-color:\s*highlighttext/u]],
+  ] as const;
+  for (const [map, key, declarations] of forcedContracts) {
+    const keyCss = entryCss(map, key, forcedConditionalCss);
+    for (const declaration of declarations) {
+      assert.match(keyCss, declaration, `packed ${key} must retain its exact forced-colors contract`);
+    }
+  }
+  for (const [map, key] of [
+    [field, "control"],
+    [field, "controlInvalid"],
+    [field, "numberControl"],
+    [field, "radioIndicatorInvalid"],
+    [field, "switchTrackInvalid"],
+    [select, "trigger"],
+    [select, "triggerHovered"],
+    [select, "triggerFocusVisible"],
+    [select, "triggerInvalid"],
+    [select, "triggerNativeInteractions"],
+  ] as const) {
+    assert.match(
+      entryCss(map, key, forcedConditionalCss),
+      /border-color:\s*canvastext/u,
+      `packed ${key} must retain its forced-colors CanvasText border`,
+    );
+  }
+  const ordinaryFocusContracts = [
+    [field, "controlFocusWithinFallback", [
+      /outline-color:\s*var\(--ui-ring\)/u,
+      /outline-offset:\s*2px/u,
+      /outline-style:\s*solid/u,
+      /outline-width:\s*2px/u,
+    ]],
+    [field, "numberStepFocusVisible", [
+      /box-shadow:\s*inset 0 0 0 2px var\(--ui-ring\)/u,
+      /outline-color:\s*var\(--ui-ring\)/u,
+      /outline-offset:\s*-2px/u,
+      /outline-style:\s*solid/u,
+      /outline-width:\s*2px/u,
+    ]],
+    [field, "numberStepNativeInteractions", [
+      /box-shadow:\s*inset 0 0 0 2px var\(--ui-ring\)/u,
+      /outline-color:\s*var\(--ui-ring\)/u,
+      /outline-offset:\s*-2px/u,
+      /outline-style:\s*solid/u,
+      /outline-width:\s*2px/u,
+    ]],
+  ] as const;
+  for (const [map, key, declarations] of ordinaryFocusContracts) {
+    const keyCss = entryCss(map, key);
+    for (const declaration of declarations) {
+      assert.match(keyCss, declaration, `packed ${key} must retain its ordinary focus contract`);
+    }
+  }
+  const nativeSelectCss = entryCss(field, "nativeSelect");
+  assert.match(nativeSelectCss, /appearance:\s*none/u);
+  assert.match(
+    nativeSelectCss,
+    /background-position:\s*calc\(100%\s*-\s*1rem\)(?:\s+50%)?,\s*calc\(100%\s*-\s*0?\.75rem\)(?:\s+50%)?/u,
+  );
+  assert.match(nativeSelectCss, /:is\(\s*:lang\(ae\),[^{}]*:lang\(yi\)\s*\)[^{}]*\{[^{}]*background-position:\s*0?\.75rem(?:\s+50%)?,\s*1rem(?:\s+50%)?/u);
+  assert.match(nativeSelectCss, /padding-inline-end:\s*2\.5rem/u);
+
+  const reducedConditionalCss = packageExactConditionalCss(
+    css,
+    "@media(prefers-reduced-motion:reduce)",
+  );
+  for (const key of ["popoverEntering", "popoverExiting"] as const) {
+    const keyCss = entryCss(select, key, reducedConditionalCss);
+    assert.match(keyCss, /animation-duration:\s*0s/u);
+    assert.match(keyCss, /animation-name:\s*none/u);
+  }
+  for (const hook of [
+    "hraness-text-field",
+    "hraness-native-select-field",
+    "hraness-file-field",
+    "hraness-number-field",
+    "hraness-select-field",
+  ]) {
+    assert.match(javaScript, new RegExp(`["']${hook}["']`, "u"));
+  }
+}
 function requirePackageVisuallyHiddenStyles(
   javaScript: string,
   css: string,
@@ -816,6 +1192,7 @@ function resolveGenuineNodeExecutable(): string {
 function ssrProbe(
   release: ReactRelease,
   checkboxProbe: CheckboxPrecedenceProbe,
+  fieldSelectProbe: PackageFieldSelectProbe,
   formProbe: FormPrecedenceProbe,
   linkProbe: LinkPrecedenceProbe,
   visuallyHiddenClasses: readonly string[],
@@ -836,18 +1213,22 @@ import {
   CardHeader,
   CardTitle,
   CheckboxField,
+  FileField,
   Form,
   Icon,
   KeyHint,
   Link,
+  NativeSelectField,
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
   SocialIcon,
   StatusDot,
+  SelectField,
   Tag,
   ThemedSurface,
   Toolbar,
+  TextField,
   ViewportFrame,
   WrappingRow,
   buildAskAiProviderLinks,
@@ -868,6 +1249,21 @@ const checkboxControlXstyle = {
 };
 const checkboxRootBaseClasses = ${JSON.stringify(checkboxProbe.rootBaseClasses)};
 const checkboxControlBaseClasses = ${JSON.stringify(checkboxProbe.controlBaseClasses)};
+const fieldRootXstyle = {
+  ${JSON.stringify(fieldSelectProbe.fieldRootProperty)}: "package-field-root-xstyle",
+  $$css: true,
+};
+const fieldControlXstyle = {
+  ${JSON.stringify(fieldSelectProbe.fieldControlProperty)}: "package-field-control-xstyle",
+  $$css: true,
+};
+const selectTriggerXstyle = {
+  ${JSON.stringify(fieldSelectProbe.selectTriggerProperty)}: "package-select-trigger-xstyle",
+  $$css: true,
+};
+const fieldRootBaseClasses = ${JSON.stringify(fieldSelectProbe.fieldRootBaseClasses)};
+const fieldControlBaseClasses = ${JSON.stringify(fieldSelectProbe.fieldControlBaseClasses)};
+const selectTriggerBaseClasses = ${JSON.stringify(fieldSelectProbe.selectTriggerBaseClasses)};
 const formXstyle = {
   ${JSON.stringify(formProbe.property)}: "package-form-xstyle",
   $$css: true,
@@ -992,6 +1388,8 @@ const componentsCss = await readFile(new URL(componentsCssUrl), "utf8");
 await access(new URL("./skip-link.stylex.ts", componentsCssUrl));
 await access(new URL("./visually-hidden.stylex.ts", componentsCssUrl));
 await access(new URL("./form.stylex.ts", componentsCssUrl));
+await access(new URL("./fields.stylex.ts", componentsCssUrl));
+await access(new URL("./select-field.stylex.ts", componentsCssUrl));
 assert.doesNotMatch(componentsCss, /\.hraness-form(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u);
@@ -1030,6 +1428,22 @@ assert.match(
 assert.doesNotMatch(
   componentsCss,
   /\.hraness-checkbox-field(?:__(?:control|indicator|label))?(?![A-Za-z0-9_-])/u,
+);
+const fieldLegacyWithoutNativeSeams = componentsCss
+  .replace(/\.hraness-field__input::placeholder\s*\{[^{}]*\}/gu, "")
+  .replace(/(?:\.hraness-file-field\[data-size=["'](?:compact|large)["']\]\s*)?\.hraness-field__file::file-selector-button\s*\{[^{}]*\}/gu, "");
+assert.doesNotMatch(
+  fieldLegacyWithoutNativeSeams,
+  /\.hraness-(?:field__(?:input|file)|text-field|text-area-field|search-field|number-field|radio-group|radio-option|switch-field|native-select-field|file-field|select-field|checkbox-group)(?![A-Za-z0-9_-])/u,
+  "packed components.css must retain only the approved placeholder and file-button native seams",
+);
+assert.equal(
+  componentsCss.match(/\.hraness-field__input::placeholder(?![A-Za-z0-9_-])/gu)?.length,
+  2,
+);
+assert.equal(
+  componentsCss.match(/\.hraness-field__file::file-selector-button(?![A-Za-z0-9_-])/gu)?.length,
+  4,
 );
 assert.equal(
   componentsCss.match(
@@ -1403,6 +1817,66 @@ for (const baseClass of checkboxControlBaseClasses) {
   assert.ok(!checkboxControlTag.split(/[\s"]/u).includes(baseClass), "controlXstyle must replace its package property class");
 }
 
+const textFieldMarkup = renderToStaticMarkup(React.createElement(TextField, {
+  className: "consumer-text-field",
+  controlXstyle: fieldControlXstyle,
+  defaultValue: "Ada",
+  label: "Display name",
+  name: "display-name",
+  xstyle: fieldRootXstyle,
+}));
+const textFieldRootTag = textFieldMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+const textFieldControlTag = textFieldMarkup.match(/<div[^>]*data-slot="field-control"[^>]*>/u)?.[0] ?? "";
+assert.match(textFieldRootTag, /class="hraness-field hraness-text-field [^"]*package-field-root-xstyle consumer-text-field"/u);
+assert.match(textFieldControlTag, /class="hraness-field__control [^"]*package-field-control-xstyle"/u);
+assert.match(textFieldMarkup, /<input[^>]*name="display-name"[^>]*value="Ada"/u);
+for (const baseClass of fieldRootBaseClasses) {
+  assert.ok(!textFieldRootTag.split(/[\s"]/u).includes(baseClass));
+}
+for (const baseClass of fieldControlBaseClasses) {
+  assert.ok(!textFieldControlTag.split(/[\s"]/u).includes(baseClass));
+}
+
+const nativeSelectMarkup = renderToStaticMarkup(React.createElement(NativeSelectField, {
+  controlXstyle: fieldControlXstyle,
+  label: "Native choice",
+  name: "native-choice",
+  options: [
+    { id: "alpha", label: "Alpha" },
+    { disabled: true, id: "beta", label: "Beta" },
+  ],
+  value: "alpha",
+  xstyle: fieldRootXstyle,
+}));
+assert.match(nativeSelectMarkup, /data-slot="native-select-field"/u);
+assert.match(nativeSelectMarkup, /<select[^>]*name="native-choice"[^>]*>/u);
+assert.match(nativeSelectMarkup, /<option value="alpha" selected="">Alpha<\/option>/u);
+assert.match(nativeSelectMarkup, /<option disabled="" value="beta">Beta<\/option>/u);
+
+const fileFieldMarkup = renderToStaticMarkup(React.createElement(FileField, {
+  controlXstyle: fieldControlXstyle,
+  label: "Attachment",
+  name: "attachment",
+  xstyle: fieldRootXstyle,
+}));
+assert.match(fileFieldMarkup, /data-slot="file-field"/u);
+assert.match(fileFieldMarkup, /<input[^>]*name="attachment"[^>]*type="file"/u);
+
+const selectFieldMarkup = renderToStaticMarkup(React.createElement(SelectField, {
+  label: "Styled choice",
+  name: "styled-choice",
+  options: [{ id: "alpha", label: "Alpha", textValue: "Alpha" }],
+  triggerXstyle: selectTriggerXstyle,
+  value: "alpha",
+  xstyle: fieldRootXstyle,
+}));
+const selectTriggerTag = selectFieldMarkup.match(/<button[^>]*class="hraness-select-field__trigger[^"]*"[^>]*>/u)?.[0] ?? "";
+assert.match(selectFieldMarkup, /data-slot="select-field"/u);
+assert.match(selectTriggerTag, /package-select-trigger-xstyle/u);
+for (const baseClass of selectTriggerBaseClasses) {
+  assert.ok(!selectTriggerTag.split(/[\s"]/u).includes(baseClass));
+}
+
 const pageMarkup = renderToStaticMarkup(React.createElement(QuietSitePage, {
   "aria-label": "Package page",
   className: "consumer-page",
@@ -1494,18 +1968,22 @@ import {
   CardHeader,
   CardTitle,
   CheckboxField,
+  FileField,
   Form,
   Icon,
   KeyHint,
   Link,
+  NativeSelectField,
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
   SocialIcon,
   StatusDot,
+  SelectField,
   Tag,
   ThemedSurface,
   Toolbar,
+  TextField,
   ViewportFrame,
   WrappingRow,
   buildAskAiProviderLinks,
@@ -1547,6 +2025,18 @@ const styles = stylex.create({
     minWidth: "7rem",
   },
   formDynamic: (width: string) => ({ width }),
+  field: {
+    color: "var(--ui-primary)",
+    display: "grid",
+  },
+  fieldControl: {
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+  },
+  selectTrigger: {
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+  },
   camelInlineSize: { inlineSize: "100%" },
   camelMaxInlineSize: { maxInlineSize: "40rem" },
   camelMinInlineSize: { minInlineSize: 0 },
@@ -1767,6 +2257,35 @@ const checkboxMarkup: string = renderToStaticMarkup(createElement(CheckboxField,
   style: ({ isSelected }) => ({ width: isSelected ? "15rem" : "13rem" }),
   xstyle: [styles.checkbox, styles.checkboxDynamic("14rem")],
 }));
+const textFieldMarkup: string = renderToStaticMarkup(createElement(TextField, {
+  controlXstyle: styles.fieldControl,
+  defaultValue: "Ada",
+  label: "Display name",
+  name: "display-name",
+  xstyle: styles.field,
+}));
+const nativeSelectMarkup: string = renderToStaticMarkup(createElement(NativeSelectField, {
+  controlXstyle: styles.fieldControl,
+  label: "Native choice",
+  name: "native-choice",
+  options: [{ id: "alpha", label: "Alpha" }] as const,
+  value: "alpha",
+  xstyle: styles.field,
+}));
+const fileFieldMarkup: string = renderToStaticMarkup(createElement(FileField, {
+  controlXstyle: styles.fieldControl,
+  label: "Attachment",
+  name: "attachment",
+  xstyle: styles.field,
+}));
+const selectFieldMarkup: string = renderToStaticMarkup(createElement(SelectField, {
+  label: "Styled choice",
+  name: "styled-choice",
+  options: [{ id: "alpha", label: "Alpha", textValue: "Alpha" }] as const,
+  triggerXstyle: styles.selectTrigger,
+  value: "alpha",
+  xstyle: styles.field,
+}));
 const formRef = createRef<HTMLFormElement>();
 const formMarkup: string = renderToStaticMarkup(createElement(Form, {
   acceptCharset: "utf-8",
@@ -1913,6 +2432,10 @@ void toolbarMarkup;
 void keyHintMarkup;
 void linkMarkup;
 void checkboxMarkup;
+void textFieldMarkup;
+void nativeSelectMarkup;
+void fileFieldMarkup;
+void selectFieldMarkup;
 void formMarkup;
 void pageMarkup;
 void footerMarkup;
@@ -1952,7 +2475,7 @@ void invalidFormXstyleMarkup;
 `;
 
 const viteClient = `import "@hraness/ui/styles.css";
-import { AskAiAboutThis, Card, CardDescription, CheckboxField, Form, KeyHint, Link, PressableCard, Toolbar } from "@hraness/ui";
+import { AskAiAboutThis, Card, CardDescription, CheckboxField, FileField, Form, KeyHint, Link, NativeSelectField, PressableCard, SelectField, TextField, Toolbar } from "@hraness/ui";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 
@@ -1978,6 +2501,27 @@ createRoot(root).render(React.createElement(React.Fragment, null,
     name: "vite-checkbox",
     showLabel: false,
   }),
+  React.createElement(TextField, {
+    defaultValue: "Ada",
+    label: "Display name",
+    name: "display-name",
+  }),
+  React.createElement(NativeSelectField, {
+    label: "Native choice",
+    name: "native-choice",
+    options: [{ id: "alpha", label: "Alpha" }],
+    value: "alpha",
+  }),
+  React.createElement(FileField, {
+    label: "Attachment",
+    name: "attachment",
+  }),
+  React.createElement(SelectField, {
+    label: "Styled choice",
+    name: "styled-choice",
+    options: [{ id: "alpha", label: "Alpha", textValue: "Alpha" }],
+    value: "alpha",
+  }),
   React.createElement(Form, {
     action: "/preferences",
     method: "post",
@@ -1988,12 +2532,13 @@ createRoot(root).render(React.createElement(React.Fragment, null,
 
 function viteSsrProbe(
   checkboxProbe: CheckboxPrecedenceProbe,
+  fieldSelectProbe: PackageFieldSelectProbe,
   formProbe: FormPrecedenceProbe,
   linkProbe: LinkPrecedenceProbe,
   visuallyHiddenClasses: readonly string[],
 ): string {
   return `import assert from "node:assert/strict";
-import { CheckboxField, Form, Link } from "@hraness/ui";
+import { CheckboxField, NativeSelectField, SelectField, TextField, Form, Link } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -2003,6 +2548,18 @@ const rootXstyle = {
 };
 const controlXstyle = {
   ${JSON.stringify(checkboxProbe.controlProperty)}: "vite-checkbox-control-xstyle",
+  $$css: true,
+};
+const fieldRootXstyle = {
+  ${JSON.stringify(fieldSelectProbe.fieldRootProperty)}: "vite-field-root-xstyle",
+  $$css: true,
+};
+const fieldControlXstyle = {
+  ${JSON.stringify(fieldSelectProbe.fieldControlProperty)}: "vite-field-control-xstyle",
+  $$css: true,
+};
+const selectTriggerXstyle = {
+  ${JSON.stringify(fieldSelectProbe.selectTriggerProperty)}: "vite-select-trigger-xstyle",
   $$css: true,
 };
 const formXstyle = {
@@ -2041,6 +2598,35 @@ for (const baseClass of ${JSON.stringify(checkboxProbe.rootBaseClasses)}) {
 for (const baseClass of ${JSON.stringify(checkboxProbe.controlBaseClasses)}) {
   assert.ok(!controlTag.split(/[\\s"]/u).includes(baseClass));
 }
+const textFieldMarkup = renderToStaticMarkup(React.createElement(TextField, {
+  controlXstyle: fieldControlXstyle,
+  defaultValue: "Ada",
+  label: "Display name",
+  name: "display-name",
+  xstyle: fieldRootXstyle,
+}));
+assert.match(textFieldMarkup, /vite-field-root-xstyle/u);
+assert.match(textFieldMarkup, /vite-field-control-xstyle/u);
+assert.match(textFieldMarkup, /name="display-name"/u);
+const nativeSelectMarkup = renderToStaticMarkup(React.createElement(NativeSelectField, {
+  controlXstyle: fieldControlXstyle,
+  label: "Native choice",
+  name: "native-choice",
+  options: [{ id: "alpha", label: "Alpha" }],
+  value: "alpha",
+  xstyle: fieldRootXstyle,
+}));
+assert.match(nativeSelectMarkup, /<select[^>]*name="native-choice"/u);
+assert.match(nativeSelectMarkup, /value="alpha" selected=""/u);
+const selectFieldMarkup = renderToStaticMarkup(React.createElement(SelectField, {
+  label: "Styled choice",
+  name: "styled-choice",
+  options: [{ id: "alpha", label: "Alpha", textValue: "Alpha" }],
+  triggerXstyle: selectTriggerXstyle,
+  value: "alpha",
+  xstyle: fieldRootXstyle,
+}));
+assert.match(selectFieldMarkup, /vite-select-trigger-xstyle/u);
 const formMarkup = renderToStaticMarkup(React.createElement(Form, {
   action: "/preferences",
   className: "vite-form-class",
@@ -2169,6 +2755,12 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "form.stylex.ts"),
   );
   await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "fields.stylex.ts"),
+  );
+  await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "select-field.stylex.ts"),
+  );
+  await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "lib", "stylex.ts"),
   );
   const installedPackageRoot = join(
@@ -2182,9 +2774,11 @@ async function verifyConsumer(
     readFile(join(installedPackageRoot, "dist", "stylex.css"), "utf8"),
   ]);
   const checkboxProbe = packageCheckboxStyleMap(installedJavaScript);
+  const fieldSelectProbe = packageFieldSelectProbe(installedJavaScript);
   const formProbe = packageFormStyleMap(installedJavaScript, installedStylexCss);
   const linkProbe = packageLinkStyleMap(installedJavaScript);
   requirePackageCheckboxStyles(installedJavaScript, installedStylexCss);
+  requirePackageFieldSelectStyles(installedJavaScript, installedStylexCss);
   requirePackageLinkStyles(installedJavaScript, installedStylexCss);
   const visuallyHiddenClasses = requirePackageVisuallyHiddenStyles(
     installedJavaScript,
@@ -2212,6 +2806,7 @@ async function verifyConsumer(
     ssrProbe(
       release,
       checkboxProbe,
+      fieldSelectProbe,
       formProbe,
       linkProbe,
       visuallyHiddenClasses,
@@ -2236,6 +2831,7 @@ async function verifyConsumer(
       join(consumer, "vite-ssr.ts"),
       viteSsrProbe(
         checkboxProbe,
+        fieldSelectProbe,
         formProbe,
         linkProbe,
         visuallyHiddenClasses,
@@ -2261,6 +2857,7 @@ async function verifyConsumer(
     readFile(join(consumer, "vite-dist", "assets", viteCssPath), "utf8"),
   ]);
   requirePackageCheckboxStyles(viteJavaScript, viteCss);
+  requirePackageFieldSelectStyles(viteJavaScript, viteCss);
   requirePackageLinkStyles(viteJavaScript, viteCss);
   requirePackageFormStyles(viteJavaScript, viteCss);
   requirePackageVisuallyHiddenStyles(viteJavaScript, viteCss);
@@ -2332,6 +2929,31 @@ async function verifyConsumer(
     viteSsrBundle,
     /vite-checkbox-control-xstyle/u,
     "Vite SSR must bundle the caller controlXstyle probe",
+  );
+  assert.match(
+    viteSsrBundle,
+    /hraness-text-field/u,
+    "Vite SSR must bundle the TextField implementation",
+  );
+  assert.match(
+    viteSsrBundle,
+    /vite-field-root-xstyle/u,
+    "Vite SSR must bundle the caller field root xstyle probe",
+  );
+  assert.match(
+    viteSsrBundle,
+    /vite-field-control-xstyle/u,
+    "Vite SSR must bundle the caller field controlXstyle probe",
+  );
+  assert.match(
+    viteSsrBundle,
+    /hraness-select-field/u,
+    "Vite SSR must bundle the SelectField implementation",
+  );
+  assert.match(
+    viteSsrBundle,
+    /vite-select-trigger-xstyle/u,
+    "Vite SSR must bundle the caller SelectField triggerXstyle probe",
   );
   assert.match(
     viteSsrBundle,

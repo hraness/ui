@@ -1,340 +1,14 @@
 @layer components.hraness-ui.legacy.base {
-  :where(.hraness-field, .hraness-search-field, .hraness-number-field,
-    .hraness-checkbox-group, .hraness-radio-group,
-    .hraness-radio-option, .hraness-switch-field, .hraness-native-select-field,
-    .hraness-file-field, .hraness-select-field) {
-    --hraness-field-height: var(--interactive-target-compact);
-    --hraness-field-surface: var(--ui-background);
-    display: grid;
-    min-width: 0;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-2);
-    color: var(--ui-foreground);
-  }
-
-  :where(.hraness-field, .hraness-search-field, .hraness-number-field,
-    .hraness-native-select-field, .hraness-file-field,
-    .hraness-select-field)[data-size="compact"] {
-    --hraness-field-height: 2rem;
-  }
-
-  :where(.hraness-field, .hraness-search-field, .hraness-number-field,
-    .hraness-native-select-field, .hraness-file-field,
-    .hraness-select-field)[data-size="large"] {
-    --hraness-field-height: var(--control-height-primary);
-  }
-
-  :where(.hraness-field, .hraness-search-field, .hraness-number-field,
-    .hraness-native-select-field, .hraness-file-field,
-    .hraness-select-field)[data-surface="card"] {
-    --hraness-field-surface: var(--ui-card);
-  }
-
-  :where(.hraness-field, .hraness-search-field, .hraness-number-field,
-    .hraness-native-select-field, .hraness-file-field,
-    .hraness-select-field)[data-surface="pane"] {
-    --hraness-field-surface: var(--ui-muted);
-  }
-
-  :where(.hraness-field__label, .hraness-checkbox-group__label,
-    .hraness-radio-group__label,
-    .hraness-radio-option__label, .hraness-switch-field__label,
-    .hraness-select-field__label) {
-    width: fit-content;
-    color: var(--ui-foreground);
-    font-size: var(--text-label);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.35;
-  }
-
-  :where(.hraness-field__description, .hraness-radio-option__description,
-    .hraness-select-field__description) {
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-caption);
-    line-height: 1.5;
-  }
-
-  :where(.hraness-field__error, .hraness-select-field__error) {
-    color: var(--ui-destructive);
-    font-size: var(--text-caption);
-    line-height: 1.5;
-  }
-
-  .hraness-field__control {
-    display: flex;
-    min-width: 0;
-    min-height: var(--hraness-field-height);
-    align-items: center;
-    gap: var(--space-2);
-    overflow: clip;
-    border: 1px solid var(--ui-input);
-    border-radius: var(--radius-md);
-    background: var(--hraness-field-surface);
-    color: var(--ui-foreground);
-  }
-
-  :where(.hraness-field, .hraness-search-field, .hraness-number-field,
-    .hraness-native-select-field, .hraness-file-field):where([data-focused],
-      :focus-within) .hraness-field__control,
-  .hraness-field__control:focus-within {
-    border-color: var(--ui-ring);
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ui-ring) 24%, transparent);
-  }
-
-  :where(.hraness-field, .hraness-search-field, .hraness-number-field,
-    .hraness-native-select-field, .hraness-file-field)[data-invalid]
-    .hraness-field__control {
-    border-color: var(--ui-destructive);
-  }
-
-  .hraness-number-field[data-invalid] .hraness-number-field__control,
-  .hraness-radio-group[data-invalid] .hraness-radio-option__indicator,
-  .hraness-switch-field[data-invalid] .hraness-switch-field__track {
-    border-color: var(--ui-destructive);
-  }
-
-  :where(.hraness-field__input, .hraness-field__select,
-    .hraness-field__file) {
-    width: 100%;
-    min-width: 0;
-    min-height: calc(var(--hraness-field-height) - 2px);
-    padding: 0 var(--space-3);
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--ui-foreground);
-    font: inherit;
-  }
-
-  textarea.hraness-field__input {
-    min-height: 7.5rem;
-    padding-block: var(--space-3);
-    line-height: 1.5;
-  }
-
-  .hraness-text-area-field[data-resize="none"] .hraness-field__input {
-    resize: none;
-  }
-
-  .hraness-text-area-field[data-resize="vertical"] .hraness-field__input {
-    resize: vertical;
-  }
-
+  /* Placeholder and file-button pseudo-elements remain native CSS seams. */
   .hraness-field__input::placeholder {
     color: var(--ui-muted-foreground);
     opacity: 1;
   }
 
-  :where(.hraness-field, .hraness-search-field, .hraness-number-field,
-    .hraness-checkbox-group, .hraness-radio-group,
-    .hraness-radio-option, .hraness-switch-field, .hraness-native-select-field,
-    .hraness-file-field, .hraness-select-field)[data-disabled] {
-    color: var(--ui-muted-foreground);
-    cursor: not-allowed;
-    opacity: 0.62;
-  }
-
-  .hraness-search-field__control {
-    padding-inline-start: var(--space-3);
-  }
-
-  .hraness-search-field__control .hraness-field__input {
-    padding-inline: 0;
-  }
-
-  .hraness-search-field__clear {
-    display: inline-grid;
-    min-width: calc(var(--hraness-field-height) - 0.5rem);
-    min-height: calc(var(--hraness-field-height) - 0.5rem);
-    flex: 0 0 auto;
-    place-items: center;
-    border: 0;
-    border-radius: var(--radius-sm);
-    outline: none;
-    background: transparent;
-    color: var(--ui-muted-foreground);
-  }
-
-  .hraness-search-field__clear:where([data-hovered], :hover) {
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  .hraness-search-field__clear:where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: -2px;
-  }
-
-  .hraness-number-field__control {
-    display: grid;
-    min-width: 0;
-    min-height: var(--hraness-field-height);
-    grid-template-columns: var(--hraness-field-height) minmax(3rem, 1fr)
-      var(--hraness-field-height);
-    padding: 0;
-    overflow: clip;
-    border: 1px solid var(--ui-input);
-    border-radius: var(--radius-md);
-    background: var(--hraness-field-surface);
-  }
-
-  .hraness-number-field__control:focus-within {
-    border-color: var(--ui-ring);
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ui-ring) 24%, transparent);
-  }
-
-  .hraness-number-field__step {
-    display: grid;
-    min-height: 100%;
-    place-items: center;
-    border: 0;
-    outline: none;
-    background: transparent;
-    color: var(--ui-muted-foreground);
-  }
-
-  .hraness-number-field__step:where([data-hovered], :hover) {
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  .hraness-number-field__step:where([data-focus-visible], :focus-visible) {
-    box-shadow: inset 0 0 0 2px var(--ui-ring);
-  }
-
-  :where(.hraness-radio-option__control, .hraness-switch-field__control) {
-    display: grid;
-    width: auto;
-    height: auto;
-    min-height: var(--interactive-target-compact);
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: var(--space-3);
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-sm);
-    outline: none;
-    background: transparent;
-    color: var(--ui-foreground);
-    text-align: start;
-  }
-
-  :where(.hraness-radio-option__control,
-    .hraness-switch-field__control):where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 3px;
-  }
-
-  .hraness-radio-option__indicator {
-    display: inline-grid;
-    width: 1.25rem;
-    height: 1.25rem;
-    flex: 0 0 auto;
-    place-items: center;
-    border: 1px solid var(--ui-input);
-    background: var(--hraness-field-surface);
-    color: var(--ui-primary-foreground);
-    line-height: 1;
-    transition:
-      background-color var(--motion-duration-fast) var(--motion-easing-standard),
-      border-color var(--motion-duration-fast) var(--motion-easing-standard);
-  }
-
-  .hraness-radio-option__indicator {
-    border-radius: var(--radius-round);
-  }
-
-  :where(.hraness-radio-option, .hraness-radio-option__control)[data-selected]
-    .hraness-radio-option__indicator {
-    border-color: var(--ui-primary);
-    background: var(--ui-primary);
-  }
-
-  :where(.hraness-radio-option, .hraness-radio-option__control)[data-selected]
-    .hraness-radio-option__indicator::after {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: var(--radius-round);
-    background: var(--ui-primary-foreground);
-    content: "";
-  }
-
-  :where(.hraness-checkbox-group__options, .hraness-radio-group__options) {
-    display: grid;
-    min-width: 0;
-    gap: var(--space-2);
-  }
-
-  .hraness-radio-group[data-orientation="horizontal"]
-    .hraness-radio-group__options {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
-
-  .hraness-switch-field__track {
-    display: flex;
-    width: 2.5rem;
-    height: 1.5rem;
-    flex: 0 0 auto;
-    align-items: center;
-    padding: 0.1875rem;
-    border: 1px solid var(--ui-input);
-    border-radius: var(--radius-round);
-    background: var(--ui-background);
-    transition:
-      background-color var(--motion-duration-fast) var(--motion-easing-standard),
-      border-color var(--motion-duration-fast) var(--motion-easing-standard);
-  }
-
-  .hraness-switch-field__thumb {
-    width: 1rem;
-    height: 1rem;
-    border-radius: var(--radius-round);
-    background: var(--ui-muted-foreground);
-    box-shadow: var(--elevation-low);
-    transition:
-      background-color var(--motion-duration-fast) var(--motion-easing-standard),
-      transform var(--motion-duration-standard) var(--motion-easing-emphasized);
-  }
-
-  :where(.hraness-switch-field, .hraness-switch-field__control)[data-selected]
-    .hraness-switch-field__track {
-    border-color: var(--ui-primary);
-    background: var(--ui-primary);
-  }
-
-  :where(.hraness-switch-field, .hraness-switch-field__control)[data-selected]
-    .hraness-switch-field__thumb {
-    background: var(--ui-primary-foreground);
-    transform: translateX(1rem);
-  }
-
-  :where(.hraness-switch-field, .hraness-switch-field__control):dir(rtl)[data-selected]
-    .hraness-switch-field__thumb {
-    transform: translateX(-1rem);
-  }
-
-  .hraness-field__select {
-    appearance: none;
-    padding-inline-end: 2.5rem;
-    background-image:
-      linear-gradient(45deg, transparent 50%, currentColor 50%),
-      linear-gradient(135deg, currentColor 50%, transparent 50%);
-    background-position:
-      calc(100% - 1rem) 50%,
-      calc(100% - 0.75rem) 50%;
-    background-repeat: no-repeat;
-    background-size: 0.25rem 0.25rem, 0.25rem 0.25rem;
-  }
-
-  .hraness-field__file {
-    padding-inline-start: 0;
-  }
-
   .hraness-field__file::file-selector-button {
-    min-height: calc(var(--hraness-field-height) - 2px);
+    min-height: calc(max(var(--hraness-field-height,
+      var(--interactive-target-compact)),
+      var(--hraness-field-coarse-min, 0px)) - 2px);
     margin-inline-end: var(--space-3);
     padding-inline: var(--space-3);
     border: 0;
@@ -344,139 +18,23 @@
     font: inherit;
   }
 
-  .hraness-select-field__trigger {
-    display: flex;
-    width: 100%;
-    min-width: 0;
-    min-height: var(--hraness-field-height);
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding-inline: var(--space-3);
-    border: 1px solid var(--ui-input);
-    border-radius: var(--radius-md);
-    outline: none;
-    background: var(--hraness-field-surface);
-    color: var(--ui-foreground);
-    font: inherit;
-    text-align: start;
+  :where(.hraness-file-field[data-size="compact"])
+    .hraness-field__file::file-selector-button {
+    min-height: calc(max(var(--hraness-field-height, 2rem),
+      var(--hraness-field-coarse-min, 0px)) - 2px);
   }
 
-  .hraness-select-field__trigger:where([data-hovered], :hover) {
-    border-color: color-mix(in oklch, var(--ui-input) 65%, var(--ui-foreground));
+  :where(.hraness-file-field[data-size="large"])
+    .hraness-field__file::file-selector-button {
+    min-height: calc(max(var(--hraness-field-height,
+      var(--control-height-primary)),
+      var(--hraness-field-coarse-min, 0px)) - 2px);
   }
 
-  .hraness-select-field__trigger:where([data-focus-visible], :focus-visible) {
-    border-color: var(--ui-ring);
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 2px;
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ui-ring) 24%, transparent);
-  }
-
-  .hraness-select-field[data-invalid] .hraness-select-field__trigger {
-    border-color: var(--ui-destructive);
-  }
-
-  .hraness-select-field__value {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .hraness-select-field__value[data-placeholder] {
-    color: var(--ui-muted-foreground);
-  }
-
-  .hraness-select-field__indicator {
-    display: block;
-    width: 1em;
-    height: 1em;
-    flex: 0 0 auto;
-    color: var(--ui-muted-foreground);
-    overflow: visible;
-    transform-origin: center;
-    transition: transform var(--motion-duration-standard) var(--motion-easing-emphasized);
-  }
-
-  .hraness-select-field[data-open] .hraness-select-field__indicator {
-    transform: rotate(180deg);
-  }
-
-  .hraness-select-field__popover {
-    z-index: var(--z-tooltip);
-    width: var(--trigger-width);
-    min-width: min(12rem, calc(100vw - 2rem));
-    max-width: min(28rem, calc(100vw - 2rem));
-    overflow: hidden;
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    outline: none;
-    background: var(--ui-popover);
-    color: var(--ui-popover-foreground);
-    box-shadow: var(--elevation-overlay);
-  }
-
-  .hraness-select-field__popover[data-entering] {
-    animation: hraness-overlay-enter var(--motion-duration-standard) var(--motion-easing-emphasized);
-  }
-
-  .hraness-select-field__popover[data-exiting] {
-    animation: hraness-overlay-exit var(--motion-duration-fast) var(--motion-easing-standard);
-  }
-
-  .hraness-select-field__list-box {
-    display: grid;
-    max-height: min(24rem, var(--visual-viewport-height, 70vh));
-    padding: var(--space-1);
-    overflow: auto;
-    outline: none;
-  }
-
-  .hraness-select-field__option {
-    position: relative;
-    display: grid;
-    min-height: var(--interactive-target-compact);
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-content: center;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    outline: none;
-    cursor: default;
-    user-select: none;
-  }
-
-  .hraness-select-field__option:where([data-focused], [data-hovered]) {
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  .hraness-select-field__option[data-selected]::after {
-    align-self: center;
-    color: var(--ui-primary);
-    content: "✓";
-    font-weight: var(--font-weight-bold);
-  }
-
-  .hraness-select-field__option[data-disabled] {
-    opacity: 0.5;
-  }
-
-  .hraness-select-field__option-copy {
-    display: grid;
-    min-width: 0;
-    gap: 0.125rem;
-  }
-
-  .hraness-select-field__option-label {
-    overflow-wrap: anywhere;
-  }
-
-  .hraness-select-field__option-description {
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-caption);
-    line-height: 1.4;
+  @media (pointer: coarse) {
+    .hraness-field__file::file-selector-button {
+      min-height: calc(var(--interactive-target-min) - 2px);
+    }
   }
 
   /* WebKit scrollbar pseudo-elements cannot be emitted in StyleX's named layers. */
@@ -1521,9 +1079,6 @@
     .hraness-segmented-control__item,
     .hraness-list-box__item,
     .hraness-menu__item,
-    .hraness-select-field__option,
-    .hraness-radio-option__control,
-    .hraness-switch-field__control,
     .hraness-dialog__close,
     .hraness-toast__close,
     .hraness-pagination a,
@@ -1536,14 +1091,11 @@
     min-width: var(--interactive-target-min);
   }
 
-  :where(.hraness-field, .hraness-search-field, .hraness-number-field,
-    .hraness-native-select-field, .hraness-file-field, .hraness-select-field) {
-    --hraness-field-height: var(--interactive-target-min);
-  }
 }
 
 :root[data-verification-pointer="coarse"] {
   --hraness-action-coarse-min: var(--interactive-target-min);
+  --hraness-field-coarse-min: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
@@ -1553,9 +1105,6 @@
   .hraness-segmented-control__item,
   .hraness-list-box__item,
   .hraness-menu__item,
-  .hraness-select-field__option,
-  .hraness-radio-option__control,
-  .hraness-switch-field__control,
   .hraness-dialog__close,
   .hraness-toast__close,
   .hraness-pagination a,
@@ -1568,24 +1117,12 @@
   min-width: var(--interactive-target-min);
 }
 
-:root[data-verification-pointer="coarse"] :where(
-  .hraness-field,
-  .hraness-search-field,
-  .hraness-number-field,
-  .hraness-native-select-field,
-  .hraness-file-field,
-  .hraness-select-field
-) {
-  --hraness-field-height: var(--interactive-target-min);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .hraness-progress-bar__fill[data-indeterminate] {
     animation: none;
   }
 
-  :where(.hraness-menu-popover, .hraness-popover,
-    .hraness-select-field__popover, .hraness-dialog-overlay,
+  :where(.hraness-menu-popover, .hraness-popover, .hraness-dialog-overlay,
     .hraness-toast) {
     animation: none;
   }
@@ -1617,11 +1154,6 @@
   }
 
   :where(
-    .hraness-field__control,
-    .hraness-number-field__control,
-    .hraness-radio-option__indicator,
-    .hraness-switch-field__track,
-    .hraness-select-field__trigger,
     .hraness-menu-popover,
     .hraness-popover,
     .hraness-tooltip,
