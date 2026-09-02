@@ -4764,7 +4764,10 @@ async function verifyKeyboardPath(
     && skipLinkFocus.backgroundClip === "border-box"
     && skipLinkFocus.backgroundImage === "none"
     && skipLinkFocus.backgroundOrigin === "padding-box"
-    && skipLinkFocus.backgroundPosition === "0% 0%"
+    && (
+      skipLinkFocus.backgroundPosition === "0% 0%"
+      || skipLinkFocus.backgroundPosition === "0px 0px"
+    )
     && skipLinkFocus.backgroundRepeat === "repeat"
     && (
       skipLinkFocus.backgroundSize === "auto"
