@@ -4804,6 +4804,11 @@ async function verifyKeyboardPath(
             || animation.constructor.name === "CSSTransition")
           && animation.playState !== "finished"
           && animation.playState !== "idle"
+          && !(
+            animation.constructor.name === "CSSTransition"
+            && animation.startTime === null
+            && animation.currentTime === 0
+          )
         );
       return style.outlineColor === expectedOutlineColor
         && Number.parseFloat(style.outlineOffset) === 3
@@ -4866,6 +4871,10 @@ async function verifyKeyboardPath(
         animation.constructor.name === "CSSTransition"
         && animation.playState !== "finished"
         && animation.playState !== "idle"
+        && !(
+          animation.startTime === null
+          && animation.currentTime === 0
+        )
       );
     return {
       activeTransitionsAfter: activeTransitionsAfter.map(transitionEvidence),
