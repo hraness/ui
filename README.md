@@ -261,7 +261,7 @@ const styles = stylex.create({
 `LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `KeyHint`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
-`ViewportFrame`, `WrappingRow`, `ThemedSurface`, `Toolbar`, and `CheckboxField`
+`SkipLink`, `ViewportFrame`, `WrappingRow`, `ThemedSurface`, `Toolbar`, and `CheckboxField`
 accept a typed StyleX override. Base declarations are applied first, finite
 size, tone, shape, and interaction recipes come next, and the caller recipe is
 applied last. `CheckboxField` exposes `controlXstyle` separately for its
@@ -272,6 +272,9 @@ empty conditional overrides. An effective control recipe selects explicit
 React Aria state composition so the caller remains last; native `style`
 declarations still resolve after StyleX. `Button` and `LinkButton` accept only
 the documented `partXstyles.label` part.
+`SkipLink` applies `xstyle` to its native anchor without changing its hash,
+focus-transfer, or native `:focus` reveal behavior. Native `style` declarations
+resolve after the StyleX recipe.
 Quiet-site landmarks and these surfaces also preserve dynamic StyleX inline
 values when merging the native `style` prop, with caller inline declarations
 taking precedence.
