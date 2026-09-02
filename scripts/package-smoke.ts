@@ -553,7 +553,7 @@ function ssrProbe(
   linkProbe: LinkPrecedenceProbe,
 ): string {
   return String.raw`import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import {
@@ -673,6 +673,24 @@ assert.match(stylexCss, /animation-name:\s*hraness-spin/u);
 assert.match(stylexCss, /background-color:\s*buttonface/u);
 assert.match(stylexCss, /color:\s*buttontext/u);
 assert.match(stylexCss, /@media\s*\(pointer:\s*coarse\)/u);
+assert.match(stylexCss, /position:\s*fixed/u);
+assert.match(stylexCss, /background-attachment:\s*scroll/u);
+assert.match(stylexCss, /background-clip:\s*border-box/u);
+assert.match(stylexCss, /background-color:\s*var\(--ui-foreground\)/u);
+assert.match(stylexCss, /background-image:\s*none/u);
+assert.match(stylexCss, /background-origin:\s*padding-box/u);
+assert.match(stylexCss, /background-position:\s*0 0/u);
+assert.match(stylexCss, /background-repeat:\s*repeat/u);
+assert.match(stylexCss, /background-size:\s*auto/u);
+assert.match(stylexCss, /z-index:\s*var\(--z-skip-link\)/u);
+assert.match(
+  stylexCss,
+  /transform:\s*translateY\(calc\(-100%\s*-\s*var\(--space-6\)\)\)/u,
+);
+assert.match(
+  stylexCss,
+  /:focus\s*\{[^{}]*transform:\s*translateY\(0\)/u,
+);
 const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
 const viewportHeightPositions = viewportHeightFallbacks.map((fallback) => stylexCss.indexOf(fallback));
 assert.ok(viewportHeightPositions.every((position) => position >= 0));
@@ -694,6 +712,7 @@ assert.equal(
 
 const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
 const componentsCss = await readFile(new URL(componentsCssUrl), "utf8");
+await access(new URL("./skip-link.stylex.ts", componentsCssUrl));
 assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-themed-surface(?![A-Za-z0-9_-])/u);
@@ -715,6 +734,10 @@ assert.doesNotMatch(componentsCss, /\.hraness-link(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(
   componentsCss,
   /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
+);
+assert.doesNotMatch(
+  componentsCss,
+  /\.hraness-skip-link(?![A-Za-z0-9_-])/u,
 );
 assert.match(
   componentsCss,

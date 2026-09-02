@@ -988,6 +988,42 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not include legacy action recipes",
   );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-skip-link(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not include the legacy SkipLink recipe",
+  );
+  assert.match(
+    css,
+    /transform:\s*translateY\(calc\(-100%\s*-\s*var\(--space-6\)\)\)/u,
+    "the packed default stylesheet must include the offscreen SkipLink transform",
+  );
+  for (const [pattern, description] of [
+    [/background-attachment:\s*scroll/u, "background attachment reset"],
+    [/background-clip:\s*border-box/u, "background clip reset"],
+    [/background-color:\s*var\(--ui-foreground\)/u, "background color"],
+    [/background-image:\s*none/u, "background image reset"],
+    [/background-origin:\s*padding-box/u, "background origin reset"],
+    [/background-position:\s*0 0/u, "background position reset"],
+    [/background-repeat:\s*repeat/u, "background repeat reset"],
+    [/background-size:\s*auto/u, "background size reset"],
+  ] as const) {
+    assert.match(
+      css,
+      pattern,
+      `the packed default stylesheet must include the SkipLink ${description}`,
+    );
+  }
+  assert.match(
+    css,
+    /:focus\s*\{[^{}]*transform:\s*translateY\(0\)/u,
+    "the packed default stylesheet must include the native SkipLink focus reveal",
+  );
+  assert.match(
+    css,
+    /border-radius:\s*13px/u,
+    "the harness bundle must include its SkipLink xstyle override",
+  );
   assert.match(
     css,
     /min-height:\s*var\(--interactive-target-min\)/u,
@@ -4657,6 +4693,10 @@ async function verifyKeyboardPath(
 ): Promise<void> {
   await page.keyboard.press("Tab");
   const skipLink = page.locator('[data-slot="skip-link"]');
+  invariant(
+    await skipLink.count() === 1,
+    `${id}: the gallery must contain exactly one SkipLink`,
+  );
   await page.waitForFunction(() => {
     const element = document.querySelector('[data-slot="skip-link"]');
     if (!(element instanceof HTMLElement)) return false;
@@ -4695,7 +4735,24 @@ async function verifyKeyboardPath(
         && box.left < document.documentElement.clientWidth
         && box.top < document.documentElement.clientHeight,
       opacity: Number.parseFloat(style.opacity),
+      backgroundAttachment: style.backgroundAttachment,
+      backgroundClip: style.backgroundClip,
+      backgroundImage: style.backgroundImage,
+      backgroundOrigin: style.backgroundOrigin,
+      backgroundPosition: style.backgroundPosition,
+      backgroundRepeat: style.backgroundRepeat,
+      backgroundSize: style.backgroundSize,
+      borderRadius: style.borderRadius,
+      legacySentinel: style.getPropertyValue(
+        "--gallery-skip-link-layer-conflict",
+      ).trim(),
+      minHeight: Number.parseFloat(style.minHeight),
+      position: style.position,
+      semanticClass: element.classList.contains("hraness-skip-link"),
       transform: style.transform,
+      translationY: style.transform === "none"
+        ? 0
+        : new DOMMatrixReadOnly(style.transform).m42,
       transitionDuration: style.transitionDuration,
       transitionProperty: style.transitionProperty,
       visibility: style.visibility,
@@ -4703,8 +4760,27 @@ async function verifyKeyboardPath(
   });
   invariant(
     skipLinkFocus.focusVisible
+    && skipLinkFocus.backgroundAttachment === "scroll"
+    && skipLinkFocus.backgroundClip === "border-box"
+    && skipLinkFocus.backgroundImage === "none"
+    && skipLinkFocus.backgroundOrigin === "padding-box"
+    && (
+      skipLinkFocus.backgroundPosition === "0% 0%"
+      || skipLinkFocus.backgroundPosition === "0px 0px"
+    )
+    && skipLinkFocus.backgroundRepeat === "repeat"
+    && (
+      skipLinkFocus.backgroundSize === "auto"
+      || skipLinkFocus.backgroundSize === "auto auto"
+    )
+    && skipLinkFocus.borderRadius === "13px"
     && skipLinkFocus.intersectsViewport
+    && skipLinkFocus.legacySentinel === "legacy"
+    && skipLinkFocus.minHeight >= 48
     && skipLinkFocus.opacity > 0
+    && skipLinkFocus.position === "fixed"
+    && skipLinkFocus.semanticClass
+    && Math.abs(skipLinkFocus.translationY) < 0.5
     && skipLinkFocus.visibility === "visible",
     `${id}: the first keyboard stop is not the visible skip link: ${JSON.stringify(skipLinkFocus)}`,
   );
@@ -6265,6 +6341,7 @@ try {
     access(resolve(installedRoot, "dist/stylex.css")),
     access(resolve(installedRoot, "src/actions.stylex.ts")),
     access(resolve(installedRoot, "src/checkbox-field.stylex.ts")),
+    access(resolve(installedRoot, "src/skip-link.stylex.ts")),
   ]);
   await assert.rejects(
     access(resolve(installedRoot, "gallery/styles.css")),
@@ -6280,7 +6357,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|checkbox-field|key-hint|link|status-family|themed-surface|toolbar|viewport-frame|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|checkbox-field|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -6322,6 +6399,11 @@ try {
     installedPackageCss,
     /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate action-family declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-skip-link(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate SkipLink declarations in legacy CSS",
   );
 
   const productionDirectory = resolve(consumer, "dist/browser");

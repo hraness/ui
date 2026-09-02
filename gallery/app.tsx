@@ -181,6 +181,9 @@ const galleryStyles = stylex.create({
   quietSiteFooterOverride: {
     "max-inline-size": "35rem",
   },
+  skipLinkOverride: {
+    borderRadius: "13px",
+  },
   statusDotOverride: {
     backgroundColor: "var(--ui-primary)",
     height: "1rem",
@@ -270,7 +273,11 @@ export function PrimitiveGallery() {
 
   return (
     <div data-gallery-root="true">
-      <SkipLink href="#primitive-gallery-main" />
+      <SkipLink
+        data-gallery-skip-link-layer-conflict="true"
+        href="#primitive-gallery-main"
+        xstyle={galleryStyles.skipLinkOverride}
+      />
       <QuietSitePage
         className="gallery-quiet-site-page"
         data-gallery-quiet-site-layer-conflict="true"

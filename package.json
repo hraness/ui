@@ -85,6 +85,7 @@
     "src/router.tsx",
     "src/select-field.tsx",
     "src/separator.stylex.ts",
+    "src/skip-link.stylex.ts",
     "src/skip-link.tsx",
     "src/status.stylex.ts",
     "src/styles.css",

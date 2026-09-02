@@ -281,6 +281,44 @@ test("copy buttons reserve both transient labels without layout shift", async ()
   expect(source).toContain('hiddenCopyLabel: {\n    visibility: "hidden"');
 });
 
+test("SkipLink owns its offscreen and native focus presentation in StyleX", async () => {
+  const [components, source] = await Promise.all([
+    stylesheet("./components.css"),
+    stylesheet("./skip-link.stylex.ts"),
+  ]);
+
+  expect(components).not.toMatch(
+    /\.hraness-skip-link(?![A-Za-z0-9_-])/u,
+  );
+  expect(source).toContain('alignItems: "center"');
+  expect(source).toContain('position: "fixed"');
+  expect(source).toContain('backgroundAttachment: "scroll"');
+  expect(source).toContain('backgroundClip: "border-box"');
+  expect(source).toContain('backgroundColor: "var(--ui-foreground)"');
+  expect(source).toContain('backgroundImage: "none"');
+  expect(source).toContain('backgroundOrigin: "padding-box"');
+  expect(source).toContain('backgroundPosition: "0% 0%"');
+  expect(source).toContain('backgroundRepeat: "repeat"');
+  expect(source).toContain('backgroundSize: "auto auto"');
+  expect(source).not.toContain('background: "');
+  expect(source).toContain('borderRadius: "var(--radius-md)"');
+  expect(source).toContain('color: "var(--ui-background)"');
+  expect(source).toContain('display: "inline-flex"');
+  expect(source).toContain('fontWeight: "var(--font-weight-medium)"');
+  expect(source).toContain('zIndex: "var(--z-skip-link)"');
+  expect(source).toContain('"inset-block-start": "var(--space-3)"');
+  expect(source).toContain('"inset-inline-start": "var(--space-3)"');
+  expect(source).not.toContain("insetBlockStart");
+  expect(source).not.toContain("insetInlineStart");
+  expect(source).toContain('minHeight: "var(--interactive-target-min)"');
+  expect(source).toContain('paddingInline: "var(--space-4)"');
+  expect(source).toContain(
+    'transform: "translateY(calc(-100% - var(--space-6)))"',
+  );
+  expect(source).toContain('":focus": {\n      transform: "translateY(0)"');
+  expect(source).not.toContain(":focus-visible");
+});
+
 test("breadcrumbs keep the current page on one shrinkable line", async () => {
   const components = await stylesheet("./components.css");
   const breadcrumbs = declarationBlock(

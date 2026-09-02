@@ -20,6 +20,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-link-layer-conflict",
   "data-gallery-checkbox-field-layer-conflict",
   "data-gallery-action-family-layer-conflict",
+  "data-gallery-skip-link-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -2268,6 +2269,94 @@ function requireActionFamilyContract(
   }
 }
 
+function requireSkipLinkContract(
+  legacyComponents: string,
+  compiledCss: string,
+  skipLinkSource: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-skip-link(?![A-Za-z0-9_-])/u,
+    "a legacy SkipLink recipe",
+  );
+  for (const [pattern, description] of [
+    [/align-items:\s*center;/u, "the SkipLink alignment"],
+    [/background-attachment:\s*scroll;/u, "the SkipLink background attachment reset"],
+    [/background-clip:\s*border-box;/u, "the SkipLink background clip reset"],
+    [/background-color:\s*var\(--ui-foreground\);/u, "the SkipLink background color"],
+    [/background-image:\s*none;/u, "the SkipLink background image reset"],
+    [/background-origin:\s*padding-box;/u, "the SkipLink background origin reset"],
+    [/background-position:\s*0 0;/u, "the SkipLink background position reset"],
+    [/background-repeat:\s*repeat;/u, "the SkipLink background repeat reset"],
+    [/background-size:\s*auto;/u, "the SkipLink background size reset"],
+    [/border-radius:\s*var\(--radius-md\);/u, "the SkipLink radius"],
+    [/color:\s*var\(--ui-background\);/u, "the SkipLink foreground"],
+    [/display:\s*inline-flex;/u, "the SkipLink display"],
+    [/font-weight:\s*var\(--font-weight-medium\);/u, "the SkipLink weight"],
+    [/position:\s*fixed;/u, "the fixed SkipLink position"],
+    [/z-index:\s*var\(--z-skip-link\);/u, "the SkipLink stack order"],
+    [/inset-block-start:\s*var\(--space-3\);/u, "the SkipLink block inset"],
+    [/inset-inline-start:\s*var\(--space-3\);/u, "the SkipLink inline inset"],
+    [/min-height:\s*var\(--interactive-target-min\);/u, "the SkipLink target height"],
+    [/padding-inline:\s*var\(--space-4\);/u, "the SkipLink inline padding"],
+    [
+      /transform:\s*translateY\(calc\(-100%\s*-\s*var\(--space-6\)\)\);/u,
+      "the offscreen SkipLink transform",
+    ],
+    [
+      /:focus\s*\{[^{}]*transform:\s*translateY\(0\);/u,
+      "the native SkipLink focus reveal",
+    ],
+  ] as const) {
+    requireMatch(compiledCss, pattern, description);
+  }
+  requireMatch(
+    skipLinkSource,
+    /xstyle\?:\s*StyleXStyles;/u,
+    "the typed SkipLink xstyle seam",
+  );
+  requireMatch(
+    skipLinkSource,
+    /stylex\.props\(skipLinkStyles\.root,\s*xstyle\)/u,
+    "the caller-last SkipLink StyleX composition",
+  );
+  requireMatch(
+    skipLinkSource,
+    /cn\(\s*["']hraness-skip-link["'],\s*presentation\.className,\s*className,?\s*\)/u,
+    "the SkipLink stable, generated, and caller class order",
+  );
+  requireMatch(
+    skipLinkSource,
+    /mergeStylexInlineStyles\(presentation\.style,\s*style\)/u,
+    "the SkipLink StyleX-before-native inline merge",
+  );
+  for (const [pattern, description] of [
+    [/href\?:\s*`#\$\{string\}`;/u, "the hash-only SkipLink href"],
+    [/href\s*=\s*["']#main-content["']/u, "the default SkipLink hash"],
+    [/data-slot=["']skip-link["']/u, "the SkipLink semantic slot"],
+    [/onClick\?\.\(event\)/u, "the caller SkipLink click callback"],
+    [/onKeyDown\?\.\(event\)/u, "the caller SkipLink keyboard callback"],
+    [/onClick=\{handleClick\}/u, "the SkipLink click handler"],
+    [/onKeyDown=\{handleKeyDown\}/u, "the SkipLink keyboard handler"],
+    [/ref=\{ref\}/u, "the SkipLink anchor ref"],
+    [/document\.getElementById\(href\.slice\(1\)\)/u, "the SkipLink hash target lookup"],
+    [/target\.focus\(\{ preventScroll:\s*true \}\)/u, "the non-scrolling SkipLink focus attempt"],
+    [/target\.setAttribute\(["']tabindex["'],\s*["']-1["']\)/u, "the temporary SkipLink tabindex"],
+    [/target\.removeAttribute\(["']tabindex["']\)/u, "the SkipLink tabindex cleanup"],
+    [/scrollTargetIntoView\(target\)/u, "the SkipLink target scroll"],
+  ] as const) {
+    requireMatch(skipLinkSource, pattern, description);
+  }
+  const focusTransfers = skipLinkSource.match(
+    /if \(focusHashTarget\(href\)\) event\.preventDefault\(\);/gu,
+  );
+  if (focusTransfers?.length !== 2) {
+    throw new Error(
+      "StyleX artifact is missing the SkipLink click and keyboard focus transfers",
+    );
+  }
+}
+
 function requireCheckboxFieldContract(
   legacyComponents: string,
   compiledCss: string,
@@ -2442,6 +2531,7 @@ const [
   actionsSource,
   fieldsSource,
   resetStylesheet,
+  skipLinkSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -2454,6 +2544,7 @@ const [
     readFile(resolve(repository, "src/actions.tsx"), "utf8"),
     readFile(resolve(repository, "src/fields.tsx"), "utf8"),
     readFile(resolve(repository, "src/reset.css"), "utf8"),
+    readFile(resolve(repository, "src/skip-link.tsx"), "utf8"),
   ]);
 
 if (compiledCss.trim().length === 0) {
@@ -2568,6 +2659,7 @@ requireActionFamilyContract(
   compiledJavaScript,
   actionsSource,
 );
+requireSkipLinkContract(legacyComponents, compiledCss, skipLinkSource);
 requireCheckboxFieldContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCheckboxFieldSourceContract(fieldsSource);
 requireEarliestLayerPrelude(resetStylesheet);
@@ -2664,6 +2756,7 @@ for (const [pattern, description] of [
   [/hraness-toolbar/u, "the Toolbar semantic hook"],
   [/hraness-key-hint/u, "the KeyHint semantic hook"],
   [/hraness-link/u, "the Link semantic hook"],
+  [/hraness-skip-link/u, "the SkipLink semantic hook"],
   [/hraness-checkbox-field/u, "the CheckboxField semantic hook"],
   [/hraness-checkbox-field__control/u, "the CheckboxField control semantic hook"],
   [/hraness-checkbox-field__indicator/u, "the CheckboxField indicator semantic hook"],
@@ -3471,6 +3564,76 @@ for (const {
     `the action-family guard must reject reversed ${component} native inline-style precedence`,
   );
 }
+assert.throws(
+  () =>
+    requireSkipLinkContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-skip-link { position: fixed; } }`,
+      compiledCss,
+      skipLinkSource,
+    ),
+  /legacy SkipLink recipe/u,
+  "the SkipLink guard must reject a restored legacy selector",
+);
+assert.throws(
+  () =>
+    requireSkipLinkContract(
+      legacyComponents,
+      compiledCss.replace(
+        /background-image:\s*none;/gu,
+        "background-image: linear-gradient(red, blue);",
+      ),
+      skipLinkSource,
+    ),
+  /SkipLink background image reset/u,
+  "the SkipLink guard must reject lost background-shorthand reset semantics",
+);
+assert.throws(
+  () =>
+    requireSkipLinkContract(
+      legacyComponents,
+      compiledCss.replace(
+        /translateY\(calc\(-100%\s*-\s*var\(--space-6\)\)\)/u,
+        "translateY(-1px)",
+      ),
+      skipLinkSource,
+    ),
+  /offscreen SkipLink transform/u,
+  "the SkipLink guard must reject changed offscreen geometry",
+);
+assert.throws(
+  () =>
+    requireSkipLinkContract(
+      legacyComponents,
+      compiledCss.replace(
+        /transform:\s*translateY\(0\);/u,
+        "transform: translateY(1px);",
+      ),
+      skipLinkSource,
+    ),
+  /native SkipLink focus reveal/u,
+  "the SkipLink guard must reject a changed native focus reveal",
+);
+assert.throws(
+  () =>
+    requireSkipLinkContract(
+      legacyComponents,
+      compiledCss,
+      skipLinkSource.replace(
+        "mergeStylexInlineStyles(presentation.style, style)",
+        "mergeStylexInlineStyles(style, presentation.style)",
+      ),
+    ),
+  /StyleX-before-native inline merge/u,
+  "the SkipLink guard must reject reversed native-style precedence",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-skip-link-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-skip-link-layer-conflict sentinel/u,
+  "the SkipLink guard must reject gallery sentinel leakage",
+);
 const changedCheckboxDefaultTarget = replaceCheckboxDeclaration(
   compiledJavaScript,
   compiledCss,

@@ -7,8 +7,12 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 
+import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
+import { skipLinkStyles } from "./skip-link.stylex.js";
 
 export type SkipLinkProps = Omit<
   AnchorHTMLAttributes<HTMLAnchorElement>,
@@ -16,6 +20,8 @@ export type SkipLinkProps = Omit<
 > & {
   readonly children?: ReactNode;
   readonly href?: `#${string}`;
+  /** Typed StyleX presentation applied after the SkipLink base recipe. */
+  readonly xstyle?: StyleXStyles;
 };
 
 function attemptFocus(target: HTMLElement, ownerDocument: Document): boolean {
@@ -83,6 +89,8 @@ export const SkipLink = forwardRef<HTMLAnchorElement, SkipLinkProps>(
       href = "#main-content",
       onClick,
       onKeyDown,
+      style,
+      xstyle,
       ...props
     },
     ref,
@@ -121,15 +129,22 @@ export const SkipLink = forwardRef<HTMLAnchorElement, SkipLinkProps>(
       if (focusHashTarget(href)) event.preventDefault();
     };
 
+    const presentation = stylex.props(skipLinkStyles.root, xstyle);
+
     return (
       <a
         {...props}
-        className={cn("hraness-skip-link", className)}
+        className={cn(
+          "hraness-skip-link",
+          presentation.className,
+          className,
+        )}
         data-slot="skip-link"
         href={href}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         ref={ref}
+        style={mergeStylexInlineStyles(presentation.style, style)}
       >
         {children}
       </a>

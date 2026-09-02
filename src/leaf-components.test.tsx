@@ -49,18 +49,34 @@ import {
 import { Toolbar } from "./toolbar.js";
 
 type SkipLinkTestElement = ReactElement<{
+  href: `#${string}`;
   onClick: (event: ReactMouseEvent<HTMLAnchorElement>) => void;
+  ref: Ref<HTMLAnchorElement>;
 }>;
 
-function renderSkipLinkForTest(props: SkipLinkProps): SkipLinkTestElement {
+function renderSkipLinkForTest(
+  props: SkipLinkProps,
+  ref: Ref<HTMLAnchorElement> = null,
+): SkipLinkTestElement {
   const component = SkipLink as unknown as Readonly<{
     render: (
       props: SkipLinkProps,
       ref: Ref<HTMLAnchorElement>,
     ) => SkipLinkTestElement;
   }>;
-  return component.render(props, null);
+  return component.render(props, ref);
 }
+
+const skipLinkTestStyles = stylex.create({
+  dynamicWidth: (width: string) => ({ width }),
+  override: {
+    backgroundColor: "var(--ui-secondary)",
+    borderRadius: "var(--radius-lg)",
+    ":focus": {
+      transform: "translateY(0.5rem)",
+    },
+  },
+});
 
 const keyHintTestStyles = stylex.create({
   dynamicWidth: (width: string) => ({ width }),
@@ -414,6 +430,48 @@ test("surface and skip-link primitives preserve chosen native elements", () => {
   expect(html).toContain('data-shape="rectangular"');
   expect(html).toContain('data-slot="themed-surface"');
   expect(html).toContain('data-tone="inverse"');
+});
+
+test("SkipLink preserves its native anchor and composes caller presentation last", () => {
+  const ref = createRef<HTMLAnchorElement>();
+  const element = renderSkipLinkForTest({ children: "Jump" }, ref);
+  const html = renderToStaticMarkup(
+    <SkipLink
+      aria-label="Jump to content"
+      className="consumer-skip-link"
+      data-product="writer"
+      href="#content"
+      ref={ref}
+      style={{ insetInlineStart: "3rem", width: "3rem" }}
+      title="Jump over navigation"
+      xstyle={[
+        skipLinkTestStyles.override,
+        skipLinkTestStyles.dynamicWidth("2rem"),
+      ]}
+    >
+      Jump
+    </SkipLink>,
+  );
+  const openingTag = html.slice(0, html.indexOf(">") + 1);
+  const classes = openingTag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+
+  expect(element.type).toBe("a");
+  expect(element.props.ref).toBe(ref);
+  expect(element.props.href).toBe("#main-content");
+  expect(openingTag).toStartWith("<a");
+  expect(openingTag).toContain('aria-label="Jump to content"');
+  expect(openingTag).toContain('data-product="writer"');
+  expect(openingTag).toContain('data-slot="skip-link"');
+  expect(openingTag).toContain('href="#content"');
+  expect(openingTag).toContain('title="Jump over navigation"');
+  expect(classes[0]).toBe("hraness-skip-link");
+  expect(classes.at(-1)).toBe("consumer-skip-link");
+  expect(classes.length).toBeGreaterThan(2);
+  expect(openingTag).toMatch(
+    /style="--[^:]+:2rem;inset-inline-start:3rem;width:3rem"/u,
+  );
+  expect(html).toEndWith("Jump</a>");
+  expect(SkipLink.displayName).toBe("SkipLink");
 });
 
 test("SkipLink temporarily focuses ordinary targets and preserves failed navigation", () => {
