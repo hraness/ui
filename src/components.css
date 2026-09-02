@@ -782,216 +782,9 @@
     line-height: 1.4;
   }
 
-  .hraness-tabs {
-    display: grid;
-    min-width: 0;
-    gap: var(--space-4);
-  }
-
-  .hraness-tabs__list {
-    display: flex;
-    min-width: 0;
-    width: fit-content;
-    max-width: 100%;
-    gap: var(--space-1);
-    padding: var(--space-1);
-    overflow-x: auto;
-    border-radius: var(--radius-lg);
-    background: var(--ui-muted);
-  }
-
-  .hraness-tabs[data-orientation="vertical"] .hraness-tabs__bar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .hraness-tabs[data-orientation="vertical"] .hraness-tabs__list {
-    width: 100%;
-    flex-direction: column;
-    overflow-x: visible;
-    overflow-y: auto;
-  }
-
-  .hraness-tabs[data-orientation="vertical"] .hraness-tabs__tab {
-    width: 100%;
-    justify-content: flex-start;
-    text-align: start;
-  }
-
-  .hraness-tabs__tab {
-    display: inline-flex;
-    min-height: var(--interactive-target-compact);
-    align-items: center;
-    justify-content: center;
-    padding-inline: var(--space-3);
-    border: 0;
-    border-radius: var(--radius-md);
-    outline: none;
-    background: transparent;
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-label);
-    font-weight: var(--font-weight-medium);
-    white-space: nowrap;
-  }
-
-  .hraness-tabs__tab[data-selected] {
-    background: var(--ui-background);
-    color: var(--ui-foreground);
-    box-shadow: var(--elevation-low);
-  }
-
-  .hraness-tabs__tab:where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: -2px;
-  }
-
-  .hraness-tabs__panels {
-    min-width: 0;
-  }
-
-  .hraness-tabs__panel {
-    min-width: 0;
-    outline: none;
-  }
-
-  .hraness-tabs__panel:where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 4px;
-  }
-
-  :where(.hraness-disclosure, .hraness-accordion) {
-    border-block-end: 1px solid var(--ui-border);
-  }
-
-  .hraness-disclosure__heading {
-    margin: 0;
-    font: inherit;
-  }
-
-  .hraness-disclosure__trigger {
-    display: flex;
-    width: 100%;
-    min-height: var(--interactive-target-min);
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    padding-block: var(--space-3);
-    border: 0;
-    outline: none;
-    background: transparent;
-    color: var(--ui-foreground);
-    font-weight: var(--font-weight-medium);
-    text-align: start;
-  }
-
-  .hraness-disclosure__trigger:where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 2px;
-  }
-
-  .hraness-disclosure__indicator {
-    flex: 0 0 auto;
-    transition: transform var(--motion-duration-standard) var(--motion-easing-emphasized);
-  }
-
-  .hraness-disclosure[data-expanded] .hraness-disclosure__indicator {
-    transform: rotate(90deg);
-  }
-
-  .hraness-disclosure__panel {
-    padding-block: 0 var(--space-4);
-    color: var(--ui-muted-foreground);
-  }
-
-  /* `hidden="until-found"` keeps the box in layout for find-in-page. */
-  .hraness-disclosure__panel[hidden] {
-    padding-block: 0;
-  }
-
-  :where(.hraness-toggle-group, .hraness-segmented-control) {
-    display: inline-flex;
-    width: fit-content;
-    max-width: 100%;
-    padding: var(--space-1);
-    overflow-x: auto;
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    background: var(--ui-muted);
-  }
-
-  .hraness-segmented-control {
-    gap: 0.125rem;
-    scrollbar-width: none;
-  }
-
+  /* WebKit scrollbar pseudo-elements cannot be emitted in StyleX's named layers. */
   .hraness-segmented-control::-webkit-scrollbar {
     display: none;
-  }
-
-  .hraness-toggle-group[data-orientation="vertical"] {
-    width: 100%;
-    flex-direction: column;
-    overflow-x: visible;
-  }
-
-  .hraness-toggle-group[data-orientation="vertical"]
-    .hraness-toggle-group__item {
-    width: 100%;
-    justify-content: flex-start;
-    text-align: start;
-  }
-
-  :where(.hraness-toggle-group__item, .hraness-segmented-control__item) {
-    display: inline-flex;
-    min-height: var(--interactive-target-compact);
-    align-items: center;
-    justify-content: center;
-    padding-inline: var(--space-3);
-    border: 0;
-    border-radius: var(--radius-md);
-    outline: none;
-    background: transparent;
-    color: var(--ui-muted-foreground);
-    white-space: nowrap;
-  }
-
-  .hraness-segmented-control__item {
-    cursor: pointer;
-    user-select: none;
-    transition:
-      background-color var(--motion-duration-fast) var(--motion-easing-standard),
-      box-shadow var(--motion-duration-fast) var(--motion-easing-standard),
-      color var(--motion-duration-fast) var(--motion-easing-standard);
-  }
-
-  .hraness-segmented-control__item:where([data-hovered], :hover):not([data-selected]) {
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  :where(.hraness-toggle-group__item, .hraness-segmented-control__item)[data-selected] {
-    background: var(--ui-background);
-    color: var(--ui-foreground);
-    box-shadow: var(--elevation-low);
-  }
-
-  :where(.hraness-toggle-group__item, .hraness-segmented-control__item):where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: -2px;
-  }
-
-  .hraness-separator {
-    width: 100%;
-    height: 1px;
-    flex: 0 0 auto;
-    border: 0;
-    background: var(--ui-border);
-  }
-
-  .hraness-separator[aria-orientation="vertical"] {
-    width: 1px;
-    height: auto;
-    align-self: stretch;
   }
 
   :where(.hraness-list-box, .hraness-menu) {
@@ -1492,83 +1285,6 @@
   .hraness-pagination [aria-current="page"] {
     background: var(--ui-primary);
     color: var(--ui-primary-foreground);
-  }
-
-  /* Canonical substructure shared by the complete component set. */
-  .hraness-tabs__bar {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-  }
-
-  :where(.hraness-tabs__leading, .hraness-toggle-group__leading,
-    .hraness-segmented-control__leading) {
-    display: inline-grid;
-    flex: 0 0 auto;
-    place-items: center;
-  }
-
-  :where(.hraness-tabs__label, .hraness-toggle-group__label,
-    .hraness-segmented-control__label) {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .hraness-segmented-control__label {
-    display: inline-grid;
-    place-items: center;
-  }
-
-  .hraness-tabs__end {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .hraness-tabs[data-size="compact"] .hraness-tabs__tab,
-  .hraness-segmented-control[data-size="compact"]
-    .hraness-segmented-control__item {
-    min-height: 2rem;
-    padding-inline: var(--space-2);
-  }
-
-  .hraness-segmented-control[data-size="compact"] {
-    padding: 0.125rem;
-    border-radius: var(--radius-md);
-  }
-
-  .hraness-segmented-control[data-size="compact"]
-    .hraness-segmented-control__item {
-    border-radius: var(--radius-sm);
-  }
-
-  .hraness-disclosure__title {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .hraness-disclosure[data-size="compact"] .hraness-disclosure__trigger {
-    min-height: var(--interactive-target-compact);
-    padding-block: var(--space-2);
-  }
-
-  .hraness-disclosure[data-size="large"] .hraness-disclosure__trigger {
-    min-height: var(--control-height-primary);
-    font-size: var(--text-body);
-  }
-
-  .hraness-segmented-control__indicator {
-    display: none;
-  }
-
-  :where(.hraness-toggle-group__item, .hraness-segmented-control__item)[data-disabled] {
-    cursor: not-allowed;
-    opacity: 0.5;
   }
 
   :where(.hraness-list-box__section, .hraness-menu__section) {
@@ -2162,10 +1878,6 @@
     .hraness-icon-button__control,
     .hraness-toggle-button__control,
     .hraness-link-button__control,
-    .hraness-tabs__tab,
-    .hraness-disclosure__trigger,
-    .hraness-toggle-group__item,
-    .hraness-segmented-control__item,
     .hraness-list-box__item,
     .hraness-menu__item,
     .hraness-select-field__option,
@@ -2184,10 +1896,6 @@
     min-width: var(--interactive-target-min);
   }
 
-  .hraness-segmented-control__item {
-    min-width: var(--interactive-target-min);
-  }
-
   :where(.hraness-field, .hraness-search-field, .hraness-number-field,
     .hraness-native-select-field, .hraness-file-field, .hraness-select-field) {
     --hraness-field-height: var(--interactive-target-min);
@@ -2199,10 +1907,6 @@
   .hraness-icon-button__control,
   .hraness-toggle-button__control,
   .hraness-link-button__control,
-  .hraness-tabs__tab,
-  .hraness-disclosure__trigger,
-  .hraness-toggle-group__item,
-  .hraness-segmented-control__item,
   .hraness-list-box__item,
   .hraness-menu__item,
   .hraness-select-field__option,
@@ -2214,10 +1918,6 @@
   .hraness-pagination__boundary
 ) {
   min-height: var(--interactive-target-min);
-}
-
-:root[data-verification-pointer="coarse"] .hraness-segmented-control__item {
-  min-width: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
@@ -2279,9 +1979,6 @@
     .hraness-radio-option__indicator,
     .hraness-switch-field__track,
     .hraness-select-field__trigger,
-    .hraness-tabs__list,
-    .hraness-toggle-group,
-    .hraness-segmented-control,
     .hraness-menu-popover,
     .hraness-popover,
     .hraness-tooltip,
@@ -2294,9 +1991,7 @@
   }
 
   :where(.hraness-button__control, .hraness-toggle-button__control,
-    .hraness-link-button__control,
-    .hraness-tabs__tab[data-selected], .hraness-toggle-group__item[data-selected],
-    .hraness-segmented-control__item[data-selected]) {
+    .hraness-link-button__control) {
     background: ButtonFace;
     color: ButtonText;
   }

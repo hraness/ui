@@ -2,13 +2,19 @@ import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { buildPackage } from "./build-package.js";
-
 async function buildCopy(repository: string, destination: string): Promise<void> {
   await cp(resolve(repository, "src"), resolve(destination, "src"), {
     recursive: true,
   });
-  await buildPackage(destination);
+  const child = Bun.spawn({
+    cmd: [process.execPath, resolve(repository, "scripts/build-package.ts")],
+    cwd: destination,
+    stderr: "inherit",
+    stdout: "inherit",
+  });
+  if (await child.exited !== 0) {
+    throw new Error("StyleX determinism build failed");
+  }
 }
 
 async function requireSameFile(

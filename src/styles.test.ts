@@ -152,6 +152,11 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   expect(components).not.toMatch(/\.hraness-toolbar(?![A-Za-z0-9_-])/u);
   expect(components).not.toMatch(/\.hraness-key-hint(?![A-Za-z0-9_-])/u);
   expect(components).not.toMatch(/\.hraness-checkbox-field(?![A-Za-z0-9_-])/u);
+  const renderedComponents = components.replace(
+    /\/\* WebKit scrollbar pseudo-elements[^]*?\.hraness-segmented-control::-webkit-scrollbar\s*\{\s*display:\s*none;\s*\}/u,
+    "",
+  );
+  expect(renderedComponents).not.toMatch(/\.hraness-(?:tabs|disclosure|accordion|toggle-group|segmented-control|separator)(?![A-Za-z0-9_-])/u);
   expect(tailwind).toContain(
     ':not(:where([data-theme="light"], [data-theme="light"] *))',
   );
@@ -170,42 +175,61 @@ test("forced-colors field placeholders use unfaded system text", async () => {
 });
 
 test("segmented controls keep one compact selection surface without item dividers", async () => {
-  const components = await stylesheet("./components.css");
-  const control = declarationBlock(
-    components,
-    ".hraness-segmented-control {",
-  );
-  const item = declarationBlock(
-    components,
-    ".hraness-segmented-control__item {",
-  );
-  const compact = declarationBlock(
-    components,
-    '.hraness-segmented-control[data-size="compact"] {',
-  );
-  const label = declarationBlock(
-    components,
-    ".hraness-segmented-control__label {",
-  );
+  const source = await Bun.file(
+    new URL("./collections.stylex.ts", import.meta.url),
+  ).text();
 
-  expect(control).toContain("gap: 0.125rem;");
-  expect(control).toContain("scrollbar-width: none;");
-  expect(item).toContain("cursor: pointer;");
-  expect(item).toContain("user-select: none;");
-  expect(item).toContain("background-color var(--motion-duration-fast)");
-  expect(compact).toContain("padding: 0.125rem;");
-  expect(compact).toContain("border-radius: var(--radius-md);");
-  expect(components).toContain(
-    ".hraness-segmented-control__item:where([data-hovered], :hover):not([data-selected])",
-  );
-  expect(components).toContain(
-    '.hraness-segmented-control[data-size="compact"]\n    .hraness-segmented-control__item {\n    border-radius: var(--radius-sm);',
-  );
-  expect(label).toContain("display: inline-grid;");
-  expect(label).toContain("place-items: center;");
-  expect(components).toContain(
-    ':root[data-verification-pointer="coarse"] .hraness-segmented-control__item {\n  min-width: var(--interactive-target-min);',
-  );
+  expect(source).toContain('gap: "0.125rem"');
+  expect(source).toContain('scrollbarWidth: "none"');
+  expect(source).toContain('cursor: "pointer"');
+  expect(source).toContain('userSelect: "none"');
+  expect(source).toContain('transitionProperty: "background-color, box-shadow, color"');
+  expect(source).toContain('paddingBlock: "0.125rem"');
+  expect(source).toContain('paddingInline: "0.125rem"');
+  expect(source).toContain('borderRadius: "var(--radius-md)"');
+  expect(source).toContain('borderRadius: "var(--radius-sm)"');
+  expect(source).toContain('backgroundColor: "var(--ui-accent)"');
+  expect(source).toContain('display: "inline-grid"');
+  expect(source).toContain('alignItems: "center"');
+  expect(source).toContain('justifyItems: "center"');
+  expect(source).toContain('minWidth: {');
+  expect(source).toContain('[coarsePointer]: "var(--interactive-target-min)"');
+});
+
+test("Separator owns its physical orientation and shorthand resets in StyleX", async () => {
+  const [components, source] = await Promise.all([
+    stylesheet("./components.css"),
+    stylesheet("./separator.stylex.ts"),
+  ]);
+
+  expect(components).not.toMatch(/\.hraness-separator(?![A-Za-z0-9_-])/u);
+  for (const declaration of [
+    'backgroundAttachment: "scroll"',
+    'backgroundClip: "border-box"',
+    'backgroundColor: "var(--ui-border)"',
+    'backgroundImage: "none"',
+    'backgroundOrigin: "padding-box"',
+    'backgroundPosition: "0% 0%"',
+    'backgroundRepeat: "repeat"',
+    'backgroundSize: "auto auto"',
+    'borderColor: "currentColor"',
+    'borderImageOutset: 0',
+    'borderImageRepeat: "stretch"',
+    'borderImageSlice: "100%"',
+    'borderImageSource: "none"',
+    'borderImageWidth: 1',
+    'borderStyle: "none"',
+    'borderWidth: 0',
+    'flexBasis: "auto"',
+    'flexGrow: 0',
+    'flexShrink: 0',
+    'height: "1px"',
+    'width: "100%"',
+    'alignSelf: "stretch"',
+    'height: "auto"',
+    'width: "1px"',
+  ]) expect(source).toContain(declaration);
+  expect(source).not.toMatch(/^\s*(?:background|border|flex):/mu);
 });
 
 test("inline icon links keep typographic scale without losing interaction states", async () => {
@@ -293,18 +317,13 @@ test("breadcrumbs keep the current page on one shrinkable line", async () => {
 });
 
 test("collapsed disclosure panels do not retain their expanded inset", async () => {
-  const components = await stylesheet("./components.css");
-  const panel = declarationBlock(
-    components,
-    ".hraness-disclosure__panel {",
-  );
-  const hiddenPanel = declarationBlock(
-    components,
-    ".hraness-disclosure__panel[hidden] {",
-  );
+  const source = await Bun.file(
+    new URL("./collections.stylex.ts", import.meta.url),
+  ).text();
 
-  expect(panel).toContain("padding-block: 0 var(--space-4);");
-  expect(hiddenPanel).toContain("padding-block: 0;");
+  expect(source).toContain('paddingBlockEnd: "var(--space-4)"');
+  expect(source).toContain("disclosurePanelHidden");
+  expect(source).toContain("paddingBlockEnd: 0");
 });
 
 test("transport actions and slider thumbs use their shared geometry", async () => {
