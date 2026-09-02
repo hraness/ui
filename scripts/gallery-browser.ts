@@ -6048,11 +6048,14 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     ) {
       throw new Error("The RTL Fields affordances are incomplete.");
     }
+    const previousSelectDirection = nativeSelect.getAttribute("dir");
+    const previousSelectLanguage = nativeSelect.getAttribute("lang");
     const selectEvidence = () => {
       const style = getComputedStyle(nativeSelect);
       return {
         backgroundImage: style.backgroundImage,
         backgroundPosition: style.backgroundPosition,
+        direction: style.direction,
         paddingInlineEnd: Number.parseFloat(style.paddingInlineEnd),
         paddingLeft: Number.parseFloat(style.paddingLeft),
         paddingRight: Number.parseFloat(style.paddingRight),
@@ -6064,6 +6067,8 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     try {
       root.lang = "ar";
       root.dir = "rtl";
+      nativeSelect.lang = "ar";
+      nativeSelect.dir = "rtl";
       for (const animation of thumb.getAnimations()) animation.finish();
       await new Promise<void>((resolveFrame) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
@@ -6075,6 +6080,10 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       else root.setAttribute("lang", previousLanguage);
       if (previousDirection === null) root.removeAttribute("dir");
       else root.setAttribute("dir", previousDirection);
+      if (previousSelectLanguage === null) nativeSelect.removeAttribute("lang");
+      else nativeSelect.setAttribute("lang", previousSelectLanguage);
+      if (previousSelectDirection === null) nativeSelect.removeAttribute("dir");
+      else nativeSelect.setAttribute("dir", previousSelectDirection);
       for (const animation of thumb.getAnimations()) animation.finish();
       await new Promise<void>((resolveFrame) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
@@ -6098,6 +6107,8 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
   invariant(
     rtlEvidence.ltrSelect.backgroundImage.includes("linear-gradient")
     && rtlEvidence.rtlSelect.backgroundImage.includes("linear-gradient")
+    && rtlEvidence.ltrSelect.direction === "ltr"
+    && rtlEvidence.rtlSelect.direction === "rtl"
     && /calc\(100% - (?:16px|1rem)\).*calc\(100% - (?:12px|0\.75rem)\)/u.test(
       rtlEvidence.ltrSelect.backgroundPosition,
     )
@@ -6112,6 +6123,7 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     && nearlyEqual(rtlEvidence.rtlSelect.paddingRight, 12)
     && rtlEvidence.restoredSelect.backgroundPosition
       === rtlEvidence.ltrSelect.backgroundPosition
+    && rtlEvidence.restoredSelect.direction === rtlEvidence.ltrSelect.direction
     && nearlyEqual(
       rtlEvidence.restoredSelect.paddingLeft,
       rtlEvidence.ltrSelect.paddingLeft,
