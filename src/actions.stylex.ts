@@ -1,8 +1,8 @@
 import * as stylex from "@stylexjs/stylex";
 
-const coarsePointer = "@media (pointer: coarse)";
-const forcedColors = "@media (forced-colors: active)";
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
+const coarsePointer = "@media(pointer: coarse)";
+const forcedColors = "@media(forced-colors: active)";
+const reducedMotion = "@media(prefers-reduced-motion: reduce)";
 const syntheticCoarseMinimum = "var(--hraness-action-coarse-min, 0px)";
 
 export const actionStyles = stylex.create({
@@ -37,8 +37,11 @@ export const actionStyles = stylex.create({
     borderStyle: "solid",
     borderWidth: "1px",
     display: "inline-flex",
-    font: "inherit",
+    fontFamily: "inherit",
     fontSize: "var(--text-label)",
+    fontStretch: "inherit",
+    fontStyle: "inherit",
+    fontVariant: "inherit",
     fontWeight: "var(--font-weight-medium)",
     gap: "var(--space-2)",
     justifyContent: "center",
@@ -66,7 +69,8 @@ export const actionStyles = stylex.create({
     width: "100%",
   },
   copyLabel: {
-    gridArea: "1 / 1",
+    gridColumn: "1",
+    gridRow: "1",
   },
   copyLabels: {
     display: "inline-grid",
@@ -152,9 +156,10 @@ export const actionStyles = stylex.create({
     },
   },
   iconContent: {
+    alignItems: "center",
     display: "inline-grid",
     flex: "0 0 auto",
-    placeItems: "center",
+    justifyItems: "center",
   },
   iconControl: {
     minHeight: {
@@ -185,10 +190,11 @@ export const actionStyles = stylex.create({
     },
   },
   inlineContent: {
+    alignItems: "center",
     display: "inline-grid",
     height: "100%",
+    justifyItems: "center",
     lineHeight: 0,
-    placeItems: "center",
     width: "100%",
   },
   inlineControl: {
@@ -200,13 +206,14 @@ export const actionStyles = stylex.create({
     color: "var(--ui-primary)",
     display: "inline-grid",
     height: "1.5rem",
+    justifyItems: "center",
     lineHeight: 1,
     minHeight: "1.5rem",
     minWidth: "1.5rem",
     outlineStyle: "none",
     paddingBlock: 0,
     paddingInline: 0,
-    placeItems: "center",
+    alignItems: "center",
     textDecoration: "none",
     transitionDelay: "0s, 0s, 0s, 0s",
     transitionDuration:
@@ -282,9 +289,10 @@ export const actionStyles = stylex.create({
     },
   },
   leading: {
+    alignItems: "center",
     display: "inline-grid",
     flex: "0 0 auto",
-    placeItems: "center",
+    justifyItems: "center",
   },
   nativeDangerHover: {
     ":hover": {

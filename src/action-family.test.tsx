@@ -233,7 +233,10 @@ test("action StyleX source owns every migrated visual recipe and legacy CSS owns
   }
   expect(source).toContain('animationName: {');
   expect(source).toContain('[reducedMotion]: "none"');
-  expect(source).toContain('font: "inherit"');
+  expect(source).toContain('fontFamily: "inherit"');
+  expect(source).toContain('fontStretch: "inherit"');
+  expect(source).toContain('fontStyle: "inherit"');
+  expect(source).toContain('fontVariant: "inherit"');
   expect(source).not.toContain("fontSizeAdjust");
   expect(components).toContain("@keyframes hraness-spin");
 });

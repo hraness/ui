@@ -254,7 +254,7 @@ test("coarse-pointer seams preserve every action density without widening icon t
     stylesheet("./actions.stylex.ts"),
   ]);
 
-  expect(source).toContain('const coarsePointer = "@media (pointer: coarse)"');
+  expect(source).toContain('const coarsePointer = "@media(pointer: coarse)"');
   expect(source).toContain('[coarsePointer]: "var(--interactive-target-min)"');
   expect(source).toContain('[coarsePointer]: "var(--control-height-primary)"');
   expect(source).toContain('[coarsePointer]: "var(--control-height-transport)"');
@@ -277,7 +277,7 @@ test("copy buttons reserve both transient labels without layout shift", async ()
   const source = await stylesheet("./actions.stylex.ts");
 
   expect(source).toContain('copyLabels: {\n    display: "inline-grid"');
-  expect(source).toContain('copyLabel: {\n    gridArea: "1 / 1"');
+  expect(source).toContain('copyLabel: {\n    gridColumn: "1",\n    gridRow: "1"');
   expect(source).toContain('hiddenCopyLabel: {\n    visibility: "hidden"');
 });
 

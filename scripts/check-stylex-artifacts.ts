@@ -2040,7 +2040,10 @@ function requireActionFamilyContract(
   for (const [key, pattern, description] of [
     ["danger", /background-color:\s*var\(--ui-destructive\);/u, "the danger action surface"],
     ["hoveredQuiet", /background-color:\s*var\(--ui-accent\);/u, "the quiet hover surface"],
-    ["control", /font:\s*inherit;/u, "the inherited action font shorthand"],
+    ["control", /font-family:\s*inherit;/u, "the inherited action font family"],
+    ["control", /font-stretch:\s*inherit;/u, "the inherited action font stretch"],
+    ["control", /font-style:\s*inherit;/u, "the inherited action font style"],
+    ["control", /font-variant:\s*inherit;/u, "the inherited action font variant"],
     ["inlineControl", /(?:^|;)\s*height:\s*1\.5rem;/u, "the inline IconLink height"],
     ["inlineControl", /min-height:\s*1\.5rem;/u, "the inline IconLink minimum height"],
     ["inlineControl", /min-width:\s*1\.5rem;/u, "the inline IconLink minimum width"],
@@ -3183,9 +3186,13 @@ assert.throws(
 assert.throws(
   () =>
     requireLinkSourceContract(
-      actionsSource.replace(
-        "mergeStylexInlineStyles(presentation.style, callerStyle)",
-        "mergeStylexInlineStyles(callerStyle, presentation.style)",
+      replaceExactlyOnceInBoundedSource(
+        actionsSource,
+        "export function Link({",
+        "/** A semantic destination with action-control presentation. */",
+        /mergeStylexInlineStyles\(presentation\.style,\s*callerStyle\)/u,
+        () => "mergeStylexInlineStyles(callerStyle, presentation.style)",
+        "Link native inline-style precedence",
       ),
     ),
   /Link StyleX-before-native inline merge/u,
@@ -3203,8 +3210,8 @@ const changedActionFont = replaceActionDeclaration(
   compiledJavaScript,
   compiledCss,
   "control",
-  /font:\s*inherit;/u,
-  "font: menu;",
+  /font-family:\s*inherit;/u,
+  "font-family: menu;",
   "action inherited font",
 );
 const relocatedActionCoarseTarget = relocateActionConditionalRule(
@@ -3226,10 +3233,10 @@ const relocatedActionReducedMotion = relocateActionConditionalRule(
 const relocatedActionForcedSurface = relocateActionConditionalRule(
   compiledJavaScript,
   compiledCss,
-  "labeledPrimary",
+  "control",
   "@media(forced-colors:active)",
-  /background-color:\s*buttonface;/u,
-  "forced-color labeled action surface",
+  /border-color:\s*canvastext;/u,
+  "forced-color action border",
 );
 const changedActionSpinner = replaceActionDeclaration(
   compiledJavaScript,
@@ -3277,7 +3284,7 @@ const actionStyleAfterCallerSource = replaceExactlyOnceInBoundedSource(
   actionsSource,
   "function actionControlPresentation(",
   "function inlineIconControlPresentation(",
-  /controlXstyle,?\s*\);/u,
+  /\n\s*controlXstyle,\n\s*\);/u,
   () => "controlXstyle,\n    actionStyles.control,\n  );",
   "action caller class precedence",
 );
@@ -3308,7 +3315,7 @@ assert.throws(
       compiledJavaScript,
       actionsSource,
     ),
-  /inherited action font shorthand/u,
+  /inherited action font family/u,
   "the action-family guard must reject a changed inherited font",
 );
 assert.throws(
@@ -3330,7 +3337,7 @@ assert.throws(
       swappedActionControlOwnership,
       actionsSource,
     ),
-  /inherited action font shorthand/u,
+  /inherited action font family/u,
   "the action-family guard must reject declarations owned by the wrong action recipe",
 );
 assert.doesNotThrow(
@@ -3356,8 +3363,8 @@ for (const [mutatedCss, pattern, description] of [
   ],
   [
     relocatedActionForcedSurface,
-    /forced-color labeled action surface must remain directly inside/u,
-    "a relocated forced-color surface",
+    /forced-color action border must remain directly inside/u,
+    "a relocated forced-color border",
   ],
 ] as const) {
   assert.throws(

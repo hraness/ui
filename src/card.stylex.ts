@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 
-const forcedColors = "@media (forced-colors: active)";
+const forcedColors = "@media(forced-colors: active)";
 
 const hoveredBorder =
   "color-mix(in oklch, var(--ui-primary) 35%, var(--ui-border))";

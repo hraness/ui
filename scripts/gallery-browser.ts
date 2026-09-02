@@ -1000,8 +1000,23 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   );
   assert.match(
     css,
-    /font:\s*inherit/u,
-    "the packed default stylesheet must preserve the inherited action font shorthand",
+    /font-family:\s*inherit/u,
+    "the packed default stylesheet must preserve the inherited action font family",
+  );
+  assert.match(
+    css,
+    /font-stretch:\s*inherit/u,
+    "the packed default stylesheet must preserve the inherited action font stretch",
+  );
+  assert.match(
+    css,
+    /font-style:\s*inherit/u,
+    "the packed default stylesheet must preserve the inherited action font style",
+  );
+  assert.match(
+    css,
+    /font-variant:\s*inherit/u,
+    "the packed default stylesheet must preserve the inherited action font variant",
   );
   assert.match(
     css,
