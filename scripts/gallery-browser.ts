@@ -3247,10 +3247,12 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
           defaultActionEvidence.color,
           resolvedTokens.primaryForeground,
         )
-        && defaultActionEvidence.controlDisplay === "inline-flex"
+        // The gallery action row is a flex container, so the browser blockifies
+        // the authored inline-flex controls in computed style.
+        && defaultActionEvidence.controlDisplay === "flex"
         && defaultActionEvidence.justifyContent === "center"
         && defaultActionEvidence.minHeight >= 40
-        && defaultActionEvidence.rootDisplay === "inline-flex"
+        && defaultActionEvidence.rootDisplay === "flex"
         && defaultActionEvidence.rootMaxWidth === "100%"
         && defaultActionEvidence.rootVerticalAlign === "middle",
       actionFamilyClassContracts: actionEvidence.every(
@@ -3290,7 +3292,9 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         && overrideActionEvidence.minHeight === 56
         && overrideActionEvidence.paddingLeft === resolvedTokens.space5
         && overrideActionEvidence.paddingRight === resolvedTokens.space5
-        && overrideActionEvidence.rootDisplay === "inline-grid"
+        // The caller's authored inline-grid wrapper is likewise blockified by
+        // the gallery flex row.
+        && overrideActionEvidence.rootDisplay === "grid"
         && overrideActionEvidence.rootMaxWidth === "272px"
         && overrideActionEvidence.rootVerticalAlign === "bottom"
         && overrideActionEvidence.width === 240,
@@ -5285,6 +5289,41 @@ async function verifyActionCallerStatePrecedence(
         && element.matches(":hover")
         && element.hasAttribute("data-hovered");
     }, selector);
+    await page.waitForFunction(
+      ({ background, color, selector }) => {
+        const element = document.querySelector(selector);
+        if (
+          !(element instanceof HTMLButtonElement)
+          || !element.matches(":hover")
+          || !element.hasAttribute("data-hovered")
+        ) {
+          return false;
+        }
+        const resolveStyle = (property: string, value: string): string => {
+          const probe = document.createElement("span");
+          probe.style.setProperty(property, value);
+          document.body.append(probe);
+          const resolved = getComputedStyle(probe)
+            .getPropertyValue(property)
+            .trim();
+          probe.remove();
+          return resolved;
+        };
+        const style = getComputedStyle(element);
+        const hasRunningTransition = element.getAnimations({ subtree: true })
+          .some((animation) =>
+            animation.constructor.name === "CSSTransition"
+            && animation.playState !== "finished"
+            && animation.playState !== "idle"
+          );
+        return style.backgroundColor
+            === resolveStyle("background-color", background)
+          && style.color === resolveStyle("color", color)
+          && !hasRunningTransition;
+      },
+      { background: expectedBackground, color: expectedColor, selector },
+      { polling: "raf", timeout: 2_000 },
+    );
     return action.evaluate(
       (element, expected) => {
         const resolveStyle = (property: string, value: string): string => {
@@ -6283,8 +6322,8 @@ try {
   assert.match(production.javaScript, /hydrateRoot/u);
   assert.doesNotMatch(
     negativeControl.css,
-    /(?:height|width):\s*(?:100%|2\.5rem|3\.5rem)/u,
-    "the unstyled negative control must not accidentally receive package Avatar priority3 CSS",
+    /object-fit:\s*cover/u,
+    "the unstyled negative control must not accidentally receive the package Avatar image recipe",
   );
   await rm(negativeDirectory, { force: true, recursive: true });
   assert.equal(await Bun.file(negativeControl.cssPath).exists(), false);
@@ -7074,6 +7113,15 @@ try {
           await forcedPrimaryAction.evaluate((element) =>
             document.activeElement === element),
           "forced colors: the primary action is not next after the theme action",
+        );
+        await page.keyboard.press("Tab");
+        const forcedCallerAction = page.getByRole("button", {
+          name: "Caller action",
+        });
+        invariant(
+          await forcedCallerAction.evaluate((element) =>
+            document.activeElement === element),
+          "forced colors: the caller action is not next after the primary action",
         );
         for (const selector of [
           '[data-gallery-link="default"]',
