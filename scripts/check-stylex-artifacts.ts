@@ -4357,9 +4357,11 @@ assert.throws(
       legacyComponents,
       compiledCss,
       compiledJavaScript,
-      formSource.replace(
-        'from "./form.stylex.js"',
-        'from "./unrelated.stylex.js"',
+      replaceExactlyOnce(
+        formSource,
+        /from ["']\.\/form\.stylex\.js["']/u,
+        () => 'from "./unrelated.stylex.js"',
+        "Form style source import",
       ),
       formStyleSource,
     ),
@@ -4373,9 +4375,11 @@ assert.throws(
       compiledCss,
       compiledJavaScript,
       formSource,
-      formStyleSource.replace(
-        'gap: "var(--space-6)"',
-        'gap: "var(--space-5)"',
+      replaceExactlyOnce(
+        formStyleSource,
+        /gap:\s*["']var\(--space-6\)["']/u,
+        () => 'gap: "var(--space-5)"',
+        "Form style source recipe",
       ),
     ),
   /exact formStyles source recipe/u,
@@ -4387,9 +4391,11 @@ assert.throws(
       legacyComponents,
       compiledCss,
       compiledJavaScript,
-      formSource.replace(
-        "render ?? inheritedRender",
-        "inheritedRender ?? render",
+      replaceExactlyOnce(
+        formSource,
+        /render\s*\?\?\s*inheritedRender/u,
+        () => "inheritedRender ?? render",
+        "Form renderer precedence",
       ),
       formStyleSource,
     ),
@@ -4402,9 +4408,11 @@ assert.throws(
       legacyComponents,
       compiledCss,
       compiledJavaScript,
-      formSource.replace(
-        "resolvedRender(composedProps, undefined)",
-        "render?.(composedProps, undefined)",
+      replaceExactlyOnce(
+        formSource,
+        /resolvedRender\(composedProps,\s*undefined\)/u,
+        () => "render?.(composedProps, undefined)",
+        "Form inherited renderer",
       ),
       formStyleSource,
     ),
@@ -4417,9 +4425,11 @@ assert.throws(
       legacyComponents,
       compiledCss,
       compiledJavaScript,
-      formSource.replace(
-        "stylex.props(formStyles.root, xstyle)",
-        "stylex.props(xstyle, formStyles.root)",
+      replaceExactlyOnce(
+        formSource,
+        /stylex\.props\(formStyles\.root,\s*xstyle\)/u,
+        () => "stylex.props(xstyle, formStyles.root)",
+        "Form StyleX precedence",
       ),
       formStyleSource,
     ),
@@ -4432,9 +4442,11 @@ assert.throws(
       legacyComponents,
       compiledCss,
       compiledJavaScript,
-      formSource.replace(
-        "presentation.style,\n            domProps.style",
-        "domProps.style,\n            presentation.style",
+      replaceExactlyOnce(
+        formSource,
+        /mergeStylexInlineStyles\(\s*presentation\.style,\s*domProps\.style,?\s*\)/u,
+        () => "mergeStylexInlineStyles(domProps.style, presentation.style)",
+        "Form native inline-style precedence",
       ),
       formStyleSource,
     ),
@@ -4447,9 +4459,11 @@ assert.throws(
       legacyComponents,
       compiledCss,
       compiledJavaScript,
-      formSource.replace(
-        "domProps.className,\n            presentation.className",
-        "presentation.className,\n            domProps.className",
+      replaceExactlyOnce(
+        formSource,
+        /cn\(\s*domProps\.className,\s*presentation\.className,\s*className,?\s*\)/u,
+        () => "cn(presentation.className, domProps.className, className)",
+        "Form class precedence",
       ),
       formStyleSource,
     ),
