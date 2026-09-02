@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef } from "react";
+import { forwardRef, type FormHTMLAttributes } from "react";
 import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
 import {
@@ -14,11 +14,15 @@ import { formStyles } from "./form.stylex.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 
-export type FormProps = Omit<AriaFormProps, "className"> & {
-  readonly className?: string;
-  /** Typed StyleX presentation applied after the Form base recipe. */
-  readonly xstyle?: StyleXStyles;
-};
+export type FormProps =
+  Omit<AriaFormProps, "className"> &
+  Pick<FormHTMLAttributes<HTMLFormElement>, "acceptCharset"> & {
+    readonly className?: string;
+    /** A React Aria context slot. Null opts out of inherited context props. */
+    readonly slot?: string | null;
+    /** Typed StyleX presentation applied after the Form base recipe. */
+    readonly xstyle?: StyleXStyles;
+  };
 
 /** A validation-aware semantic form that leaves submission to the caller. */
 export const Form = forwardRef<HTMLFormElement, FormProps>(

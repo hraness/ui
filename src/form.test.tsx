@@ -70,7 +70,7 @@ test("Form preserves native submission, validation, ref, and custom render contr
   expect(tag).toContain('data-product="settings"');
   expect(tag).toContain('data-slot="form"');
   expect(tag).toContain('method="post"');
-  expect(tag).toContain('novalidate=""');
+  expect(tag).toMatch(/no[Vv]alidate=""/u);
   expect(classes[0]).toBe("hraness-form");
   expect(classes.at(-1)).toBe("consumer-form");
   expect(classes.slice(1, -1).some((name) => name.startsWith("x"))).toBe(true);

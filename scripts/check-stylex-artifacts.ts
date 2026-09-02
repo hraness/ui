@@ -2733,6 +2733,8 @@ function requireFormContract(
     [/FormContext,/u, "the React Aria Form context import"],
     [/useSlottedContext,/u, "the React Aria slotted-context helper import"],
     [/Omit<AriaFormProps,\s*["']className["']>/u, "the static Form className boundary"],
+    [/Pick<FormHTMLAttributes<HTMLFormElement>,\s*["']acceptCharset["']>/u, "the native Form acceptCharset seam"],
+    [/slot\?:\s*string\s*\|\s*null;/u, "the nullable Form context slot"],
     [/xstyle\?:\s*StyleXStyles;/u, "the typed Form xstyle seam"],
     [/\{ className,\s*render,\s*style,\s*xstyle,\s*\.\.\.props \}/u, "the Form presentation prop split"],
     [/const inheritedRender\s*=\s*useSlottedContext\(FormContext,\s*props\.slot\)\?\.render;/u, "the inherited Form context renderer"],

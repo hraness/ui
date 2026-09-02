@@ -7073,7 +7073,7 @@ try {
   assert.match(html, /action="\/gallery-form-override"/u);
   assert.match(html, /accept-charset="utf-8"/u);
   assert.match(html, /method="post"/u);
-  assert.match(html, /novalidate=""/u);
+  assert.match(html, /no[Vv]alidate=""/u);
   assert.match(
     html,
     /class="hraness-form [^"]+ gallery-form gallery-form--default"/u,

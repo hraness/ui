@@ -1313,7 +1313,7 @@ assert.match(formTag, /class="hraness-form [^"]*package-form-xstyle consumer-for
 assert.match(formTag, /data-package-render="true"/u);
 assert.match(formTag, /data-slot="form"/u);
 assert.match(formTag, /method="post"/u);
-assert.match(formTag, /novalidate=""/u);
+assert.match(formTag, /no[Vv]alidate=""/u);
 assert.match(formTag, /style="display:block;width:15rem"/u);
 for (const baseClass of formBaseClasses) {
   assert.ok(!formTag.split(/[\s"]/u).includes(baseClass), "Form xstyle must replace its package property class");
@@ -2054,7 +2054,7 @@ assert.match(formTag, /action="\\/preferences"/u);
 assert.match(formTag, /class="hraness-form [^"]*vite-form-xstyle vite-form-class"/u);
 assert.match(formTag, /data-slot="form"/u);
 assert.match(formTag, /method="post"/u);
-assert.match(formTag, /novalidate=""/u);
+assert.match(formTag, /no[Vv]alidate=""/u);
 assert.match(formTag, /style="display:block"/u);
 for (const baseClass of ${JSON.stringify(formProbe.baseClasses)}) {
   assert.ok(!formTag.split(/[\\s"]/u).includes(baseClass));
