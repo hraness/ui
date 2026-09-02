@@ -183,6 +183,10 @@
     text-decoration: none;
   }
 
+  .x1bvjpef {
+    text-decoration: underline;
+  }
+
   .x19pv2u9:hover {
     border-color: color-mix(in oklch,var(--ui-primary) 35%,var(--ui-border));
   }
@@ -337,6 +341,10 @@
 
   .x1nqtexi {
     color: var(--ui-primary-foreground);
+  }
+
+  .x1ueta6y {
+    color: var(--ui-primary);
   }
 
   .xw694iq {
@@ -495,6 +503,10 @@
     outline-color: var(--ui-ring);
   }
 
+  .x1hl8ikr {
+    outline-offset: 2px;
+  }
+
   .x1ewu8gn {
     outline-offset: 3px;
   }
@@ -515,8 +527,20 @@
     text-align: start;
   }
 
+  .xyi4chj {
+    text-decoration-thickness: 1px;
+  }
+
+  .xewurvo {
+    text-decoration-thickness: 2px;
+  }
+
   .xtvhhri {
     text-transform: uppercase;
+  }
+
+  .x1ohr1zr {
+    text-underline-offset: .2em;
   }
 
   .xavs3du {
@@ -585,6 +609,10 @@
 
   .xu0kh1y:hover {
     color: var(--ui-foreground);
+  }
+
+  .x1itt8ug:hover {
+    text-decoration-thickness: 2px;
   }
 
   .xymg228:active {

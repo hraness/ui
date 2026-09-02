@@ -49,6 +49,7 @@
     "dist",
     "src/ask-ai.stylex.ts",
     "src/ask-ai.tsx",
+    "src/actions.stylex.ts",
     "src/actions.tsx",
     "src/autocomplete.tsx",
     "src/avatar.stylex.ts",

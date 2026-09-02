@@ -55,6 +55,13 @@ const CHECKBOX_STYLE_KEYS = [
   "root",
   "selectedIndicator",
 ] as const;
+const LINK_STYLE_KEYS = [
+  "focusVisible",
+  "hovered",
+  "nativeInteractionFallbacks",
+  "root",
+] as const;
+type LinkStyleKey = (typeof LINK_STYLE_KEYS)[number];
 
 function balancedBlock(source: string, open: number, description: string): string {
   let depth = 0;
@@ -97,6 +104,16 @@ interface CheckboxPrecedenceProbe {
 
 interface PackageCheckboxStyleMap extends CheckboxPrecedenceProbe {
   readonly classNames: ReadonlySet<string>;
+}
+
+interface LinkPrecedenceProbe {
+  readonly baseClasses: readonly string[];
+  readonly property: string;
+}
+
+interface PackageLinkStyleMap extends LinkPrecedenceProbe {
+  readonly classNames: ReadonlySet<string>;
+  readonly classNamesByKey: Readonly<Record<LinkStyleKey, ReadonlySet<string>>>;
 }
 
 function packageCheckboxStyleMap(javaScript: string): PackageCheckboxStyleMap {
@@ -156,6 +173,76 @@ function packageCheckboxStyleMap(javaScript: string): PackageCheckboxStyleMap {
   };
 }
 
+function packageLinkStyleMap(javaScript: string): PackageLinkStyleMap {
+  const candidates: string[] = [];
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*focusVisible\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(javaScript, open, "packed Link JavaScript");
+    if (LINK_STYLE_KEYS.every(
+      (key) => new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u")
+        .test(object.slice(1, -1)),
+    )) {
+      candidates.push(object);
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "packed JavaScript must contain exactly one compiled linkStyles class map",
+  );
+  const classNames = new Set<string>();
+  for (const match of candidates[0]!.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )) {
+    for (const className of match[1]!.split(/\s+/u)) classNames.add(className);
+  }
+  assert.notEqual(classNames.size, 0, "packed linkStyles map must not be empty");
+  const objectBody = candidates[0]!.slice(1, -1);
+  const entry = (key: LinkStyleKey) => {
+    const matches = [...objectBody.matchAll(
+      new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+    )];
+    assert.equal(
+      matches.length,
+      1,
+      `packed linkStyles must include exactly one ${key}`,
+    );
+    const match = matches[0]!;
+    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+    return balancedBlock(objectBody, open, `packed linkStyles.${key}`);
+  };
+  const classNamesFor = (key: LinkStyleKey): ReadonlySet<string> => {
+    const names = new Set<string>();
+    for (const match of entry(key).matchAll(
+      /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    )) {
+      for (const className of match[1]!.split(/\s+/u)) names.add(className);
+    }
+    assert.notEqual(
+      names.size,
+      0,
+      `packed linkStyles.${key} must not be empty`,
+    );
+    return names;
+  };
+  const classNamesByKey = Object.fromEntries(
+    LINK_STYLE_KEYS.map((key) => [key, classNamesFor(key)]),
+  ) as Record<LinkStyleKey, ReadonlySet<string>>;
+  const root = entry("root");
+  const declaration = [...root.matchAll(
+    /([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )][0];
+  assert.ok(declaration !== undefined, "packed linkStyles.root has no class property");
+  return {
+    baseClasses: declaration[2]!.split(/\s+/u),
+    classNames,
+    classNamesByKey,
+    property: declaration[1]!,
+  };
+}
+
 function packageCheckboxRuleBodies(
   css: string,
   classNames: ReadonlySet<string>,
@@ -165,6 +252,94 @@ function packageCheckboxRuleBodies(
       new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(match[1]!)
     ))
     .map((match) => match[2]!);
+}
+
+interface PackageStyleRule {
+  readonly body: string;
+  readonly header: string;
+  readonly source: string;
+}
+
+function packageSelectorList(header: string): readonly string[] {
+  const selectors: string[] = [];
+  let escaped = false;
+  let quote: "\"" | "'" | undefined;
+  let parentheses = 0;
+  let brackets = 0;
+  let start = 0;
+  for (let index = 0; index < header.length; index += 1) {
+    const character = header[index];
+    if (character === undefined) continue;
+    if (quote !== undefined) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === "\"" || character === "'") quote = character;
+    else if (character === "(") parentheses += 1;
+    else if (character === ")") parentheses -= 1;
+    else if (character === "[") brackets += 1;
+    else if (character === "]") brackets -= 1;
+    else if (character === "," && parentheses === 0 && brackets === 0) {
+      selectors.push(header.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  selectors.push(header.slice(start).trim());
+  return selectors.filter((selector) => selector.length > 0);
+}
+
+function packageStyleRules(
+  css: string,
+  classNames: ReadonlySet<string>,
+): PackageStyleRule[] {
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+    .filter((match) => [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(match[1]!)
+    ))
+    .map((match) => ({
+      body: match[2]!,
+      header: match[1]!.trim(),
+      source: match[0],
+    }));
+}
+
+function packageDeclarationSelectors(
+  rules: readonly PackageStyleRule[],
+  classNames: ReadonlySet<string>,
+  declaration: RegExp,
+  description: string,
+): readonly string[] {
+  const selectors = rules
+    .filter((rule) => declaration.test(rule.body))
+    .flatMap((rule) => packageSelectorList(rule.header))
+    .filter((selector) => [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
+    ));
+  assert.notEqual(
+    selectors.length,
+    0,
+    `${description} must have a class-owned selector`,
+  );
+  return selectors;
+}
+
+function requirePackagePositivePseudoSelector(
+  selector: string,
+  pseudo: "focus-visible" | "hover",
+  description: string,
+): void {
+  assert.doesNotMatch(
+    selector,
+    new RegExp(`:not\\([^)]*:${pseudo}(?![A-Za-z0-9_-])[^)]*\\)`, "u"),
+    `${description} must not negate :${pseudo}`,
+  );
+  assert.match(
+    selector,
+    new RegExp(`:${pseudo}(?![A-Za-z0-9_-])`, "u"),
+    description,
+  );
 }
 
 function packageExactConditionalCss(css: string, condition: string): string {
@@ -220,6 +395,124 @@ function requirePackageCheckboxStyles(javaScript: string, css: string): void {
   );
 }
 
+function requirePackageLinkStyles(javaScript: string, css: string): void {
+  const { classNamesByKey } = packageLinkStyleMap(javaScript);
+  const recipeRules = (key: LinkStyleKey) => packageStyleRules(
+    css,
+    classNamesByKey[key],
+  );
+  const rootRules = recipeRules("root");
+  const hoveredRules = recipeRules("hovered");
+  const focusVisibleRules = recipeRules("focusVisible");
+  const nativeFallbackRules = recipeRules("nativeInteractionFallbacks");
+  const cssFor = (rules: readonly PackageStyleRule[]) =>
+    rules.map((rule) => rule.source).join("\n");
+  const rootCss = cssFor(rootRules);
+  const hoveredCss = cssFor(hoveredRules);
+  const focusVisibleCss = cssFor(focusVisibleRules);
+  const nativeFallbackCss = cssFor(nativeFallbackRules);
+  for (const [pattern, description] of [
+    [/color:\s*var\(--ui-primary\)/u, "Link color"],
+    [/text-decoration-thickness:\s*1px/u, "base underline thickness"],
+    [/text-underline-offset:\s*0?\.2em/u, "underline offset"],
+  ] as const) {
+    assert.match(
+      rootCss,
+      pattern,
+      `linkStyles.root must own the packed ${description}`,
+    );
+    for (const selector of packageDeclarationSelectors(
+      rootRules,
+      classNamesByKey.root,
+      pattern,
+      `linkStyles.root ${description}`,
+    )) {
+      assert.doesNotMatch(
+        selector,
+        /:(?:focus-visible|hover)(?![A-Za-z0-9_-])/u,
+        `linkStyles.root ${description} must remain unconditional`,
+      );
+    }
+  }
+  const hoveredDeclaration = /text-decoration-thickness:\s*2px/u;
+  assert.match(
+    hoveredCss,
+    hoveredDeclaration,
+    "linkStyles.hovered must own the packed hovered underline thickness",
+  );
+  for (const selector of packageDeclarationSelectors(
+    hoveredRules,
+    classNamesByKey.hovered,
+    hoveredDeclaration,
+    "linkStyles.hovered underline thickness",
+  )) {
+    assert.doesNotMatch(
+      selector,
+      /:hover(?![A-Za-z0-9_-])/u,
+      "linkStyles.hovered must remain an unconditional explicit state recipe",
+    );
+  }
+  const focusDeclarations = [
+    [/outline-color:\s*var\(--ui-ring\)/u, "focus-ring color"],
+    [/outline-offset:\s*2px/u, "focus-ring offset"],
+    [/outline-style:\s*solid/u, "focus-ring style"],
+    [/outline-width:\s*2px/u, "focus-ring width"],
+  ] as const;
+  for (const [pattern, description] of focusDeclarations) {
+    assert.match(
+      focusVisibleCss,
+      pattern,
+      `linkStyles.focusVisible must own the packed ${description}`,
+    );
+    assert.match(
+      nativeFallbackCss,
+      pattern,
+      `linkStyles.nativeInteractionFallbacks must own the packed ${description}`,
+    );
+    for (const selector of packageDeclarationSelectors(
+      focusVisibleRules,
+      classNamesByKey.focusVisible,
+      pattern,
+      `linkStyles.focusVisible ${description}`,
+    )) {
+      assert.doesNotMatch(
+        selector,
+        /:focus-visible(?![A-Za-z0-9_-])/u,
+        `linkStyles.focusVisible ${description} must remain unconditional`,
+      );
+    }
+    for (const selector of packageDeclarationSelectors(
+      nativeFallbackRules,
+      classNamesByKey.nativeInteractionFallbacks,
+      pattern,
+      `linkStyles.nativeInteractionFallbacks ${description}`,
+    )) {
+      requirePackagePositivePseudoSelector(
+        selector,
+        "focus-visible",
+        `linkStyles.nativeInteractionFallbacks ${description} must keep its native focus selector`,
+      );
+    }
+  }
+  assert.match(
+    nativeFallbackCss,
+    hoveredDeclaration,
+    "linkStyles.nativeInteractionFallbacks must own the packed hover thickness",
+  );
+  for (const selector of packageDeclarationSelectors(
+    nativeFallbackRules,
+    classNamesByKey.nativeInteractionFallbacks,
+    hoveredDeclaration,
+    "linkStyles.nativeInteractionFallbacks hover thickness",
+  )) {
+    requirePackagePositivePseudoSelector(
+      selector,
+      "hover",
+      "linkStyles.nativeInteractionFallbacks must keep its native hover selector",
+    );
+  }
+}
+
 function resolveGenuineNodeExecutable(): string {
   const executableName = process.platform === "win32" ? "node.exe" : "node";
   const identityProbe = [
@@ -257,6 +550,7 @@ function resolveGenuineNodeExecutable(): string {
 function ssrProbe(
   release: ReactRelease,
   checkboxProbe: CheckboxPrecedenceProbe,
+  linkProbe: LinkPrecedenceProbe,
 ): string {
   return String.raw`import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -276,6 +570,7 @@ import {
   CheckboxField,
   Icon,
   KeyHint,
+  Link,
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
@@ -303,6 +598,11 @@ const checkboxControlXstyle = {
 };
 const checkboxRootBaseClasses = ${JSON.stringify(checkboxProbe.rootBaseClasses)};
 const checkboxControlBaseClasses = ${JSON.stringify(checkboxProbe.controlBaseClasses)};
+const linkXstyle = {
+  ${JSON.stringify(linkProbe.property)}: "package-link-xstyle",
+  $$css: true,
+};
+const linkBaseClasses = ${JSON.stringify(linkProbe.baseClasses)};
 
 const reactDomPackageUrl = import.meta.resolve("react-dom/package.json");
 const reactDomPackage = JSON.parse(await readFile(new URL(reactDomPackageUrl), "utf8"));
@@ -358,6 +658,9 @@ assert.match(stylexCss, /min-height:\s*1\.875rem/u);
 assert.match(stylexCss, /min-height:\s*var\(--interactive-target-min,\s*3rem\)/u);
 assert.match(stylexCss, /min-block-size:\s*1\.5rem/u);
 assert.match(stylexCss, /min-inline-size:\s*1\.5rem/u);
+assert.match(stylexCss, /text-decoration-thickness:\s*1px/u);
+assert.match(stylexCss, /text-decoration-thickness:\s*2px/u);
+assert.match(stylexCss, /text-underline-offset:\s*0?\.2em/u);
 const viewportHeightFallbacks = ["height: 100vh;", "height: 100svh;", "height: 100dvh;"];
 const viewportHeightPositions = viewportHeightFallbacks.map((fallback) => stylexCss.indexOf(fallback));
 assert.ok(viewportHeightPositions.every((position) => position >= 0));
@@ -396,6 +699,7 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(componentsCss, /\.hraness-toolbar(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-key-hint(?![A-Za-z0-9_-])/u);
+assert.doesNotMatch(componentsCss, /\.hraness-link(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(
   componentsCss,
   /\.hraness-checkbox-field(?:__(?:control|indicator|label))?(?![A-Za-z0-9_-])/u,
@@ -639,6 +943,24 @@ assert.match(keyHintMarkup, /style="width:2rem"/u);
 assert.match(keyHintMarkup, /title="Open command menu"/u);
 assert.match(keyHintMarkup, />⌘K<\/kbd>/u);
 
+const linkMarkup = renderToStaticMarkup(React.createElement(Link, {
+  className: "consumer-link",
+  href: "/reference",
+  style: ({ isHovered }) => ({ color: isHovered ? "red" : "blue" }),
+  xstyle: linkXstyle,
+}, "Reference"));
+const linkTag = linkMarkup.match(/^<a[^>]*>/u)?.[0] ?? "";
+assert.match(linkTag, /href="\/reference"/u);
+assert.match(linkTag, /class="hraness-link [^"]*package-link-xstyle consumer-link"/u);
+assert.match(linkTag, /data-slot="link"/u);
+assert.match(linkTag, /style="color:blue"/u);
+for (const baseClass of linkBaseClasses) {
+  assert.ok(
+    !linkTag.split(/[\s"]/u).includes(baseClass),
+    "Link xstyle must replace its package property class",
+  );
+}
+
 const checkboxMarkup = renderToStaticMarkup(React.createElement(CheckboxField, {
   className: "consumer-checkbox",
   controlClassName: "consumer-checkbox-control",
@@ -784,6 +1106,7 @@ import {
   CheckboxField,
   Icon,
   KeyHint,
+  Link,
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
@@ -838,6 +1161,16 @@ const styles = stylex.create({
     paddingInline: "var(--space-2)",
   },
   keyHintDynamic: (width: string) => ({ width }),
+  link: {
+    color: "var(--ui-secondary-foreground)",
+    ":focus-visible": {
+      outlineColor: "var(--ui-warning)",
+      outlineWidth: "3px",
+    },
+    ":hover": {
+      textDecorationThickness: "4px",
+    },
+  },
   dynamicPage: (inlineSize: string) => ({ "inline-size": inlineSize }),
   logicalPage: {
     "inline-size": "100%",
@@ -1014,6 +1347,17 @@ const keyHintMarkup: string = renderToStaticMarkup(createElement(KeyHint, {
   title: "Open command menu",
   xstyle: [styles.keyHint, styles.keyHintDynamic("2rem")],
 }));
+const linkRef = createRef<HTMLAnchorElement>();
+const linkMarkup: string = renderToStaticMarkup(createElement(Link, {
+  children: ({ isHovered }) => isHovered ? "Hovered reference" : "Reference",
+  className: "consumer-link",
+  href: "/reference",
+  linkRef,
+  style: ({ isFocusVisible }) => ({
+    outlineOffset: isFocusVisible ? "5px" : "3px",
+  }),
+  xstyle: styles.link,
+}));
 const checkboxRef = createRef<HTMLDivElement>();
 const checkboxMarkup: string = renderToStaticMarkup(createElement(CheckboxField, {
   className: "consumer-checkbox",
@@ -1125,6 +1469,12 @@ const unnamedToolbarMarkup = renderToStaticMarkup(createElement(Toolbar, { child
 const multiplyNamedToolbarMarkup = renderToStaticMarkup(createElement(Toolbar, { "aria-label": "Commands", "aria-labelledby": "commands", children: "Commands" }));
 // @ts-expect-error Toolbar keeps className static for stable semantic composition.
 const invalidToolbarClassMarkup = renderToStaticMarkup(createElement(Toolbar, { "aria-label": "Commands", className: () => "dynamic" }));
+// @ts-expect-error Link requires an explicit href.
+const missingLinkHrefMarkup = renderToStaticMarkup(createElement(Link, { children: "Reference" }));
+// @ts-expect-error Link keeps className static for stable semantic composition.
+const invalidLinkClassMarkup = renderToStaticMarkup(createElement(Link, { children: "Reference", className: () => "dynamic", href: "/reference" }));
+// @ts-expect-error Link accepts compiled StyleX values rather than raw style objects.
+const invalidLinkXstyleMarkup = renderToStaticMarkup(createElement(Link, { children: "Reference", href: "/reference", xstyle: { color: "red" } }));
 // @ts-expect-error AskAiAboutThis requires one explicit canonical HTTPS URL.
 const missingAskAiUrlMarkup = renderToStaticMarkup(createElement(AskAiAboutThis, {}));
 // @ts-expect-error CheckboxField requires a label even when visible copy is hidden.
@@ -1145,6 +1495,7 @@ void cardMarkup;
 void pressableMarkup;
 void toolbarMarkup;
 void keyHintMarkup;
+void linkMarkup;
 void checkboxMarkup;
 void pageMarkup;
 void footerMarkup;
@@ -1174,13 +1525,16 @@ void invalidPressableClassMarkup;
 void unnamedToolbarMarkup;
 void multiplyNamedToolbarMarkup;
 void invalidToolbarClassMarkup;
+void missingLinkHrefMarkup;
+void invalidLinkClassMarkup;
+void invalidLinkXstyleMarkup;
 void missingAskAiUrlMarkup;
 void unnamedCheckboxMarkup;
 void compactCheckboxMarkup;
 `;
 
 const viteClient = `import "@hraness/ui/styles.css";
-import { AskAiAboutThis, Card, CardDescription, CheckboxField, KeyHint, PressableCard, Toolbar } from "@hraness/ui";
+import { AskAiAboutThis, Card, CardDescription, CheckboxField, KeyHint, Link, PressableCard, Toolbar } from "@hraness/ui";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 
@@ -1200,6 +1554,7 @@ createRoot(root).render(React.createElement(React.Fragment, null,
   }, React.createElement("button", { type: "button" }, "Save")),
   React.createElement(KeyHint, null, "⌘K"),
   React.createElement(AskAiAboutThis, { url: "https://hraness.com/stripe" }),
+  React.createElement(Link, { href: "/reference" }, "Reference"),
   React.createElement(CheckboxField, {
     label: "Vite checkbox",
     name: "vite-checkbox",
@@ -1208,9 +1563,12 @@ createRoot(root).render(React.createElement(React.Fragment, null,
 ));
 `;
 
-function viteSsrProbe(checkboxProbe: CheckboxPrecedenceProbe): string {
+function viteSsrProbe(
+  checkboxProbe: CheckboxPrecedenceProbe,
+  linkProbe: LinkPrecedenceProbe,
+): string {
   return `import assert from "node:assert/strict";
-import { CheckboxField } from "@hraness/ui";
+import { CheckboxField, Link } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -1220,6 +1578,10 @@ const rootXstyle = {
 };
 const controlXstyle = {
   ${JSON.stringify(checkboxProbe.controlProperty)}: "vite-checkbox-control-xstyle",
+  $$css: true,
+};
+const linkXstyle = {
+  ${JSON.stringify(linkProbe.property)}: "vite-link-xstyle",
   $$css: true,
 };
 const markup = renderToStaticMarkup(React.createElement(CheckboxField, {
@@ -1239,6 +1601,16 @@ for (const baseClass of ${JSON.stringify(checkboxProbe.rootBaseClasses)}) {
 }
 for (const baseClass of ${JSON.stringify(checkboxProbe.controlBaseClasses)}) {
   assert.ok(!controlTag.split(/[\\s"]/u).includes(baseClass));
+}
+const linkMarkup = renderToStaticMarkup(React.createElement(Link, {
+  className: "vite-link-class",
+  href: "/reference",
+  xstyle: linkXstyle,
+}, "Reference"));
+const linkTag = linkMarkup.match(/^<a[^>]*>/u)?.[0] ?? "";
+assert.match(linkTag, /class="hraness-link [^"]*vite-link-xstyle vite-link-class"/u);
+for (const baseClass of ${JSON.stringify(linkProbe.baseClasses)}) {
+  assert.ok(!linkTag.split(/[\\s"]/u).includes(baseClass));
 }
 console.log("Vite CheckboxField xstyle runtime passed");
 `;
@@ -1331,6 +1703,9 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "checkbox-field.stylex.ts"),
   );
   await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "actions.stylex.ts"),
+  );
+  await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "lib", "stylex.ts"),
   );
   const installedPackageRoot = join(
@@ -1344,7 +1719,9 @@ async function verifyConsumer(
     readFile(join(installedPackageRoot, "dist", "stylex.css"), "utf8"),
   ]);
   const checkboxProbe = packageCheckboxStyleMap(installedJavaScript);
+  const linkProbe = packageLinkStyleMap(installedJavaScript);
   requirePackageCheckboxStyles(installedJavaScript, installedStylexCss);
+  requirePackageLinkStyles(installedJavaScript, installedStylexCss);
 
   // A restored package-manager cache can retain this valid duplicate topology.
   // Public source types must remain portable when React Aria resolves through it.
@@ -1361,7 +1738,10 @@ async function verifyConsumer(
     { recursive: true },
   );
 
-  await writeFile(join(consumer, "ssr.mjs"), ssrProbe(release, checkboxProbe));
+  await writeFile(
+    join(consumer, "ssr.mjs"),
+    ssrProbe(release, checkboxProbe, linkProbe),
+  );
   await run([nodeExecutable, "./ssr.mjs"], consumer);
 
   await writeFile(join(consumer, "index.ts"), typeScriptProbe);
@@ -1379,7 +1759,7 @@ async function verifyConsumer(
     writeFile(join(consumer, "vite-client.ts"), viteClient),
     writeFile(
       join(consumer, "vite-ssr.ts"),
-      viteSsrProbe(checkboxProbe),
+      viteSsrProbe(checkboxProbe, linkProbe),
     ),
     writeFile(join(consumer, "vite.config.ts"), viteConfig),
   ]);
@@ -1401,9 +1781,11 @@ async function verifyConsumer(
     readFile(join(consumer, "vite-dist", "assets", viteCssPath), "utf8"),
   ]);
   requirePackageCheckboxStyles(viteJavaScript, viteCss);
+  requirePackageLinkStyles(viteJavaScript, viteCss);
   assert.match(viteJavaScript, /hraness-pressable-card/u);
   assert.match(viteJavaScript, /hraness-toolbar/u);
   assert.match(viteJavaScript, /hraness-key-hint/u);
+  assert.match(viteJavaScript, /hraness-link/u);
   assert.match(viteJavaScript, /--_hraness-card-description/u);
   assert.match(viteCss, /color:var\(--hraness-card-description\)/u);
   assert.match(viteCss, /:hover\{/u);
@@ -1428,6 +1810,7 @@ async function verifyConsumer(
   );
   assert.doesNotMatch(viteCss, /\.hraness-toolbar(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(viteCss, /\.hraness-key-hint(?![A-Za-z0-9_-])/u);
+  assert.doesNotMatch(viteCss, /\.hraness-link(?![A-Za-z0-9_-])/u);
 
   await run([
     process.execPath,
@@ -1464,6 +1847,16 @@ async function verifyConsumer(
     viteSsrBundle,
     /vite-checkbox-control-xstyle/u,
     "Vite SSR must bundle the caller controlXstyle probe",
+  );
+  assert.match(
+    viteSsrBundle,
+    /hraness-link/u,
+    "Vite SSR must bundle the Link implementation",
+  );
+  assert.match(
+    viteSsrBundle,
+    /vite-link-xstyle/u,
+    "Vite SSR must bundle the caller Link xstyle probe",
   );
   assert.doesNotMatch(
     viteSsrBundle,

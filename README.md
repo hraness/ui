@@ -243,7 +243,7 @@ Every primitive accepts `className`. Actions also expose `controlClassName` when
 ```
 
 `AskAiAboutThis`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
-`KeyHint`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
+`KeyHint`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `ViewportFrame`, `WrappingRow`, `ThemedSurface`, `Toolbar`, and `CheckboxField`
 accept a typed StyleX override. Base declarations are applied first, finite
@@ -288,21 +288,33 @@ keeps its static string `className` API. Its native `style` may be either a
 static object or a React Aria state callback; both are merged after compiled
 StyleX output. Pointer, pressed, keyboard-focus, disabled, and pending behavior
 continue to come from React Aria. Native pseudo-class fallbacks are attached
-when `xstyle` is omitted. Supplying `xstyle` selects the caller-last path:
-React Aria state recipes remain active, and the caller recipe resolves after
-them without a hidden pseudo-class rule reverting hover, press, or focus
-values.
+when a conditional `xstyle` contributes no compiled presentation. Supplying an
+effective `xstyle` selects the caller-last path: React Aria state recipes remain
+active, and the caller recipe resolves after them without a hidden pseudo-class
+rule reverting hover, press, or focus values.
 
 `Toolbar` preserves React Aria's horizontal and vertical arrow-key behavior,
 required accessible name, semantic class, slot, ref, and static or render-prop
-`style`. Its native `:focus-visible` ring is attached when `xstyle` is omitted.
-Supplying `xstyle` removes that fallback so a caller focus recipe remains the
-last compiled authority.
+`style`. Its native `:focus-visible` ring is attached when a conditional
+`xstyle` contributes no compiled presentation. Supplying an effective `xstyle`
+removes that fallback so a caller focus recipe remains the last compiled
+authority.
 
 `KeyHint` remains a server-compatible native `kbd` element. Its semantic class,
 slot, ref, attributes, and children remain stable while a typed caller `xstyle`
 recipe resolves after its compact presentation. Dynamic StyleX values merge
 before the native `style` prop, so native declarations remain final.
+
+`Link` remains an ordinary React Aria destination with a required `href`, stable
+semantic class and slot, optional link ref, native attributes, render-prop
+children and style, and router-prefetch behavior on focus or hover intent. Its
+base, hovered, and focus-visible presentation is compiled with StyleX. A typed
+caller `xstyle` is composed last inside the state-aware Link presentation
+callbacks, so caller hover and focus-visible recipes retain precedence over the
+equivalent React Aria state recipes. Native pseudo-class fallbacks stay attached
+when a conditional `xstyle` contributes no compiled presentation and are omitted
+for an effective caller recipe. Dynamic StyleX values merge before a static or
+state-aware native `style` prop.
 
 `CheckboxField` keeps its required `label`, native checkbox input, form value,
 validation, description, React Aria context and render behavior, and stable
@@ -324,6 +336,7 @@ import {
   CheckboxField,
   Icon,
   KeyHint,
+  Link,
   PressableCard,
   QuietSitePage,
   StatusDot,
@@ -381,6 +394,15 @@ const styles = stylex.create({
     backgroundColor: "var(--ui-secondary)",
     borderColor: "var(--ui-primary)",
   },
+  link: {
+    color: "var(--ui-foreground)",
+    ":focus-visible": {
+      outlineColor: "var(--ui-warning)",
+    },
+    ":hover": {
+      textDecorationThickness: "3px",
+    },
+  },
 });
 
 <Icon icon={Search01Icon} xstyle={styles.searchIcon} />;
@@ -400,6 +422,7 @@ const styles = stylex.create({
 <ThemedSurface tone="accent" xstyle={styles.texturedSurface}>...</ThemedSurface>;
 <Toolbar aria-label="Editor actions" xstyle={styles.toolbar}>...</Toolbar>;
 <KeyHint xstyle={styles.keyHint}>⌘K</KeyHint>;
+<Link href="/reference" xstyle={styles.link}>Reference</Link>;
 <CheckboxField
   controlXstyle={styles.checkboxControl}
   label="Include archived projects"

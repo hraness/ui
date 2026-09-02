@@ -284,23 +284,6 @@
     animation: hraness-spin 700ms linear infinite;
   }
 
-  .hraness-link {
-    border-radius: var(--radius-sm);
-    color: var(--ui-primary);
-    text-decoration: underline;
-    text-decoration-thickness: 1px;
-    text-underline-offset: 0.2em;
-  }
-
-  .hraness-link:where([data-hovered], :hover) {
-    text-decoration-thickness: 2px;
-  }
-
-  .hraness-link:where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 2px;
-  }
-
   /* Public field DOM contracts. */
   .hraness-visually-hidden {
     position: absolute !important;

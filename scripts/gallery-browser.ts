@@ -116,6 +116,13 @@ interface BrowserEvidence {
   readonly keyHintDiagnostics: string;
   readonly keyHintLayerSentinels: boolean;
   readonly keyHintOverrideContract: boolean;
+  readonly linkBoundaryContracts: boolean;
+  readonly linkClassContracts: boolean;
+  readonly linkDiagnostics: string;
+  readonly linkLayerSentinels: boolean;
+  readonly linkNativeFallbackContract: boolean;
+  readonly linkNativeStyleLastContract: boolean;
+  readonly linkOverrideContract: boolean;
   readonly mainPresent: boolean;
   readonly pageBoxSizing: string;
   readonly pageCallerClassLast: boolean;
@@ -282,6 +289,8 @@ interface ForcedColorsEvidence {
   readonly forcedColorsActive: boolean;
   readonly keyHintContracts: boolean;
   readonly keyHintDiagnostics: string;
+  readonly linkContracts: boolean;
+  readonly linkDiagnostics: string;
   readonly selectedTabBackground: string;
   readonly selectedTabColor: string;
   readonly selectedSegmentBackground: string;
@@ -308,6 +317,12 @@ interface CheckboxFocusRuleEvidence {
 interface CheckboxFocusContract {
   readonly classNames: readonly string[];
   readonly rules: readonly CheckboxFocusRuleEvidence[];
+}
+
+interface LinkNativeFallbackContract {
+  readonly classNames: readonly string[];
+  readonly nativeInteractionFallbackClassNames: readonly string[];
+  readonly rootClassNames: readonly string[];
 }
 
 const layouts = [
@@ -485,6 +500,12 @@ const CHECKBOX_STYLE_KEYS = [
   "root",
   "selectedIndicator",
 ] as const;
+const LINK_STYLE_KEYS = [
+  "focusVisible",
+  "hovered",
+  "nativeInteractionFallbacks",
+  "root",
+] as const;
 
 function balancedBlock(source: string, open: number, description: string): string {
   let depth = 0;
@@ -591,6 +612,69 @@ function packedCheckboxClassNames(javaScript: string): ReadonlySet<string> {
     for (const className of match[1]!.split(/\s+/u)) classNames.add(className);
   }
   assert.notEqual(classNames.size, 0, "the packed checkboxFieldStyles map is empty");
+  return classNames;
+}
+
+function packedLinkStyleMap(javaScript: string): string {
+  const candidates: string[] = [];
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*focusVisible\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(javaScript, open, "packed Link JavaScript");
+    if (LINK_STYLE_KEYS.every(
+      (key) => new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u")
+        .test(object.slice(1, -1)),
+    )) {
+      candidates.push(object);
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "the packed JavaScript must contain exactly one compiled linkStyles class map",
+  );
+  const candidate = candidates[0];
+  assert.ok(candidate !== undefined);
+  return candidate;
+}
+
+function packedLinkStyleClassNames(
+  javaScript: string,
+  key: typeof LINK_STYLE_KEYS[number],
+): readonly string[] {
+  const styleMap = packedLinkStyleMap(javaScript);
+  const matches = [...styleMap.matchAll(
+    new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+  )];
+  assert.equal(
+    matches.length,
+    1,
+    `the packed linkStyles map must contain exactly one ${key} entry`,
+  );
+  const match = matches[0]!;
+  const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+  const nestedMap = balancedBlock(
+    styleMap,
+    open,
+    `packed Link ${key} JavaScript`,
+  );
+  const classNames: string[] = [];
+  for (const classMatch of nestedMap.slice(1, -1).matchAll(
+    /(?:^|,)\s*[A-Za-z_$][\w$]*\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )) {
+    classNames.push(...classMatch[1]!.split(/\s+/u));
+  }
+  assert.notEqual(
+    classNames.length,
+    0,
+    `the packed linkStyles ${key} entry has no generated classes`,
+  );
+  assert.equal(
+    new Set(classNames).size,
+    classNames.length,
+    `the packed linkStyles ${key} entry contains duplicate generated classes`,
+  );
   return classNames;
 }
 
@@ -793,6 +877,33 @@ function requirePackedCheckboxFocusContract(
     "the final CheckboxField focus recipe contains an unexpected declaration",
   );
   return { classNames, rules };
+}
+
+function requirePackedLinkNativeFallbackContract(
+  javaScript: string,
+  css: string,
+): LinkNativeFallbackContract {
+  const rootClassNames = packedLinkStyleClassNames(javaScript, "root");
+  const nativeInteractionFallbackClassNames = packedLinkStyleClassNames(
+    javaScript,
+    "nativeInteractionFallbacks",
+  );
+  const classNames = [...new Set([
+    ...rootClassNames,
+    ...nativeInteractionFallbackClassNames,
+  ])];
+  for (const className of classNames) {
+    assert.match(
+      css,
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u"),
+      `the final bundle must contain the Link native-fallback canary class .${className}`,
+    );
+  }
+  return {
+    classNames,
+    nativeInteractionFallbackClassNames,
+    rootClassNames,
+  };
 }
 
 function exactConditionalCss(css: string, condition: string): string {
@@ -1081,6 +1192,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     /\.hraness-checkbox-field(?:__(?:control|indicator|label))?(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain legacy CheckboxField selectors",
   );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-link(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain a legacy Link selector",
+  );
   assert.equal(
     css.match(CARD_DESCRIPTION_BRIDGE_PATTERN)?.length,
     1,
@@ -1100,6 +1216,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     css,
     /data-gallery-checkbox-field-layer-conflict/u,
     "the harness bundle must include its CheckboxField legacy conflict",
+  );
+  assert.match(
+    css,
+    /data-gallery-link-layer-conflict/u,
+    "the harness bundle must include its Link legacy conflict",
   );
   assert.match(
     css,
@@ -1393,6 +1514,38 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     /\[data-gallery-checkbox-field-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"checkbox-label"|checkbox-label)\]\{(?=[^}]*font-size:\s*4rem)(?=[^}]*font-weight:\s*100)(?=[^}]*line-height:\s*4)(?=[^}]*width:\s*18rem)[^}]*\}/u,
     "the gallery CheckboxField label conflict must carry every typography counterexample",
   );
+  const linkConflict = css.match(
+    /\[data-gallery-link-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"link"|link)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    linkConflict !== undefined
+    && /--gallery-link-layer-conflict:\s*legacy/u.test(linkConflict)
+    && /border-radius:\s*0/u.test(linkConflict)
+    && /color:/u.test(linkConflict)
+    && /text-decoration:\s*none/u.test(linkConflict)
+    && /text-decoration-thickness:\s*9px/u.test(linkConflict)
+    && /text-underline-offset:\s*1em/u.test(linkConflict),
+    `the gallery Link base conflict is incomplete: ${String(linkConflict)}`,
+  );
+  const linkHoverConflict = css.match(
+    /\[data-gallery-link-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"link"|link)\]:where\([^)]*(?:data-hovered|:hover)[^)]*\)\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    linkHoverConflict !== undefined
+    && /text-decoration-thickness:\s*8px/u.test(linkHoverConflict),
+    `the gallery Link hover conflict is incomplete: ${String(linkHoverConflict)}`,
+  );
+  const linkFocusConflict = css.match(
+    /\[data-gallery-link-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"link"|link)\]:where\([^)]*(?:data-focus-visible|:focus-visible)[^)]*\)\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    linkFocusConflict !== undefined
+    && /outline-color:/u.test(linkFocusConflict)
+    && /outline-offset:\s*11px/u.test(linkFocusConflict)
+    && /outline-style:\s*solid/u.test(linkFocusConflict)
+    && /outline-width:\s*7px/u.test(linkFocusConflict),
+    `the gallery Link focus conflict is incomplete: ${String(linkFocusConflict)}`,
+  );
   const toolbarConflict = css.match(
     /\[data-gallery-toolbar-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"toolbar"|toolbar)\]\{[^}]*\}/u,
   )?.[0];
@@ -1652,6 +1805,12 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const keyHintOverride = document.querySelector(
       '[data-gallery-key-hint="override"]',
     );
+    const links = [
+      ...document.querySelectorAll<HTMLAnchorElement>('[data-gallery-link]'),
+    ];
+    const linkOverride = document.querySelector(
+      '[data-gallery-link="override"]',
+    );
     const checkboxFields = [
       ...document.querySelectorAll<HTMLElement>('[data-gallery-checkbox]'),
     ];
@@ -1707,6 +1866,8 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       || !(toolbarOverride instanceof HTMLDivElement)
       || keyHints.length !== 2
       || !(keyHintOverride instanceof HTMLElement)
+      || links.length !== 2
+      || !(linkOverride instanceof HTMLAnchorElement)
       || checkboxFields.length !== 2
       || !(defaultCheckbox instanceof HTMLDivElement)
       || !(overrideCheckbox instanceof HTMLDivElement)
@@ -2836,6 +2997,57 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
     const overrideKeyHintEvidence = keyHintEvidence.find(
       (keyHint) => keyHint.isOverride,
     );
+    const linkEvidence = links.map((link) => {
+      const kind = link.dataset.galleryLink;
+      if (kind !== "default" && kind !== "override") {
+        throw new Error(`Unexpected Link kind: ${String(kind)}`);
+      }
+      const isOverride = kind === "override";
+      const style = getComputedStyle(link);
+      const classes = [...link.classList];
+      const expectedColor = isOverride
+        ? resolvedTokens.neutralForeground
+        : resolvedTokens.primary;
+      return {
+        borderRadius: Number.parseFloat(style.borderRadius),
+        classContract:
+          classes[0] === "hraness-link"
+          && classes.at(-1) === `gallery-link--${kind}`
+          && classes.some(
+            (name) =>
+              name !== "hraness-link"
+              && name !== "gallery-link"
+              && name !== `gallery-link--${kind}`,
+          ),
+        color: style.color,
+        colorEquivalent: equivalentColor(style.color, expectedColor),
+        dynamicInlineValue: [...link.style].some(
+          (property) =>
+            property.startsWith("--")
+            && link.style.getPropertyValue(property).trim() === "0.5px",
+        ),
+        emptyConditionalXstyle:
+          link.dataset.galleryLinkEmptyXstyle === "true",
+        href: link.getAttribute("href") ?? "",
+        inlineLetterSpacing: link.style.letterSpacing,
+        isOverride,
+        kind,
+        layerSentinel: style
+          .getPropertyValue("--gallery-link-layer-conflict")
+          .trim(),
+        letterSpacing: Number.parseFloat(style.letterSpacing),
+        nativeStyleLast: link.dataset.galleryLinkNativeStyleLast === "true",
+        refConnected: link.dataset.galleryLinkRef === "true",
+        slot: link.dataset.slot ?? "",
+        tagName: link.tagName,
+        text: link.textContent?.trim() ?? "",
+        textDecorationLine: style.textDecorationLine,
+        textDecorationThickness: Number.parseFloat(style.textDecorationThickness),
+        textUnderlineOffset: Number.parseFloat(style.textUnderlineOffset),
+      };
+    });
+    const defaultLinkEvidence = linkEvidence.find((link) => !link.isOverride);
+    const overrideLinkEvidence = linkEvidence.find((link) => link.isOverride);
 
     return {
       appearanceAlignItems: appearanceStyle.alignItems,
@@ -3281,6 +3493,42 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         && overrideKeyHintEvidence.paddingRight === resolvedTokens.space2
         && overrideKeyHintEvidence.title === ""
         && overrideKeyHintEvidence.width === 48,
+      linkBoundaryContracts:
+        linkEvidence.every(
+          (link) =>
+            link.borderRadius === resolvedTokens.smallRadius
+            && link.href.startsWith("/reference")
+            && link.slot === "link"
+            && link.tagName === "A"
+            && link.text.length > 0
+            && link.textDecorationLine.includes("underline")
+            && link.textUnderlineOffset > 0,
+        )
+        && defaultLinkEvidence !== undefined
+        && defaultLinkEvidence.colorEquivalent
+        && defaultLinkEvidence.textDecorationThickness === 1,
+      linkClassContracts: linkEvidence.every((link) => link.classContract),
+      linkDiagnostics: JSON.stringify({
+        links: linkEvidence,
+        tokens: resolvedTokens,
+      }),
+      linkLayerSentinels: linkEvidence.every(
+        (link) => link.layerSentinel === "legacy",
+      ),
+      linkNativeFallbackContract:
+        defaultLinkEvidence !== undefined
+        && defaultLinkEvidence.emptyConditionalXstyle,
+      linkNativeStyleLastContract:
+        overrideLinkEvidence !== undefined
+        && overrideLinkEvidence.dynamicInlineValue
+        && overrideLinkEvidence.inlineLetterSpacing === "1px"
+        && overrideLinkEvidence.letterSpacing === 1
+        && overrideLinkEvidence.nativeStyleLast,
+      linkOverrideContract:
+        overrideLinkEvidence !== undefined
+        && overrideLinkEvidence.colorEquivalent
+        && overrideLinkEvidence.refConnected
+        && overrideLinkEvidence.textDecorationThickness === 3,
       mainPresent: main.tagName === "MAIN",
       pageBoxSizing: pageStyle.boxSizing,
       pageCallerClassLast:
@@ -3948,6 +4196,140 @@ async function settleCardFamilyTransitions(page: Page): Promise<void> {
   });
 }
 
+async function verifyLinkNativeFallbackCascadeIsolation(
+  page: Page,
+  id: string,
+  nativeFallbackContract: LinkNativeFallbackContract,
+): Promise<void> {
+  const canarySelector = '[data-gallery-link-native-fallback-canary="true"]';
+
+  async function settleNativeFallbackPresentation(
+    state: "focus" | "hover",
+  ): Promise<void> {
+    await page.waitForFunction(
+      (contract) => {
+        const element = document.querySelector(contract.selector);
+        if (!(element instanceof HTMLAnchorElement)) return false;
+        const style = getComputedStyle(element);
+        if (contract.state === "hover") {
+          return element.matches(":hover")
+            && Number.parseFloat(style.textDecorationThickness) === 2;
+        }
+        const probe = document.createElement("span");
+        probe.style.color = "var(--ui-ring)";
+        document.body.append(probe);
+        const expectedOutlineColor = getComputedStyle(probe).color;
+        probe.remove();
+        return document.activeElement === element
+          && element.matches(":focus-visible")
+          && style.outlineColor === expectedOutlineColor
+          && Number.parseFloat(style.outlineOffset) === 2
+          && style.outlineStyle === "solid"
+          && Number.parseFloat(style.outlineWidth) === 2
+          && style.textDecorationLine.includes("underline");
+      },
+      { selector: canarySelector, state },
+      { polling: "raf", timeout: 2_000 },
+    ).catch(() => undefined);
+  }
+
+  await page.evaluate((contract) => {
+    const themeButton = document.querySelector(
+      '[data-gallery-theme-toggle="true"]',
+    );
+    if (!(themeButton instanceof HTMLButtonElement)) {
+      throw new Error("The Link native-fallback canary has no theme-button anchor");
+    }
+    const canary = document.createElement("a");
+    canary.dataset.galleryLinkLayerConflict = "true";
+    canary.dataset.galleryLinkNativeFallbackCanary = "true";
+    canary.dataset.slot = "link";
+    canary.href = "#primitive-gallery-main";
+    canary.textContent = "Native fallback canary";
+    canary.classList.add(...contract.classNames);
+    themeButton.after(canary);
+  }, nativeFallbackContract);
+
+  try {
+    const canary = page.locator(canarySelector);
+    await page.locator('[data-gallery-theme-toggle="true"]').focus();
+    await page.keyboard.press("Tab");
+    await settleNativeFallbackPresentation("focus");
+    const focusEvidence = await canary.evaluate((element, contract) => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--ui-ring)";
+      document.body.append(probe);
+      const expectedOutlineColor = getComputedStyle(probe).color;
+      probe.remove();
+      const style = getComputedStyle(element);
+      const classNames = [...element.classList];
+      return {
+        classNames,
+        expectedOutlineColor,
+        focusVisible: element.matches(":focus-visible"),
+        hasReactAriaFocusState: element.hasAttribute("data-focus-visible"),
+        layerSentinel: style
+          .getPropertyValue("--gallery-link-layer-conflict")
+          .trim(),
+        missingClassNames: contract.classNames.filter(
+          (className) => !classNames.includes(className),
+        ),
+        outlineColor: style.outlineColor,
+        outlineOffset: Number.parseFloat(style.outlineOffset),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+        textDecorationLine: style.textDecorationLine,
+      };
+    }, nativeFallbackContract);
+    const focusDiagnostics = JSON.stringify({
+      ...focusEvidence,
+      nativeFallbackContract,
+    });
+    invariant(
+      focusEvidence.missingClassNames.length === 0
+      && !focusEvidence.hasReactAriaFocusState
+      && focusEvidence.layerSentinel === "legacy",
+      `${id}: the isolated Link canary is not limited to compiled native-fallback classes: ${focusDiagnostics}`,
+    );
+    invariant(
+      focusEvidence.focusVisible
+      && focusEvidence.outlineColor === focusEvidence.expectedOutlineColor
+      && focusEvidence.outlineOffset === 2
+      && focusEvidence.outlineStyle === "solid"
+      && focusEvidence.outlineWidth === 2
+      && focusEvidence.textDecorationLine.includes("underline"),
+      `${id}: the isolated Link native focus fallback does not win the final cascade: ${focusDiagnostics}`,
+    );
+
+    await canary.hover();
+    await settleNativeFallbackPresentation("hover");
+    const hoverEvidence = await canary.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        hasReactAriaHoverState: element.hasAttribute("data-hovered"),
+        hovered: element.matches(":hover"),
+        thickness: Number.parseFloat(style.textDecorationThickness),
+      };
+    });
+    invariant(
+      hoverEvidence.hovered
+      && !hoverEvidence.hasReactAriaHoverState
+      && hoverEvidence.thickness === 2,
+      `${id}: the isolated Link native hover fallback does not win the final cascade: ${JSON.stringify(hoverEvidence)}`,
+    );
+  } finally {
+    await page.mouse.move(0, 0);
+    const canary = page.locator(canarySelector);
+    if (await canary.count() > 0) {
+      await canary.evaluate((element) => element.remove());
+    }
+    invariant(
+      await canary.count() === 0,
+      `${id}: the isolated Link native-fallback canary was not removed`,
+    );
+  }
+}
+
 async function verifyCheckboxFocusCascadeIsolation(
   page: Page,
   id: string,
@@ -4119,11 +4501,52 @@ async function verifyKeyboardPath(
   await page.getByText("Runs: 1", { exact: true }).waitFor();
 
   await page.keyboard.press("Tab");
+  const defaultLink = page.getByRole("link", { name: "Default reference" });
+  invariant(
+    await defaultLink.evaluate((element) => document.activeElement === element),
+    `${id}: the default Link is not next after the primary action`,
+  );
+
+  await page.keyboard.press("Tab");
+  const overrideLink = page.getByRole("link", { name: "Caller reference" });
+  invariant(
+    await overrideLink.evaluate((element) => document.activeElement === element),
+    `${id}: the caller-override Link is not next after the default Link`,
+  );
+
+  await page.keyboard.press("Tab");
   const checkbox = page.getByRole("checkbox", { name: "Preserve accessible interaction" });
   invariant(
     await checkbox.evaluate((element) => document.activeElement === element),
-    `${id}: the checkbox is not reachable after the action`,
+    `${id}: the checkbox is not reachable after the Links`,
   );
+  await page.waitForFunction(() => {
+    const element = document.activeElement;
+    if (
+      !(element instanceof HTMLInputElement)
+      || element.type !== "checkbox"
+      || !element.matches(":focus-visible")
+    ) {
+      return false;
+    }
+    const control = element.closest('[data-slot="checkbox-control"]');
+    if (
+      !(control instanceof HTMLLabelElement)
+      || control.dataset.focusVisible !== "true"
+    ) {
+      return false;
+    }
+    const style = getComputedStyle(control);
+    const colorProbe = document.createElement("div");
+    colorProbe.style.setProperty("outline-color", "var(--ui-ring)");
+    document.body.append(colorProbe);
+    const expectedOutlineColor = getComputedStyle(colorProbe).outlineColor;
+    colorProbe.remove();
+    return style.outlineColor === expectedOutlineColor
+      && Number.parseFloat(style.outlineOffset) === 3
+      && style.outlineStyle === "solid"
+      && Number.parseFloat(style.outlineWidth) === 2;
+  }, undefined, { polling: "raf", timeout: 2_000 }).catch(() => undefined);
   const checkboxTransitionSettlement = await checkbox.evaluate(async (element) => {
     const control = element.closest('[data-slot="checkbox-control"]');
     if (!(control instanceof HTMLLabelElement)) {
@@ -4297,6 +4720,229 @@ async function verifyKeyboardPath(
     ).isVisible(),
     `${id}: the selected tab panel is not visible`,
   );
+}
+
+async function verifyLinkCallerStatePrecedence(
+  page: Page,
+  id: string,
+): Promise<void> {
+  const themeSelector = '[data-gallery-theme-toggle="true"]';
+  const defaultSelector = '[data-gallery-link="default"]';
+  const overrideSelector = '[data-gallery-link="override"]';
+
+  async function reachByKeyboard(selector: string): Promise<void> {
+    await page.locator(themeSelector).focus();
+    for (let step = 0; step < 8; step += 1) {
+      await page.keyboard.press("Tab");
+      if (await page.locator(selector).evaluate(
+        (element) => document.activeElement === element,
+      )) {
+        await page.waitForFunction((targetSelector) => {
+          const element = document.querySelector(targetSelector);
+          return element instanceof HTMLAnchorElement
+            && element.matches(":focus-visible")
+            && element.hasAttribute("data-focus-visible");
+        }, selector);
+        return;
+      }
+    }
+    throw new Error(`${id}: ${selector} was not reachable by keyboard`);
+  }
+
+  async function focusEvidence(selector: string) {
+    return page.locator(selector).evaluate((element) => {
+      const resolveColor = (value: string): string => {
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      };
+      const style = getComputedStyle(element);
+      return {
+        dataFocusVisible: element.hasAttribute("data-focus-visible"),
+        expectedRing: resolveColor("var(--ui-ring)"),
+        expectedWarning: resolveColor("var(--ui-warning)"),
+        focusVisible: element.matches(":focus-visible"),
+        outlineColor: style.outlineColor,
+        outlineOffset: Number.parseFloat(style.outlineOffset),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+      };
+    });
+  }
+
+  type SettlementContract =
+    | Readonly<{
+      expectedColor: string;
+      expectedOffset: number;
+      expectedStyle: string;
+      expectedWidth: number;
+      selector: string;
+      state: "focus";
+    }>
+    | Readonly<{
+      expectedLetterSpacing?: number;
+      expectedThickness: number;
+      selector: string;
+      state: "hover";
+    }>;
+
+  async function settlePresentation(
+    contract: SettlementContract,
+  ): Promise<void> {
+    await page.waitForFunction(
+      (contract) => {
+        const element = document.querySelector(contract.selector);
+        if (!(element instanceof HTMLAnchorElement)) return false;
+        const style = getComputedStyle(element);
+        if (contract.state === "hover") {
+          return element.matches(":hover")
+            && element.hasAttribute("data-hovered")
+            && Number.parseFloat(style.textDecorationThickness)
+              === contract.expectedThickness
+            && (
+              contract.expectedLetterSpacing === undefined
+              || (
+                element.style.letterSpacing
+                  === `${String(contract.expectedLetterSpacing)}px`
+                && Number.parseFloat(style.letterSpacing)
+                  === contract.expectedLetterSpacing
+              )
+            );
+        }
+        const probe = document.createElement("span");
+        probe.style.color = contract.expectedColor;
+        document.body.append(probe);
+        const expectedOutlineColor = getComputedStyle(probe).color;
+        probe.remove();
+        return document.activeElement === element
+          && element.matches(":focus-visible")
+          && element.hasAttribute("data-focus-visible")
+          && style.outlineColor === expectedOutlineColor
+          && Number.parseFloat(style.outlineOffset) === contract.expectedOffset
+          && style.outlineStyle === contract.expectedStyle
+          && Number.parseFloat(style.outlineWidth) === contract.expectedWidth;
+      },
+      contract,
+      { polling: "raf", timeout: 2_000 },
+    ).catch(() => undefined);
+  }
+
+  await reachByKeyboard(defaultSelector);
+  await settlePresentation({
+    expectedColor: "var(--ui-ring)",
+    expectedOffset: 2,
+    expectedStyle: "solid",
+    expectedWidth: 2,
+    selector: defaultSelector,
+    state: "focus",
+  });
+  const defaultFocused = await focusEvidence(defaultSelector);
+  invariant(
+    defaultFocused.dataFocusVisible
+    && defaultFocused.focusVisible
+    && defaultFocused.outlineColor === defaultFocused.expectedRing
+    && defaultFocused.outlineOffset === 2
+    && defaultFocused.outlineStyle === "solid"
+    && defaultFocused.outlineWidth === 2,
+    `${id}: empty-conditional Link lost its native focus fallback: ${JSON.stringify(defaultFocused)}`,
+  );
+  const defaultLink = page.locator(defaultSelector);
+  await defaultLink.hover();
+  await page.waitForFunction((selector) => {
+    const element = document.querySelector(selector);
+    return element instanceof HTMLAnchorElement
+      && element.matches(":hover")
+      && element.hasAttribute("data-hovered");
+  }, defaultSelector);
+  await settlePresentation({
+    expectedThickness: 2,
+    selector: defaultSelector,
+    state: "hover",
+  });
+  const defaultHovered = await defaultLink.evaluate((element) => ({
+    dataHovered: element.hasAttribute("data-hovered"),
+    hovered: element.matches(":hover"),
+    thickness: Number.parseFloat(
+      getComputedStyle(element).textDecorationThickness,
+    ),
+  }));
+  invariant(
+    defaultHovered.dataHovered
+    && defaultHovered.hovered
+    && defaultHovered.thickness === 2,
+    `${id}: empty-conditional Link lost its native hover fallback: ${JSON.stringify(defaultHovered)}`,
+  );
+
+  await page.mouse.move(0, 0);
+  await reachByKeyboard(overrideSelector);
+  await settlePresentation({
+    expectedColor: "var(--ui-warning)",
+    expectedOffset: 6,
+    expectedStyle: "dashed",
+    expectedWidth: 3,
+    selector: overrideSelector,
+    state: "focus",
+  });
+  const overrideFocused = await focusEvidence(overrideSelector);
+  invariant(
+    overrideFocused.dataFocusVisible
+    && overrideFocused.focusVisible
+    && overrideFocused.outlineColor === overrideFocused.expectedWarning
+    && overrideFocused.outlineOffset === 6
+    && overrideFocused.outlineStyle === "dashed"
+    && overrideFocused.outlineWidth === 3,
+    `${id}: caller StyleX lost Link focus precedence: ${JSON.stringify(overrideFocused)}`,
+  );
+  const overrideLink = page.locator(overrideSelector);
+  await overrideLink.hover();
+  await page.waitForFunction((selector) => {
+    const element = document.querySelector(selector);
+    return element instanceof HTMLAnchorElement
+      && element.matches(":hover")
+      && element.hasAttribute("data-hovered");
+  }, overrideSelector);
+  await settlePresentation({
+    expectedLetterSpacing: 2,
+    expectedThickness: 4,
+    selector: overrideSelector,
+    state: "hover",
+  });
+  const overrideHovered = await overrideLink.evaluate((element) => ({
+    dataHovered: element.hasAttribute("data-hovered"),
+    dynamicInlineValue: [...element.style].some(
+      (property) =>
+        property.startsWith("--")
+        && element.style.getPropertyValue(property).trim() === "0.5px",
+    ),
+    hovered: element.matches(":hover"),
+    inlineLetterSpacing: element.style.letterSpacing,
+    letterSpacing: Number.parseFloat(getComputedStyle(element).letterSpacing),
+    thickness: Number.parseFloat(
+      getComputedStyle(element).textDecorationThickness,
+    ),
+  }));
+  invariant(
+    overrideHovered.dataHovered
+    && overrideHovered.dynamicInlineValue
+    && overrideHovered.hovered
+    && overrideHovered.inlineLetterSpacing === "2px"
+    && overrideHovered.letterSpacing === 2
+    && overrideHovered.thickness === 4,
+    `${id}: caller presentation lost Link hover/native-style precedence: ${JSON.stringify(overrideHovered)}`,
+  );
+
+  await overrideLink.evaluate((element) => element.blur());
+  await page.mouse.move(0, 0);
+  await page.waitForFunction((selector) => {
+    const element = document.querySelector(selector);
+    return element instanceof HTMLAnchorElement
+      && document.activeElement !== element
+      && !element.hasAttribute("data-focus-visible")
+      && !element.hasAttribute("data-hovered");
+  }, overrideSelector);
 }
 
 async function verifyPressableCardCallerStatePrecedence(
@@ -4633,6 +5279,11 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     );
     const spinner = document.querySelector('[data-slot="spinner"]');
     const keyHint = document.querySelector('[data-gallery-key-hint="default"]');
+    const links = [
+      ...document.querySelectorAll<HTMLAnchorElement>(
+        '[data-gallery-link="default"], [data-gallery-link="override"]',
+      ),
+    ];
     const statusPills = [
       ...document.querySelectorAll<HTMLElement>(
         '[data-gallery-badge-tone], [data-gallery-tag-variant], [data-gallery-status-family-override="badge"], [data-gallery-status-family-override="tag"]',
@@ -4660,6 +5311,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       || !(selectedSegment instanceof HTMLElement)
       || !(spinner instanceof HTMLElement)
       || !(keyHint instanceof HTMLElement)
+      || links.length !== 2
       || statusPills.length !== 10
       || statusDots.length !== 6
       || cardFamily.length !== 11
@@ -4683,6 +5335,16 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     const keyHintStyle = getComputedStyle(keyHint);
     const canvas = normalize("backgroundColor", "Canvas");
     const canvasText = normalize("color", "CanvasText");
+    const linkText = normalize("color", "LinkText");
+    const linkEvidence = links.map((link) => {
+      const style = getComputedStyle(link);
+      return {
+        color: style.color,
+        forcedColorAdjust: style.forcedColorAdjust,
+        kind: link.dataset.galleryLink ?? "",
+        textDecorationLine: style.textDecorationLine,
+      };
+    });
     const statusPillEvidence = statusPills.map((pill) => {
       const style = getComputedStyle(pill);
       return {
@@ -4798,6 +5460,17 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
         color: keyHintStyle.color,
         display: keyHintStyle.display,
         forcedColorAdjust: keyHintStyle.forcedColorAdjust,
+      }),
+      linkContracts: linkEvidence.every(
+        (link) =>
+          link.color === linkText
+          && link.forcedColorAdjust === "auto"
+          && (link.kind === "default" || link.kind === "override")
+          && link.textDecorationLine.includes("underline"),
+      ),
+      linkDiagnostics: JSON.stringify({
+        linkText,
+        links: linkEvidence,
       }),
       selectedTabBackground: tabStyle.backgroundColor,
       selectedTabColor: tabStyle.color,
@@ -4958,6 +5631,7 @@ try {
   await Promise.all([
     access(resolve(installedRoot, "src/styles.css")),
     access(resolve(installedRoot, "dist/stylex.css")),
+    access(resolve(installedRoot, "src/actions.stylex.ts")),
     access(resolve(installedRoot, "src/checkbox-field.stylex.ts")),
   ]);
   await assert.rejects(
@@ -4974,7 +5648,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|checkbox-field|key-hint|status-family|themed-surface|toolbar|viewport-frame|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|checkbox-field|key-hint|link|status-family|themed-surface|toolbar|viewport-frame|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -5007,6 +5681,11 @@ try {
     /\.hraness-checkbox-field(?:__(?:control|indicator|label))?(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate CheckboxField declarations in legacy CSS",
   );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-link(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate Link declarations in legacy CSS",
+  );
 
   const productionDirectory = resolve(consumer, "dist/browser");
   const negativeDirectory = resolve(consumer, "dist/unstyled-negative-control");
@@ -5018,6 +5697,10 @@ try {
   ]);
   requirePackedDefaultStylesheet(production.css, production.javaScript);
   const checkboxFocusContract = requirePackedCheckboxFocusContract(
+    production.javaScript,
+    production.css,
+  );
+  const linkNativeFallbackContract = requirePackedLinkNativeFallbackContract(
     production.javaScript,
     production.css,
   );
@@ -5133,6 +5816,15 @@ try {
   assert.match(html, /class="hraness-key-hint [^"]+gallery-key-hint gallery-key-hint--default"/u);
   assert.match(html, /aria-label="Escape"/u);
   assert.match(html, />⌘K<\/kbd>/u);
+  assert.match(html, /data-gallery-link="default"/u);
+  assert.match(html, /data-gallery-link="override"/u);
+  assert.match(html, /data-gallery-link-empty-xstyle="true"/u);
+  assert.match(html, /data-gallery-link-native-style-last="true"/u);
+  assert.match(html, /data-gallery-link-layer-conflict="true"/u);
+  assert.match(html, /data-slot="link"/u);
+  assert.match(html, /class="hraness-link [^"]+gallery-link gallery-link--default"/u);
+  assert.match(html, /href="\/reference"/u);
+  assert.match(html, /href="\/reference\?presentation=override"/u);
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
@@ -5355,6 +6047,15 @@ try {
             `${layout.id}: KeyHint parity failed: ${light.keyHintDiagnostics}`,
           );
           invariant(
+            light.linkBoundaryContracts
+            && light.linkClassContracts
+            && light.linkLayerSentinels
+            && light.linkNativeFallbackContract
+            && light.linkNativeStyleLastContract
+            && light.linkOverrideContract,
+            `${layout.id}: Link parity failed: ${light.linkDiagnostics}`,
+          );
+          invariant(
             light.statusFamilyClassContracts
             && light.statusFamilyGeometryContracts
             && light.statusFamilyLayerSentinels
@@ -5513,6 +6214,11 @@ try {
             checkboxFocusContract,
           );
           await verifyKeyboardPath(page, layout.id, checkboxFocusContract);
+          await verifyLinkNativeFallbackCascadeIsolation(
+            page,
+            layout.id,
+            linkNativeFallbackContract,
+          );
           await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
@@ -5560,6 +6266,15 @@ try {
             `${layout.id}: dark KeyHint parity failed: ${dark.keyHintDiagnostics}`,
           );
           invariant(
+            dark.linkBoundaryContracts
+            && dark.linkClassContracts
+            && dark.linkLayerSentinels
+            && dark.linkNativeFallbackContract
+            && dark.linkNativeStyleLastContract
+            && dark.linkOverrideContract,
+            `${layout.id}: dark Link parity failed: ${dark.linkDiagnostics}`,
+          );
+          invariant(
             dark.checkboxBoundaryContracts
             && dark.checkboxClassContracts
             && dark.checkboxLayerSentinels
@@ -5600,6 +6315,7 @@ try {
               !== light.toolbarDefaultBackground,
             `${layout.id}: dark Toolbar parity failed: ${dark.toolbarDiagnostics}`,
           );
+          await verifyLinkCallerStatePrecedence(page, layout.id);
           await verifyPressableCardCallerStatePrecedence(page, layout.id);
           await verifyToolbarKeyboardFocusPrecedence(page, layout.id);
           invariant(dark.recoverableErrors.length === 0, `${layout.id}: interaction introduced hydration recovery`);
@@ -5733,6 +6449,10 @@ try {
           `forced colors: KeyHint parity failed: ${forced.keyHintDiagnostics}`,
         );
         invariant(
+          forced.linkContracts,
+          `forced colors: Link parity failed: ${forced.linkDiagnostics}`,
+        );
+        invariant(
           forced.checkboxContracts,
           `forced colors: CheckboxField parity failed: ${forced.checkboxDiagnostics}`,
         );
@@ -5760,6 +6480,56 @@ try {
           && forcedOutline.width >= 2,
           `forced colors: focus outline is ${forcedOutline.width}px ${forcedOutline.style} ${forcedOutline.actual}, expected a visible ${forcedOutline.highlight} outline`,
         );
+        await page.keyboard.press("Tab");
+        const forcedPrimaryAction = page.getByRole("button", {
+          name: "Run primitive check",
+        });
+        invariant(
+          await forcedPrimaryAction.evaluate((element) =>
+            document.activeElement === element),
+          "forced colors: the primary action is not next after the theme action",
+        );
+        for (const selector of [
+          '[data-gallery-link="default"]',
+          '[data-gallery-link="override"]',
+        ] as const) {
+          await page.keyboard.press("Tab");
+          const focusedLink = page.locator(selector);
+          await page.waitForFunction((targetSelector) => {
+            const element = document.querySelector(targetSelector);
+            return element instanceof HTMLAnchorElement
+              && document.activeElement === element
+              && element.matches(":focus-visible");
+          }, selector);
+          const linkOutline = await focusedLink.evaluate((element) => {
+            const probe = document.createElement("span");
+            probe.style.color = "Highlight";
+            document.body.append(probe);
+            const highlight = getComputedStyle(probe).color;
+            probe.remove();
+            const style = getComputedStyle(element);
+            return {
+              active: document.activeElement === element,
+              actual: style.outlineColor,
+              dataFocusVisible: element.hasAttribute("data-focus-visible"),
+              focusVisible: element.matches(":focus-visible"),
+              forcedColorAdjust: style.forcedColorAdjust,
+              highlight,
+              style: style.outlineStyle,
+              width: Number.parseFloat(style.outlineWidth),
+            };
+          });
+          invariant(
+            linkOutline.active
+            && linkOutline.dataFocusVisible
+            && linkOutline.focusVisible
+            && linkOutline.forcedColorAdjust === "auto"
+            && linkOutline.actual === linkOutline.highlight
+            && linkOutline.style !== "none"
+            && linkOutline.width >= 2,
+            `forced colors: ${selector} focus is not a visible ${linkOutline.highlight} outline: ${JSON.stringify(linkOutline)}`,
+          );
+        }
         invariant(failures.length === 0, `forced colors: ${failures.join("; ")}`);
 
         await page.evaluate(() => {

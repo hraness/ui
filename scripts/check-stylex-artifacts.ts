@@ -17,6 +17,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-card-family-layer-conflict",
   "data-gallery-toolbar-layer-conflict",
   "data-gallery-key-hint-layer-conflict",
+  "data-gallery-link-layer-conflict",
   "data-gallery-checkbox-field-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
@@ -146,7 +147,20 @@ const CHECKBOX_STYLE_KEYS = [
   "root",
   "selectedIndicator",
 ] as const;
+const LINK_STYLE_KEYS = [
+  "focusVisible",
+  "hovered",
+  "nativeInteractionFallbacks",
+  "root",
+] as const;
+const TOOLBAR_STYLE_KEYS = [
+  "nativeFocusFallback",
+  "root",
+  "vertical",
+] as const;
 type CheckboxStyleKey = (typeof CHECKBOX_STYLE_KEYS)[number];
+type LinkStyleKey = (typeof LINK_STYLE_KEYS)[number];
+type ToolbarStyleKey = (typeof TOOLBAR_STYLE_KEYS)[number];
 
 function blockFromStatement(
   statement: string,
@@ -184,6 +198,71 @@ function cssRules(
     }
   }
   return rules;
+}
+
+function cssSelectorList(header: string): readonly string[] {
+  const selectors: string[] = [];
+  let escaped = false;
+  let quote: "\"" | "'" | undefined;
+  let parentheses = 0;
+  let brackets = 0;
+  let start = 0;
+  for (let index = 0; index < header.length; index += 1) {
+    const character = header[index];
+    if (character === undefined) continue;
+    if (quote !== undefined) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === "\"" || character === "'") quote = character;
+    else if (character === "(") parentheses += 1;
+    else if (character === ")") parentheses -= 1;
+    else if (character === "[") brackets += 1;
+    else if (character === "]") brackets -= 1;
+    else if (character === "," && parentheses === 0 && brackets === 0) {
+      selectors.push(header.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  selectors.push(header.slice(start).trim());
+  return selectors.filter((selector) => selector.length > 0);
+}
+
+function declarationSelectors(
+  rules: readonly CssRule[],
+  classNames: ReadonlySet<string>,
+  declaration: RegExp,
+  description: string,
+): readonly string[] {
+  const selectors = rules
+    .filter((rule) => declaration.test(rule.body))
+    .flatMap((rule) => cssSelectorList(rule.header))
+    .filter((selector) => [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
+    ));
+  if (selectors.length === 0) {
+    throw new Error(`${description} has no class-owned selector`);
+  }
+  return selectors;
+}
+
+function requirePositivePseudoSelector(
+  selector: string,
+  pseudo: "focus-visible" | "hover",
+  description: string,
+): void {
+  forbid(
+    selector,
+    new RegExp(`:not\\([^)]*:${pseudo}(?![A-Za-z0-9_-])[^)]*\\)`, "u"),
+    `a negated ${description}`,
+  );
+  requireMatch(
+    selector,
+    new RegExp(`:${pseudo}(?![A-Za-z0-9_-])`, "u"),
+    description,
+  );
 }
 
 function balancedObject(
@@ -320,6 +399,221 @@ function checkboxStyleRules(
     );
   }
   return rules;
+}
+
+function toolbarStyleMap(compiledJavaScript: string): string {
+  const candidates: string[] = [];
+  for (const match of compiledJavaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*nativeFocusFallback\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedObject(
+      compiledJavaScript,
+      open,
+      "dist/index.js Toolbar StyleX map",
+    );
+    if (TOOLBAR_STYLE_KEYS.every(
+      (key) => new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u")
+        .test(object.slice(1, -1)),
+    )) {
+      candidates.push(object);
+    }
+  }
+  if (candidates.length !== 1) {
+    throw new Error(
+      `dist/index.js must contain exactly one compiled toolbarStyles class map; found ${String(candidates.length)}`,
+    );
+  }
+  return candidates[0]!;
+}
+
+function toolbarStyleObject(
+  compiledJavaScript: string,
+  key: ToolbarStyleKey,
+): string {
+  const map = toolbarStyleMap(compiledJavaScript);
+  const body = map.slice(1, -1);
+  const matches = [...body.matchAll(
+    new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+  )];
+  if (matches.length !== 1) {
+    throw new Error(
+      `the compiled toolbarStyles map must contain exactly one ${key} object; found ${String(matches.length)}`,
+    );
+  }
+  const match = matches[0]!;
+  const open = 1 + (match.index ?? 0) + match[0].lastIndexOf("{");
+  return balancedObject(
+    map,
+    open,
+    `dist/index.js Toolbar ${key} StyleX map`,
+  );
+}
+
+function toolbarStyleRules(
+  compiledJavaScript: string,
+  compiledCss: string,
+  key: ToolbarStyleKey,
+): CssRule[] {
+  const classNames = toolbarStyleClassNames(compiledJavaScript, key);
+  const rules = cssRules(compiledCss, "dist/stylex.css").filter((rule) =>
+    [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+    )
+  );
+  if (rules.length === 0) {
+    throw new Error(`dist/stylex.css has no rules owned by toolbarStyles.${key}`);
+  }
+  return rules;
+}
+
+function toolbarStyleClassNames(
+  compiledJavaScript: string,
+  key: ToolbarStyleKey,
+): ReadonlySet<string> {
+  return generatedClassNames(
+    toolbarStyleObject(compiledJavaScript, key),
+    `the compiled toolbarStyles ${key} class map`,
+  );
+}
+
+function replaceToolbarDeclaration(
+  compiledJavaScript: string,
+  compiledCss: string,
+  key: ToolbarStyleKey,
+  declaration: RegExp,
+  replacement: string,
+  description: string,
+): string {
+  const matches = toolbarStyleRules(compiledJavaScript, compiledCss, key)
+    .filter((rule) => declaration.test(rule.body));
+  if (matches.length !== 1) {
+    throw new Error(`${description} mutation expected one Toolbar rule`);
+  }
+  const rule = matches[0]!;
+  const mutatedRule = rule.source.replace(declaration, replacement);
+  if (mutatedRule === rule.source) {
+    throw new Error(`${description} mutation did not change its exact rule`);
+  }
+  const ruleIndex = compiledCss.indexOf(rule.source);
+  if (ruleIndex < 0 || ruleIndex !== compiledCss.lastIndexOf(rule.source)) {
+    throw new Error(`${description} mutation requires one exact Toolbar rule`);
+  }
+  return `${compiledCss.slice(0, ruleIndex)}${mutatedRule}${compiledCss.slice(
+    ruleIndex + rule.source.length,
+  )}`;
+}
+
+function linkStyleMap(compiledJavaScript: string): string {
+  const candidates: string[] = [];
+  for (const match of compiledJavaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*focusVisible\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedObject(
+      compiledJavaScript,
+      open,
+      "dist/index.js Link StyleX map",
+    );
+    if (LINK_STYLE_KEYS.every(
+      (key) => new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u")
+        .test(object.slice(1, -1)),
+    )) {
+      candidates.push(object);
+    }
+  }
+  if (candidates.length !== 1) {
+    throw new Error(
+      `dist/index.js must contain exactly one compiled linkStyles class map; found ${String(candidates.length)}`,
+    );
+  }
+  return candidates[0]!;
+}
+
+function linkStyleObject(
+  compiledJavaScript: string,
+  key: LinkStyleKey,
+): string {
+  const map = linkStyleMap(compiledJavaScript);
+  const body = map.slice(1, -1);
+  const matches = [...body.matchAll(
+    new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+  )];
+  if (matches.length !== 1) {
+    throw new Error(
+      `the compiled linkStyles map must contain exactly one ${key} object; found ${String(matches.length)}`,
+    );
+  }
+  const match = matches[0]!;
+  const open = 1 + (match.index ?? 0) + match[0].lastIndexOf("{");
+  return balancedObject(
+    map,
+    open,
+    `dist/index.js Link ${key} StyleX map`,
+  );
+}
+
+function linkStyleClassNames(
+  compiledJavaScript: string,
+  key?: LinkStyleKey,
+): ReadonlySet<string> {
+  return generatedClassNames(
+    key === undefined
+      ? linkStyleMap(compiledJavaScript)
+      : linkStyleObject(compiledJavaScript, key),
+    key === undefined
+      ? "the compiled linkStyles class map"
+      : `the compiled linkStyles ${key} class map`,
+  );
+}
+
+function linkStyleRules(
+  compiledJavaScript: string,
+  compiledCss: string,
+  key?: LinkStyleKey,
+): CssRule[] {
+  const classNames = linkStyleClassNames(compiledJavaScript, key);
+  const rules = cssRules(compiledCss, "dist/stylex.css").filter((rule) =>
+    [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+    )
+  );
+  if (rules.length === 0) {
+    throw new Error(
+      key === undefined
+        ? "dist/stylex.css has no rules owned by linkStyles"
+        : `dist/stylex.css has no rules owned by linkStyles.${key}`,
+    );
+  }
+  return rules;
+}
+
+function replaceLinkDeclaration(
+  compiledJavaScript: string,
+  compiledCss: string,
+  key: LinkStyleKey,
+  declaration: RegExp,
+  replacement: string,
+  description: string,
+): string {
+  const matches = linkStyleRules(compiledJavaScript, compiledCss, key).filter(
+    (rule) => declaration.test(rule.body),
+  );
+  if (matches.length !== 1) {
+    throw new Error(`${description} mutation expected one Link rule`);
+  }
+  const rule = matches[0]!;
+  const mutatedRule = rule.source.replace(declaration, replacement);
+  if (mutatedRule === rule.source) {
+    throw new Error(`${description} mutation did not change its exact rule`);
+  }
+  const ruleIndex = compiledCss.indexOf(rule.source);
+  if (ruleIndex < 0 || ruleIndex !== compiledCss.lastIndexOf(rule.source)) {
+    throw new Error(`${description} mutation requires one exact Link rule`);
+  }
+  return `${compiledCss.slice(0, ruleIndex)}${mutatedRule}${compiledCss.slice(
+    ruleIndex + rule.source.length,
+  )}`;
 }
 
 function replaceCheckboxStyleClassName(
@@ -885,11 +1179,11 @@ function requireCardFamilyContract(
 
 function requireCardFamilyCallerFallbackSeam(cardSource: string): void {
   const seams = cardSource.match(
-    /xstyle\s*===\s*undefined\s*&&\s*cardStyles\.nativeInteractionFallbacks/gu,
+    /!hasStylexPresentation\(xstyle\)\s*&&\s*cardStyles\.nativeInteractionFallbacks/gu,
   ) ?? [];
   if (seams.length !== 1) {
     throw new Error(
-      "src/card.tsx must omit native PressableCard pseudo fallbacks exactly when caller xstyle is present",
+      "src/card.tsx must omit native PressableCard pseudo fallbacks exactly when caller xstyle contributes presentation",
     );
   }
 }
@@ -897,59 +1191,125 @@ function requireCardFamilyCallerFallbackSeam(cardSource: string): void {
 function requireToolbarContract(
   legacyComponents: string,
   compiledCss: string,
+  compiledJavaScript: string,
 ): void {
   forbid(
     legacyComponents,
     /\.hraness-toolbar(?![A-Za-z0-9_-])/u,
     "a legacy Toolbar recipe",
   );
-  const declarations = [
+  const rootRules = toolbarStyleRules(
+    compiledJavaScript,
+    compiledCss,
+    "root",
+  );
+  const verticalRules = toolbarStyleRules(
+    compiledJavaScript,
+    compiledCss,
+    "vertical",
+  );
+  const nativeFocusRules = toolbarStyleRules(
+    compiledJavaScript,
+    compiledCss,
+    "nativeFocusFallback",
+  );
+  const rootClassNames = toolbarStyleClassNames(compiledJavaScript, "root");
+  const verticalClassNames = toolbarStyleClassNames(compiledJavaScript, "vertical");
+  const nativeFocusClassNames = toolbarStyleClassNames(
+    compiledJavaScript,
+    "nativeFocusFallback",
+  );
+  const rootCss = rootRules.map((rule) => rule.source).join("\n");
+  const verticalCss = verticalRules.map((rule) => rule.source).join("\n");
+  const nativeFocusCss = nativeFocusRules.map((rule) => rule.source).join("\n");
+  const rootDeclarations = [
     [/align-items:\s*center;/u, "the horizontal Toolbar alignment"],
-    [/align-items:\s*stretch;/u, "the vertical Toolbar alignment"],
     [/background-color:\s*var\(--ui-card\);/u, "the Toolbar background"],
     [/border-color:\s*var\(--ui-border\);/u, "the Toolbar border color"],
     [/border-radius:\s*var\(--radius-lg\);/u, "the Toolbar radius"],
     [/border-style:\s*solid;/u, "the Toolbar border style"],
     [/border-width:\s*1px;/u, "the Toolbar border width"],
     [/display:\s*flex;/u, "the Toolbar flex layout"],
-    [/flex-direction:\s*column;/u, "the vertical Toolbar direction"],
-    [/flex-wrap:\s*nowrap;/u, "the vertical Toolbar wrapping"],
     [/flex-wrap:\s*wrap;/u, "the horizontal Toolbar wrapping"],
     [/gap:\s*var\(--space-1\);/u, "the Toolbar gap"],
     [/min-width:\s*0;/u, "the physical Toolbar shrink boundary"],
+    [/padding-block:\s*var\(--space-1\);/u, "the Toolbar block padding"],
+    [/padding-inline:\s*var\(--space-1\);/u, "the Toolbar inline padding"],
+  ] as const;
+  for (const [pattern, description] of rootDeclarations) {
+    requireMatch(rootCss, pattern, description);
+    for (const selector of declarationSelectors(
+      rootRules,
+      rootClassNames,
+      pattern,
+      description,
+    )) {
+      forbid(
+        selector,
+        /:(?:focus-visible|hover)(?![A-Za-z0-9_-])/u,
+        `a pseudo-qualified ${description}`,
+      );
+    }
+  }
+  const verticalDeclarations = [
+    [/align-items:\s*stretch;/u, "the vertical Toolbar alignment"],
+    [/flex-direction:\s*column;/u, "the vertical Toolbar direction"],
+    [/flex-wrap:\s*nowrap;/u, "the vertical Toolbar wrapping"],
+    [/width:\s*fit-content;/u, "the vertical Toolbar width"],
+  ] as const;
+  for (const [pattern, description] of verticalDeclarations) {
+    requireMatch(verticalCss, pattern, description);
+    for (const selector of declarationSelectors(
+      verticalRules,
+      verticalClassNames,
+      pattern,
+      description,
+    )) {
+      forbid(
+        selector,
+        /:(?:focus-visible|hover)(?![A-Za-z0-9_-])/u,
+        `a pseudo-qualified ${description}`,
+      );
+    }
+  }
+  const focusDeclarations = [
     [/outline-color:\s*var\(--ui-ring\);/u, "the Toolbar focus ring color"],
     [/outline-offset:\s*2px;/u, "the Toolbar focus ring offset"],
     [/outline-style:\s*solid;/u, "the Toolbar focus ring style"],
     [/outline-width:\s*2px;/u, "the Toolbar focus ring width"],
-    [/padding-block:\s*var\(--space-1\);/u, "the Toolbar block padding"],
-    [/padding-inline:\s*var\(--space-1\);/u, "the Toolbar inline padding"],
-    [/width:\s*fit-content;/u, "the vertical Toolbar width"],
   ] as const;
-  for (const [pattern, description] of declarations) {
-    requireMatch(compiledCss, pattern, description);
+  for (const [pattern, description] of focusDeclarations) {
+    requireMatch(nativeFocusCss, pattern, description);
+    for (const selector of declarationSelectors(
+      nativeFocusRules,
+      nativeFocusClassNames,
+      pattern,
+      description,
+    )) {
+      requirePositivePseudoSelector(
+        selector,
+        "focus-visible",
+        `the native ${description} selector`,
+      );
+    }
   }
-  requireMatch(
-    compiledCss,
-    /:focus-visible\s*\{\s*outline-color:\s*var\(--ui-ring\);/u,
-    "the native Toolbar focus-visible fallback",
-  );
   forbid(
-    compiledCss,
+    rootCss,
     /background:\s*var\(--ui-card\);/u,
     "a Toolbar background shorthand",
   );
   forbid(
-    compiledCss,
+    rootCss,
     /border:\s*1px\s+solid\s+var\(--ui-border\)/u,
     "a Toolbar border shorthand",
   );
   forbid(
-    compiledCss,
+    nativeFocusCss,
     /outline:\s*2px\s+solid\s+var\(--ui-ring\)/u,
     "a Toolbar outline shorthand",
   );
   forbid(
-    compiledCss,
+    rootCss,
     /padding:\s*var\(--space-1\)/u,
     "a Toolbar padding shorthand",
   );
@@ -957,11 +1317,11 @@ function requireToolbarContract(
 
 function requireToolbarCallerFallbackSeam(toolbarSource: string): void {
   const seams = toolbarSource.match(
-    /xstyle\s*===\s*undefined\s*&&\s*toolbarStyles\.nativeFocusFallback/gu,
+    /!hasStylexPresentation\(xstyle\)\s*&&\s*toolbarStyles\.nativeFocusFallback/gu,
   ) ?? [];
   if (seams.length !== 1) {
     throw new Error(
-      "src/toolbar.tsx must omit the native Toolbar focus fallback exactly when caller xstyle is present",
+      "src/toolbar.tsx must omit the native Toolbar focus fallback exactly when caller xstyle contributes presentation",
     );
   }
 }
@@ -1028,6 +1388,188 @@ function requireKeyHintSourceContract(contentSource: string): void {
     /mergeStylexInlineStyles\(presentation\.style,\s*style\)/u,
     "the KeyHint StyleX-before-native inline merge",
   );
+}
+
+function requireLinkContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-link(?![A-Za-z0-9_-])/u,
+    "a legacy Link recipe",
+  );
+  const rootRules = linkStyleRules(
+    compiledJavaScript,
+    compiledCss,
+    "root",
+  );
+  const hoveredRules = linkStyleRules(
+    compiledJavaScript,
+    compiledCss,
+    "hovered",
+  );
+  const focusVisibleRules = linkStyleRules(
+    compiledJavaScript,
+    compiledCss,
+    "focusVisible",
+  );
+  const nativeFallbackRules = linkStyleRules(
+    compiledJavaScript,
+    compiledCss,
+    "nativeInteractionFallbacks",
+  );
+  const rootClassNames = linkStyleClassNames(compiledJavaScript, "root");
+  const hoveredClassNames = linkStyleClassNames(compiledJavaScript, "hovered");
+  const focusVisibleClassNames = linkStyleClassNames(
+    compiledJavaScript,
+    "focusVisible",
+  );
+  const nativeFallbackClassNames = linkStyleClassNames(
+    compiledJavaScript,
+    "nativeInteractionFallbacks",
+  );
+  const rootCss = rootRules.map((rule) => rule.source).join("\n");
+  const hoveredCss = hoveredRules.map((rule) => rule.source).join("\n");
+  const focusVisibleCss = focusVisibleRules
+    .map((rule) => rule.source).join("\n");
+  const nativeFallbackCss = nativeFallbackRules
+    .map((rule) => rule.source).join("\n");
+  const rootDeclarations = [
+    [/border-radius:\s*var\(--radius-sm\);/u, "the Link radius"],
+    [/color:\s*var\(--ui-primary\);/u, "the Link color"],
+    [/text-decoration:\s*underline;/u, "the Link underline"],
+    [/text-decoration-thickness:\s*1px;/u, "the Link base underline thickness"],
+    [/text-underline-offset:\s*0?\.2em;/u, "the Link underline offset"],
+  ] as const;
+  for (const [pattern, description] of rootDeclarations) {
+    requireMatch(rootCss, pattern, description);
+    for (const selector of declarationSelectors(
+      rootRules,
+      rootClassNames,
+      pattern,
+      description,
+    )) {
+      forbid(
+        selector,
+        /:(?:focus-visible|hover)(?![A-Za-z0-9_-])/u,
+        `a pseudo-qualified ${description}`,
+      );
+    }
+  }
+  const hoveredDeclaration = /text-decoration-thickness:\s*2px;/u;
+  requireMatch(
+    hoveredCss,
+    hoveredDeclaration,
+    "the Link hovered underline thickness",
+  );
+  for (const selector of declarationSelectors(
+    hoveredRules,
+    hoveredClassNames,
+    hoveredDeclaration,
+    "the Link hovered underline thickness",
+  )) {
+    forbid(
+      selector,
+      /:hover(?![A-Za-z0-9_-])/u,
+      "a pseudo-qualified explicit Link hovered recipe",
+    );
+  }
+  const focusDeclarations = [
+    [/outline-color:\s*var\(--ui-ring\);/u, "the Link focus-ring color"],
+    [/outline-offset:\s*2px;/u, "the Link focus-ring offset"],
+    [/outline-style:\s*solid;/u, "the Link focus-ring style"],
+    [/outline-width:\s*2px;/u, "the Link focus-ring width"],
+  ] as const;
+  for (const [pattern, description] of focusDeclarations) {
+    requireMatch(focusVisibleCss, pattern, description);
+    requireMatch(nativeFallbackCss, pattern, `the native ${description}`);
+    for (const selector of declarationSelectors(
+      focusVisibleRules,
+      focusVisibleClassNames,
+      pattern,
+      description,
+    )) {
+      forbid(
+        selector,
+        /:focus-visible(?![A-Za-z0-9_-])/u,
+        `a pseudo-qualified explicit ${description}`,
+      );
+    }
+    for (const selector of declarationSelectors(
+      nativeFallbackRules,
+      nativeFallbackClassNames,
+      pattern,
+      `the native ${description}`,
+    )) {
+      requirePositivePseudoSelector(
+        selector,
+        "focus-visible",
+        `the native ${description} selector`,
+      );
+    }
+  }
+  requireMatch(
+    nativeFallbackCss,
+    hoveredDeclaration,
+    "the native Link hover thickness",
+  );
+  for (const selector of declarationSelectors(
+    nativeFallbackRules,
+    nativeFallbackClassNames,
+    hoveredDeclaration,
+    "the native Link hover thickness",
+  )) {
+    requirePositivePseudoSelector(
+      selector,
+      "hover",
+      "the native Link hover fallback selector",
+    );
+  }
+  forbid(
+    `${focusVisibleCss}\n${nativeFallbackCss}`,
+    /outline:\s*2px\s+solid\s+var\(--ui-ring\)/u,
+    "a Link outline shorthand",
+  );
+}
+
+function requireLinkSourceContract(actionsSource: string): void {
+  const start = actionsSource.indexOf("export type LinkProps");
+  const end = actionsSource.indexOf("export type LinkButtonProps", start);
+  if (start < 0 || end < 0) {
+    throw new Error("src/actions.tsx must retain the bounded Link source family");
+  }
+  const linkSource = actionsSource.slice(start, end);
+  requireMatch(linkSource, /href:\s*RequiredHref;/u, "the required Link href");
+  requireMatch(linkSource, /xstyle\?:\s*StyleXStyles;/u, "the typed Link xstyle seam");
+  requireMatch(
+    linkSource,
+    /!hasStylexPresentation\(xstyle\)\s*&&\s*linkStyles\.nativeInteractionFallbacks/u,
+    "the conditional native Link interaction fallbacks",
+  );
+  requireMatch(
+    linkSource,
+    /state\.isHovered\s*&&\s*linkStyles\.hovered/u,
+    "the explicit React Aria Link hover recipe",
+  );
+  requireMatch(
+    linkSource,
+    /state\.isFocusVisible\s*&&\s*linkStyles\.focusVisible/u,
+    "the explicit React Aria Link focus recipe",
+  );
+  requireMatch(
+    linkSource,
+    /stylex\.props\(\s*linkStyles\.root,\s*!hasStylexPresentation\(xstyle\)\s*&&\s*linkStyles\.nativeInteractionFallbacks,\s*state\.isHovered\s*&&\s*linkStyles\.hovered,\s*state\.isFocusVisible\s*&&\s*linkStyles\.focusVisible,\s*xstyle,?\s*\)/u,
+    "the caller-last Link state and xstyle merge",
+  );
+  requireMatch(
+    linkSource,
+    /mergeStylexInlineStyles\(presentation\.style,\s*callerStyle\)/u,
+    "the Link StyleX-before-native inline merge",
+  );
+  requireMatch(linkSource, /["']hraness-link["']/u, "the Link semantic hook");
+  requireMatch(linkSource, /data-slot=["']link["']/u, "the Link semantic slot");
 }
 
 function requireCheckboxFieldContract(
@@ -1201,6 +1743,7 @@ const [
   cardSource,
   toolbarSource,
   contentSource,
+  actionsSource,
   fieldsSource,
   resetStylesheet,
 ] =
@@ -1212,6 +1755,7 @@ const [
     readFile(resolve(repository, "src/card.tsx"), "utf8"),
     readFile(resolve(repository, "src/toolbar.tsx"), "utf8"),
     readFile(resolve(repository, "src/content.tsx"), "utf8"),
+    readFile(resolve(repository, "src/actions.tsx"), "utf8"),
     readFile(resolve(repository, "src/fields.tsx"), "utf8"),
     readFile(resolve(repository, "src/reset.css"), "utf8"),
   ]);
@@ -1316,10 +1860,12 @@ requireAvatarContract(legacyComponents, compiledCss);
 requireStatusFamilyContract(legacyComponents, compiledCss);
 requireCardFamilyContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCardFamilyCallerFallbackSeam(cardSource);
-requireToolbarContract(legacyComponents, compiledCss);
+requireToolbarContract(legacyComponents, compiledCss, compiledJavaScript);
 requireToolbarCallerFallbackSeam(toolbarSource);
 requireKeyHintContract(legacyComponents, compiledCss);
 requireKeyHintSourceContract(contentSource);
+requireLinkContract(legacyComponents, compiledCss, compiledJavaScript);
+requireLinkSourceContract(actionsSource);
 requireCheckboxFieldContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCheckboxFieldSourceContract(fieldsSource);
 requireEarliestLayerPrelude(resetStylesheet);
@@ -1415,6 +1961,7 @@ for (const [pattern, description] of [
   [/hraness-pressable-card/u, "the PressableCard semantic hook"],
   [/hraness-toolbar/u, "the Toolbar semantic hook"],
   [/hraness-key-hint/u, "the KeyHint semantic hook"],
+  [/hraness-link/u, "the Link semantic hook"],
   [/hraness-checkbox-field/u, "the CheckboxField semantic hook"],
   [/hraness-checkbox-field__control/u, "the CheckboxField control semantic hook"],
   [/hraness-checkbox-field__indicator/u, "the CheckboxField indicator semantic hook"],
@@ -1605,9 +2152,9 @@ assert.throws(
 assert.throws(
   () =>
     requireCardFamilyCallerFallbackSeam(
-      cardSource.replace("xstyle === undefined && ", ""),
+      cardSource.replace("!hasStylexPresentation(xstyle) && ", ""),
     ),
-  /omit native PressableCard pseudo fallbacks exactly when caller xstyle is present/u,
+  /omit native PressableCard pseudo fallbacks exactly when caller xstyle contributes presentation/u,
   "the Card-family guard must reject unconditional native pseudo fallbacks",
 );
 assert.throws(
@@ -1752,11 +2299,20 @@ assert.throws(
   /gallery-only data-gallery-card-family-layer-conflict sentinel/u,
   "the Card-family guard must reject gallery sentinel leakage",
 );
+const changedToolbarOutlineOffset = replaceToolbarDeclaration(
+  compiledJavaScript,
+  compiledCss,
+  "nativeFocusFallback",
+  /outline-offset:\s*2px;/u,
+  "outline-offset: 9px;",
+  "Toolbar focus ring offset",
+);
 assert.throws(
   () =>
     requireToolbarContract(
       `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-toolbar { display: flex; } }`,
       compiledCss,
+      compiledJavaScript,
     ),
   /legacy Toolbar recipe/u,
   "the Toolbar guard must reject a restored legacy selector",
@@ -1765,7 +2321,8 @@ assert.throws(
   () =>
     requireToolbarContract(
       legacyComponents,
-      compiledCss.replace("outline-offset: 2px;", "outline-offset: 9px;"),
+      changedToolbarOutlineOffset,
+      compiledJavaScript,
     ),
   /Toolbar focus ring offset/u,
   "the Toolbar guard must reject a changed focus-ring offset",
@@ -1775,6 +2332,7 @@ assert.throws(
     requireToolbarContract(
       legacyComponents,
       compiledCss.replaceAll("flex-direction: column;", "flex-direction: row;"),
+      compiledJavaScript,
     ),
   /vertical Toolbar direction/u,
   "the Toolbar guard must reject a missing vertical direction",
@@ -1782,9 +2340,9 @@ assert.throws(
 assert.throws(
   () =>
     requireToolbarCallerFallbackSeam(
-      toolbarSource.replace("xstyle === undefined && ", ""),
+      toolbarSource.replace("!hasStylexPresentation(xstyle) && ", ""),
     ),
-  /omit the native Toolbar focus fallback exactly when caller xstyle is present/u,
+  /omit the native Toolbar focus fallback exactly when caller xstyle contributes presentation/u,
   "the Toolbar guard must reject an unconditional native focus fallback",
 );
 assert.throws(
@@ -1851,6 +2409,96 @@ assert.throws(
     ),
   /gallery-only data-gallery-key-hint-layer-conflict sentinel/u,
   "the KeyHint guard must reject gallery sentinel leakage",
+);
+const changedLinkUnderlineOffset = replaceLinkDeclaration(
+  compiledJavaScript,
+  compiledCss,
+  "root",
+  /text-underline-offset:\s*0?\.2em;/u,
+  "text-underline-offset: 1em;",
+  "Link underline offset",
+);
+const nativeLinkHoverRules = linkStyleRules(
+  compiledJavaScript,
+  compiledCss,
+  "nativeInteractionFallbacks",
+).filter((rule) => /:hover(?![A-Za-z0-9_-])/u.test(rule.header));
+if (nativeLinkHoverRules.length !== 1) {
+  throw new Error("the Link guard requires one exact native hover fallback rule");
+}
+const nativeLinkHoverRule = nativeLinkHoverRules[0]!;
+const linkWithoutNativeHover = compiledCss.replace(
+  nativeLinkHoverRule.source,
+  nativeLinkHoverRule.source.replace(":hover", ":not(:hover)"),
+);
+
+assert.throws(
+  () =>
+    requireLinkContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-link[data-restored] { color: red; } }`,
+      compiledCss,
+      compiledJavaScript,
+    ),
+  /legacy Link recipe/u,
+  "the Link guard must reject a restored compound legacy selector",
+);
+assert.throws(
+  () =>
+    requireLinkContract(
+      legacyComponents,
+      changedLinkUnderlineOffset,
+      compiledJavaScript,
+    ),
+  /Link underline offset/u,
+  "the Link guard must reject a changed underline offset",
+);
+assert.throws(
+  () =>
+    requireLinkContract(
+      legacyComponents,
+      linkWithoutNativeHover,
+      compiledJavaScript,
+    ),
+  /native Link hover fallback/u,
+  "the Link guard must reject a missing native hover fallback",
+);
+assert.throws(
+  () =>
+    requireLinkSourceContract(
+      actionsSource.replace("!hasStylexPresentation(xstyle) && ", ""),
+    ),
+  /conditional native Link interaction fallbacks/u,
+  "the Link guard must reject unconditional native interaction fallbacks",
+);
+assert.throws(
+  () =>
+    requireLinkSourceContract(
+      actionsSource.replace(
+        "    state.isFocusVisible && linkStyles.focusVisible,\n    xstyle,",
+        "    xstyle,\n    state.isFocusVisible && linkStyles.focusVisible,",
+      ),
+    ),
+  /caller-last Link state and xstyle merge/u,
+  "the Link guard must reject caller xstyle before a state recipe",
+);
+assert.throws(
+  () =>
+    requireLinkSourceContract(
+      actionsSource.replace(
+        "mergeStylexInlineStyles(presentation.style, callerStyle)",
+        "mergeStylexInlineStyles(callerStyle, presentation.style)",
+      ),
+    ),
+  /Link StyleX-before-native inline merge/u,
+  "the Link guard must reject reversed native-style precedence",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-link-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-link-layer-conflict sentinel/u,
+  "the Link guard must reject gallery sentinel leakage",
 );
 const changedCheckboxDefaultTarget = replaceCheckboxDeclaration(
   compiledJavaScript,

@@ -15,7 +15,10 @@ import {
 } from "react-aria-components";
 
 import { cardStyles } from "./card.stylex.js";
-import { mergeStylexInlineStyles } from "./lib/stylex.js";
+import {
+  hasStylexPresentation,
+  mergeStylexInlineStyles,
+} from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 
 export type SurfaceShape = "rectangular" | "rounded";
@@ -244,7 +247,7 @@ function pressableCardPresentation(
   return stylex.props(
     cardStyles.surface,
     cardStyles.pressableRoot,
-    xstyle === undefined && cardStyles.nativeInteractionFallbacks,
+    !hasStylexPresentation(xstyle) && cardStyles.nativeInteractionFallbacks,
     cardToneStyles[tone],
     shape === "rectangular" && cardStyles.rectangular,
     state.isHovered && cardStyles.hovered,

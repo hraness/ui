@@ -11,7 +11,10 @@ import {
   useSlottedContext,
 } from "react-aria-components";
 
-import { mergeStylexInlineStyles } from "./lib/stylex.js";
+import {
+  hasStylexPresentation,
+  mergeStylexInlineStyles,
+} from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 import { toolbarStyles } from "./toolbar.stylex.js";
 
@@ -36,7 +39,7 @@ function toolbarPresentation(
   return stylex.props(
     toolbarStyles.root,
     state.orientation === "vertical" && toolbarStyles.vertical,
-    xstyle === undefined && toolbarStyles.nativeFocusFallback,
+    !hasStylexPresentation(xstyle) && toolbarStyles.nativeFocusFallback,
     xstyle,
   );
 }
