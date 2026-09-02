@@ -537,7 +537,7 @@
 
 html body [data-gallery-visually-hidden-layer-conflict="true"] [data-slot="spinner-label"],
 html body [data-gallery-visually-hidden-layer-conflict="true"] [data-slot="checkbox-label"],
-html body [data-gallery-visually-hidden-layer-conflict="true"][data-slot="select-field"] > label {
+html body [data-gallery-visually-hidden-layer-conflict="true"][data-slot="select-field"] > span {
   --gallery-visually-hidden-layer-conflict: consumer-important;
   border-color: rgb(255 0 255) !important;
   border-image-outset: 9 !important;

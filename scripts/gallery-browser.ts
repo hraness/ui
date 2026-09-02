@@ -316,7 +316,7 @@ interface ArtifactSet {
 interface CheckboxFocusRuleEvidence {
   readonly className: string;
   readonly declaration: string;
-  readonly layer: "components.hraness-ui.priority2";
+  readonly layer: "components.hraness-ui.priority3";
   readonly selector: string;
 }
 
@@ -994,7 +994,7 @@ function requirePackedCheckboxFocusContract(
   javaScript: string,
   css: string,
 ): CheckboxFocusContract {
-  const layer = "components.hraness-ui.priority2" as const;
+  const layer = "components.hraness-ui.priority3" as const;
   const classNames = packedCheckboxStyleClassNames(javaScript, "focusVisible");
   const expectedDeclarations = [
     "outline-color:var(--ui-ring)",
@@ -1938,6 +1938,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   assert.ok(
     visuallyHiddenConflict !== undefined,
     "the packed stylesheet must include the gallery visually-hidden conflict",
+  );
+  assert.match(
+    visuallyHiddenConflict,
+    /\[data-gallery-visually-hidden-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"select-field"|select-field)\]\s*>\s*span/u,
+    "the gallery SelectField conflict must target React Aria's ID-linked label span",
   );
   assert.match(
     visuallyHiddenConflict,
@@ -4643,17 +4648,12 @@ async function verifyVisuallyHiddenPresentation(
         && checkboxControl.contains(checkboxHidden)
         && [...(checkboxInput.labels ?? [])].includes(checkboxControl),
       select: read(roots.select),
-      selectAssociation: selectLabel instanceof HTMLLabelElement
+      selectAssociation: selectLabel instanceof HTMLSpanElement
         && selectTrigger instanceof HTMLButtonElement
-        && (
-          selectLabel.control === selectTrigger
-          || (
-            selectLabel.id.length > 0
-            && (selectTrigger.getAttribute("aria-labelledby") ?? "")
-              .split(/\s+/u)
-              .includes(selectLabel.id)
-          )
-        ),
+        && selectLabel.id.length > 0
+        && (selectTrigger.getAttribute("aria-labelledby") ?? "")
+          .split(/\s+/u)
+          .includes(selectLabel.id),
       spinner: read(roots.spinner),
       spinnerRole: roots.spinner.getAttribute("role"),
     };
@@ -4716,7 +4716,7 @@ async function verifyVisuallyHiddenPresentation(
     hiddenContract(evidence.select, {
       rootSlot: "select-field",
       slot: null,
-      tagName: "LABEL",
+      tagName: "SPAN",
       text: "Profile metric",
     }) && evidence.selectAssociation,
     `${id}: SelectField visually-hidden presentation failed: ${JSON.stringify(evidence.select)}`,
@@ -6944,7 +6944,7 @@ try {
   );
   assert.match(
     html,
-    /<label[^>]*class="hraness-select-field__label hraness-visually-hidden x[^"]+"[^>]*>Profile metric<\/label>/u,
+    /<span[^>]*class="hraness-select-field__label hraness-visually-hidden x[^"]+"[^>]*>Profile metric<\/span>/u,
   );
   assert.match(
     html,
