@@ -210,201 +210,6 @@
     inset-inline-end: var(--space-3);
   }
 
-  :where(.hraness-progress-bar, .hraness-meter, .hraness-slider) {
-    display: grid;
-    min-width: 0;
-    gap: var(--space-2);
-  }
-
-  :where(.hraness-progress-bar__track, .hraness-meter__track, .hraness-slider__track) {
-    position: relative;
-    height: 0.5rem;
-    overflow: hidden;
-    border-radius: var(--radius-round);
-    background: var(--ui-muted);
-  }
-
-  :where(.hraness-progress-bar__fill, .hraness-meter__fill) {
-    height: 100%;
-    border-radius: inherit;
-    background: var(--ui-primary);
-    forced-color-adjust: none;
-  }
-
-  .hraness-meter[data-tone="success"] .hraness-meter__fill {
-    background: var(--ui-success);
-  }
-
-  .hraness-meter[data-tone="warning"] .hraness-meter__fill {
-    background: var(--ui-warning);
-  }
-
-  .hraness-meter[data-tone="danger"] .hraness-meter__fill {
-    background: var(--ui-destructive);
-  }
-
-  .hraness-slider__track {
-    overflow: visible;
-  }
-
-  .hraness-slider[data-orientation="vertical"] {
-    width: fit-content;
-    min-height: 12rem;
-  }
-
-  .hraness-slider[data-orientation="vertical"] .hraness-slider__track {
-    width: 0.5rem;
-    height: 10rem;
-    justify-self: center;
-  }
-
-  .hraness-slider[data-orientation="vertical"] .hraness-slider__thumb {
-    left: 50%;
-  }
-
-  .hraness-slider[data-orientation="horizontal"] .hraness-slider__thumb {
-    top: 50%;
-  }
-
-  .hraness-slider__fill {
-    position: absolute;
-    height: 100%;
-    border-radius: inherit;
-    background: var(--ui-primary);
-  }
-
-  .hraness-slider__thumb {
-    width: 1.25rem;
-    height: 1.25rem;
-    border: 2px solid var(--ui-primary);
-    border-radius: var(--radius-round);
-    outline: none;
-    background: var(--ui-background);
-    box-shadow: var(--elevation-low);
-  }
-
-  .hraness-slider__thumb:where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 2px;
-  }
-
-  .hraness-knob {
-    display: inline-grid;
-    min-width: 3rem;
-    justify-items: center;
-    gap: var(--space-1);
-    color: var(--ui-foreground);
-    vertical-align: middle;
-  }
-
-  .hraness-knob__control {
-    position: relative;
-    width: 3rem;
-    min-width: 3rem;
-    height: 3rem;
-    min-height: 3rem;
-    touch-action: none;
-    user-select: none;
-  }
-
-  .hraness-knob__thumb {
-    z-index: 1;
-    display: grid;
-    place-items: center;
-    outline: none;
-    pointer-events: none;
-  }
-
-  .hraness-knob__gesture {
-    position: absolute;
-    z-index: 2;
-    inset: 0;
-    border-radius: var(--radius-round);
-    cursor: grab;
-    touch-action: none;
-    user-select: none;
-  }
-
-  .hraness-knob[data-touch-pan="horizontal"] .hraness-knob__control,
-  .hraness-knob[data-touch-pan="horizontal"] .hraness-knob__gesture {
-    touch-action: pan-x;
-  }
-
-  .hraness-knob__thumb[data-dragging] + .hraness-knob__gesture {
-    cursor: grabbing;
-  }
-
-  .hraness-knob__dial {
-    display: block;
-    width: 2.5rem;
-    height: 2.5rem;
-    overflow: visible;
-    border-radius: var(--radius-round);
-  }
-
-  .hraness-knob[data-density="compact"] .hraness-knob__dial {
-    width: 2rem;
-    height: 2rem;
-  }
-
-  .hraness-knob__face {
-    fill: var(--ui-card);
-    stroke: var(--ui-border);
-    stroke-width: 1.5;
-  }
-
-  .hraness-knob__arc {
-    fill: none;
-    stroke-linecap: round;
-    stroke-width: 3;
-  }
-
-  .hraness-knob__arc--track {
-    stroke: var(--ui-muted);
-  }
-
-  .hraness-knob__arc--value {
-    stroke: var(--ui-primary);
-  }
-
-  .hraness-knob__indicator {
-    stroke: var(--ui-foreground);
-    stroke-linecap: round;
-    stroke-width: 2.5;
-  }
-
-  .hraness-knob__thumb[data-focus-visible] .hraness-knob__dial {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 2px;
-  }
-
-  .hraness-knob__label,
-  .hraness-knob__value {
-    max-width: 100%;
-    font-size: var(--text-label);
-    line-height: 1.2;
-    overflow-wrap: anywhere;
-    text-align: center;
-  }
-
-  .hraness-knob__label {
-    font-weight: var(--font-weight-medium);
-  }
-
-  .hraness-knob__value {
-    color: var(--ui-muted-foreground);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .hraness-knob[data-disabled] .hraness-knob__control {
-    opacity: 0.5;
-  }
-
-  .hraness-knob[data-disabled] .hraness-knob__gesture {
-    cursor: not-allowed;
-    pointer-events: none;
-  }
-
   .hraness-empty-state {
     display: grid;
     min-height: 12rem;
@@ -633,32 +438,12 @@
     outline: none;
   }
 
-  :where(.hraness-progress-bar__label-row, .hraness-meter__label-row,
-    .hraness-slider__label-row, .hraness-progress__label-row) {
+  .hraness-progress__label-row {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-3);
     font-size: var(--text-label);
-  }
-
-  :where(.hraness-progress-bar__label, .hraness-meter__label,
-    .hraness-slider__label) {
-    min-width: 0;
-    font-weight: var(--font-weight-medium);
-    overflow-wrap: anywhere;
-  }
-
-  :where(.hraness-progress-bar__value, .hraness-meter__value,
-    .hraness-slider__value) {
-    flex: 0 0 auto;
-    color: var(--ui-muted-foreground);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .hraness-progress-bar__fill[data-indeterminate] {
-    width: 40% !important;
-    animation: hraness-progress-indeterminate 1.25s ease-in-out infinite;
   }
 
   .hraness-progress {
@@ -1096,6 +881,7 @@
 :root[data-verification-pointer="coarse"] {
   --hraness-action-coarse-min: var(--interactive-target-min);
   --hraness-field-coarse-min: var(--interactive-target-min);
+  --hraness-slider-coarse-min: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
@@ -1118,10 +904,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hraness-progress-bar__fill[data-indeterminate] {
-    animation: none;
-  }
-
   :where(.hraness-menu-popover, .hraness-popover, .hraness-dialog-overlay,
     .hraness-toast) {
     animation: none;
@@ -1171,32 +953,9 @@
     color: ButtonText;
   }
 
-  :where(.hraness-progress-bar__fill, .hraness-meter__fill,
-    .hraness-slider__fill) {
-    background: Highlight;
-  }
-
   .hraness-progress__control {
     color: Highlight;
     forced-color-adjust: none;
-  }
-
-  .hraness-slider__thumb {
-    border-color: Highlight;
-    background: Canvas;
-  }
-
-  .hraness-knob__face {
-    fill: Canvas;
-    stroke: CanvasText;
-  }
-
-  .hraness-knob__arc--track {
-    stroke: GrayText;
-  }
-
-  :where(.hraness-knob__arc--value, .hraness-knob__indicator) {
-    stroke: Highlight;
   }
 
 }

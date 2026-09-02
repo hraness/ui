@@ -25,6 +25,8 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-form-layer-conflict",
   "data-gallery-fields-layer-conflict",
   "data-gallery-select-option-layer-conflict",
+  "data-gallery-indicators-layer-conflict",
+  "data-gallery-knob-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -205,6 +207,50 @@ const TOOLBAR_STYLE_KEYS = [
   "nativeFocusFallback",
   "root",
   "vertical",
+] as const;
+const INDICATOR_STYLE_KEYS = [
+  "fill",
+  "indeterminateFill",
+  "label",
+  "labelRow",
+  "meterDanger",
+  "meterSuccess",
+  "meterWarning",
+  "root",
+  "sliderFill",
+  "sliderRootVertical",
+  "sliderThumb",
+  "sliderThumbFocusVisible",
+  "sliderThumbIndicator",
+  "sliderThumbHorizontal",
+  "sliderThumbNativeFocusFallback",
+  "sliderThumbVertical",
+  "sliderTrack",
+  "sliderTrackVertical",
+  "track",
+  "value",
+] as const;
+const KNOB_STYLE_KEYS = [
+  "arc",
+  "arcTrack",
+  "arcValue",
+  "control",
+  "controlDisabled",
+  "controlDragging",
+  "controlHorizontalTouchPan",
+  "controlNativeFocus",
+  "dial",
+  "dialCompact",
+  "face",
+  "gesture",
+  "gestureDisabled",
+  "gestureHorizontalTouchPan",
+  "indicator",
+  "label",
+  "labelValue",
+  "root",
+  "thumb",
+  "value",
 ] as const;
 type CheckboxStyleKey = (typeof CHECKBOX_STYLE_KEYS)[number];
 type LinkStyleKey = (typeof LINK_STYLE_KEYS)[number];
@@ -2500,7 +2546,7 @@ function requireActionFamilyContract(
   );
   requireMatch(
     legacyComponents,
-    /:root\[data-verification-pointer=["']coarse["']\]\s*\{\s*--hraness-action-coarse-min:\s*var\(--interactive-target-min\);\s*(?:--hraness-field-coarse-min:\s*var\(--interactive-target-min\);\s*)?\}/u,
+    /:root\[data-verification-pointer=["']coarse["']\]\s*\{\s*--hraness-action-coarse-min:\s*var\(--interactive-target-min\);\s*(?:--hraness-field-coarse-min:\s*var\(--interactive-target-min\);\s*)?(?:--hraness-slider-coarse-min:\s*var\(--interactive-target-min\);\s*)?\}/u,
     "the synthetic coarse-pointer action variable",
   );
   requireMatch(
@@ -4056,6 +4102,443 @@ function requireTextAreaAndCheckboxGroupContract(
   );
 }
 
+function requireIndicatorAndKnobContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+  indicatorsSource: string,
+  indicatorStyleSource: string,
+  knobSource: string,
+  knobStyleSource: string,
+): void {
+  const indicatorKeys = sourceStyleKeys(indicatorStyleSource, "indicatorStyles");
+  const knobKeys = sourceStyleKeys(knobStyleSource, "knobStyles");
+  if (
+    indicatorKeys.join("\n") !== INDICATOR_STYLE_KEYS.join("\n")
+    || knobKeys.join("\n") !== KNOB_STYLE_KEYS.join("\n")
+  ) {
+    throw new Error(
+      "indicatorStyles and knobStyles must retain their exact finite recipe keys and order",
+    );
+  }
+  const indicatorMap = namedCompiledStyleMap(
+    compiledJavaScript,
+    indicatorKeys,
+    "indicatorStyles class map",
+  );
+  const knobMap = namedCompiledStyleMap(
+    compiledJavaScript,
+    knobKeys,
+    "knobStyles class map",
+  );
+  compiledStyleRules(compiledCss, indicatorMap);
+  compiledStyleRules(compiledCss, knobMap);
+
+  forbid(
+    legacyComponents,
+    /\.hraness-(?:progress-bar|meter|slider|knob)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+    "a legacy ProgressBar, Meter, Slider, or Knob recipe",
+  );
+  requireMatch(
+    legacyComponents,
+    /--hraness-slider-coarse-min:\s*var\(--interactive-target-min\);/u,
+    "the synthetic coarse-pointer Slider variable",
+  );
+  requireMatch(
+    legacyComponents,
+    /\.hraness-progress(?:__control|__label-row)?(?![A-Za-z0-9_-])/u,
+    "the separate native Feedback progress boundary",
+  );
+
+  for (const [source, pattern, description] of [
+    [
+      indicatorsSource,
+      /from ["']\.\/indicators\.stylex\.js["']/u,
+      "the indicatorStyles source import",
+    ],
+    [
+      knobSource,
+      /from ["']\.\/knob\.stylex\.js["']/u,
+      "the knobStyles source import",
+    ],
+    [
+      indicatorsSource,
+      /stylex\.props\(\s*indicatorStyles\.root,\s*orientation === ["']vertical["']\s*&&\s*indicatorStyles\.sliderRootVertical,\s*xstyle,?\s*\)/u,
+      "the Slider finite orientation recipe and caller-last root xstyle order",
+    ],
+    [
+      indicatorsSource,
+      /stylex\.props\(\s*indicatorStyles\.sliderTrack,\s*orientation === ["']vertical["']\s*&&\s*indicatorStyles\.sliderTrackVertical,?\s*\)/u,
+      "the Slider finite track orientation recipe order",
+    ],
+    [
+      indicatorsSource,
+      /stylex\.props\(\s*indicatorStyles\.sliderThumb,\s*orientation === ["']horizontal["']\s*\?\s*indicatorStyles\.sliderThumbHorizontal\s*:\s*indicatorStyles\.sliderThumbVertical,\s*!state\.isFocused\s*&&\s*indicatorStyles\.sliderThumbNativeFocusFallback,\s*state\.isFocusVisible\s*&&\s*indicatorStyles\.sliderThumbFocusVisible,?\s*\)/u,
+      "the Slider thumb base, orientation, pre-hydration native focus, and React Aria focus order",
+    ],
+    [
+      indicatorStyleSource,
+      /sliderThumbNativeFocusFallback:\s*\{\s*["']:has\(input:focus-visible\)["']:\s*\{/u,
+      "the Slider native fallback restricted to a focus-visible range input",
+    ],
+    [
+      indicatorsSource,
+      /["']hraness-slider__thumb-indicator["'],\s*indicatorPresentation\.className/u,
+      "the Slider visible-thumb semantic and generated class order",
+    ],
+    [
+      indicatorsSource,
+      /mergeStylexInlineStyles\(\s*rootPresentation\.style,\s*resolveRenderStyle\(style,\s*state\),?\s*\)/u,
+      "the indicator StyleX-before-native root style order",
+    ],
+    [
+      indicatorsSource,
+      /mergeStylexInlineStyles\(\s*fillPresentation\.style,\s*percentageStyle\(percentage\),?\s*\)/u,
+      "the indicator StyleX-before-protected percentage geometry order",
+    ],
+    [
+      knobSource,
+      /stylex\.props\(\s*knobStyles\.root,\s*xstyle,?\s*\)/u,
+      "the Knob caller-last root xstyle order",
+    ],
+    [
+      knobSource,
+      /stylex\.props\(\s*knobStyles\.control,\s*touchPan === ["']horizontal["']\s*&&\s*knobStyles\.controlHorizontalTouchPan,\s*state\.state\.isThumbDragging\(0\)\s*&&\s*knobStyles\.controlDragging,\s*state\.isDisabled\s*&&\s*knobStyles\.controlDisabled,\s*!hasStylexPresentation\(controlXstyle\)\s*&&\s*knobStyles\.controlNativeFocus,\s*controlXstyle,?\s*\)/u,
+      "the Knob control finite state, conditional native focus, and caller-last controlXstyle order",
+    ],
+    [
+      knobSource,
+      /mergeStylexInlineStyles\(rootPresentation\.style,\s*callerStyle\)/u,
+      "the Knob StyleX-before-native root style order",
+    ],
+    [
+      knobSource,
+      /mergeStylexInlineStyles\(presentation\.style,\s*\{\s*touchAction:\s*touchPan === ["']horizontal["']\s*\?\s*["']pan-x["']\s*:\s*["']none["'],?\s*\}\)/u,
+      "the Knob protected touch-pan interaction style after compiled presentation",
+    ],
+    [
+      knobSource,
+      /return\s*\{\s*\.\.\.stylexStyle,\s*\.\.\.KNOB_THUMB_GEOMETRY_STYLE,?\s*\}/u,
+      "the Knob protected thumb geometry after StyleX presentation",
+    ],
+    [
+      knobSource,
+      /["']hraness-knob["'],\s*rootPresentation\.className,\s*className/u,
+      "the Knob stable, generated, and caller root class order",
+    ],
+    [
+      knobSource,
+      /["']hraness-knob__control["'],\s*presentation\.className,\s*controlClassName/u,
+      "the Knob stable, generated, and caller control class order",
+    ],
+  ] as const) {
+    requireMatch(source, pattern, description);
+  }
+  requireExactSourceMatches(
+    indicatorsSource,
+    /readonly xstyle\?: StyleXStyles;/gu,
+    3,
+    "typed ProgressBar, Meter, and Slider xstyle seams",
+  );
+  requireExactSourceMatches(
+    indicatorsSource,
+    /const rootPresentation = stylex\.props\(indicatorStyles\.root, xstyle\);/gu,
+    2,
+    "ProgressBar and Meter caller-last root recipes",
+  );
+  requireExactSourceMatches(
+    indicatorsSource,
+    /className=\{cn\([^)]*rootPresentation\.className,\s*className/gu,
+    3,
+    "ProgressBar, Meter, and Slider stable, generated, and caller class order",
+  );
+  requireExactSourceMatches(
+    knobSource,
+    /(?:controlXstyle|xstyle)\?: StyleXStyles;/gu,
+    2,
+    "typed Knob root and control StyleX seams",
+  );
+
+  const indicatorRules = (key: (typeof INDICATOR_STYLE_KEYS)[number]) =>
+    compiledStyleRules(compiledCss, indicatorMap, key);
+  const knobRules = (key: (typeof KNOB_STYLE_KEYS)[number]) =>
+    compiledStyleRules(compiledCss, knobMap, key);
+  for (const [key, declaration, description] of [
+    ["root", /display:\s*grid;/u, "indicator grid root"],
+    ["root", /gap:\s*var\(--space-2\);/u, "indicator root gap"],
+    ["root", /min-width:\s*0;/u, "indicator shrink boundary"],
+    ["track", /overflow:\s*hidden;/u, "ProgressBar and Meter clipping"],
+    ["track", /height:\s*0?\.5rem;/u, "ProgressBar and Meter track height"],
+    ["fill", /background-color:\s*var\(--ui-primary\);/u, "indicator primary fill"],
+    ["fill", /display:\s*block;/u, "indicator fill box generation"],
+    ["fill", /forced-color-adjust:\s*none;/u, "indicator forced-color ownership"],
+    ["sliderTrack", /overflow:\s*visible;/u, "Slider track overflow"],
+    ["sliderRootVertical", /min-height:\s*12rem;/u, "vertical Slider root height"],
+    ["sliderTrackVertical", /height:\s*10rem;/u, "vertical Slider track height"],
+    ["sliderTrackVertical", /width:\s*0?\.5rem;/u, "vertical Slider track width"],
+    ["sliderThumb", /height:\s*max\(1\.25rem,\s*var\(--hraness-slider-coarse-min,\s*0px\)\);/u, "synthetic coarse Slider target height"],
+    ["sliderThumb", /width:\s*max\(1\.25rem,\s*var\(--hraness-slider-coarse-min,\s*0px\)\);/u, "synthetic coarse Slider target width"],
+    ["sliderThumbIndicator", /height:\s*1\.25rem;/u, "Slider visible-thumb height"],
+    ["sliderThumbIndicator", /width:\s*1\.25rem;/u, "Slider visible-thumb width"],
+    ["sliderThumbIndicator", /pointer-events:\s*none;/u, "Slider visible-thumb hit transparency"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(
+      indicatorRules(key),
+      declaration,
+      description,
+    );
+  }
+  for (const key of [
+    "fill",
+    "sliderFill",
+    "sliderThumb",
+    "sliderThumbIndicator",
+    "sliderTrack",
+    "track",
+  ] as const) {
+    for (const [declaration, description] of [
+      [/background-attachment:\s*scroll;/u, "attachment"],
+      [/background-clip:\s*border-box;/u, "clip"],
+      [/background-image:\s*none;/u, "image"],
+      [/background-origin:\s*padding-box;/u, "origin"],
+      [/background-position:\s*0(?:%?)\s+0(?:%?);/u, "position"],
+      [/background-repeat:\s*repeat;/u, "repeat"],
+      [/background-size:\s*auto(?:\s+auto)?;/u, "size"],
+    ] as const) {
+      requireCompiledUnconditionalDeclaration(
+        indicatorRules(key),
+        declaration,
+        `${key} background-${description} shorthand reset`,
+      );
+    }
+  }
+  for (const [key, declaration, description] of [
+    ["fill", /background-color:\s*var\(--ui-primary\);/u, "ProgressBar and Meter fill"],
+    ["sliderFill", /background-color:\s*var\(--ui-primary\);/u, "Slider fill"],
+    ["sliderThumb", /background-color:\s*(?:transparent|#0000);/u, "Slider hit boundary"],
+    ["sliderThumbIndicator", /background-color:\s*var\(--ui-background\);/u, "Slider visible thumb"],
+    ["sliderTrack", /background-color:\s*var\(--ui-muted\);/u, "Slider track"],
+    ["track", /background-color:\s*var\(--ui-muted\);/u, "ProgressBar and Meter track"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(
+      indicatorRules(key),
+      declaration,
+      `${description} background-color reset`,
+    );
+  }
+  for (const key of ["sliderThumb", "sliderThumbIndicator"] as const) {
+    for (const [declaration, description] of [
+      [/border-image-outset:\s*0;/u, "outset"],
+      [/border-image-repeat:\s*stretch;/u, "repeat"],
+      [/border-image-slice:\s*100%;/u, "slice"],
+      [/border-image-source:\s*none;/u, "source"],
+      [/border-image-width:\s*1;/u, "width"],
+    ] as const) {
+      requireCompiledUnconditionalDeclaration(
+        indicatorRules(key),
+        declaration,
+        `${key} border-image-${description} shorthand reset`,
+      );
+    }
+  }
+  for (const [key, declaration, description] of [
+    ["sliderThumb", /height:\s*var\(--interactive-target-min\);/u, "real coarse Slider target height"],
+    ["sliderThumb", /width:\s*var\(--interactive-target-min\);/u, "real coarse Slider target width"],
+  ] as const) {
+    requireCompiledConditionalDeclaration(
+      indicatorRules(key),
+      "@media(pointer:coarse)",
+      declaration,
+      description,
+    );
+  }
+  for (const [key, declaration, description] of [
+    ["fill", /background-color:\s*highlight;/u, "forced-colors ProgressBar and Meter fill"],
+    ["sliderFill", /background-color:\s*highlight;/u, "forced-colors Slider fill"],
+    ["sliderThumbIndicator", /background-color:\s*canvas;/u, "forced-colors Slider thumb surface"],
+    ["sliderThumbIndicator", /border-color:\s*highlight;/u, "forced-colors Slider thumb border"],
+    ["sliderThumbIndicator", /box-shadow:\s*none;/u, "forced-colors Slider thumb shadow reset"],
+  ] as const) {
+    requireCompiledConditionalDeclaration(
+      indicatorRules(key),
+      "@media(forced-colors:active)",
+      declaration,
+      description,
+    );
+  }
+  for (const key of ["meterDanger", "meterSuccess", "meterWarning"] as const) {
+    requireCompiledConditionalDeclaration(
+      indicatorRules(key),
+      "@media(forced-colors:active)",
+      /background-color:\s*highlight;/u,
+      `the forced-colors ${key} system fill`,
+    );
+  }
+  for (const [key, declaration, description] of [
+    ["meterDanger", /background-color:\s*var\(--ui-destructive\);/u, "danger Meter tone"],
+    ["meterSuccess", /background-color:\s*var\(--ui-success\);/u, "success Meter tone"],
+    ["meterWarning", /background-color:\s*var\(--ui-warning\);/u, "warning Meter tone"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(indicatorRules(key), declaration, description);
+  }
+  const indeterminateRules = indicatorRules("indeterminateFill");
+  for (const [declaration, description] of [
+    [/animation-name:\s*hraness-progress-indeterminate;/u, "indeterminate animation name"],
+    [/animation-duration:\s*1\.25s;/u, "indeterminate duration"],
+    [/animation-iteration-count:\s*infinite;/u, "indeterminate repetition"],
+    [/animation-timing-function:\s*ease-in-out;/u, "indeterminate easing"],
+    [/width:\s*40%\s*!important;/u, "indeterminate finite width"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(indeterminateRules, declaration, description);
+  }
+  for (const declaration of [
+    /animation-duration:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u,
+    /animation-name:\s*none;/u,
+  ]) {
+    requireCompiledConditionalDeclaration(
+      indeterminateRules,
+      "@media(prefers-reduced-motion:reduce)",
+      declaration,
+      `the reduced-motion indeterminate reset for ${declaration.source}`,
+    );
+  }
+  if (!indeterminateRules.some((rule) =>
+    /animation-direction:\s*reverse;/u.test(rule.body)
+    && /:is\(\s*:lang\(ae\),[^{}]*:lang\(yi\)\s*\)/u.test(rule.header)
+  )) {
+    throw new Error("StyleX artifact is missing the RTL indeterminate direction rule");
+  }
+  requireMatch(
+    indicatorStyleSource,
+    /animationName:\s*\{\s*default:\s*["']hraness-progress-indeterminate["'],\s*\[reducedMotion\]:\s*["']none["'],?\s*\}/u,
+    "the finite indeterminate animation-name and reduced-motion source contract",
+  );
+  requireMatch(
+    legacyComponents,
+    /@keyframes\s+hraness-progress-indeterminate\s*\{\s*from\s*\{\s*transform:\s*translateX\(-125%\);\s*\}\s*to\s*\{\s*transform:\s*translateX\(250%\);\s*\}\s*\}/u,
+    "the exact selector-free indeterminate progress keyframes",
+  );
+  forbid(
+    compiledCss,
+    /@layer\s+components\.hraness-ui\.priority5/u,
+    "a priority5 layer created by an out-of-envelope StyleX keyframe",
+  );
+  requireExactPseudoDeclarations(
+    indicatorRules("sliderThumbNativeFocusFallback"),
+    generatedClassNames(
+      indicatorMap.properties.get("sliderThumbNativeFocusFallback")?.value ?? "",
+      "compiled sliderThumbNativeFocusFallback entry",
+    ),
+    "has(input:focus-visible)",
+    [
+      /outline-color:\s*var\(--ui-ring\);/u,
+      /outline-offset:\s*2px;/u,
+      /outline-style:\s*solid;/u,
+      /outline-width:\s*2px;/u,
+    ],
+    "native Slider thumb :has(input:focus-visible)",
+  );
+
+  for (const [key, declaration, description] of [
+    ["root", /display:\s*inline-grid;/u, "Knob root display"],
+    ["root", /min-width:\s*3rem;/u, "Knob root minimum width"],
+    ["control", /height:\s*3rem;/u, "Knob control height"],
+    ["control", /width:\s*3rem;/u, "Knob control width"],
+    ["control", /min-height:\s*3rem;/u, "Knob control minimum height"],
+    ["control", /min-width:\s*3rem;/u, "Knob control minimum width"],
+    ["dial", /height:\s*2\.5rem;/u, "default Knob dial height"],
+    ["dial", /width:\s*2\.5rem;/u, "default Knob dial width"],
+    ["dialCompact", /height:\s*2rem;/u, "compact Knob dial height"],
+    ["dialCompact", /width:\s*2rem;/u, "compact Knob dial width"],
+    ["thumb", /align-items:\s*center;/u, "Knob thumb block-axis centering"],
+    ["thumb", /justify-items:\s*center;/u, "Knob thumb inline-axis centering"],
+    ["gesture", /bottom:\s*0;/u, "Knob gesture bottom edge"],
+    ["gesture", /left:\s*0;/u, "Knob gesture left edge"],
+    ["gesture", /right:\s*0;/u, "Knob gesture right edge"],
+    ["gesture", /top:\s*0;/u, "Knob gesture top edge"],
+    ["gestureDisabled", /pointer-events:\s*none;/u, "disabled Knob gesture"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(knobRules(key), declaration, description);
+  }
+  forbid(
+    compiledCss,
+    /place-items:\s*/u,
+    "a place-items shorthand outside the global longhand-only StyleX contract",
+  );
+  for (const declaration of [
+    /height:\s*max\(3rem,\s*var\(--interactive-target-min\)\);/u,
+    /min-height:\s*max\(3rem,\s*var\(--interactive-target-min\)\);/u,
+    /min-width:\s*max\(3rem,\s*var\(--interactive-target-min\)\);/u,
+    /width:\s*max\(3rem,\s*var\(--interactive-target-min\)\);/u,
+  ]) {
+    requireCompiledConditionalDeclaration(
+      knobRules("control"),
+      "@media(pointer:coarse)",
+      declaration,
+      `the coarse Knob control geometry for ${declaration.source}`,
+    );
+  }
+  for (const [key, declaration, description] of [
+    ["sliderThumbFocusVisible", /outline-color:\s*highlight;/u, "Slider reactive focus system outline"],
+    ["sliderThumbNativeFocusFallback", /outline-color:\s*highlight;/u, "Slider native focus system outline"],
+    ["arcTrack", /stroke:\s*graytext;/u, "Knob track system stroke"],
+    ["arcValue", /stroke:\s*highlight;/u, "Knob value system stroke"],
+    ["face", /fill:\s*canvas;/u, "Knob face system fill"],
+    ["face", /stroke:\s*canvastext;/u, "Knob face system stroke"],
+    ["indicator", /stroke:\s*highlight;/u, "Knob indicator system stroke"],
+    ["controlNativeFocus", /outline-color:\s*highlight;/u, "Knob focus system outline"],
+  ] as const) {
+    requireCompiledConditionalDeclaration(
+      key === "sliderThumbFocusVisible" || key === "sliderThumbNativeFocusFallback"
+        ? indicatorRules(key)
+        : knobRules(key),
+      "@media(forced-colors:active)",
+      declaration,
+      description,
+    );
+  }
+  for (const declaration of [
+    /transition-duration:\s*0s;/u,
+    /transition-property:\s*none;/u,
+  ]) {
+    requireCompiledConditionalDeclaration(
+      knobRules("dial"),
+      "@media(prefers-reduced-motion:reduce)",
+      declaration,
+      `the reduced-motion Knob dial reset for ${declaration.source}`,
+    );
+  }
+  requireExactPseudoDeclarations(
+    knobRules("controlNativeFocus"),
+    generatedClassNames(
+      knobMap.properties.get("controlNativeFocus")?.value ?? "",
+      "compiled controlNativeFocus entry",
+    ),
+    "has(input:focus-visible)",
+    [
+      /outline-color:\s*var\(--ui-ring\);/u,
+      /outline-offset:\s*2px;/u,
+      /outline-style:\s*solid;/u,
+      /outline-width:\s*2px;/u,
+    ],
+    "native Knob :has(input:focus-visible)",
+  );
+
+  for (const [map, keys, description] of [
+    [indicatorMap, INDICATOR_STYLE_KEYS, "indicatorStyles"],
+    [knobMap, KNOB_STYLE_KEYS, "knobStyles"],
+  ] as const) {
+    for (const key of keys) {
+      requireMatch(
+        compiledJavaScript,
+        new RegExp(`${map.identifier}\\.${key}(?![A-Za-z0-9_$])`, "u"),
+        `the compiled ${description}.${key} composition binding`,
+      );
+    }
+  }
+}
+
 function requireNoGallerySentinels(source: string): void {
   for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
     forbid(
@@ -4080,7 +4563,10 @@ const [
   checkboxGroupSource,
   visuallyHiddenSource,
   feedbackSource,
+  indicatorsSource,
+  indicatorStyleSource,
   knobSource,
+  knobStyleSource,
   selectFieldSource,
   resetStylesheet,
   skipLinkSource,
@@ -4102,7 +4588,10 @@ const [
     readFile(resolve(repository, "src/checkbox-group.tsx"), "utf8"),
     readFile(resolve(repository, "src/visually-hidden.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/feedback.tsx"), "utf8"),
+    readFile(resolve(repository, "src/indicators.tsx"), "utf8"),
+    readFile(resolve(repository, "src/indicators.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/knob.tsx"), "utf8"),
+    readFile(resolve(repository, "src/knob.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/select-field.tsx"), "utf8"),
     readFile(resolve(repository, "src/reset.css"), "utf8"),
     readFile(resolve(repository, "src/skip-link.tsx"), "utf8"),
@@ -4269,6 +4758,15 @@ requireTextAreaAndCheckboxGroupContract(
   fieldsSource,
   fieldStyleSource,
   checkboxGroupSource,
+);
+requireIndicatorAndKnobContract(
+  legacyComponents,
+  compiledCss,
+  compiledJavaScript,
+  indicatorsSource,
+  indicatorStyleSource,
+  knobSource,
+  knobStyleSource,
 );
 assert.throws(
   () => requireFieldAndSelectContract(
@@ -4890,6 +5388,40 @@ for (const [pattern, description] of [
   [/hraness-checkbox-field__control/u, "the CheckboxField control semantic hook"],
   [/hraness-checkbox-field__indicator/u, "the CheckboxField indicator semantic hook"],
   [/hraness-checkbox-field__label/u, "the CheckboxField label semantic hook"],
+  [/hraness-progress-bar(?![A-Za-z0-9_-])/u, "the ProgressBar semantic hook"],
+  [/hraness-progress-bar__header(?![A-Za-z0-9_-])/u, "the ProgressBar header semantic hook"],
+  [/hraness-progress-bar__label-row(?![A-Za-z0-9_-])/u, "the ProgressBar label-row semantic hook"],
+  [/hraness-progress-bar__label(?![A-Za-z0-9_-])/u, "the ProgressBar label semantic hook"],
+  [/hraness-progress-bar__value(?![A-Za-z0-9_-])/u, "the ProgressBar value semantic hook"],
+  [/hraness-progress-bar__track(?![A-Za-z0-9_-])/u, "the ProgressBar track semantic hook"],
+  [/hraness-progress-bar__fill(?![A-Za-z0-9_-])/u, "the ProgressBar fill semantic hook"],
+  [/hraness-meter(?![A-Za-z0-9_-])/u, "the Meter semantic hook"],
+  [/hraness-meter__header(?![A-Za-z0-9_-])/u, "the Meter header semantic hook"],
+  [/hraness-meter__label-row(?![A-Za-z0-9_-])/u, "the Meter label-row semantic hook"],
+  [/hraness-meter__label(?![A-Za-z0-9_-])/u, "the Meter label semantic hook"],
+  [/hraness-meter__value(?![A-Za-z0-9_-])/u, "the Meter value semantic hook"],
+  [/hraness-meter__track(?![A-Za-z0-9_-])/u, "the Meter track semantic hook"],
+  [/hraness-meter__fill(?![A-Za-z0-9_-])/u, "the Meter fill semantic hook"],
+  [/hraness-slider(?![A-Za-z0-9_-])/u, "the Slider semantic hook"],
+  [/hraness-slider__label-row(?![A-Za-z0-9_-])/u, "the Slider label-row semantic hook"],
+  [/hraness-slider__label(?![A-Za-z0-9_-])/u, "the Slider label semantic hook"],
+  [/hraness-slider__value(?![A-Za-z0-9_-])/u, "the Slider value semantic hook"],
+  [/hraness-slider__track(?![A-Za-z0-9_-])/u, "the Slider track semantic hook"],
+  [/hraness-slider__fill(?![A-Za-z0-9_-])/u, "the Slider fill semantic hook"],
+  [/hraness-slider__thumb(?![A-Za-z0-9_-])/u, "the Slider thumb semantic hook"],
+  [/hraness-slider__thumb-indicator(?![A-Za-z0-9_-])/u, "the Slider thumb-indicator semantic hook"],
+  [/hraness-knob(?![A-Za-z0-9_-])/u, "the Knob semantic hook"],
+  [/hraness-knob__control(?![A-Za-z0-9_-])/u, "the Knob control semantic hook"],
+  [/hraness-knob__thumb(?![A-Za-z0-9_-])/u, "the Knob thumb semantic hook"],
+  [/hraness-knob__dial(?![A-Za-z0-9_-])/u, "the Knob dial semantic hook"],
+  [/hraness-knob__face(?![A-Za-z0-9_-])/u, "the Knob face semantic hook"],
+  [/hraness-knob__arc(?![A-Za-z0-9_-])/u, "the Knob arc semantic hook"],
+  [/hraness-knob__arc--track(?![A-Za-z0-9_-])/u, "the Knob track-arc semantic hook"],
+  [/hraness-knob__arc--value(?![A-Za-z0-9_-])/u, "the Knob value-arc semantic hook"],
+  [/hraness-knob__indicator(?![A-Za-z0-9_-])/u, "the Knob indicator semantic hook"],
+  [/hraness-knob__gesture(?![A-Za-z0-9_-])/u, "the Knob gesture semantic hook"],
+  [/hraness-knob__label(?![A-Za-z0-9_-])/u, "the Knob label semantic hook"],
+  [/hraness-knob__value(?![A-Za-z0-9_-])/u, "the Knob value semantic hook"],
 ] as const) {
   requireMatch(compiledJavaScript, pattern, description);
 }

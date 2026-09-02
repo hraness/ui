@@ -178,6 +178,14 @@ Use `renderValue` when compact visible copy should differ from the formatted
 accessible value. For example, a rack may show `83` while `formatOptions`
 keeps the native range announcement at `83%`.
 
+`ProgressBar`, `Meter`, and `Slider` keep React Aria's accessible range,
+keyboard, orientation, and form behavior while their presentation is compiled
+with StyleX. Each root accepts a typed `xstyle`; native `style` declarations
+remain final. Slider keeps a 20-pixel visible thumb inside a 48-pixel target for
+real coarse pointers and the synthetic verification seam. Indeterminate
+ProgressBar motion stops under reduced motion, and all three families use
+system colors in forced-colors mode.
+
 ```tsx
 <Knob
   defaultValue={0}
@@ -189,6 +197,11 @@ keeps the native range announcement at `83%`.
   step={0.1}
 />
 ```
+
+Knob also accepts root `xstyle` and control-only `controlXstyle`. Its control
+remains 48 by 48 pixels at both densities while the visible dial is 40 pixels
+by default and 32 pixels when compact. Caller control recipes replace its
+native focus fallback without changing the protected range-input geometry.
 
 `Tag` is a noninteractive compact label. Its optional `icon` is decorative because the visible label carries the meaning. Use `default` for ordinary labels, `muted` for subdued metadata, and `outline` for a muted boundary. Add `accentColor` only when a measured or authored color carries categorical identity. Keep navigation on a native link that contains the tag instead of making the tag itself interactive.
 

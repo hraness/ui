@@ -144,6 +144,16 @@ interface PackageFieldSelectProbe {
   readonly selectTriggerProperty: string;
 }
 
+interface PackageIndicatorKnobProbe {
+  readonly indicatorRootBaseClasses: readonly string[];
+  readonly indicatorRootProperty: string;
+  readonly knobControlBaseClasses: readonly string[];
+  readonly knobControlNativeFocusClasses: readonly string[];
+  readonly knobControlProperty: string;
+  readonly knobRootBaseClasses: readonly string[];
+  readonly knobRootProperty: string;
+}
+
 interface PackageNamedStyleMap {
   readonly classNames: ReadonlySet<string>;
   readonly entries: ReadonlyMap<string, string>;
@@ -399,6 +409,30 @@ function packageNamedStyleMap(
   return candidates[0]!;
 }
 
+function packageTopLevelStyleKeys(
+  object: string,
+  description: string,
+): readonly string[] {
+  const keys: string[] = [];
+  let index = 1;
+  while (index < object.length - 1) {
+    while (/[,\s]/u.test(object[index] ?? "")) index += 1;
+    if (index >= object.length - 1) break;
+    const key = /^[A-Za-z_$][\w$]*/u.exec(object.slice(index))?.[0];
+    assert.ok(key !== undefined, `${description} contains a non-identifier key`);
+    index += key.length;
+    while (/\s/u.test(object[index] ?? "")) index += 1;
+    assert.equal(object[index], ":", `${description}.${key} is missing its colon`);
+    index += 1;
+    while (/\s/u.test(object[index] ?? "")) index += 1;
+    assert.equal(object[index], "{", `${description}.${key} must remain an object entry`);
+    const entry = balancedBlock(object, index, `${description}.${key}`);
+    keys.push(key);
+    index += entry.length;
+  }
+  return keys;
+}
+
 function packageEntryProbe(entry: string, description: string): Readonly<{
   baseClasses: readonly string[];
   property: string;
@@ -464,6 +498,50 @@ const PACKAGE_SELECT_STYLE_KEYS = [
   "triggerLarge",
   "triggerNativeInteractions",
 ] as const;
+const PACKAGE_INDICATOR_STYLE_KEYS = [
+  "fill",
+  "indeterminateFill",
+  "label",
+  "labelRow",
+  "meterDanger",
+  "meterSuccess",
+  "meterWarning",
+  "root",
+  "sliderFill",
+  "sliderRootVertical",
+  "sliderThumb",
+  "sliderThumbFocusVisible",
+  "sliderThumbIndicator",
+  "sliderThumbHorizontal",
+  "sliderThumbNativeFocusFallback",
+  "sliderThumbVertical",
+  "sliderTrack",
+  "sliderTrackVertical",
+  "track",
+  "value",
+] as const;
+const PACKAGE_KNOB_STYLE_KEYS = [
+  "arc",
+  "arcTrack",
+  "arcValue",
+  "control",
+  "controlDisabled",
+  "controlDragging",
+  "controlHorizontalTouchPan",
+  "controlNativeFocus",
+  "dial",
+  "dialCompact",
+  "face",
+  "gesture",
+  "gestureDisabled",
+  "gestureHorizontalTouchPan",
+  "indicator",
+  "label",
+  "labelValue",
+  "root",
+  "thumb",
+  "value",
+] as const;
 
 function packageFieldSelectProbe(javaScript: string): PackageFieldSelectProbe {
   const field = packageNamedStyleMap(
@@ -510,6 +588,44 @@ function packageFieldSelectProbe(javaScript: string): PackageFieldSelectProbe {
     ],
     selectTriggerBaseClasses: selectTrigger.baseClasses,
     selectTriggerProperty: selectTrigger.property,
+  };
+}
+
+function packageIndicatorKnobProbe(
+  javaScript: string,
+): PackageIndicatorKnobProbe {
+  const indicators = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_INDICATOR_STYLE_KEYS,
+    "indicatorStyles class map",
+  );
+  const knob = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_KNOB_STYLE_KEYS,
+    "knobStyles class map",
+  );
+  const indicatorRoot = packageEntryProbe(
+    indicators.entries.get("root")!,
+    "indicatorStyles.root",
+  );
+  const knobRoot = packageEntryProbe(
+    knob.entries.get("root")!,
+    "knobStyles.root",
+  );
+  const knobControl = packageEntryProbe(
+    knob.entries.get("control")!,
+    "knobStyles.control",
+  );
+  return {
+    indicatorRootBaseClasses: indicatorRoot.baseClasses,
+    indicatorRootProperty: indicatorRoot.property,
+    knobControlBaseClasses: knobControl.baseClasses,
+    knobControlNativeFocusClasses: [
+      ...packageEntryClassNames(knob, "controlNativeFocus"),
+    ],
+    knobControlProperty: knobControl.property,
+    knobRootBaseClasses: knobRoot.baseClasses,
+    knobRootProperty: knobRoot.property,
   };
 }
 
@@ -851,6 +967,264 @@ function requirePackageFormStyles(javaScript: string, css: string): void {
     ["display:grid;", "gap:var(--space-6);", "min-width:0;"],
     "formStyles.root must preserve the exact packed declaration set",
   );
+}
+
+function requirePackageIndicatorKnobStyles(
+  javaScript: string,
+  css: string,
+): void {
+  const indicators = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_INDICATOR_STYLE_KEYS,
+    "indicatorStyles class map",
+  );
+  const knob = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_KNOB_STYLE_KEYS,
+    "knobStyles class map",
+  );
+  assert.deepEqual(
+    packageTopLevelStyleKeys(indicators.object, "packed indicatorStyles class map"),
+    PACKAGE_INDICATOR_STYLE_KEYS,
+    "packed indicatorStyles must retain its exact finite recipe keys and order",
+  );
+  assert.deepEqual(
+    packageTopLevelStyleKeys(knob.object, "packed knobStyles class map"),
+    PACKAGE_KNOB_STYLE_KEYS,
+    "packed knobStyles must retain its exact finite recipe keys and order",
+  );
+  const entryCss = (
+    map: PackageNamedStyleMap,
+    key: string,
+    source = css,
+  ) => packageStyleRules(
+    source,
+    packageEntryClassNames(map, key),
+  ).map((rule) => rule.source).join("\n");
+
+  for (const [map, key, declaration, description] of [
+    [indicators, "root", /display:\s*grid/u, "indicator grid root"],
+    [indicators, "root", /gap:\s*var\(--space-2\)/u, "indicator root gap"],
+    [indicators, "track", /overflow:\s*hidden/u, "indicator track clipping"],
+    [indicators, "fill", /background-color:\s*var\(--ui-primary\)/u, "indicator primary fill"],
+    [indicators, "fill", /display:\s*block/u, "indicator fill box generation"],
+    [indicators, "sliderRootVertical", /min-height:\s*12rem/u, "vertical Slider root geometry"],
+    [indicators, "sliderTrackVertical", /height:\s*10rem/u, "vertical Slider track geometry"],
+    [indicators, "sliderThumb", /max\(1\.25rem,\s*var\(--hraness-slider-coarse-min,\s*0px\)\)/u, "synthetic coarse Slider target"],
+    [indicators, "sliderThumbIndicator", /height:\s*1\.25rem/u, "Slider visible thumb height"],
+    [indicators, "sliderThumbIndicator", /width:\s*1\.25rem/u, "Slider visible thumb width"],
+    [indicators, "indeterminateFill", /animation-name:\s*hraness-progress-indeterminate/u, "indeterminate animation name"],
+    [indicators, "indeterminateFill", /animation-duration:\s*1\.25s/u, "indeterminate animation duration"],
+    [indicators, "indeterminateFill", /width:\s*40%\s*!important/u, "indeterminate fill width"],
+    [knob, "root", /display:\s*inline-grid/u, "Knob root display"],
+    [knob, "control", /height:\s*3rem/u, "Knob control height"],
+    [knob, "control", /width:\s*3rem/u, "Knob control width"],
+    [knob, "dial", /height:\s*2\.5rem/u, "default Knob dial"],
+    [knob, "dialCompact", /height:\s*2rem/u, "compact Knob dial"],
+    [knob, "thumb", /align-items:\s*center/u, "Knob thumb block-axis centering"],
+    [knob, "thumb", /justify-items:\s*center/u, "Knob thumb inline-axis centering"],
+    [knob, "gesture", /bottom:\s*0/u, "Knob gesture bottom edge"],
+    [knob, "gesture", /left:\s*0/u, "Knob gesture left edge"],
+    [knob, "gesture", /right:\s*0/u, "Knob gesture right edge"],
+    [knob, "gesture", /top:\s*0/u, "Knob gesture top edge"],
+  ] as const) {
+    assert.match(
+      entryCss(map, key),
+      declaration,
+      `packed ${description} must remain in its compiled recipe`,
+    );
+  }
+  assert.doesNotMatch(
+    entryCss(knob, "thumb"),
+    /place-items:\s*/u,
+    "packed Knob thumb must preserve its longhand-only place-items contract",
+  );
+
+  for (const key of [
+    "fill",
+    "sliderFill",
+    "sliderThumb",
+    "sliderThumbIndicator",
+    "sliderTrack",
+    "track",
+  ] as const) {
+    for (const [declaration, description] of [
+      [/background-attachment:\s*scroll/u, "attachment"],
+      [/background-clip:\s*border-box/u, "clip"],
+      [/background-image:\s*none/u, "image"],
+      [/background-origin:\s*padding-box/u, "origin"],
+      [/background-position:\s*0(?:%?)\s+0(?:%?)/u, "position"],
+      [/background-repeat:\s*repeat/u, "repeat"],
+      [/background-size:\s*auto(?:\s+auto)?/u, "size"],
+    ] as const) {
+      assert.match(
+        entryCss(indicators, key),
+        declaration,
+        `packed ${key} must retain its background-${description} shorthand reset`,
+      );
+    }
+  }
+  for (const [key, declaration, description] of [
+    ["fill", /background-color:\s*var\(--ui-primary\)/u, "ProgressBar and Meter fill"],
+    ["sliderFill", /background-color:\s*var\(--ui-primary\)/u, "Slider fill"],
+    ["sliderThumb", /background-color:\s*(?:transparent|#0000)/u, "Slider hit boundary"],
+    ["sliderThumbIndicator", /background-color:\s*var\(--ui-background\)/u, "Slider visible thumb"],
+    ["sliderTrack", /background-color:\s*var\(--ui-muted\)/u, "Slider track"],
+    ["track", /background-color:\s*var\(--ui-muted\)/u, "ProgressBar and Meter track"],
+  ] as const) {
+    assert.match(
+      entryCss(indicators, key),
+      declaration,
+      `packed ${description} must retain its background-color reset`,
+    );
+  }
+  for (const key of ["sliderThumb", "sliderThumbIndicator"] as const) {
+    for (const [declaration, description] of [
+      [/border-image-outset:\s*0/u, "outset"],
+      [/border-image-repeat:\s*stretch/u, "repeat"],
+      [/border-image-slice:\s*100%/u, "slice"],
+      [/border-image-source:\s*none/u, "source"],
+      [/border-image-width:\s*1/u, "width"],
+    ] as const) {
+      assert.match(
+        entryCss(indicators, key),
+        declaration,
+        `packed ${key} must retain its border-image-${description} shorthand reset`,
+      );
+    }
+  }
+
+  const coarseCss = packageExactConditionalCss(css, "@media(pointer:coarse)");
+  for (const [map, key, declaration, description] of [
+    [indicators, "sliderThumb", /height:\s*var\(--interactive-target-min\)/u, "Slider target height"],
+    [indicators, "sliderThumb", /width:\s*var\(--interactive-target-min\)/u, "Slider target width"],
+    [knob, "control", /height:\s*max\(3rem,\s*var\(--interactive-target-min\)\)/u, "Knob control height"],
+    [knob, "control", /width:\s*max\(3rem,\s*var\(--interactive-target-min\)\)/u, "Knob control width"],
+  ] as const) {
+    assert.match(
+      entryCss(map, key, coarseCss),
+      declaration,
+      `packed real coarse ${description} must remain in the exact media block`,
+    );
+  }
+
+  const forcedCss = packageExactConditionalCss(
+    css,
+    "@media(forced-colors:active)",
+  );
+  for (const [map, key, declaration, description] of [
+    [indicators, "fill", /background-color:\s*highlight/u, "indicator fill"],
+    [indicators, "sliderFill", /background-color:\s*highlight/u, "Slider fill"],
+    [indicators, "sliderThumbFocusVisible", /outline-color:\s*highlight/u, "Slider reactive focus"],
+    [indicators, "sliderThumbNativeFocusFallback", /outline-color:\s*highlight/u, "Slider native focus"],
+    [indicators, "sliderThumbIndicator", /background-color:\s*canvas/u, "Slider thumb surface"],
+    [indicators, "sliderThumbIndicator", /border-color:\s*highlight/u, "Slider thumb border"],
+    [knob, "arcTrack", /stroke:\s*graytext/u, "Knob track"],
+    [knob, "arcValue", /stroke:\s*highlight/u, "Knob value"],
+    [knob, "face", /fill:\s*canvas/u, "Knob face"],
+    [knob, "face", /stroke:\s*canvastext/u, "Knob face border"],
+    [knob, "indicator", /stroke:\s*highlight/u, "Knob indicator"],
+    [knob, "controlNativeFocus", /outline-color:\s*highlight/u, "Knob focus"],
+  ] as const) {
+    assert.match(
+      entryCss(map, key, forcedCss),
+      declaration,
+      `packed forced-colors ${description} must retain its system color`,
+    );
+  }
+
+  const reducedCss = packageExactConditionalCss(
+    css,
+    "@media(prefers-reduced-motion:reduce)",
+  );
+  for (const [map, key, declaration, description] of [
+    [indicators, "indeterminateFill", /animation-name:\s*none/u, "ProgressBar animation stop"],
+    [indicators, "indeterminateFill", /animation-duration:\s*0s/u, "ProgressBar zero duration"],
+    [knob, "dial", /transition-duration:\s*0s/u, "Knob zero transition duration"],
+    [knob, "dial", /transition-property:\s*none/u, "Knob transition stop"],
+  ] as const) {
+    assert.match(
+      entryCss(map, key, reducedCss),
+      declaration,
+      `packed reduced-motion ${description} must remain in the exact media block`,
+    );
+  }
+
+  for (const [map, key, pseudo, declarations, description] of [
+    [
+      indicators,
+      "sliderThumbNativeFocusFallback",
+      "has(input:focus-visible)",
+      [
+        /outline-color:\s*var\(--ui-ring\)/u,
+        /outline-offset:\s*2px/u,
+        /outline-style:\s*solid/u,
+        /outline-width:\s*2px/u,
+      ],
+      "native Slider thumb focus-visible fallback",
+    ],
+    [
+      knob,
+      "controlNativeFocus",
+      "has(input:focus-visible)",
+      [
+        /outline-color:\s*var\(--ui-ring\)/u,
+        /outline-offset:\s*2px/u,
+        /outline-style:\s*solid/u,
+        /outline-width:\s*2px/u,
+      ],
+      "native Knob focus",
+    ],
+  ] as const) {
+    const classNames = packageEntryClassNames(map, key);
+    const rules = packageStyleRules(css, classNames);
+    for (const declaration of declarations) {
+      const selectors = packageDeclarationSelectors(
+        rules,
+        classNames,
+        declaration,
+        `packed ${description} ${declaration.source}`,
+      ).filter((selector) => selector.endsWith(`:${pseudo}`));
+      assert.notEqual(
+        selectors.length,
+        0,
+        `packed ${description} must retain its exact :${pseudo} selector`,
+      );
+      for (const selector of selectors) {
+        requirePackageExactClassPseudoSelector(
+          selector,
+          classNames,
+          pseudo,
+          `packed ${description} ${declaration.source}`,
+        );
+      }
+    }
+  }
+
+  assert.match(
+    entryCss(indicators, "indeterminateFill"),
+    /:is\(\s*:lang\(ae\),[^{}]*:lang\(yi\)\s*\)[^{]*\{[^{}]*animation-direction:\s*reverse/u,
+    "packed indeterminate ProgressBar must retain its RTL direction reversal",
+  );
+  assert.doesNotMatch(
+    css,
+    /@layer\s+components\.hraness-ui\.priority5/u,
+    "packed StyleX CSS must stay inside the priority1 through priority4 envelope",
+  );
+}
+
+function requireNoIndicatorKnobGallerySentinels(...sources: string[]): void {
+  const output = sources.join("\n");
+  for (const sentinel of [
+    "data-gallery-indicators-layer-conflict",
+    "data-gallery-knob-layer-conflict",
+  ]) {
+    assert.doesNotMatch(
+      output,
+      new RegExp(sentinel, "u"),
+      `package output must not contain the gallery-only ${sentinel} sentinel`,
+    );
+  }
 }
 
 function packageNamedStyleEntry(
@@ -1484,6 +1858,7 @@ function ssrProbe(
   checkboxProbe: CheckboxPrecedenceProbe,
   fieldSelectProbe: PackageFieldSelectProbe,
   formProbe: FormPrecedenceProbe,
+  indicatorKnobProbe: PackageIndicatorKnobProbe,
   linkProbe: LinkPrecedenceProbe,
   visuallyHiddenClasses: readonly string[],
 ): string {
@@ -1508,9 +1883,12 @@ import {
   Form,
   Icon,
   KeyHint,
+  Knob,
   Link,
+  Meter,
   NativeSelectField,
   PressableCard,
+  ProgressBar,
   QuietSiteFooter,
   QuietSitePage,
   RadioGroup,
@@ -1518,6 +1896,7 @@ import {
   SocialIcon,
   StatusDot,
   SelectField,
+  Slider,
   Tag,
   ThemedSurface,
   Toolbar,
@@ -1581,6 +1960,22 @@ const linkXstyle = {
   $$css: true,
 };
 const linkBaseClasses = ${JSON.stringify(linkProbe.baseClasses)};
+const indicatorRootXstyle = {
+  ${JSON.stringify(indicatorKnobProbe.indicatorRootProperty)}: "package-indicator-root-xstyle",
+  $$css: true,
+};
+const indicatorRootBaseClasses = ${JSON.stringify(indicatorKnobProbe.indicatorRootBaseClasses)};
+const knobRootXstyle = {
+  ${JSON.stringify(indicatorKnobProbe.knobRootProperty)}: "package-knob-root-xstyle",
+  $$css: true,
+};
+const knobControlXstyle = {
+  ${JSON.stringify(indicatorKnobProbe.knobControlProperty)}: "package-knob-control-xstyle",
+  $$css: true,
+};
+const knobRootBaseClasses = ${JSON.stringify(indicatorKnobProbe.knobRootBaseClasses)};
+const knobControlBaseClasses = ${JSON.stringify(indicatorKnobProbe.knobControlBaseClasses)};
+const knobControlNativeFocusClasses = ${JSON.stringify(indicatorKnobProbe.knobControlNativeFocusClasses)};
 const visuallyHiddenClasses = ${JSON.stringify(visuallyHiddenClasses)};
 
 const reactDomPackageUrl = import.meta.resolve("react-dom/package.json");
@@ -1593,6 +1988,7 @@ const stylexCss = await readFile(new URL(stylexCssUrl), "utf8");
 assert.ok(stylexCss.trim().length > 0, "@hraness/ui/stylex.css must not be empty");
 assert.match(stylexCss, /@layer components\.hraness-ui\.priority3/u);
 assert.match(stylexCss, /@layer components\.hraness-ui\.priority4/u);
+assert.doesNotMatch(stylexCss, /@layer components\.hraness-ui\.priority5/u);
 assert.match(stylexCss, /max-inline-size:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
 assert.doesNotMatch(stylexCss, /max-width:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
 assert.match(stylexCss, /gap:\s*var\(--space-3\)/u);
@@ -1697,6 +2093,22 @@ await access(new URL("./visually-hidden.stylex.ts", componentsCssUrl));
 await access(new URL("./form.stylex.ts", componentsCssUrl));
 await access(new URL("./fields.stylex.ts", componentsCssUrl));
 await access(new URL("./select-field.stylex.ts", componentsCssUrl));
+await access(new URL("./indicators.stylex.ts", componentsCssUrl));
+await access(new URL("./knob.stylex.ts", componentsCssUrl));
+assert.match(
+  componentsCss,
+  /@keyframes\s+hraness-progress-indeterminate\s*\{\s*from\s*\{\s*transform:\s*translateX\(-125%\);\s*\}\s*to\s*\{\s*transform:\s*translateX\(250%\);\s*\}\s*\}/u,
+);
+assert.match(
+  componentsCss,
+  /\.hraness-progress(?:__control|__label-row)?(?![A-Za-z0-9_-])/u,
+  "components.css must preserve the separate native Feedback progress boundary",
+);
+assert.doesNotMatch(
+  componentsCss,
+  /\.hraness-(?:progress-bar|meter|slider|knob)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+  "components.css must not retain migrated indicator or Knob recipes",
+);
 assert.doesNotMatch(componentsCss, /\.hraness-form(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u);
@@ -2065,6 +2477,121 @@ for (const baseClass of linkBaseClasses) {
   assert.ok(
     !linkTag.split(/[\s"]/u).includes(baseClass),
     "Link xstyle must replace its package property class",
+  );
+}
+
+const progressMarkup = renderToStaticMarkup(React.createElement(ProgressBar, {
+  className: "consumer-progress",
+  label: "Upload",
+  showValue: true,
+  style: { width: "15rem" },
+  value: 35,
+  xstyle: indicatorRootXstyle,
+}));
+const progressTag = progressMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+assert.match(progressTag, /class="hraness-progress-bar [^"]*package-indicator-root-xstyle consumer-progress"/u);
+assert.match(progressTag, /data-slot="progress-bar"/u);
+assert.match(progressTag, /role="progressbar"/u);
+assert.match(progressTag, /style="width:15rem"/u);
+assert.match(progressMarkup, /data-slot="progress-bar-label"/u);
+assert.match(progressMarkup, /data-slot="progress-bar-value"/u);
+assert.match(progressMarkup, /data-slot="progress-bar-track"/u);
+assert.match(progressMarkup, /data-slot="progress-bar-fill"/u);
+assert.match(progressMarkup, /--hraness-percentage:35%;width:35%/u);
+for (const baseClass of indicatorRootBaseClasses) {
+  assert.ok(!progressTag.split(/[\s"]/u).includes(baseClass));
+}
+
+const indeterminateMarkup = renderToStaticMarkup(React.createElement(ProgressBar, {
+  isIndeterminate: true,
+  label: "Loading",
+}));
+assert.match(indeterminateMarkup, /data-indeterminate="true"/u);
+assert.match(indeterminateMarkup, /--hraness-percentage:0%;width:0%/u);
+
+const meterMarkup = renderToStaticMarkup(React.createElement(Meter, {
+  className: "consumer-meter",
+  label: "Storage",
+  maxValue: 100,
+  style: ({ percentage }) => ({ width: percentage === 68 ? "16rem" : "14rem" }),
+  tone: "warning",
+  value: 68,
+  xstyle: indicatorRootXstyle,
+}));
+const meterTag = meterMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+assert.match(meterTag, /class="hraness-meter [^"]*package-indicator-root-xstyle consumer-meter"/u);
+assert.match(meterTag, /data-slot="meter"/u);
+assert.match(meterTag, /data-tone="warning"/u);
+assert.match(meterTag, /role="meter progressbar"/u);
+assert.match(meterTag, /style="width:16rem"/u);
+assert.match(meterMarkup, /--hraness-percentage:68%;width:68%/u);
+
+const sliderMarkup = renderToStaticMarkup(React.createElement(Slider, {
+  className: "consumer-slider",
+  defaultValue: 42,
+  label: "Gain",
+  name: "gain",
+  orientation: "vertical",
+  style: { minHeight: "14rem" },
+  thumbLabel: "Gain level",
+  xstyle: indicatorRootXstyle,
+}));
+const sliderTag = sliderMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+assert.match(sliderTag, /class="hraness-slider [^"]*package-indicator-root-xstyle consumer-slider"/u);
+assert.match(sliderTag, /data-orientation="vertical"/u);
+assert.match(sliderTag, /data-slot="slider"/u);
+assert.match(sliderTag, /style="min-height:14rem"/u);
+assert.match(sliderMarkup, /data-slot="slider-track"/u);
+assert.match(sliderMarkup, /data-slot="slider-fill"/u);
+assert.match(sliderMarkup, /data-slot="slider-thumb"/u);
+assert.match(sliderMarkup, /data-slot="slider-thumb-indicator"/u);
+assert.match(sliderMarkup, /aria-label="Gain level"/u);
+const sliderInputTag = sliderMarkup.match(/<input\b[^>]*>/u)?.[0] ?? "";
+assert.match(sliderInputTag, /(?:^|\s)name="gain"(?:\s|\/?>)/u);
+assert.match(sliderInputTag, /(?:^|\s)type="range"(?:\s|\/?>)/u);
+
+const knobMarkup = renderToStaticMarkup(React.createElement(Knob, {
+  className: "consumer-knob",
+  controlClassName: "consumer-knob-control",
+  controlXstyle: knobControlXstyle,
+  defaultValue: 64,
+  density: "compact",
+  label: "Drive",
+  name: "drive",
+  style: { width: "9rem" },
+  touchPan: "horizontal",
+  xstyle: knobRootXstyle,
+}));
+const knobTag = knobMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+const knobControlTag = knobMarkup.match(/<div[^>]*data-slot="knob-control"[^>]*>/u)?.[0] ?? "";
+const knobThumbTag = knobMarkup.match(/<div[^>]*data-slot="knob-thumb"[^>]*>/u)?.[0] ?? "";
+assert.match(knobTag, /class="hraness-knob [^"]*package-knob-root-xstyle consumer-knob"/u);
+assert.match(knobTag, /data-density="compact"/u);
+assert.match(knobTag, /data-slot="knob"/u);
+assert.match(knobTag, /style="width:9rem"/u);
+assert.match(knobControlTag, /class="hraness-knob__control [^"]*package-knob-control-xstyle consumer-knob-control"/u);
+assert.match(knobControlTag, /touch-action:pan-x/u);
+assert.match(knobThumbTag, /height:100%/u);
+assert.match(knobThumbTag, /left:0/u);
+assert.match(knobThumbTag, /position:absolute/u);
+assert.match(knobThumbTag, /touch-action:none/u);
+assert.match(knobThumbTag, /transform:none/u);
+assert.match(knobThumbTag, /width:100%/u);
+assert.match(knobMarkup, /data-slot="knob-dial"/u);
+assert.match(knobMarkup, /data-slot="knob-gesture"/u);
+const knobInputTag = knobMarkup.match(/<input\b[^>]*>/u)?.[0] ?? "";
+assert.match(knobInputTag, /(?:^|\s)name="drive"(?:\s|\/?>)/u);
+assert.match(knobInputTag, /(?:^|\s)type="range"(?:\s|\/?>)/u);
+for (const baseClass of knobRootBaseClasses) {
+  assert.ok(!knobTag.split(/[\s"]/u).includes(baseClass));
+}
+for (const baseClass of knobControlBaseClasses) {
+  assert.ok(!knobControlTag.split(/[\s"]/u).includes(baseClass));
+}
+for (const focusClass of knobControlNativeFocusClasses) {
+  assert.ok(
+    !knobControlTag.split(/[\s"]/u).includes(focusClass),
+    "Knob controlXstyle must suppress its native focus fallback",
   );
 }
 
@@ -2448,9 +2975,12 @@ import {
   Form,
   Icon,
   KeyHint,
+  Knob,
   Link,
+  Meter,
   NativeSelectField,
   PressableCard,
+  ProgressBar,
   QuietSiteFooter,
   QuietSitePage,
   RadioGroup,
@@ -2458,6 +2988,7 @@ import {
   SocialIcon,
   StatusDot,
   SelectField,
+  Slider,
   Tag,
   ThemedSurface,
   Toolbar,
@@ -2505,6 +3036,18 @@ const styles = stylex.create({
     minWidth: "7rem",
   },
   formDynamic: (width: string) => ({ width }),
+  indicator: {
+    color: "var(--ui-primary)",
+    display: "flex",
+  },
+  knob: {
+    color: "var(--ui-primary)",
+    display: "flex",
+  },
+  knobControl: {
+    backgroundColor: "var(--ui-secondary)",
+    cursor: "crosshair",
+  },
   field: {
     color: "var(--ui-primary)",
     display: "grid",
@@ -2732,6 +3275,50 @@ const linkMarkup: string = renderToStaticMarkup(createElement(Link, {
   }),
   xstyle: styles.link,
 }));
+const progressRef = createRef<HTMLDivElement>();
+const progressMarkup: string = renderToStaticMarkup(createElement(ProgressBar, {
+  className: "consumer-progress",
+  label: "Upload",
+  progressRef,
+  showValue: true,
+  style: ({ percentage }) => ({ width: percentage === 35 ? "15rem" : "14rem" }),
+  value: 35,
+  xstyle: styles.indicator,
+}));
+const meterRef = createRef<HTMLDivElement>();
+const meterMarkup: string = renderToStaticMarkup(createElement(Meter, {
+  className: "consumer-meter",
+  label: "Storage",
+  meterRef,
+  tone: "warning",
+  value: 68,
+  xstyle: styles.indicator,
+}));
+const sliderRef = createRef<HTMLDivElement>();
+const sliderMarkup: string = renderToStaticMarkup(createElement(Slider, {
+  className: "consumer-slider",
+  defaultValue: 42,
+  label: "Gain",
+  name: "gain",
+  orientation: "vertical",
+  sliderRef,
+  thumbLabel: "Gain level",
+  xstyle: styles.indicator,
+}));
+const knobRef = createRef<HTMLDivElement>();
+const knobMarkup: string = renderToStaticMarkup(createElement(Knob, {
+  className: "consumer-knob",
+  controlClassName: "consumer-knob-control",
+  controlXstyle: styles.knobControl,
+  defaultValue: 64,
+  density: "compact",
+  label: "Drive",
+  name: "drive",
+  ref: knobRef,
+  style: ({ orientation }) => ({ width: orientation === "horizontal" ? "9rem" : "8rem" }),
+  touchPan: "horizontal",
+  xstyle: styles.knob,
+}));
 const checkboxRef = createRef<HTMLDivElement>();
 const checkboxMarkup: string = renderToStaticMarkup(createElement(CheckboxField, {
   className: "consumer-checkbox",
@@ -2938,6 +3525,16 @@ const unnamedCheckboxMarkup = renderToStaticMarkup(createElement(CheckboxField, 
 const compactCheckboxMarkup = renderToStaticMarkup(createElement(CheckboxField, { compact: true, label: "Compact" }));
 // @ts-expect-error Form accepts compiled StyleX recipes rather than raw CSS objects.
 const invalidFormXstyleMarkup = renderToStaticMarkup(createElement(Form, { xstyle: { display: "flex" } }));
+// @ts-expect-error Meter keeps its tone set finite.
+const invalidMeterToneMarkup = renderToStaticMarkup(createElement(Meter, { label: "Meter", tone: "info" }));
+// @ts-expect-error Slider keeps its orientation set finite.
+const invalidSliderOrientationMarkup = renderToStaticMarkup(createElement(Slider, { label: "Slider", orientation: "diagonal" }));
+// @ts-expect-error Indicator roots accept compiled StyleX recipes rather than raw CSS objects.
+const invalidIndicatorXstyleMarkup = renderToStaticMarkup(createElement(ProgressBar, { label: "Progress", xstyle: { display: "flex" } }));
+// @ts-expect-error Knob keeps its density set finite.
+const invalidKnobDensityMarkup = renderToStaticMarkup(createElement(Knob, { defaultValue: 0, density: "dense", label: "Knob" }));
+// @ts-expect-error Knob controls accept compiled StyleX recipes rather than raw CSS objects.
+const invalidKnobControlXstyleMarkup = renderToStaticMarkup(createElement(Knob, { controlXstyle: { cursor: "grab" }, defaultValue: 0, label: "Knob" }));
 
 void markup;
 void askAiLinks;
@@ -2953,6 +3550,10 @@ void pressableMarkup;
 void toolbarMarkup;
 void keyHintMarkup;
 void linkMarkup;
+void progressMarkup;
+void meterMarkup;
+void sliderMarkup;
+void knobMarkup;
 void checkboxMarkup;
 void textFieldMarkup;
 void textAreaMarkup;
@@ -2998,10 +3599,15 @@ void missingAskAiUrlMarkup;
 void unnamedCheckboxMarkup;
 void compactCheckboxMarkup;
 void invalidFormXstyleMarkup;
+void invalidMeterToneMarkup;
+void invalidSliderOrientationMarkup;
+void invalidIndicatorXstyleMarkup;
+void invalidKnobDensityMarkup;
+void invalidKnobControlXstyleMarkup;
 `;
 
 const viteClient = `import "@hraness/ui/styles.css";
-import { AskAiAboutThis, Card, CardDescription, CheckboxField, FileField, Form, KeyHint, Link, NativeSelectField, PressableCard, SelectField, TextField, Toolbar } from "@hraness/ui";
+import { AskAiAboutThis, Card, CardDescription, CheckboxField, FileField, Form, KeyHint, Knob, Link, Meter, NativeSelectField, PressableCard, ProgressBar, SelectField, Slider, TextField, Toolbar } from "@hraness/ui";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 
@@ -3022,6 +3628,10 @@ createRoot(root).render(React.createElement(React.Fragment, null,
   React.createElement(KeyHint, null, "⌘K"),
   React.createElement(AskAiAboutThis, { url: "https://hraness.com/stripe" }),
   React.createElement(Link, { href: "/reference" }, "Reference"),
+  React.createElement(ProgressBar, { label: "Vite progress", value: 35 }),
+  React.createElement(Meter, { label: "Vite meter", tone: "success", value: 68 }),
+  React.createElement(Slider, { defaultValue: 42, label: "Vite gain", name: "vite-gain" }),
+  React.createElement(Knob, { defaultValue: 64, label: "Vite drive", name: "vite-drive" }),
   React.createElement(CheckboxField, {
     label: "Vite checkbox",
     name: "vite-checkbox",
@@ -3060,11 +3670,12 @@ function viteSsrProbe(
   checkboxProbe: CheckboxPrecedenceProbe,
   fieldSelectProbe: PackageFieldSelectProbe,
   formProbe: FormPrecedenceProbe,
+  indicatorKnobProbe: PackageIndicatorKnobProbe,
   linkProbe: LinkPrecedenceProbe,
   visuallyHiddenClasses: readonly string[],
 ): string {
   return `import assert from "node:assert/strict";
-import { CheckboxField, NativeSelectField, SelectField, TextField, Form, Link } from "@hraness/ui";
+import { CheckboxField, Form, Knob, Link, Meter, NativeSelectField, ProgressBar, SelectField, Slider, TextField } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -3094,6 +3705,18 @@ const formXstyle = {
 };
 const linkXstyle = {
   ${JSON.stringify(linkProbe.property)}: "vite-link-xstyle",
+  $$css: true,
+};
+const indicatorRootXstyle = {
+  ${JSON.stringify(indicatorKnobProbe.indicatorRootProperty)}: "vite-indicator-root-xstyle",
+  $$css: true,
+};
+const knobRootXstyle = {
+  ${JSON.stringify(indicatorKnobProbe.knobRootProperty)}: "vite-knob-root-xstyle",
+  $$css: true,
+};
+const knobControlXstyle = {
+  ${JSON.stringify(indicatorKnobProbe.knobControlProperty)}: "vite-knob-control-xstyle",
   $$css: true,
 };
 const markup = renderToStaticMarkup(React.createElement(CheckboxField, {
@@ -3181,7 +3804,62 @@ assert.match(linkTag, /class="hraness-link [^"]*vite-link-xstyle vite-link-class
 for (const baseClass of ${JSON.stringify(linkProbe.baseClasses)}) {
   assert.ok(!linkTag.split(/[\\s"]/u).includes(baseClass));
 }
-console.log("Vite CheckboxField, Form, and Link xstyle runtime passed");
+const progressMarkup = renderToStaticMarkup(React.createElement(ProgressBar, {
+  className: "vite-progress-class",
+  label: "Vite progress",
+  style: { width: "15rem" },
+  value: 35,
+  xstyle: indicatorRootXstyle,
+}));
+const progressTag = progressMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+assert.match(progressTag, /class="hraness-progress-bar [^"]*vite-indicator-root-xstyle vite-progress-class"/u);
+assert.match(progressTag, /style="width:15rem"/u);
+for (const baseClass of ${JSON.stringify(indicatorKnobProbe.indicatorRootBaseClasses)}) {
+  assert.ok(!progressTag.split(/[\\s"]/u).includes(baseClass));
+}
+const meterMarkup = renderToStaticMarkup(React.createElement(Meter, {
+  label: "Vite meter",
+  tone: "success",
+  value: 68,
+  xstyle: indicatorRootXstyle,
+}));
+assert.match(meterMarkup, /data-slot="meter"/u);
+assert.match(meterMarkup, /data-tone="success"/u);
+const sliderMarkup = renderToStaticMarkup(React.createElement(Slider, {
+  defaultValue: 42,
+  label: "Vite gain",
+  name: "vite-gain",
+  xstyle: indicatorRootXstyle,
+}));
+assert.match(sliderMarkup, /data-slot="slider-thumb-indicator"/u);
+assert.match(sliderMarkup, /<input[^>]*name="vite-gain"/u);
+const knobMarkup = renderToStaticMarkup(React.createElement(Knob, {
+  className: "vite-knob-class",
+  controlClassName: "vite-knob-control-class",
+  controlXstyle: knobControlXstyle,
+  defaultValue: 64,
+  label: "Vite drive",
+  name: "vite-drive",
+  style: { width: "9rem" },
+  touchPan: "horizontal",
+  xstyle: knobRootXstyle,
+}));
+const knobTag = knobMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+const knobControlTag = knobMarkup.match(/<div[^>]*data-slot="knob-control"[^>]*>/u)?.[0] ?? "";
+assert.match(knobTag, /class="hraness-knob [^"]*vite-knob-root-xstyle vite-knob-class"/u);
+assert.match(knobTag, /style="width:9rem"/u);
+assert.match(knobControlTag, /vite-knob-control-xstyle/u);
+assert.match(knobControlTag, /touch-action:pan-x/u);
+for (const baseClass of ${JSON.stringify(indicatorKnobProbe.knobRootBaseClasses)}) {
+  assert.ok(!knobTag.split(/[\\s"]/u).includes(baseClass));
+}
+for (const baseClass of ${JSON.stringify(indicatorKnobProbe.knobControlBaseClasses)}) {
+  assert.ok(!knobControlTag.split(/[\\s"]/u).includes(baseClass));
+}
+for (const focusClass of ${JSON.stringify(indicatorKnobProbe.knobControlNativeFocusClasses)}) {
+  assert.ok(!knobControlTag.split(/[\\s"]/u).includes(focusClass));
+}
+console.log("Vite CheckboxField, Form, Link, indicators, and Knob xstyle runtime passed");
 `;
 }
 
@@ -3287,6 +3965,12 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "select-field.stylex.ts"),
   );
   await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "indicators.stylex.ts"),
+  );
+  await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "knob.stylex.ts"),
+  );
+  await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "lib", "stylex.ts"),
   );
   const installedPackageRoot = join(
@@ -3295,13 +3979,21 @@ async function verifyConsumer(
     "@hraness",
     "ui",
   );
-  const [installedJavaScript, installedStylexCss] = await Promise.all([
+  const [
+    installedJavaScript,
+    installedStylexCss,
+    installedComponentsCss,
+    installedStylesCss,
+  ] = await Promise.all([
     readFile(join(installedPackageRoot, "dist", "index.js"), "utf8"),
     readFile(join(installedPackageRoot, "dist", "stylex.css"), "utf8"),
+    readFile(join(installedPackageRoot, "src", "components.css"), "utf8"),
+    readFile(join(installedPackageRoot, "src", "styles.css"), "utf8"),
   ]);
   const checkboxProbe = packageCheckboxStyleMap(installedJavaScript);
   const fieldSelectProbe = packageFieldSelectProbe(installedJavaScript);
   const formProbe = packageFormStyleMap(installedJavaScript, installedStylexCss);
+  const indicatorKnobProbe = packageIndicatorKnobProbe(installedJavaScript);
   const linkProbe = packageLinkStyleMap(installedJavaScript);
   requirePackageCheckboxStyles(installedJavaScript, installedStylexCss);
   requirePackageFieldSelectStyles(installedJavaScript, installedStylexCss);
@@ -3311,6 +4003,13 @@ async function verifyConsumer(
     installedStylexCss,
   );
   requirePackageFormStyles(installedJavaScript, installedStylexCss);
+  requirePackageIndicatorKnobStyles(installedJavaScript, installedStylexCss);
+  requireNoIndicatorKnobGallerySentinels(
+    installedJavaScript,
+    installedStylexCss,
+    installedComponentsCss,
+    installedStylesCss,
+  );
 
   // A restored package-manager cache can retain this valid duplicate topology.
   // Public source types must remain portable when React Aria resolves through it.
@@ -3334,6 +4033,7 @@ async function verifyConsumer(
       checkboxProbe,
       fieldSelectProbe,
       formProbe,
+      indicatorKnobProbe,
       linkProbe,
       visuallyHiddenClasses,
     ),
@@ -3359,6 +4059,7 @@ async function verifyConsumer(
         checkboxProbe,
         fieldSelectProbe,
         formProbe,
+        indicatorKnobProbe,
         linkProbe,
         visuallyHiddenClasses,
       ),
@@ -3386,12 +4087,18 @@ async function verifyConsumer(
   requirePackageViteFieldSelectStyles(viteJavaScript, viteCss);
   requirePackageLinkStyles(viteJavaScript, viteCss);
   requirePackageFormStyles(viteJavaScript, viteCss);
+  requirePackageIndicatorKnobStyles(viteJavaScript, viteCss);
   requirePackageVisuallyHiddenStyles(viteJavaScript, viteCss);
+  requireNoIndicatorKnobGallerySentinels(viteJavaScript, viteCss);
   assert.match(viteJavaScript, /hraness-pressable-card/u);
   assert.match(viteJavaScript, /hraness-toolbar/u);
   assert.match(viteJavaScript, /hraness-key-hint/u);
   assert.match(viteJavaScript, /hraness-link/u);
   assert.match(viteJavaScript, /hraness-form/u);
+  assert.match(viteJavaScript, /hraness-progress-bar/u);
+  assert.match(viteJavaScript, /hraness-meter/u);
+  assert.match(viteJavaScript, /hraness-slider/u);
+  assert.match(viteJavaScript, /hraness-knob/u);
   assert.match(viteJavaScript, /--_hraness-card-description/u);
   assert.match(viteCss, /color:var\(--hraness-card-description\)/u);
   assert.match(viteCss, /:hover\{/u);
@@ -3419,6 +4126,10 @@ async function verifyConsumer(
   assert.doesNotMatch(viteCss, /\.hraness-link(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(viteCss, /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(viteCss, /\.hraness-form(?![A-Za-z0-9_-])/u);
+  assert.doesNotMatch(
+    viteCss,
+    /\.hraness-(?:progress-bar|meter|slider|knob)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+  );
 
   await run([
     process.execPath,
@@ -3501,6 +4212,32 @@ async function verifyConsumer(
     /vite-form-xstyle/u,
     "Vite SSR must bundle the caller Form xstyle probe",
   );
+  assert.match(
+    viteSsrBundle,
+    /hraness-progress-bar/u,
+    "Vite SSR must bundle the ProgressBar implementation",
+  );
+  assert.match(
+    viteSsrBundle,
+    /vite-indicator-root-xstyle/u,
+    "Vite SSR must bundle the caller indicator xstyle probe",
+  );
+  assert.match(
+    viteSsrBundle,
+    /hraness-slider__thumb-indicator/u,
+    "Vite SSR must bundle the Slider visible-thumb implementation",
+  );
+  assert.match(
+    viteSsrBundle,
+    /hraness-knob/u,
+    "Vite SSR must bundle the Knob implementation",
+  );
+  assert.match(
+    viteSsrBundle,
+    /vite-knob-control-xstyle/u,
+    "Vite SSR must bundle the caller Knob controlXstyle probe",
+  );
+  requireNoIndicatorKnobGallerySentinels(viteSsrBundle);
   assert.doesNotMatch(
     viteSsrBundle,
     /from\s*["']@hraness\/ui["']/u,

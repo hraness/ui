@@ -515,19 +515,12 @@ test("collapsed disclosure panels do not retain their expanded inset", async () 
   expect(source).toContain("paddingBlockEnd: 0");
 });
 
-test("transport actions and slider thumbs use their shared geometry", async () => {
-  const [actions, components] = await Promise.all([
+test("transport actions and slider thumbs use their compiled shared geometry", async () => {
+  const [actions, components, indicators] = await Promise.all([
     stylesheet("./actions.stylex.ts"),
     stylesheet("./components.css"),
+    stylesheet("./indicators.stylex.ts"),
   ]);
-  const horizontalThumb = declarationBlock(
-    components,
-    '.hraness-slider[data-orientation="horizontal"] .hraness-slider__thumb {',
-  );
-  const verticalThumb = declarationBlock(
-    components,
-    '.hraness-slider[data-orientation="vertical"] .hraness-slider__thumb {',
-  );
 
   expect(actions).toContain('transportIconControl: {');
   expect(actions).toContain(
@@ -536,38 +529,96 @@ test("transport actions and slider thumbs use their shared geometry", async () =
   expect(actions).toContain(
     '[coarsePointer]: "var(--control-height-transport)"',
   );
-  expect(horizontalThumb).toContain("top: 50%;");
-  expect(verticalThumb).toContain("left: 50%;");
+  expect(components).not.toMatch(
+    /\.hraness-(?:progress-bar|meter|slider|knob)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+  );
+  expect(components).toContain(
+    "--hraness-slider-coarse-min: var(--interactive-target-min);",
+  );
+  expect(indicators).toContain('const coarsePointer = "@media(pointer: coarse)"');
+  expect(indicators).toContain('const reducedMotion = "@media(prefers-reduced-motion: reduce)"');
+  expect(indicators).toContain('const forcedColors = "@media(forced-colors: active)"');
+  expect(indicators).toContain('sliderThumbHorizontal: {\n    top: "50%"');
+  expect(indicators).toContain('sliderThumbVertical: {\n    left: "50%"');
+  expect(indicators).toContain(
+    'default: "max(1.25rem, var(--hraness-slider-coarse-min, 0px))"',
+  );
+  expect(indicators).toContain(
+    '[coarsePointer]: "var(--interactive-target-min)"',
+  );
+  expect(indicators).toContain('width: "1.25rem"');
+  expect(indicators).toContain('default: "hraness-progress-indeterminate"');
+  expect(indicators).toContain('[reducedMotion]: "none"');
+  expect(indicators).toContain('borderRadius: "inherit",\n    display: "block"');
+  expect(components).toContain("@keyframes hraness-progress-indeterminate");
+  expect(components).toContain("transform: translateX(-125%);");
+  expect(components).toContain("transform: translateX(250%);");
+  expect(indicators).toContain('[forcedColors]: "Highlight"');
+  expect(indicators).toContain('[forcedColors]: "Canvas"');
+  expect(indicators.match(/backgroundAttachment: "scroll"/gu)).toHaveLength(6);
+  expect(indicators.match(/backgroundImage: "none"/gu)).toHaveLength(6);
+  expect(indicators.match(/backgroundOrigin: "padding-box"/gu)).toHaveLength(6);
+  expect(indicators.match(/backgroundSize: "auto auto"/gu)).toHaveLength(6);
+  expect(indicators.match(/borderImageSource: "none"/gu)).toHaveLength(2);
 });
 
 test("knob densities keep a 48px gesture target and distinct dial sizes", async () => {
-  const components = await stylesheet("./components.css");
-  const control = declarationBlock(components, ".hraness-knob__control {");
-  const dial = declarationBlock(components, ".hraness-knob__dial {");
-  const compactDial = declarationBlock(
-    components,
-    '.hraness-knob[data-density="compact"] .hraness-knob__dial {',
-  );
-  const horizontalTouchPan = declarationBlock(
-    components,
-    '.hraness-knob[data-touch-pan="horizontal"] .hraness-knob__control,',
-  );
-  const disabledControl = declarationBlock(
-    components,
-    ".hraness-knob[data-disabled] .hraness-knob__control {",
-  );
+  const [components, knob, knobComponent] = await Promise.all([
+    stylesheet("./components.css"),
+    stylesheet("./knob.stylex.ts"),
+    stylesheet("./knob.tsx"),
+  ]);
 
-  expect(control).toContain("width: 3rem;");
-  expect(control).toContain("min-width: 3rem;");
-  expect(control).toContain("height: 3rem;");
-  expect(control).toContain("min-height: 3rem;");
-  expect(control).toContain("touch-action: none;");
-  expect(dial).toContain("width: 2.5rem;");
-  expect(compactDial).toContain("width: 2rem;");
-  expect(horizontalTouchPan).toContain("touch-action: pan-x;");
-  expect(disabledControl).toContain("opacity: 0.5;");
-  expect(components).not.toContain(".hraness-knob[data-disabled] {\n    opacity:");
-  expect(components).not.toContain(".hraness-knob__gesture:hover");
+  expect(components).not.toMatch(/\.hraness-knob(?![A-Za-z0-9_-])/u);
+  expect(knob).toContain('control: {\n    cursor: "grab"');
+  expect(knob).toContain('default: "3rem"');
+  expect(knob).toContain(
+    '[coarsePointer]: "max(3rem, var(--interactive-target-min))"',
+  );
+  expect(knob).toContain('dial: {');
+  expect(knob).toContain('height: "2.5rem"');
+  expect(knob).toContain('width: "2.5rem"');
+  expect(knob).toContain('dialCompact: {\n    height: "2rem",\n    width: "2rem"');
+  expect(knob).toContain('controlHorizontalTouchPan: {\n    touchAction: "pan-x"');
+  expect(knob).toContain('controlDisabled: {\n    cursor: "not-allowed",\n    opacity: 0.5');
+  expect(knob).toContain('thumb: {\n    alignItems: "center",\n    display: "grid",\n    justifyItems: "center"');
+  expect(knob).not.toContain("placeItems:");
+  expect(knob).toContain('":has(input:focus-visible)": {');
+  expect(knob).toContain('[forcedColors]: "Canvas"');
+  expect(knob).toContain('[forcedColors]: "CanvasText"');
+  expect(knob).toContain('[forcedColors]: "GrayText"');
+  expect(knob).toContain('[forcedColors]: "Highlight"');
+  expect(knobComponent).toContain(
+    "!hasStylexPresentation(controlXstyle) && knobStyles.controlNativeFocus",
+  );
+  expect(knobComponent).toMatch(
+    /knobStyles\.control,[\s\S]*?knobStyles\.controlHorizontalTouchPan,[\s\S]*?knobStyles\.controlDragging,[\s\S]*?knobStyles\.controlDisabled,[\s\S]*?knobStyles\.controlNativeFocus,[\s\S]*?controlXstyle/u,
+  );
+  expect(knobComponent).toContain(
+    'touchAction: touchPan === "horizontal" ? "pan-x" : "none"',
+  );
+  expect(knobComponent).toMatch(
+    /mergeStylexInlineStyles\(presentation\.style,\s*\{\s*touchAction:/u,
+  );
+  expect(knobComponent).toMatch(
+    /\.\.\.stylexStyle,[\s\S]*?\.\.\.KNOB_THUMB_GEOMETRY_STYLE/u,
+  );
+});
+
+test("native Feedback Progress keeps its separate legacy CSS boundary", async () => {
+  const components = await stylesheet("./components.css");
+
+  for (const selector of [
+    ".hraness-progress {",
+    ".hraness-progress__label-row {",
+    ".hraness-progress__control {",
+    ".hraness-progress__control::-webkit-progress-bar {",
+    ".hraness-progress__control::-webkit-progress-value {",
+    ".hraness-progress__control::-moz-progress-bar {",
+  ]) expect(components).toContain(selector);
+  expect(components.match(/\.hraness-progress__control \{/gu)).toHaveLength(2);
+  expect(components).toContain("color: Highlight;");
+  expect(components).toContain("forced-color-adjust: none;");
 });
 
 test("status pills keep one compiled border geometry across their visual variants", async () => {

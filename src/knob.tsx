@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type CSSProperties,
   forwardRef,
   type ReactNode,
   useEffect,
@@ -8,6 +9,8 @@ import {
   useRef,
 } from "react";
 import { useMove } from "react-aria";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 import {
   Label,
   Slider as AriaSlider,
@@ -16,6 +19,7 @@ import {
   type SliderRenderProps,
   SliderThumb,
   SliderTrack,
+  type SliderTrackRenderProps,
 } from "react-aria-components";
 
 import {
@@ -30,6 +34,11 @@ import {
   moveKnobGesture,
   resolveKnobTouchIntent,
 } from "./knob-model.js";
+import { knobStyles } from "./knob.stylex.js";
+import {
+  hasStylexPresentation,
+  mergeStylexInlineStyles,
+} from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
 
@@ -63,6 +72,8 @@ type KnobBaseProps = Omit<
   Readonly<{
     className?: string;
     controlClassName?: string;
+    /** Typed StyleX presentation for the 48-pixel control boundary. */
+    controlXstyle?: StyleXStyles;
     density?: KnobDensity;
     disabled?: boolean;
     form?: string;
@@ -84,6 +95,8 @@ type KnobBaseProps = Omit<
      */
     renderValue?: (value: number) => ReactNode;
     touchPan?: KnobTouchPan;
+    /** Typed StyleX presentation applied after the root recipe. */
+    xstyle?: StyleXStyles;
   }>;
 
 export type KnobProps = KnobBaseProps & KnobValueProps;
@@ -95,6 +108,54 @@ const EMPTY_GESTURE: KnobGesture = {
   originValue: 0,
   pixelOffset: 0,
 };
+
+const KNOB_THUMB_GEOMETRY_STYLE = {
+  height: "100%",
+  left: 0,
+  position: "absolute",
+  top: 0,
+  touchAction: "none",
+  transform: "none",
+  width: "100%",
+} as const satisfies CSSProperties;
+
+function knobThumbStyle(
+  stylexStyle: Readonly<Record<string, number | string>> | undefined,
+): CSSProperties {
+  return {
+    ...stylexStyle,
+    ...KNOB_THUMB_GEOMETRY_STYLE,
+  };
+}
+
+function knobControlPresentation(
+  state: SliderTrackRenderProps,
+  touchPan: KnobTouchPan,
+  controlXstyle: StyleXStyles | undefined,
+) {
+  return stylex.props(
+    knobStyles.control,
+    touchPan === "horizontal" && knobStyles.controlHorizontalTouchPan,
+    state.state.isThumbDragging(0) && knobStyles.controlDragging,
+    state.isDisabled && knobStyles.controlDisabled,
+    !hasStylexPresentation(controlXstyle) && knobStyles.controlNativeFocus,
+    controlXstyle,
+  );
+}
+
+function knobControlStyle(
+  state: SliderTrackRenderProps,
+  touchPan: KnobTouchPan,
+  controlXstyle: StyleXStyles | undefined,
+): CSSProperties {
+  const presentation = knobControlPresentation(state, touchPan, controlXstyle);
+
+  // SliderTrack defaults to an inline `touch-action: none`. Keep the public
+  // touch-pan contract last so horizontal rack scrolling remains available.
+  return mergeStylexInlineStyles(presentation.style, {
+    touchAction: touchPan === "horizontal" ? "pan-x" : "none",
+  }) ?? {};
+}
 
 function validateKnobProps(
   label: ReactNode,
@@ -122,40 +183,76 @@ function validateKnobProps(
   }
 }
 
-function KnobDial({ percentage }: Readonly<{ percentage: number }>) {
+function KnobDial({
+  density,
+  percentage,
+}: Readonly<{
+  density: KnobDensity;
+  percentage: number;
+}>) {
   const valueArc = percentage * 75;
   const indicatorAngle = 135 + percentage * 270;
+  const dialPresentation = stylex.props(
+    knobStyles.dial,
+    density === "compact" && knobStyles.dialCompact,
+  );
+  const facePresentation = stylex.props(knobStyles.face);
+  const trackPresentation = stylex.props(knobStyles.arc, knobStyles.arcTrack);
+  const valuePresentation = stylex.props(knobStyles.arc, knobStyles.arcValue);
+  const indicatorPresentation = stylex.props(knobStyles.indicator);
 
   return (
     <svg
       aria-hidden="true"
-      className="hraness-knob__dial"
-      data-focus-indicator="true"
+      className={cn("hraness-knob__dial", dialPresentation.className)}
       data-slot="knob-dial"
       focusable="false"
+      style={dialPresentation.style}
       viewBox="0 0 48 48"
     >
-      <circle className="hraness-knob__face" cx="24" cy="24" r="15" />
       <circle
-        className="hraness-knob__arc hraness-knob__arc--track"
+        className={cn("hraness-knob__face", facePresentation.className)}
         cx="24"
         cy="24"
+        data-slot="knob-face"
+        r="15"
+        style={facePresentation.style}
+      />
+      <circle
+        className={cn(
+          "hraness-knob__arc hraness-knob__arc--track",
+          trackPresentation.className,
+        )}
+        cx="24"
+        cy="24"
+        data-slot="knob-arc-track"
         pathLength="100"
         r="19"
         strokeDasharray="75 25"
+        style={trackPresentation.style}
         transform="rotate(135 24 24)"
       />
       <circle
-        className="hraness-knob__arc hraness-knob__arc--value"
+        className={cn(
+          "hraness-knob__arc hraness-knob__arc--value",
+          valuePresentation.className,
+        )}
         cx="24"
         cy="24"
+        data-slot="knob-arc-value"
         pathLength="100"
         r="19"
         strokeDasharray={`${valueArc} 100`}
+        style={valuePresentation.style}
         transform="rotate(135 24 24)"
       />
       <line
-        className="hraness-knob__indicator"
+        className={cn(
+          "hraness-knob__indicator",
+          indicatorPresentation.className,
+        )}
+        data-slot="knob-indicator"
+        style={indicatorPresentation.style}
         transform={`rotate(${indicatorAngle} 24 24)`}
         x1="24"
         x2="37"
@@ -282,12 +379,17 @@ function KnobGestureSurface({
       if (result.didEnd) state.setThumbDragging(0, false);
     },
   });
+  const presentation = stylex.props(
+    knobStyles.gesture,
+    touchPan === "horizontal" && knobStyles.gestureHorizontalTouchPan,
+    disabled && knobStyles.gestureDisabled,
+  );
 
   return (
     <span
       {...(disabled ? {} : moveProps)}
       aria-hidden="true"
-      className="hraness-knob__gesture"
+      className={cn("hraness-knob__gesture", presentation.className)}
       data-slot="knob-gesture"
       onPointerDownCapture={disabled ? undefined : () => inputRef.current?.focus()}
       onPointerCancelCapture={
@@ -295,6 +397,7 @@ function KnobGestureSurface({
           canceledRef.current = true;
         }
       }
+      style={presentation.style}
     />
   );
 }
@@ -308,6 +411,7 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
     {
       className,
       controlClassName,
+      controlXstyle,
       defaultValue,
       density = "default",
       disabled = false,
@@ -320,8 +424,10 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
       outputVisibility = "visible",
       renderValue,
       step = 1,
+      style,
       touchPan = "none",
       value,
+      xstyle,
       ...props
     },
     ref,
@@ -330,12 +436,18 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
     const inputRef = inputRefProp ?? fallbackInputRef;
     const suppliedValue = value ?? defaultValue;
     validateKnobProps(label, min, max, step, suppliedValue);
+    const rootPresentation = stylex.props(knobStyles.root, xstyle);
+    const thumbPresentation = stylex.props(knobStyles.thumb);
 
     return (
       <AriaSlider
         {...props}
         {...(defaultValue === undefined ? { value } : { defaultValue })}
-        className={cn("hraness-knob", className)}
+        className={cn(
+          "hraness-knob",
+          rootPresentation.className,
+          className,
+        )}
         data-density={density}
         data-output-visibility={outputVisibility}
         data-slot="knob"
@@ -346,33 +458,57 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
         orientation="horizontal"
         ref={ref}
         step={step}
+        style={(state) => {
+          const callerStyle = typeof style === "function" ? style(state) : style;
+          return mergeStylexInlineStyles(rootPresentation.style, callerStyle);
+        }}
       >
         {({ state }) => {
           const percentage = knobValuePercentage(state.getThumbValue(0), min, max);
+          const labelPresentation = stylex.props(
+            knobStyles.labelValue,
+            knobStyles.label,
+          );
+          const valuePresentation = stylex.props(
+            knobStyles.labelValue,
+            knobStyles.value,
+          );
 
           return (
             <>
               <SliderTrack
-                className={cn("hraness-knob__control", controlClassName)}
+                className={(trackState) => {
+                  const presentation = knobControlPresentation(
+                    trackState,
+                    touchPan,
+                    controlXstyle,
+                  );
+                  return cn(
+                    "hraness-knob__control",
+                    presentation.className,
+                    controlClassName,
+                  );
+                }}
+                data-focus-indicator="true"
                 data-slot="knob-control"
+                style={(trackState) => knobControlStyle(
+                  trackState,
+                  touchPan,
+                  controlXstyle,
+                )}
               >
                 <SliderThumb
-                  className="hraness-knob__thumb"
+                  className={cn(
+                    "hraness-knob__thumb",
+                    thumbPresentation.className,
+                  )}
                   data-slot="knob-thumb"
                   inputRef={inputRef}
                   {...(form === undefined ? {} : { form })}
                   {...(name === undefined ? {} : { name })}
-                  style={{
-                    height: "100%",
-                    left: 0,
-                    position: "absolute",
-                    top: 0,
-                    touchAction: "none",
-                    transform: "none",
-                    width: "100%",
-                  }}
+                  style={knobThumbStyle(thumbPresentation.style)}
                 >
-                  <KnobDial percentage={percentage} />
+                  <KnobDial density={density} percentage={percentage} />
                 </SliderThumb>
                 <KnobGestureSurface
                   disabled={disabled}
@@ -384,7 +520,14 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
                   touchPan={touchPan}
                 />
               </SliderTrack>
-              <Label className="hraness-knob__label" data-slot="knob-label">
+              <Label
+                className={cn(
+                  "hraness-knob__label",
+                  labelPresentation.className,
+                )}
+                data-slot="knob-label"
+                style={labelPresentation.style}
+              >
                 {label}
               </Label>
               {renderValue === undefined ? (
@@ -396,6 +539,7 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
                     visuallyHiddenClassName(
                       outputVisibility === "visually-hidden",
                     ),
+                    valuePresentation.className,
                   )}
                   data-slot="knob-value"
                 />
@@ -410,8 +554,10 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
                     visuallyHiddenClassName(
                       outputVisibility === "visually-hidden",
                     ),
+                    valuePresentation.className,
                   )}
                   data-slot="knob-value"
+                  style={valuePresentation.style}
                 >
                   {renderValue(state.getThumbValue(0))}
                 </output>
