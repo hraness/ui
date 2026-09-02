@@ -5154,6 +5154,14 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       '[data-gallery-field="text-override"]',
       isHtml,
     );
+    const textAreaRoot = required(
+      '[data-gallery-field="textarea"]',
+      isHtml,
+    );
+    const checkboxGroup = required(
+      '[data-gallery-field="checkbox-group"]',
+      isHtml,
+    );
     const search = required('[data-gallery-field="search"]', isHtml);
     const number = required('[data-gallery-field="number"]', isHtml);
     const nativeSelect = required(
@@ -5175,6 +5183,14 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     const textInput = textDefault.querySelector('[data-slot="field-input"]');
     const overrideControl = textOverride.querySelector('[data-slot="field-control"]');
     const overrideInput = textOverride.querySelector('[data-slot="field-input"]');
+    const textAreaControl = textAreaRoot.querySelector('[data-slot="field-control"]');
+    const textArea = textAreaRoot.querySelector('[data-slot="field-textarea"]');
+    const checkboxGroupOptions = checkboxGroup.querySelector(
+      ".hraness-checkbox-group__options",
+    );
+    const checkboxGroupControls = [
+      ...checkboxGroup.querySelectorAll('[data-slot="checkbox-control"]'),
+    ];
     const searchControl = search.querySelector('[data-slot="field-control"]');
     const searchClear = search.querySelector('[aria-label="Clear search"]');
     const numberControl = number.querySelector('[data-slot="field-control"]');
@@ -5225,6 +5241,10 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       textInput,
       overrideControl,
       overrideInput,
+      textAreaControl,
+      textArea,
+      checkboxGroupOptions,
+      ...checkboxGroupControls,
       searchControl,
       searchClear,
       numberControl,
@@ -5253,6 +5273,11 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       || !(textInput instanceof HTMLInputElement)
       || !(overrideControl instanceof HTMLElement)
       || !(overrideInput instanceof HTMLInputElement)
+      || !(textAreaControl instanceof HTMLElement)
+      || !(textArea instanceof HTMLTextAreaElement)
+      || !(checkboxGroupOptions instanceof HTMLElement)
+      || checkboxGroupControls.length !== 2
+      || checkboxGroupControls.some((control) => !(control instanceof HTMLElement))
       || !(searchControl instanceof HTMLElement)
       || !(searchClear instanceof HTMLButtonElement)
       || !(numberControl instanceof HTMLElement)
@@ -5303,6 +5328,11 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     const overrideRootStyle = getComputedStyle(textOverride);
     const overrideControlStyle = getComputedStyle(overrideControl);
     const overrideInputStyle = getComputedStyle(overrideInput);
+    const textAreaRootStyle = getComputedStyle(textAreaRoot);
+    const textAreaControlStyle = getComputedStyle(textAreaControl);
+    const textAreaStyle = getComputedStyle(textArea);
+    const checkboxGroupStyle = getComputedStyle(checkboxGroup);
+    const checkboxGroupOptionsStyle = getComputedStyle(checkboxGroupOptions);
     const selectTriggerStyle = getComputedStyle(selectTrigger);
     const nativeSelectStyle = getComputedStyle(nativeSelect);
     const indicatorBox = selectIndicator.getBoundingClientRect();
@@ -5312,6 +5342,8 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       backgroundResetContracts: [
         textInput,
         overrideControl,
+        textAreaControl,
+        textArea,
         searchControl,
         searchClear,
         numberControl,
@@ -5338,6 +5370,29 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       callerInputLetterSpacing: Number.parseFloat(overrideInputStyle.letterSpacing),
       callerStyle: textOverride.style.cssText,
       callerWidth: textOverride.getBoundingClientRect().width,
+      checkboxGroup: {
+        ariaDescribedBy: checkboxGroup.getAttribute("aria-describedby") ?? "",
+        ariaLabelledBy: checkboxGroup.getAttribute("aria-labelledby") ?? "",
+        callerClassLast:
+          checkboxGroup.classList.item(checkboxGroup.classList.length - 1)
+            === "gallery-checkbox-group--override",
+        checkboxCount: checkboxGroupControls.length,
+        display: checkboxGroupStyle.display,
+        gap: Number.parseFloat(checkboxGroupStyle.gap),
+        generated: [...checkboxGroup.classList].some((name) => name.startsWith("x")),
+        optionsAlignItems: checkboxGroupOptionsStyle.alignItems,
+        optionsCallerClassLast:
+          checkboxGroupOptions.classList.item(
+            checkboxGroupOptions.classList.length - 1,
+          ) === "gallery-checkbox-group-options--override",
+        optionsDisplay: checkboxGroupOptionsStyle.display,
+        optionsFlexWrap: checkboxGroupOptionsStyle.flexWrap,
+        optionsGap: Number.parseFloat(checkboxGroupOptionsStyle.gap),
+        role: checkboxGroup.getAttribute("role") ?? "",
+        slot: checkboxGroup.dataset.slot ?? "",
+        style: checkboxGroup.style.cssText,
+        width: checkboxGroup.getBoundingClientRect().width,
+      },
       expectedPrimary: resolveColor("var(--ui-primary)"),
       expectedSecondary: resolveColor("var(--ui-secondary)"),
       expectedWarning: resolveColor("var(--ui-warning)"),
@@ -5368,6 +5423,30 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       syntheticDecrementWidth: syntheticDecrement.getBoundingClientRect().width,
       syntheticIncrementWidth: syntheticIncrement.getBoundingClientRect().width,
       syntheticTriggerHeight: syntheticTrigger.getBoundingClientRect().height,
+      textArea: {
+        callerClassLast:
+          textAreaRoot.classList.item(textAreaRoot.classList.length - 1)
+            === "gallery-field--textarea-override"
+          && textArea.classList.item(textArea.classList.length - 1)
+            === "gallery-field-textarea--override",
+        color: textAreaStyle.color,
+        controlBackground: textAreaControlStyle.backgroundColor,
+        controlBorder: textAreaControlStyle.borderColor,
+        display: textAreaRootStyle.display,
+        generated: [...textAreaRoot.classList].some((name) => name.startsWith("x"))
+          && [...textArea.classList].some((name) => name.startsWith("x")),
+        letterSpacing: Number.parseFloat(textAreaStyle.letterSpacing),
+        minHeight: Number.parseFloat(textAreaStyle.minHeight),
+        name: textArea.name,
+        paddingLeft: Number.parseFloat(textAreaStyle.paddingLeft),
+        paddingRight: Number.parseFloat(textAreaStyle.paddingRight),
+        resize: textAreaStyle.resize,
+        rootSlot: textAreaRoot.dataset.slot ?? "",
+        slot: textArea.dataset.slot ?? "",
+        style: textAreaRoot.style.cssText,
+        value: textArea.value,
+        width: textAreaRoot.getBoundingClientRect().width,
+      },
       textRef: textDefault.dataset.galleryFieldRef === "true",
     };
   });
@@ -5397,6 +5476,46 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     && /--[^:]+:\s*14rem/u.test(evidence.callerStyle)
     && /width:\s*15rem/u.test(evidence.callerStyle),
     `${id}: caller-last Fields presentation changed: ${JSON.stringify(evidence)}`,
+  );
+  invariant(
+    evidence.textArea.callerClassLast
+    && evidence.textArea.generated
+    && evidence.textArea.rootSlot === "text-area-field"
+    && evidence.textArea.slot === "field-textarea"
+    && evidence.textArea.display === "flex"
+    && nearlyEqual(evidence.textArea.width, 240)
+    && /--[^:]+:\s*14rem/u.test(evidence.textArea.style)
+    && /width:\s*15rem/u.test(evidence.textArea.style)
+    && evidence.textArea.controlBackground === evidence.expectedSecondary
+    && evidence.textArea.controlBorder === evidence.expectedWarning
+    && evidence.textArea.color === evidence.expectedPrimary
+    && nearlyEqual(evidence.textArea.letterSpacing, 1)
+    && evidence.textArea.minHeight >= 120
+    && evidence.textArea.paddingLeft > 0
+    && nearlyEqual(evidence.textArea.paddingLeft, evidence.textArea.paddingRight)
+    && evidence.textArea.resize === "vertical"
+    && evidence.textArea.name === "notes"
+    && evidence.textArea.value === "Bathymetry",
+    `${id}: TextAreaField structure or caller-last presentation changed: ${JSON.stringify(evidence.textArea)}`,
+  );
+  invariant(
+    evidence.checkboxGroup.ariaDescribedBy.length > 0
+    && evidence.checkboxGroup.ariaLabelledBy.length > 0
+    && evidence.checkboxGroup.callerClassLast
+    && evidence.checkboxGroup.checkboxCount === 2
+    && evidence.checkboxGroup.display === "flex"
+    && evidence.checkboxGroup.generated
+    && evidence.checkboxGroup.optionsAlignItems === "flex-start"
+    && evidence.checkboxGroup.optionsCallerClassLast
+    && evidence.checkboxGroup.optionsDisplay === "flex"
+    && evidence.checkboxGroup.optionsFlexWrap === "wrap"
+    && nearlyEqual(evidence.checkboxGroup.optionsGap, evidence.checkboxGroup.gap)
+    && evidence.checkboxGroup.role === "group"
+    && evidence.checkboxGroup.slot === "checkbox-group"
+    && /--[^:]+:\s*14rem/u.test(evidence.checkboxGroup.style)
+    && /width:\s*15rem/u.test(evidence.checkboxGroup.style)
+    && nearlyEqual(evidence.checkboxGroup.width, 240),
+    `${id}: CheckboxGroup structure or caller-last options presentation changed: ${JSON.stringify(evidence.checkboxGroup)}`,
   );
   invariant(
     evidence.fileRef
@@ -5666,6 +5785,34 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     });
   }
 
+  const textArea = page.getByRole("textbox", {
+    exact: true,
+    name: "Project notes",
+  });
+  const emailChannel = page.getByRole("checkbox", {
+    exact: true,
+    name: "Email alerts",
+  });
+  const securityChannel = page.getByRole("checkbox", {
+    exact: true,
+    name: "Security alerts",
+  });
+  invariant(
+    !(await emailChannel.isChecked()) && await securityChannel.isChecked(),
+    `${id}: CheckboxGroup default selection changed`,
+  );
+  await textArea.focus();
+  await page.keyboard.press("Tab");
+  invariant(
+    await emailChannel.evaluate((element) => document.activeElement === element),
+    `${id}: the first CheckboxGroup option is not next after TextAreaField`,
+  );
+  await page.keyboard.press("Space");
+  invariant(
+    await emailChannel.isChecked() && await securityChannel.isChecked(),
+    `${id}: Space did not extend the CheckboxGroup selection`,
+  );
+
   await page.locator('select[data-gallery-field="native-select"]').selectOption("pacific");
   await page.getByRole("radio", { exact: true, name: "Focus" }).click();
   const switchControl = page.getByRole("switch", { exact: true, name: "Alerts" });
@@ -5698,16 +5845,30 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
   await page.locator('[data-gallery-field-submit="true"]').click();
   await page.waitForFunction(() => {
     const output = document.querySelector('[data-gallery-field-submission="true"]');
-    const text = output?.textContent ?? "";
-    return text.includes("project=Seamount")
-      && text.includes("caller-project=Trench")
-      && text.includes("query=ocean")
-      && text.includes("retries=2")
-      && text.includes("ocean=pacific")
-      && text.includes("mode=focus")
-      && text.includes("alerts=on")
-      && text.includes("metric=following");
+    return (output?.textContent ?? "").length > 0;
   }, undefined, { polling: "raf", timeout: 2_000 });
+  const submissionEntries = (
+    await page.locator('[data-gallery-field-submission="true"]').textContent()
+    ?? ""
+  ).split("&").sort();
+  const expectedSubmissionEntries = [
+    "alerts=on",
+    "caller-project=Trench",
+    "channels=email",
+    "channels=security",
+    "cover=[object File]",
+    "metric=following",
+    "mode=focus",
+    "notes=Bathymetry",
+    "ocean=pacific",
+    "project=Seamount",
+    "query=ocean",
+    "retries=2",
+  ].sort();
+  invariant(
+    JSON.stringify(submissionEntries) === JSON.stringify(expectedSubmissionEntries),
+    `${id}: submitted field entries do not match the exact selected values: ${JSON.stringify(submissionEntries)}`,
+  );
 
   const rtlEvidence = await page.evaluate(async () => {
     const root = document.documentElement;
@@ -8230,6 +8391,11 @@ try {
   assert.match(html, /data-gallery-field-form="true"/u);
   assert.match(html, /data-gallery-field="text-default"/u);
   assert.match(html, /data-gallery-field="text-override"/u);
+  assert.match(html, /data-gallery-field="textarea"/u);
+  assert.match(html, /data-gallery-field="checkbox-group"/u);
+  assert.match(html, /data-slot="text-area-field"/u);
+  assert.match(html, /data-slot="field-textarea"/u);
+  assert.match(html, /data-slot="checkbox-group"/u);
   assert.match(html, /data-gallery-field="search"/u);
   assert.match(html, /data-gallery-field="number"/u);
   assert.match(html, /data-gallery-field="native-select"/u);
@@ -8242,6 +8408,8 @@ try {
   assert.match(html, /data-gallery-field="select"/u);
   assert.match(html, /data-gallery-synthetic-coarse="true"/u);
   assert.match(html, /name="project"/u);
+  assert.match(html, /name="notes"/u);
+  assert.match(html, /name="channels"/u);
   assert.match(html, /name="ocean"/u);
   assert.match(html, /name="mode"/u);
   assert.match(html, /name="alerts"/u);
@@ -9127,7 +9295,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

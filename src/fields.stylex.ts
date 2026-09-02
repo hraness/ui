@@ -213,6 +213,7 @@ export const fieldStyles = stylex.create({
     backgroundColor: "var(--hraness-field-surface, var(--ui-muted))",
   },
   numberStep: {
+    alignItems: "center",
     backgroundColor: "transparent",
     backgroundImage: "none",
     borderStyle: "none",

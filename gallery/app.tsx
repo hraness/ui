@@ -22,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
   CheckboxField,
+  CheckboxGroup,
   FileField,
   Form,
   Icon,
@@ -51,6 +52,7 @@ import {
   Tabs,
   Tag,
   ThemedSurface,
+  TextAreaField,
   TextField,
   Toolbar,
   ToggleButton,
@@ -149,6 +151,12 @@ const galleryStyles = stylex.create({
     display: "flex",
     gap: "var(--space-5)",
     gridTemplateColumns: "none",
+  },
+  checkboxGroupOptionsOverride: {
+    alignItems: "flex-start",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "var(--space-4)",
   },
   fieldControlOverride: {
     backgroundColor: "var(--ui-secondary)",
@@ -608,6 +616,42 @@ export function PrimitiveGallery() {
                   galleryStyles.fieldRootDynamicWidth("14rem"),
                 ]}
               />
+              <TextAreaField
+                className="gallery-field gallery-field--textarea-override"
+                controlXstyle={galleryStyles.fieldControlOverride}
+                data-gallery-field="textarea"
+                defaultValue="Bathymetry"
+                description="The multiline value remains a native form entry."
+                label="Project notes"
+                name="notes"
+                resize="vertical"
+                style={{ width: "15rem" }}
+                textAreaClassName="gallery-field-textarea gallery-field-textarea--override"
+                textAreaProps={{ style: { letterSpacing: "1px" } }}
+                textAreaXstyle={galleryStyles.fieldInputOverride}
+                xstyle={[
+                  galleryStyles.fieldRootOverride,
+                  galleryStyles.fieldRootDynamicWidth("14rem"),
+                ]}
+              />
+              <CheckboxGroup
+                className="gallery-checkbox-group gallery-checkbox-group--override"
+                data-gallery-field="checkbox-group"
+                defaultValue={["security"]}
+                description="Keyboard selection contributes each checked value."
+                label="Notification channels"
+                name="channels"
+                optionsClassName="gallery-checkbox-group-options gallery-checkbox-group-options--override"
+                optionsXstyle={galleryStyles.checkboxGroupOptionsOverride}
+                style={{ width: "15rem" }}
+                xstyle={[
+                  galleryStyles.fieldRootOverride,
+                  galleryStyles.fieldRootDynamicWidth("14rem"),
+                ]}
+              >
+                <CheckboxField label="Email alerts" value="email" />
+                <CheckboxField label="Security alerts" value="security" />
+              </CheckboxGroup>
               <SearchField
                 data-gallery-field="search"
                 defaultValue="ocean"

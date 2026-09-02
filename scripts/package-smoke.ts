@@ -132,8 +132,14 @@ interface PackageVisuallyHiddenStyleMap {
 interface PackageFieldSelectProbe {
   readonly fieldControlBaseClasses: readonly string[];
   readonly fieldControlProperty: string;
+  readonly fieldOptionsBaseClasses: readonly string[];
+  readonly fieldOptionsProperty: string;
   readonly fieldRootBaseClasses: readonly string[];
   readonly fieldRootProperty: string;
+  readonly fieldTextAreaBaseClasses: readonly string[];
+  readonly fieldTextAreaProperty: string;
+  readonly radioSwitchNativeFocusClasses: readonly string[];
+  readonly selectNativeInteractionClasses: readonly string[];
   readonly selectTriggerBaseClasses: readonly string[];
   readonly selectTriggerProperty: string;
 }
@@ -360,7 +366,7 @@ function packageNamedStyleMap(
 ): PackageNamedStyleMap {
   const candidates: PackageNamedStyleMap[] = [];
   for (const match of javaScript.matchAll(
-    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{/gu,
+    /(?:\b(?:const|let|var)\s+|[;,])([A-Za-z_$][\w$]*)\s*=\s*\{/gu,
   )) {
     const open = (match.index ?? 0) + match[0].lastIndexOf("{");
     const object = balancedBlock(javaScript, open, `packed ${description}`);
@@ -475,6 +481,14 @@ function packageFieldSelectProbe(javaScript: string): PackageFieldSelectProbe {
     field.entries.get("control")!,
     "fieldStyles.control",
   );
+  const fieldOptions = packageEntryProbe(
+    packageNamedStyleEntry(field, "options"),
+    "fieldStyles.options",
+  );
+  const fieldTextArea = packageEntryProbe(
+    packageNamedStyleEntry(field, "textAreaResizeVertical"),
+    "fieldStyles.textAreaResizeVertical",
+  );
   const selectTrigger = packageEntryProbe(
     select.entries.get("trigger")!,
     "selectFieldStyles.trigger",
@@ -482,8 +496,18 @@ function packageFieldSelectProbe(javaScript: string): PackageFieldSelectProbe {
   return {
     fieldControlBaseClasses: fieldControl.baseClasses,
     fieldControlProperty: fieldControl.property,
+    fieldOptionsBaseClasses: fieldOptions.baseClasses,
+    fieldOptionsProperty: fieldOptions.property,
     fieldRootBaseClasses: fieldRoot.baseClasses,
     fieldRootProperty: fieldRoot.property,
+    fieldTextAreaBaseClasses: fieldTextArea.baseClasses,
+    fieldTextAreaProperty: fieldTextArea.property,
+    radioSwitchNativeFocusClasses: [
+      ...packageEntryClassNames(field, "radioSwitchNativeFocus"),
+    ],
+    selectNativeInteractionClasses: [
+      ...packageEntryClassNames(select, "triggerNativeInteractions"),
+    ],
     selectTriggerBaseClasses: selectTrigger.baseClasses,
     selectTriggerProperty: selectTrigger.property,
   };
@@ -700,6 +724,29 @@ function requirePackagePositivePseudoSelector(
   );
 }
 
+function requirePackageExactClassPseudoSelector(
+  selector: string,
+  classNames: ReadonlySet<string>,
+  pseudo: "focus-visible" | "hover",
+  description: string,
+): void {
+  const owners = [...classNames].filter((className) =>
+    new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
+  );
+  assert.equal(
+    owners.length,
+    1,
+    `${description} must have exactly one owning generated class`,
+  );
+  const owner = owners[0]!;
+  assert.match(owner, /^[A-Za-z0-9_-]+$/u);
+  assert.match(
+    selector,
+    new RegExp(`^(?:\\.${owner})+:${pseudo}$`, "u"),
+    `${description} must use only the owning generated class and :${pseudo}`,
+  );
+}
+
 function packageExactConditionalCss(css: string, condition: string): string {
   const bodies: string[] = [];
   for (const match of css.matchAll(/@media\s*\([^{}]+\)\s*\{/gu)) {
@@ -771,13 +818,32 @@ function requirePackageFormStyles(javaScript: string, css: string): void {
   );
 }
 
+function packageNamedStyleEntry(
+  map: PackageNamedStyleMap,
+  key: string,
+): string {
+  const knownEntry = map.entries.get(key);
+  if (knownEntry !== undefined) return knownEntry;
+  const body = map.object.slice(1, -1);
+  const matches = [...body.matchAll(
+    new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+  )];
+  assert.equal(
+    matches.length,
+    1,
+    `packed StyleX map must contain exactly one ${key}`,
+  );
+  const match = matches[0]!;
+  const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+  return balancedBlock(body, open, `packed StyleX map entry ${key}`);
+}
+
 function packageEntryClassNames(
   map: PackageNamedStyleMap,
   key: string,
 ): ReadonlySet<string> {
   const names = new Set<string>();
-  const entry = map.entries.get(key);
-  assert.ok(entry !== undefined, `packed StyleX map must contain ${key}`);
+  const entry = packageNamedStyleEntry(map, key);
   for (const match of entry.matchAll(
     /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
   )) {
@@ -967,6 +1033,40 @@ function requirePackageFieldSelectStyles(javaScript: string, css: string): void 
       assert.match(keyCss, declaration, `packed ${key} must retain its ordinary focus contract`);
     }
   }
+  for (const [map, key, declarations] of [
+    [field, "radioSwitchNativeFocus", [
+      /outline-color:\s*var\(--ui-ring\)/u,
+      /outline-offset:\s*3px/u,
+      /outline-style:\s*solid/u,
+      /outline-width:\s*2px/u,
+    ]],
+    [select, "triggerNativeInteractions", [
+      /box-shadow:\s*0 0 0 3px color-mix\(in oklch,\s*var\(--ui-ring\) 24%,\s*transparent\)/u,
+      /outline-color:\s*var\(--ui-ring\)/u,
+      /outline-offset:\s*2px/u,
+      /outline-style:\s*solid/u,
+      /outline-width:\s*2px/u,
+    ]],
+  ] as const) {
+    const classNames = packageEntryClassNames(map, key);
+    const rules = packageStyleRules(css, classNames);
+    for (const declaration of declarations) {
+      const selectors = packageDeclarationSelectors(
+        rules,
+        classNames,
+        declaration,
+        `packed ${key} ${String(declaration)}`,
+      );
+      for (const selector of selectors) {
+        requirePackageExactClassPseudoSelector(
+          selector,
+          classNames,
+          "focus-visible",
+          `packed ${key} ${String(declaration)} selector`,
+        );
+      }
+    }
+  }
   for (const [map, key] of [
     [field, "radioSwitchNativeFocus"],
     [select, "triggerNativeInteractions"],
@@ -991,6 +1091,9 @@ function requirePackageFieldSelectStyles(javaScript: string, css: string): void 
   );
   assert.match(nativeSelectCss, /:is\(\s*:lang\(ae\),[^{}]*:lang\(yi\)\s*\)[^{}]*\{[^{}]*background-position:\s*0?\.75rem(?:\s+50%)?,\s*1rem(?:\s+50%)?/u);
   assert.match(nativeSelectCss, /padding-inline-end:\s*2\.5rem/u);
+  assert.match(entryCss(field, "textArea"), /min-height:\s*7\.5rem/u);
+  assert.match(entryCss(field, "textAreaResizeNone"), /resize:\s*none/u);
+  assert.match(entryCss(field, "textAreaResizeVertical"), /resize:\s*vertical/u);
 
   const reducedConditionalCss = packageExactConditionalCss(
     css,
@@ -1011,6 +1114,47 @@ function requirePackageFieldSelectStyles(javaScript: string, css: string): void 
     assert.match(javaScript, new RegExp(`["']${hook}["']`, "u"));
   }
 }
+
+function requirePackageViteFieldSelectStyles(
+  javaScript: string,
+  css: string,
+): void {
+  const field = packageNamedStyleMap(
+    javaScript,
+    ["control", "controlFocusWithinFallback", "nativeSelect", "root"],
+    "tree-shaken fieldStyles class map",
+  );
+  const select = packageNamedStyleMap(
+    javaScript,
+    ["option", "trigger", "triggerNativeInteractions"],
+    "tree-shaken selectFieldStyles class map",
+  );
+  const familyCss = packageStyleRules(
+    css,
+    new Set([...field.classNames, ...select.classNames]),
+  ).map((rule) => rule.source).join("\n");
+  for (const [pattern, description] of [
+    [/:focus-within/u, "field focus-within fallback"],
+    [/background-image:\s*none/u, "explicit background reset"],
+    [/linear-gradient\(45deg,[\s\S]*linear-gradient\(135deg,/u, "native-select arrow"],
+    [/:is\(\s*:lang\(ae\),[^{}]*:lang\(yi\)\s*\)/u, "native RTL switch seam"],
+  ] as const) {
+    assert.match(
+      familyCss,
+      pattern,
+      `Vite field/select recipes must retain ${description}`,
+    );
+  }
+  for (const hook of [
+    "hraness-text-field",
+    "hraness-native-select-field",
+    "hraness-file-field",
+    "hraness-select-field",
+  ]) {
+    assert.match(javaScript, new RegExp(`["']${hook}["']`, "u"));
+  }
+}
+
 function requirePackageVisuallyHiddenStyles(
   javaScript: string,
   css: string,
@@ -1228,6 +1372,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  CheckboxGroup,
   CheckboxField,
   FileField,
   Form,
@@ -1238,12 +1383,16 @@ import {
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
+  RadioGroup,
+  RadioOption,
   SocialIcon,
   StatusDot,
   SelectField,
   Tag,
   ThemedSurface,
   Toolbar,
+  SwitchField,
+  TextAreaField,
   TextField,
   ViewportFrame,
   WrappingRow,
@@ -1273,12 +1422,24 @@ const fieldControlXstyle = {
   ${JSON.stringify(fieldSelectProbe.fieldControlProperty)}: "package-field-control-xstyle",
   $$css: true,
 };
+const fieldOptionsXstyle = {
+  ${JSON.stringify(fieldSelectProbe.fieldOptionsProperty)}: "package-field-options-xstyle",
+  $$css: true,
+};
+const fieldTextAreaXstyle = {
+  ${JSON.stringify(fieldSelectProbe.fieldTextAreaProperty)}: "package-field-textarea-xstyle",
+  $$css: true,
+};
 const selectTriggerXstyle = {
   ${JSON.stringify(fieldSelectProbe.selectTriggerProperty)}: "package-select-trigger-xstyle",
   $$css: true,
 };
 const fieldRootBaseClasses = ${JSON.stringify(fieldSelectProbe.fieldRootBaseClasses)};
 const fieldControlBaseClasses = ${JSON.stringify(fieldSelectProbe.fieldControlBaseClasses)};
+const fieldOptionsBaseClasses = ${JSON.stringify(fieldSelectProbe.fieldOptionsBaseClasses)};
+const fieldTextAreaBaseClasses = ${JSON.stringify(fieldSelectProbe.fieldTextAreaBaseClasses)};
+const radioSwitchNativeFocusClasses = ${JSON.stringify(fieldSelectProbe.radioSwitchNativeFocusClasses)};
+const selectNativeInteractionClasses = ${JSON.stringify(fieldSelectProbe.selectNativeInteractionClasses)};
 const selectTriggerBaseClasses = ${JSON.stringify(fieldSelectProbe.selectTriggerBaseClasses)};
 const formXstyle = {
   ${JSON.stringify(formProbe.property)}: "package-form-xstyle",
@@ -1445,9 +1606,68 @@ assert.doesNotMatch(
   componentsCss,
   /\.hraness-checkbox-field(?:__(?:control|indicator|label))?(?![A-Za-z0-9_-])/u,
 );
-const fieldLegacyWithoutNativeSeams = componentsCss
-  .replace(/\.hraness-field__input::placeholder\s*\{[^{}]*\}/gu, "")
-  .replace(/(?:\.hraness-file-field\[data-size=["'](?:compact|large)["']\]\s*)?\.hraness-field__file::file-selector-button\s*\{[^{}]*\}/gu, "");
+function stripApprovedFieldNativeSeams(css) {
+  const candidates = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter(
+    (match) => /\.hraness-field__(?:input::placeholder|file::file-selector-button)/u
+      .test(match[1] ?? ""),
+  );
+  const counts = {
+    fileCompact: 0,
+    fileLarge: 0,
+    fileUnqualified: 0,
+    placeholder: 0,
+  };
+  const ranges = [];
+  for (const candidate of candidates) {
+    const selector = (candidate[1] ?? "")
+      .replace(/\/\*[\s\S]*?\*\//gu, "")
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (selector === ".hraness-field__input::placeholder") {
+      counts.placeholder += 1;
+    } else if (selector === ".hraness-field__file::file-selector-button") {
+      counts.fileUnqualified += 1;
+    } else if (
+      selector
+        === ':where(.hraness-file-field[data-size="compact"]) .hraness-field__file::file-selector-button'
+    ) {
+      counts.fileCompact += 1;
+    } else if (
+      selector
+        === ':where(.hraness-file-field[data-size="large"]) .hraness-field__file::file-selector-button'
+    ) {
+      counts.fileLarge += 1;
+    } else {
+      assert.fail(
+        "packed components.css contains an unapproved field native seam selector: "
+          + selector,
+      );
+    }
+    ranges.push([candidate.index, candidate.index + candidate[0].length]);
+  }
+  assert.deepEqual(
+    counts,
+    { fileCompact: 1, fileLarge: 1, fileUnqualified: 2, placeholder: 2 },
+    "packed components.css must contain exactly the approved placeholder and file-button native seam rules",
+  );
+  let stripped = css;
+  for (const [start, end] of ranges.toReversed()) {
+    stripped = stripped.slice(0, start) + stripped.slice(end);
+  }
+  return stripped;
+}
+
+assert.throws(
+  () => stripApprovedFieldNativeSeams(
+    componentsCss.replace(
+      ".hraness-field__input::placeholder {",
+      ".unexpected, .hraness-field__input::placeholder {",
+    ),
+  ),
+  /unapproved field native seam selector/u,
+  "the packed field seam guard must reject a grouped unexpected selector",
+);
+const fieldLegacyWithoutNativeSeams = stripApprovedFieldNativeSeams(componentsCss);
 assert.doesNotMatch(
   fieldLegacyWithoutNativeSeams,
   /\.hraness-(?:field__(?:input|file)|text-field|text-area-field|search-field|number-field|radio-group|radio-option|switch-field|native-select-field|file-field|select-field|checkbox-group)(?![A-Za-z0-9_-])/u,
@@ -1853,6 +2073,89 @@ for (const baseClass of fieldControlBaseClasses) {
   assert.ok(!textFieldControlTag.split(/[\s"]/u).includes(baseClass));
 }
 
+const textAreaMarkup = renderToStaticMarkup(React.createElement(TextAreaField, {
+  className: "consumer-text-area-field",
+  controlXstyle: fieldControlXstyle,
+  defaultValue: "Notes",
+  label: "Notes",
+  name: "notes",
+  resize: "vertical",
+  textAreaProps: { style: { resize: "both" } },
+  textAreaXstyle: fieldTextAreaXstyle,
+  xstyle: fieldRootXstyle,
+}));
+const textAreaRootTag = textAreaMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+const textAreaTag = textAreaMarkup.match(/<textarea[^>]*data-slot="field-textarea"[^>]*>/u)?.[0] ?? "";
+assert.match(textAreaRootTag, /data-resize="vertical"/u);
+assert.match(textAreaRootTag, /package-field-root-xstyle/u);
+assert.match(textAreaTag, /package-field-textarea-xstyle/u);
+assert.match(textAreaTag, /style="resize:both"/u);
+assert.match(textAreaMarkup, />Notes<\/textarea>/u);
+for (const baseClass of fieldTextAreaBaseClasses) {
+  assert.ok(
+    !textAreaTag.split(/[\s"]/u).includes(baseClass),
+    "TextAreaField textAreaXstyle must replace its package resize class",
+  );
+}
+
+const checkboxGroupMarkup = renderToStaticMarkup(React.createElement(CheckboxGroup, {
+  className: "consumer-checkbox-group",
+  defaultValue: ["digest"],
+  label: "Notifications",
+  name: "notifications",
+  optionsClassName: "consumer-checkbox-options",
+  optionsXstyle: fieldOptionsXstyle,
+  xstyle: fieldRootXstyle,
+}, React.createElement(CheckboxField, {
+  label: "Weekly digest",
+  value: "digest",
+})));
+const checkboxGroupOptionsTag = checkboxGroupMarkup.match(
+  /<div[^>]*class="hraness-checkbox-group__options[^"]*"[^>]*>/u,
+)?.[0] ?? "";
+assert.match(checkboxGroupMarkup, /data-slot="checkbox-group"/u);
+assert.match(checkboxGroupOptionsTag, /package-field-options-xstyle/u);
+assert.match(checkboxGroupOptionsTag, /consumer-checkbox-options/u);
+for (const baseClass of fieldOptionsBaseClasses) {
+  assert.ok(
+    !checkboxGroupOptionsTag.split(/[\s"]/u).includes(baseClass),
+    "CheckboxGroup optionsXstyle must replace its package options property class",
+  );
+}
+
+const radioGroupMarkup = renderToStaticMarkup(React.createElement(RadioGroup, {
+  defaultValue: "daily",
+  label: "Cadence",
+  name: "cadence",
+}, React.createElement(RadioOption, {
+  label: "Daily",
+  value: "daily",
+})));
+const radioControlTag = radioGroupMarkup.match(
+  /<label[^>]*data-slot="radio-control"[^>]*>/u,
+)?.[0] ?? "";
+assert.ok(
+  radioSwitchNativeFocusClasses.every(
+    (className) => radioControlTag.split(/[\s"]/u).includes(className),
+  ),
+  "packed RadioOption must bind every native focus fallback class",
+);
+
+const switchMarkup = renderToStaticMarkup(React.createElement(SwitchField, {
+  defaultSelected: true,
+  label: "Email alerts",
+  name: "email-alerts",
+}));
+const switchControlTag = switchMarkup.match(
+  /<label[^>]*data-slot="switch-control"[^>]*>/u,
+)?.[0] ?? "";
+assert.ok(
+  radioSwitchNativeFocusClasses.every(
+    (className) => switchControlTag.split(/[\s"]/u).includes(className),
+  ),
+  "packed SwitchField must bind every native focus fallback class",
+);
+
 const nativeSelectMarkup = renderToStaticMarkup(React.createElement(NativeSelectField, {
   controlXstyle: fieldControlXstyle,
   label: "Native choice",
@@ -1876,7 +2179,11 @@ const fileFieldMarkup = renderToStaticMarkup(React.createElement(FileField, {
   xstyle: fieldRootXstyle,
 }));
 assert.match(fileFieldMarkup, /data-slot="file-field"/u);
-assert.match(fileFieldMarkup, /<input[^>]*name="attachment"[^>]*type="file"/u);
+const fileInputTag = fileFieldMarkup.match(
+  /<input[^>]*data-slot="field-file"[^>]*>/u,
+)?.[0] ?? "";
+assert.match(fileInputTag, /(?:^|\s)name="attachment"(?:\s|\/?>)/u);
+assert.match(fileInputTag, /(?:^|\s)type="file"(?:\s|\/?>)/u);
 
 const selectFieldMarkup = renderToStaticMarkup(React.createElement(SelectField, {
   label: "Styled choice",
@@ -1892,6 +2199,28 @@ assert.match(selectTriggerTag, /package-select-trigger-xstyle/u);
 for (const baseClass of selectTriggerBaseClasses) {
   assert.ok(!selectTriggerTag.split(/[\s"]/u).includes(baseClass));
 }
+assert.ok(
+  selectNativeInteractionClasses.every(
+    (className) => !selectTriggerTag.split(/[\s"]/u).includes(className),
+  ),
+  "caller triggerXstyle must suppress SelectField native interaction fallbacks",
+);
+
+const nativeFocusSelectMarkup = renderToStaticMarkup(React.createElement(SelectField, {
+  label: "Native focus choice",
+  name: "native-focus-choice",
+  options: [{ id: "alpha", label: "Alpha", textValue: "Alpha" }],
+  value: "alpha",
+}));
+const nativeFocusSelectTriggerTag = nativeFocusSelectMarkup.match(
+  /<button[^>]*class="hraness-select-field__trigger[^"]*"[^>]*>/u,
+)?.[0] ?? "";
+assert.ok(
+  selectNativeInteractionClasses.every(
+    (className) => nativeFocusSelectTriggerTag.split(/[\s"]/u).includes(className),
+  ),
+  "packed SelectField must bind every native focus fallback class without a caller triggerXstyle",
+);
 
 const pageMarkup = renderToStaticMarkup(React.createElement(QuietSitePage, {
   "aria-label": "Package page",
@@ -1983,6 +2312,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  CheckboxGroup,
   CheckboxField,
   FileField,
   Form,
@@ -1993,12 +2323,16 @@ import {
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
+  RadioGroup,
+  RadioOption,
   SocialIcon,
   StatusDot,
   SelectField,
   Tag,
   ThemedSurface,
   Toolbar,
+  SwitchField,
+  TextAreaField,
   TextField,
   ViewportFrame,
   WrappingRow,
@@ -2048,6 +2382,13 @@ const styles = stylex.create({
   fieldControl: {
     backgroundColor: "var(--ui-secondary)",
     borderColor: "var(--ui-primary)",
+  },
+  fieldOptions: {
+    display: "flex",
+    gap: "var(--space-4)",
+  },
+  fieldTextArea: {
+    resize: "both",
   },
   selectTrigger: {
     backgroundColor: "var(--ui-secondary)",
@@ -2280,6 +2621,41 @@ const textFieldMarkup: string = renderToStaticMarkup(createElement(TextField, {
   name: "display-name",
   xstyle: styles.field,
 }));
+const textAreaMarkup: string = renderToStaticMarkup(createElement(TextAreaField, {
+  controlXstyle: styles.fieldControl,
+  defaultValue: "Notes",
+  label: "Notes",
+  name: "notes",
+  resize: "vertical",
+  textAreaProps: { style: { resize: "both" } },
+  textAreaXstyle: styles.fieldTextArea,
+  xstyle: styles.field,
+}));
+const checkboxGroupMarkup: string = renderToStaticMarkup(createElement(CheckboxGroup, {
+  children: createElement(CheckboxField, {
+    label: "Weekly digest",
+    value: "digest",
+  }),
+  defaultValue: ["digest"],
+  label: "Notifications",
+  name: "notifications",
+  optionsXstyle: styles.fieldOptions,
+  xstyle: styles.field,
+}));
+const radioGroupMarkup: string = renderToStaticMarkup(createElement(RadioGroup, {
+  children: createElement(RadioOption, {
+    label: "Daily",
+    value: "daily",
+  }),
+  defaultValue: "daily",
+  label: "Cadence",
+  name: "cadence",
+}));
+const switchMarkup: string = renderToStaticMarkup(createElement(SwitchField, {
+  defaultSelected: true,
+  label: "Email alerts",
+  name: "email-alerts",
+}));
 const nativeSelectMarkup: string = renderToStaticMarkup(createElement(NativeSelectField, {
   controlXstyle: styles.fieldControl,
   label: "Native choice",
@@ -2449,6 +2825,10 @@ void keyHintMarkup;
 void linkMarkup;
 void checkboxMarkup;
 void textFieldMarkup;
+void textAreaMarkup;
+void checkboxGroupMarkup;
+void radioGroupMarkup;
+void switchMarkup;
 void nativeSelectMarkup;
 void fileFieldMarkup;
 void selectFieldMarkup;
@@ -2873,7 +3253,7 @@ async function verifyConsumer(
     readFile(join(consumer, "vite-dist", "assets", viteCssPath), "utf8"),
   ]);
   requirePackageCheckboxStyles(viteJavaScript, viteCss);
-  requirePackageFieldSelectStyles(viteJavaScript, viteCss);
+  requirePackageViteFieldSelectStyles(viteJavaScript, viteCss);
   requirePackageLinkStyles(viteJavaScript, viteCss);
   requirePackageFormStyles(viteJavaScript, viteCss);
   requirePackageVisuallyHiddenStyles(viteJavaScript, viteCss);

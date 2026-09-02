@@ -3183,7 +3183,7 @@ function replaceCheckboxFieldSourceOnce(
 
 function requireCompiledConditionalDeclaration(
   rules: readonly CssRule[],
-  condition: RegExp,
+  condition: string,
   declaration: RegExp,
   description: string,
 ): void {
@@ -3197,7 +3197,7 @@ function requireCompiledConditionalDeclaration(
         normalizedHeader(ancestor.header),
       )
     );
-    return !condition.test(directAncestor) || hasExtraRestriction;
+    return directAncestor !== condition || hasExtraRestriction;
   })) {
     throw new Error(`StyleX artifact is missing ${description}`);
   }
@@ -3226,7 +3226,7 @@ function mutateCompiledRule(
   key: string,
   declaration: RegExp,
   mode: "relocate" | "remove",
-  condition?: RegExp,
+  condition?: string,
 ): string {
   const matches = compiledStyleRules(compiledCss, map, key).filter((rule) =>
     declaration.test(rule.body)
@@ -3236,7 +3236,7 @@ function mutateCompiledRule(
           normalizedHeader(ancestor.header),
         )
       )
-      : condition.test(normalizedHeader(rule.ancestors.at(-1)?.header ?? ""))
+      : normalizedHeader(rule.ancestors.at(-1)?.header ?? "") === condition
         && rule.ancestors.slice(0, -1).every((ancestor) =>
           !/^@(?:container|media|supports)/u.test(
             normalizedHeader(ancestor.header),
@@ -3253,17 +3253,35 @@ function mutateCompiledRule(
     : `${removed}\n@layer components.hraness-ui.priority4 { ${rule.source} }`;
 }
 
-function requirePositiveFocusVisibleDeclaration(
+function requireExactPseudoDeclarations(
   rules: readonly CssRule[],
-  declaration: RegExp,
+  classNames: ReadonlySet<string>,
+  pseudo: "focus-visible" | "focus-within",
+  declarations: readonly RegExp[],
   description: string,
 ): void {
-  const matches = rules.filter((rule) => declaration.test(rule.body));
-  if (matches.length === 0 || matches.some((rule) =>
-    !/:focus-visible(?![A-Za-z0-9_-])/u.test(rule.header)
-    || /:not\(\s*:focus-visible(?![A-Za-z0-9_-])/u.test(rule.header)
-  )) {
-    throw new Error(`StyleX artifact is missing ${description}`);
+  for (const declaration of declarations) {
+    for (const selector of declarationSelectors(
+      rules,
+      classNames,
+      declaration,
+      description,
+    )) {
+      const owningClasses = [...classNames].filter((className) =>
+        new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
+      );
+      if (
+        owningClasses.length !== 1
+        || !new RegExp(
+          `^(?:\\.${owningClasses[0]})+:${pseudo}$`,
+          "u",
+        ).test(selector)
+      ) {
+        throw new Error(
+          `StyleX artifact is missing the exact ${description} selector for ${declaration.source}`,
+        );
+      }
+    }
   }
 }
 
@@ -3379,11 +3397,65 @@ function requireFieldAndSelectContract(
     5,
     "shared text, textarea, search, native-select, and file control presentations",
   );
+  requireExactSourceMatches(
+    fieldsSource,
+    /!hasStylexPresentation\(controlXstyle\)\s*&&\s*fieldStyles\.radioSwitchNativeFocus/gu,
+    4,
+    "RadioOption and SwitchField native-focus fallback bindings",
+  );
+  requireExactSourceMatches(
+    fieldsSource,
+    /state\.isFocusVisible\s*&&\s*fieldStyles\.radioSwitchFocusVisible/gu,
+    4,
+    "RadioOption and SwitchField React Aria focus bindings",
+  );
+  requireExactSourceMatches(
+    compiledJavaScript,
+    new RegExp(`${fieldMap.identifier}\\.radioSwitchNativeFocus`, "gu"),
+    4,
+    "compiled RadioOption and SwitchField native-focus fallback bindings",
+  );
   requireMatch(
     selectFieldSource,
     /stylex\.props\(\s*selectFieldStyles\.trigger,[\s\S]*?!hasStylexPresentation\(triggerXstyle\)\s*&&\s*selectFieldStyles\.triggerNativeInteractions,[\s\S]*?buttonState\.isHovered\s*&&\s*selectFieldStyles\.triggerHovered,[\s\S]*?buttonState\.isFocusVisible\s*&&\s*selectFieldStyles\.triggerFocusVisible,[\s\S]*?selectState\.isInvalid\s*&&\s*selectFieldStyles\.triggerInvalid,\s*triggerXstyle,?\s*\)/u,
     "the conditional native Select trigger fallback, React Aria state, and caller-last order",
   );
+  for (const [pattern, count, description] of [
+    [
+      /!hasStylexPresentation\(triggerXstyle\)\s*&&\s*selectFieldStyles\.triggerNativeInteractions/gu,
+      2,
+      "Select trigger native-interaction bindings",
+    ],
+    [
+      /buttonState\.isFocusVisible\s*&&\s*selectFieldStyles\.triggerFocusVisible/gu,
+      2,
+      "Select trigger React Aria focus bindings",
+    ],
+    [
+      /popoverState\.isEntering\s*&&\s*selectFieldStyles\.popoverEntering/gu,
+      2,
+      "Select popover entering bindings",
+    ],
+    [
+      /popoverState\.isExiting\s*&&\s*selectFieldStyles\.popoverExiting/gu,
+      2,
+      "Select popover exiting bindings",
+    ],
+  ] as const) {
+    requireExactSourceMatches(selectFieldSource, pattern, count, description);
+  }
+  for (const [key, count, description] of [
+    ["triggerNativeInteractions", 2, "compiled Select trigger native-interaction bindings"],
+    ["popoverEntering", 2, "compiled Select popover entering bindings"],
+    ["popoverExiting", 2, "compiled Select popover exiting bindings"],
+  ] as const) {
+    requireExactSourceMatches(
+      compiledJavaScript,
+      new RegExp(`${selectMap.identifier}\\.${key}`, "gu"),
+      count,
+      description,
+    );
+  }
   requireExactSourceMatches(
     selectFieldSource,
     /!optionState\.isDisabled\s*&&\s*selectFieldStyles\.optionNativeInteraction/gu,
@@ -3397,6 +3469,22 @@ function requireFieldAndSelectContract(
     "disabled-option React Aria focus and hover exclusions",
   );
 
+  const numberStepRules = compiledStyleRules(
+    compiledCss,
+    fieldMap,
+    "numberStep",
+  );
+  for (const [declaration, description] of [
+    [/align-items:\s*center;/u, "block-axis centering"],
+    [/justify-items:\s*center;/u, "inline-axis centering"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(
+      numberStepRules,
+      declaration,
+      `the NumberField step ${description}`,
+    );
+  }
+
   const fieldFocusRules = compiledStyleRules(
     compiledCss,
     fieldMap,
@@ -3407,7 +3495,7 @@ function requireFieldAndSelectContract(
   }
   requireCompiledConditionalDeclaration(
     fieldFocusRules,
-    /@media\(forced-colors:active\)/u,
+    "@media(forced-colors:active)",
     /border-color:\s*canvastext;/u,
     "the forced-colors field focus border",
   );
@@ -3417,7 +3505,7 @@ function requireFieldAndSelectContract(
   ] as const) {
     requireCompiledConditionalDeclaration(
       fieldFocusRules,
-      /@media\(forced-colors:active\)/u,
+      "@media(forced-colors:active)",
       declaration,
       `the forced-colors field focus ${description}`,
     );
@@ -3433,16 +3521,58 @@ function requireFieldAndSelectContract(
       `the field focus ${description}`,
     );
   }
-
-  requirePositiveFocusVisibleDeclaration(
-    compiledStyleRules(compiledCss, fieldMap, "radioSwitchNativeFocus"),
-    /outline-width:\s*2px;/u,
-    "the positive native RadioOption/SwitchField :focus-visible selector",
+  requireExactPseudoDeclarations(
+    fieldFocusRules,
+    generatedClassNames(
+      fieldMap.properties.get("controlFocusWithinFallback")?.value ?? "",
+      "compiled controlFocusWithinFallback entry",
+    ),
+    "focus-within",
+    [
+      /border-color:\s*var\(--ui-ring\);/u,
+      /border-color:\s*canvastext;/u,
+      /box-shadow:\s*0 0 0 3px color-mix\(in oklch,\s*var\(--ui-ring\) 24%,\s*transparent\);/u,
+      /box-shadow:\s*none;/u,
+      /outline-color:\s*var\(--ui-ring\);/u,
+      /outline-color:\s*highlight;/u,
+      /outline-offset:\s*2px;/u,
+      /outline-style:\s*solid;/u,
+      /outline-width:\s*2px;/u,
+    ],
+    "field control :focus-within",
   );
-  requirePositiveFocusVisibleDeclaration(
+
+  requireExactPseudoDeclarations(
+    compiledStyleRules(compiledCss, fieldMap, "radioSwitchNativeFocus"),
+    generatedClassNames(
+      fieldMap.properties.get("radioSwitchNativeFocus")?.value ?? "",
+      "compiled radioSwitchNativeFocus entry",
+    ),
+    "focus-visible",
+    [
+      /outline-color:\s*var\(--ui-ring\);/u,
+      /outline-offset:\s*3px;/u,
+      /outline-style:\s*solid;/u,
+      /outline-width:\s*2px;/u,
+    ],
+    "native RadioOption/SwitchField :focus-visible",
+  );
+  requireExactPseudoDeclarations(
     compiledStyleRules(compiledCss, selectMap, "triggerNativeInteractions"),
-    /outline-width:\s*2px;/u,
-    "the positive native Select trigger :focus-visible selector",
+    generatedClassNames(
+      selectMap.properties.get("triggerNativeInteractions")?.value ?? "",
+      "compiled triggerNativeInteractions entry",
+    ),
+    "focus-visible",
+    [
+      /border-color:\s*var\(--ui-ring\);/u,
+      /box-shadow:\s*0 0 0 3px color-mix\(in oklch,\s*var\(--ui-ring\) 24%,\s*transparent\);/u,
+      /outline-color:\s*var\(--ui-ring\);/u,
+      /outline-offset:\s*2px;/u,
+      /outline-style:\s*solid;/u,
+      /outline-width:\s*2px;/u,
+    ],
+    "native Select trigger :focus-visible",
   );
 
   for (const key of ["numberStepFocusVisible", "numberStepNativeInteractions"] as const) {
@@ -3453,7 +3583,7 @@ function requireFieldAndSelectContract(
     ] as const) {
       requireCompiledConditionalDeclaration(
         rules,
-        /@media\(forced-colors:active\)/u,
+        "@media(forced-colors:active)",
         declaration,
         `the forced-colors ${key} ${description}`,
       );
@@ -3496,7 +3626,7 @@ function requireFieldAndSelectContract(
   for (const [map, key] of forcedBorderKeys) {
     requireCompiledConditionalDeclaration(
       compiledStyleRules(compiledCss, map, key),
-      /@media\(forced-colors:active\)/u,
+      "@media(forced-colors:active)",
       /border-color:\s*canvastext;/u,
       `the forced-colors CanvasText border for ${key}`,
     );
@@ -3533,7 +3663,7 @@ function requireFieldAndSelectContract(
     for (const declaration of declarations) {
       requireCompiledConditionalDeclaration(
         rules,
-        /@media\(forced-colors:active\)/u,
+        "@media(forced-colors:active)",
         declaration,
         `the forced-colors system surface for ${key}`,
       );
@@ -3582,7 +3712,7 @@ function requireFieldAndSelectContract(
     for (const declaration of declarations) {
       requireCompiledConditionalDeclaration(
         rules,
-        /@media\(pointer:coarse\)/u,
+        "@media(pointer:coarse)",
         declaration,
         `the real coarse-pointer geometry for ${key}`,
       );
@@ -3642,7 +3772,7 @@ function requireFieldAndSelectContract(
   ] as const) {
     requireCompiledConditionalDeclaration(
       nativeSelectRules,
-      /@media\(forced-colors:active\)/u,
+      "@media(forced-colors:active)",
       declaration,
       `the forced-colors native-select ${description}`,
     );
@@ -3684,17 +3814,98 @@ function requireFieldAndSelectContract(
     const rules = compiledStyleRules(compiledCss, selectMap, key);
     requireCompiledConditionalDeclaration(
       rules,
-      /@media\(prefers-reduced-motion:reduce\)/u,
+      "@media(prefers-reduced-motion:reduce)",
       /animation-duration:\s*0s;/u,
       `the reduced-motion duration for ${key}`,
     );
     requireCompiledConditionalDeclaration(
       rules,
-      /@media\(prefers-reduced-motion:reduce\)/u,
+      "@media(prefers-reduced-motion:reduce)",
       /animation-name:\s*none;/u,
       `the reduced-motion animation reset for ${key}`,
     );
   }
+}
+
+function requireTextAreaAndCheckboxGroupContract(
+  compiledCss: string,
+  compiledJavaScript: string,
+  fieldsSource: string,
+  fieldStyleSource: string,
+  checkboxGroupSource: string,
+): void {
+  const fieldMap = namedCompiledStyleMap(
+    compiledJavaScript,
+    sourceStyleKeys(fieldStyleSource, "fieldStyles"),
+    "fieldStyles class map",
+  );
+  requireMatch(
+    fieldsSource,
+    /const textAreaPresentation = fieldInputPresentation\(\s*size,\s*textAreaXstyle,\s*fieldStyles\.textArea,\s*resize === ["']none["']\s*\?\s*fieldStyles\.textAreaResizeNone\s*:\s*fieldStyles\.textAreaResizeVertical,?\s*\)/u,
+    "the TextAreaField resize and caller-last textAreaXstyle binding",
+  );
+  requireMatch(
+    fieldsSource,
+    /["']hraness-field__input["'],\s*textAreaPresentation\.className,\s*textAreaClassName/u,
+    "the TextAreaField stable, generated, and caller class order",
+  );
+  requireMatch(
+    fieldsSource,
+    /mergeStylexInlineStyles\(\s*textAreaPresentation\.style,\s*resolveRenderStyle\(textAreaProps\?\.style,\s*textAreaState\),?\s*\)/u,
+    "the TextAreaField StyleX-before-native style order",
+  );
+  for (const [key, declaration, description] of [
+    ["textArea", /line-height:\s*1\.5;/u, "TextAreaField line height"],
+    ["textArea", /min-height:\s*7\.5rem;/u, "TextAreaField minimum height"],
+    ["textArea", /padding-block:\s*var\(--space-3\);/u, "TextAreaField block padding"],
+    ["textAreaResizeNone", /resize:\s*none;/u, "TextAreaField fixed resize contract"],
+    ["textAreaResizeVertical", /resize:\s*vertical;/u, "TextAreaField vertical resize contract"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(
+      compiledStyleRules(compiledCss, fieldMap, key),
+      declaration,
+      description,
+    );
+  }
+  for (const [key, count, description] of [
+    ["textArea", 1, "compiled TextAreaField base binding"],
+    ["textAreaResizeNone", 1, "compiled TextAreaField fixed resize binding"],
+    ["textAreaResizeVertical", 1, "compiled TextAreaField vertical resize binding"],
+  ] as const) {
+    requireExactSourceMatches(
+      compiledJavaScript,
+      new RegExp(`${fieldMap.identifier}\\.${key}(?![A-Za-z0-9_$])`, "gu"),
+      count,
+      description,
+    );
+  }
+
+  for (const [pattern, description] of [
+    [/optionsXstyle\?:\s*StyleXStyles;/u, "the typed CheckboxGroup optionsXstyle seam"],
+    [/stylex\.props\(\s*fieldStyles\.options,\s*optionsXstyle,?\s*\)/u, "the caller-last CheckboxGroup options recipe"],
+    [/["']hraness-checkbox-group__options["'],\s*optionsPresentation\.className,\s*optionsClassName/u, "the CheckboxGroup options class order"],
+    [/stylex\.props\(\s*fieldStyles\.root,\s*state\.isDisabled\s*&&\s*fieldStyles\.disabled,\s*xstyle,?\s*\)/u, "the caller-last CheckboxGroup root recipe"],
+    [/mergeStylexInlineStyles\(presentation\.style,\s*callerStyle\)/u, "the CheckboxGroup StyleX-before-native style order"],
+  ] as const) {
+    requireMatch(checkboxGroupSource, pattern, description);
+  }
+  for (const [key, declaration, description] of [
+    ["options", /display:\s*grid;/u, "CheckboxGroup options grid"],
+    ["options", /gap:\s*var\(--space-2\);/u, "CheckboxGroup options gap"],
+    ["options", /min-width:\s*0;/u, "CheckboxGroup options shrink boundary"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(
+      compiledStyleRules(compiledCss, fieldMap, key),
+      declaration,
+      description,
+    );
+  }
+  requireExactSourceMatches(
+    compiledJavaScript,
+    new RegExp(`${fieldMap.identifier}\\.options(?![A-Za-z0-9_$])`, "gu"),
+    2,
+    "compiled RadioGroup and CheckboxGroup options bindings",
+  );
 }
 
 function requireNoGallerySentinels(source: string): void {
@@ -3718,6 +3929,7 @@ const [
   contentSource,
   actionsSource,
   fieldsSource,
+  checkboxGroupSource,
   visuallyHiddenSource,
   feedbackSource,
   knobSource,
@@ -3739,6 +3951,7 @@ const [
     readFile(resolve(repository, "src/content.tsx"), "utf8"),
     readFile(resolve(repository, "src/actions.tsx"), "utf8"),
     readFile(resolve(repository, "src/fields.tsx"), "utf8"),
+    readFile(resolve(repository, "src/checkbox-group.tsx"), "utf8"),
     readFile(resolve(repository, "src/visually-hidden.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/feedback.tsx"), "utf8"),
     readFile(resolve(repository, "src/knob.tsx"), "utf8"),
@@ -3902,6 +4115,73 @@ requireFieldAndSelectContract(
   selectFieldSource,
   selectFieldStyleSource,
 );
+requireTextAreaAndCheckboxGroupContract(
+  compiledCss,
+  compiledJavaScript,
+  fieldsSource,
+  fieldStyleSource,
+  checkboxGroupSource,
+);
+assert.throws(
+  () => requireFieldAndSelectContract(
+    legacyComponents,
+    compiledCss,
+    compiledJavaScript,
+    fieldsSource.replace(
+      "fieldStyles.radioSwitchNativeFocus",
+      "fieldStyles.radioSwitchControl",
+    ),
+    fieldStyleSource,
+    selectFieldSource,
+    selectFieldStyleSource,
+  ),
+  /RadioOption and SwitchField native-focus fallback bindings/u,
+  "the Fields/Select guard must reject a missing RadioOption native-focus binding",
+);
+assert.throws(
+  () => requireFieldAndSelectContract(
+    legacyComponents,
+    compiledCss,
+    compiledJavaScript,
+    fieldsSource,
+    fieldStyleSource,
+    selectFieldSource.replace(
+      "selectFieldStyles.popoverEntering",
+      "selectFieldStyles.popover",
+    ),
+    selectFieldStyleSource,
+  ),
+  /Select popover entering bindings/u,
+  "the Fields/Select guard must reject a missing Select entering-state binding",
+);
+assert.throws(
+  () => requireTextAreaAndCheckboxGroupContract(
+    compiledCss,
+    compiledJavaScript,
+    fieldsSource.replace(
+      "fieldStyles.textAreaResizeVertical",
+      "fieldStyles.textAreaResizeNone",
+    ),
+    fieldStyleSource,
+    checkboxGroupSource,
+  ),
+  /TextAreaField resize and caller-last textAreaXstyle binding/u,
+  "the TextAreaField guard must reject a collapsed resize binding",
+);
+assert.throws(
+  () => requireTextAreaAndCheckboxGroupContract(
+    compiledCss,
+    compiledJavaScript,
+    fieldsSource,
+    fieldStyleSource,
+    checkboxGroupSource.replace(
+      "fieldStyles.options, optionsXstyle",
+      "optionsXstyle, fieldStyles.options",
+    ),
+  ),
+  /caller-last CheckboxGroup options recipe/u,
+  "the CheckboxGroup guard must reject optionsXstyle before the package recipe",
+);
 const fieldGuardMap = namedCompiledStyleMap(
   compiledJavaScript,
   sourceStyleKeys(fieldStyleSource, "fieldStyles"),
@@ -3918,7 +4198,7 @@ const assertFieldSelectMutationRejected = (
   declaration: RegExp,
   mode: "relocate" | "remove",
   description: string,
-  condition?: RegExp,
+  condition?: string,
 ) => {
   assert.throws(
     () => requireFieldAndSelectContract(
@@ -3955,7 +4235,7 @@ for (const [map, key, declaration, mode, description] of [
     declaration,
     mode,
     description,
-    /@media\(pointer:coarse\)/u,
+    "@media(pointer:coarse)",
   );
 }
 for (const [map, key, declaration, mode, description] of [
@@ -3971,7 +4251,7 @@ for (const [map, key, declaration, mode, description] of [
     declaration,
     mode,
     description,
-    /@media\(forced-colors:active\)/u,
+    "@media(forced-colors:active)",
   );
 }
 assertFieldSelectMutationRejected(
@@ -3981,6 +4261,18 @@ assertFieldSelectMutationRejected(
   "remove",
   "a missing synthetic coarse input target",
 );
+for (const [declaration, description] of [
+  [/align-items:\s*center;/u, "missing NumberField step block-axis centering"],
+  [/justify-items:\s*center;/u, "missing NumberField step inline-axis centering"],
+] as const) {
+  assertFieldSelectMutationRejected(
+    fieldGuardMap,
+    "numberStep",
+    declaration,
+    "remove",
+    description,
+  );
+}
 for (const [key, declaration, mode, description] of [
   ["popoverEntering", /animation-duration:\s*0s;/u, "remove", "a missing reduced-motion enter duration"],
   ["popoverExiting", /animation-name:\s*none;/u, "relocate", "an exit animation reset relocated outside reduced-motion media"],
@@ -3991,9 +4283,25 @@ for (const [key, declaration, mode, description] of [
     declaration,
     mode,
     description,
-    /@media\(prefers-reduced-motion:reduce\)/u,
+    "@media(prefers-reduced-motion:reduce)",
   );
 }
+assert.throws(
+  () => requireFieldAndSelectContract(
+    legacyComponents,
+    compiledCss.replaceAll(
+      "@media (pointer: coarse)",
+      "@media (pointer: coarse) and (hover: hover)",
+    ),
+    compiledJavaScript,
+    fieldsSource,
+    fieldStyleSource,
+    selectFieldSource,
+    selectFieldStyleSource,
+  ),
+  /real coarse-pointer geometry/u,
+  "the Fields/Select guard must reject a stricter combined coarse-pointer condition",
+);
 const nativeSelectRtlRule = compiledStyleRules(
   compiledCss,
   fieldGuardMap,
@@ -4021,6 +4329,36 @@ assert.throws(
   /RTL native-select arrow position/u,
   "the Fields/Select guard must reject the native-select arrow moved to LTR",
 );
+const fieldFocusSelectorRule = compiledStyleRules(
+  compiledCss,
+  fieldGuardMap,
+  "controlFocusWithinFallback",
+).find((rule) =>
+  /border-color:\s*var\(--ui-ring\);/u.test(rule.body)
+  && /:focus-within(?![A-Za-z0-9_-])/u.test(rule.header)
+);
+if (fieldFocusSelectorRule === undefined) {
+  throw new Error("negative control cannot find the field focus-within ring rule");
+}
+assert.throws(
+  () => requireFieldAndSelectContract(
+    legacyComponents,
+    compiledCss.replace(
+      fieldFocusSelectorRule.source,
+      fieldFocusSelectorRule.source.replaceAll(
+        ":focus-within",
+        "[data-never]:focus-within",
+      ),
+    ),
+    compiledJavaScript,
+    fieldsSource,
+    fieldStyleSource,
+    selectFieldSource,
+    selectFieldStyleSource,
+  ),
+  /exact field control :focus-within selector/u,
+  "the Fields/Select guard must reject an extra-restricted field focus-within selector",
+);
 for (const [map, key, description] of [
   [fieldGuardMap, "radioSwitchNativeFocus", "RadioOption/SwitchField"],
   [selectGuardMap, "triggerNativeInteractions", "Select trigger"],
@@ -4032,22 +4370,27 @@ for (const [map, key, description] of [
   if (focusRule === undefined) {
     throw new Error(`negative control cannot find the native ${description} focus rule`);
   }
-  assert.throws(
-    () => requireFieldAndSelectContract(
-      legacyComponents,
-      compiledCss.replace(
-        focusRule.source,
-        focusRule.source.replaceAll(":focus-visible", ":not(:focus-visible)"),
+  for (const [replacement, mutation] of [
+    [":not(:focus-visible)", "negated"],
+    ["[data-never]:focus-visible", "extra-restricted"],
+  ] as const) {
+    assert.throws(
+      () => requireFieldAndSelectContract(
+        legacyComponents,
+        compiledCss.replace(
+          focusRule.source,
+          focusRule.source.replaceAll(":focus-visible", replacement),
+        ),
+        compiledJavaScript,
+        fieldsSource,
+        fieldStyleSource,
+        selectFieldSource,
+        selectFieldStyleSource,
       ),
-      compiledJavaScript,
-      fieldsSource,
-      fieldStyleSource,
-      selectFieldSource,
-      selectFieldStyleSource,
-    ),
-    /positive native .* :focus-visible selector/u,
-    `the Fields/Select guard must reject a negated native ${description} focus selector`,
-  );
+      /exact native .* :focus-visible selector/u,
+      `the Fields/Select guard must reject a ${mutation} native ${description} focus selector`,
+    );
+  }
 }
 for (const sentinel of [
   "data-gallery-fields-layer-conflict",
