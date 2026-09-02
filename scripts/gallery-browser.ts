@@ -4775,7 +4775,7 @@ async function verifyKeyboardPath(
     await checkbox.evaluate((element) => document.activeElement === element),
     `${id}: the checkbox is not reachable after the Links`,
   );
-  await page.waitForFunction(async () => {
+  const checkboxFocusSettled = await page.waitForFunction(async () => {
     const colorProbe = document.createElement("div");
     colorProbe.style.setProperty("outline-color", "var(--ui-ring)");
     document.body.append(colorProbe);
@@ -4798,28 +4798,21 @@ async function verifyKeyboardPath(
         return false;
       }
       const style = getComputedStyle(control);
-      const hasRunningCssAnimation = control.getAnimations({ subtree: true })
-        .some((animation) =>
-          (animation.constructor.name === "CSSAnimation"
-            || animation.constructor.name === "CSSTransition")
-          && animation.playState !== "finished"
-          && animation.playState !== "idle"
-          && !(
-            animation.constructor.name === "CSSTransition"
-            && animation.startTime === null
-            && animation.currentTime === 0
-          )
-        );
       return style.outlineColor === expectedOutlineColor
         && Number.parseFloat(style.outlineOffset) === 3
         && style.outlineStyle === "solid"
-        && Number.parseFloat(style.outlineWidth) === 2
-        && !hasRunningCssAnimation;
+        && Number.parseFloat(style.outlineWidth) === 2;
     };
     if (!isSettled()) return false;
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     return isSettled();
-  }, undefined, { polling: "raf", timeout: 2_000 }).catch(() => undefined);
+  }, undefined, { polling: "raf", timeout: 2_000 })
+    .then(() => true)
+    .catch(() => false);
+  invariant(
+    checkboxFocusSettled,
+    `${id}: CheckboxField keyboard focus styles did not settle within two seconds`,
+  );
   const checkboxTransitionSettlement = await checkbox.evaluate(async (element) => {
     const control = element.closest('[data-slot="checkbox-control"]');
     if (!(control instanceof HTMLLabelElement)) {
@@ -4859,27 +4852,52 @@ async function verifyKeyboardPath(
       && transitionDelays.every(
         (delay) => Number.isFinite(delay) && delay === 0,
       );
-    const transitionsBefore = control.getAnimations({ subtree: true })
+    const activeTransitions = () => control.getAnimations({ subtree: true })
       .filter((animation) => animation.constructor.name === "CSSTransition");
+    const transitionsBefore = activeTransitions();
+    let quietFrames = 0;
+    let transitionQuiescent = false;
+    const deadline = performance.now() + 2_000;
+    const nextFrame = () => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
     if (reducedMotion && reducedMotionContract) {
-      await Promise.allSettled(
-        transitionsBefore.map(async (transition) => transition.finished),
-      );
+      while (performance.now() < deadline) {
+        const generation = activeTransitions();
+        if (generation.length > 0) {
+          quietFrames = 0;
+          const settled = await new Promise<boolean>((resolve) => {
+            const timeout = window.setTimeout(
+              () => resolve(false),
+              Math.max(0, deadline - performance.now()),
+            );
+            void Promise.allSettled(
+              generation.map(async (transition) => transition.finished),
+            ).then(() => {
+              window.clearTimeout(timeout);
+              resolve(true);
+            });
+          });
+          if (!settled) break;
+        }
+        await nextFrame();
+        if (activeTransitions().length === 0) {
+          quietFrames += 1;
+          if (quietFrames === 2) {
+            transitionQuiescent = true;
+            break;
+          }
+        } else {
+          quietFrames = 0;
+        }
+      }
     }
-    const activeTransitionsAfter = control.getAnimations({ subtree: true })
-      .filter((animation) =>
-        animation.constructor.name === "CSSTransition"
-        && animation.playState !== "finished"
-        && animation.playState !== "idle"
-        && !(
-          animation.startTime === null
-          && animation.currentTime === 0
-        )
-      );
+    const activeTransitionsAfter = activeTransitions();
     return {
       activeTransitionsAfter: activeTransitionsAfter.map(transitionEvidence),
       reducedMotion,
       reducedMotionContract,
+      transitionQuiescent,
       transitionDelays,
       transitionDuration: style.transitionDuration,
       transitionDurations,
@@ -4891,6 +4909,10 @@ async function verifyKeyboardPath(
     invariant(
       checkboxTransitionSettlement.reducedMotionContract,
       `${id}: CheckboxField transitions exceed the reduced-motion reset contract: ${JSON.stringify(checkboxTransitionSettlement)}`,
+    );
+    invariant(
+      checkboxTransitionSettlement.transitionQuiescent,
+      `${id}: CheckboxField reduced-motion transitions did not become quiescent: ${JSON.stringify(checkboxTransitionSettlement)}`,
     );
     invariant(
       checkboxTransitionSettlement.activeTransitionsAfter.length === 0,
