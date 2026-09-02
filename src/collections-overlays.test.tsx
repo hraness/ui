@@ -56,7 +56,7 @@ test("tabs and disclosures retain collection ownership and ARIA relationships", 
   expect(html).toContain('aria-disabled="true"');
   expect(html).toContain('role="tabpanel"');
   expect(html).toContain("Project summary");
-  expect(html).toContain('class="hraness-disclosure__heading"');
+  expect(html).toContain('class="hraness-disclosure__heading');
   expect(html).toContain('aria-expanded="true"');
   expect(html).toContain('data-slot="disclosure-panel"');
   expect(html).toContain("Persistent content");
@@ -189,4 +189,31 @@ test("toast context is request-local and its empty portal is SSR-safe", () => {
   expect(() => renderToStaticMarkup(<ContextProbe />)).toThrow(
     "useToast must be used within a ToastProvider.",
   );
+});
+
+test("collections own no remaining legacy visual selector", async () => {
+  const [components, source] = await Promise.all([
+    Bun.file(new URL("./components.css", import.meta.url)).text(),
+    Bun.file(new URL("./collections.stylex.ts", import.meta.url)).text(),
+  ]);
+
+  const renderedComponents = components.replace(
+    /\/\* WebKit scrollbar pseudo-elements[^]*?\.hraness-segmented-control::-webkit-scrollbar\s*\{\s*display:\s*none;\s*\}/u,
+    "",
+  );
+  for (const className of [
+    "tabs",
+    "disclosure",
+    "accordion",
+    "toggle-group",
+    "segmented-control",
+    "separator",
+  ]) {
+    expect(renderedComponents).not.toMatch(
+      new RegExp(`\\.hraness-${className}(?=\\s|:|\\{|\\[)`, "u"),
+    );
+  }
+  expect(source).toContain('backgroundColor: "var(--ui-muted)"');
+  expect(source).toContain('outlineColor: "var(--ui-ring)"');
+  expect(source).toContain('transitionProperty: "background-color, box-shadow, color"');
 });

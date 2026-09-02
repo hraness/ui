@@ -2190,7 +2190,7 @@ assert.throws(
   () =>
     requireStatusFamilyContract(
       legacyComponents,
-      compiledCss.replace("border-color: canvastext;", "border-color: currentcolor;"),
+      compiledCss.replaceAll("border-color: canvastext;", "border-color: currentcolor;"),
     ),
   /forced-colors status-pill border/u,
   "the status-family guard must reject a missing forced-colors border",

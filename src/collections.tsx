@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode, Ref } from "react";
+import { createElement, type ReactNode, type Ref } from "react";
 import {
   Button as AriaButton,
   Disclosure as AriaDisclosure,
@@ -12,6 +12,7 @@ import {
   Radio as AriaRadio,
   RadioGroup,
   Separator as AriaSeparator,
+  SeparatorContext,
   type SeparatorProps as AriaSeparatorProps,
   Tab,
   TabList,
@@ -23,9 +24,15 @@ import {
   ToggleButtonGroup,
   type ToggleButtonGroupProps,
   type Key,
+  useSlottedContext,
 } from "react-aria-components";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 
+import { collectionStyles } from "./collections.stylex.js";
+import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
+import { separatorStyles } from "./separator.stylex.js";
 
 interface StringIdentified<Id extends string> {
   readonly id: Id;
@@ -87,6 +94,7 @@ export function Tabs<Id extends string>({
   end,
   items,
   onChange,
+  orientation = "horizontal",
   size = "default",
   tabsRef,
   value,
@@ -95,7 +103,11 @@ export function Tabs<Id extends string>({
   return (
     <AriaTabs
       {...props}
-      className={cn("hraness-tabs", className)}
+      className={cn(
+        "hraness-tabs",
+        stylex.props(collectionStyles.tabsRoot).className,
+        className,
+      )}
       data-slot="tabs"
       data-size={size}
       {...(defaultValue === undefined ? {} : { defaultSelectedKey: defaultValue })}
@@ -103,20 +115,46 @@ export function Tabs<Id extends string>({
         const next = ownedStringIdForKey(items, key);
         if (next !== null) onChange?.(next);
       }}
+      orientation={orientation}
       ref={tabsRef}
       {...(value === undefined ? {} : { selectedKey: value })}
     >
-      <div className="hraness-tabs__bar" data-slot="tabs-bar">
+      <div
+        className={cn(
+          "hraness-tabs__bar",
+          stylex.props(
+            collectionStyles.tabBar,
+            orientation === "vertical" && collectionStyles.tabBarVertical,
+          ).className,
+        )}
+        data-slot="tabs-bar"
+      >
         <TabList
           aria-label={ariaLabel}
-          className="hraness-tabs__list"
+          className={cn(
+            "hraness-tabs__list",
+            stylex.props(
+              collectionStyles.tabList,
+              orientation === "vertical" && collectionStyles.tabListVertical,
+            ).className,
+          )}
           data-slot="tabs-list"
           items={items}
         >
           {(item) => (
             <Tab
               {...(item.ariaLabel === undefined ? {} : { "aria-label": item.ariaLabel })}
-              className="hraness-tabs__tab"
+              className={(state) => cn(
+                "hraness-tabs__tab",
+                stylex.props(
+                  collectionStyles.tab,
+                  collectionStyles.tabNativeFocusFallback,
+                  size === "compact" && collectionStyles.tabCompact,
+                  orientation === "vertical" && collectionStyles.tabVertical,
+                  state.isFocusVisible && collectionStyles.tabFocusVisible,
+                  state.isSelected && collectionStyles.tabSelected,
+                ).className,
+              )}
               data-slot="tab"
               id={item.id}
               {...(item.isDisabled === undefined ? {} : { isDisabled: item.isDisabled })}
@@ -124,13 +162,22 @@ export function Tabs<Id extends string>({
               {item.leading === undefined ? null : (
                 <span
                   aria-hidden="true"
-                  className="hraness-tabs__leading"
+                  className={cn(
+                    "hraness-tabs__leading",
+                    stylex.props(collectionStyles.tabLeading).className,
+                  )}
                   data-slot="tab-leading"
                 >
                   {item.leading}
                 </span>
               )}
-              <span className="hraness-tabs__label" data-slot="tab-label">
+              <span
+                className={cn(
+                  "hraness-tabs__label",
+                  stylex.props(collectionStyles.tabLabel).className,
+                )}
+                data-slot="tab-label"
+              >
                 {item.label}
               </span>
               {item.badge}
@@ -138,17 +185,35 @@ export function Tabs<Id extends string>({
           )}
         </TabList>
         {end === undefined ? null : (
-          <div className="hraness-tabs__end" data-slot="tabs-end">{end}</div>
+          <div
+            className={cn(
+              "hraness-tabs__end",
+              stylex.props(collectionStyles.tabEnd).className,
+            )}
+            data-slot="tabs-end"
+          >
+            {end}
+          </div>
         )}
       </div>
       <TabPanels
-        className="hraness-tabs__panels"
+        className={cn(
+          "hraness-tabs__panels",
+          stylex.props(collectionStyles.tabPanels).className,
+        )}
         data-slot="tab-panels"
         items={items}
       >
         {(item) => (
           <TabPanel
-            className="hraness-tabs__panel"
+            className={(state) => cn(
+              "hraness-tabs__panel",
+              stylex.props(
+                collectionStyles.tabPanel,
+                collectionStyles.tabPanelNativeFocusFallback,
+                state.isFocusVisible && collectionStyles.tabPanelFocusVisible,
+              ).className,
+            )}
             data-slot="tab-panel"
             id={item.id}
           >
@@ -181,38 +246,76 @@ export function Disclosure({
   return (
     <AriaDisclosure
       {...props}
-      className={cn("hraness-disclosure", className)}
+      className={cn(
+        "hraness-disclosure",
+        stylex.props(collectionStyles.disclosureRoot).className,
+        className,
+      )}
       data-slot="disclosure"
       data-size={size}
     >
-      <Heading
-        className="hraness-disclosure__heading"
-        data-slot="disclosure-heading"
-        level={headingLevel}
-      >
-        <AriaButton
-          className="hraness-disclosure__trigger"
-          data-slot="disclosure-trigger"
-          slot="trigger"
-        >
-          <span className="hraness-disclosure__title" data-slot="disclosure-title">
-            {title}
-          </span>
-          <span
-            aria-hidden="true"
-            className="hraness-disclosure__indicator"
-            data-slot="disclosure-indicator"
+      {({ isExpanded }) => (
+        <>
+          <Heading
+            className={cn(
+              "hraness-disclosure__heading",
+              stylex.props(collectionStyles.disclosureHeading).className,
+            )}
+            data-slot="disclosure-heading"
+            level={headingLevel}
           >
-            {indicator}
-          </span>
-        </AriaButton>
-      </Heading>
-      <AriaDisclosurePanel
-        className="hraness-disclosure__panel"
-        data-slot="disclosure-panel"
-      >
-        {children}
-      </AriaDisclosurePanel>
+            <AriaButton
+              className={(state) => cn(
+                "hraness-disclosure__trigger",
+                stylex.props(
+                  collectionStyles.disclosureTrigger,
+                  collectionStyles.disclosureTriggerNativeFocusFallback,
+                  size === "compact" && collectionStyles.disclosureTriggerCompact,
+                  size === "large" && collectionStyles.disclosureTriggerLarge,
+                  state.isFocusVisible && collectionStyles.disclosureTriggerFocusVisible,
+                ).className,
+              )}
+              data-slot="disclosure-trigger"
+              slot="trigger"
+            >
+              <span
+                className={cn(
+                  "hraness-disclosure__title",
+                  stylex.props(collectionStyles.disclosureTitle).className,
+                )}
+                data-slot="disclosure-title"
+              >
+                {title}
+              </span>
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "hraness-disclosure__indicator",
+                  stylex.props(
+                    collectionStyles.disclosureIndicator,
+                    isExpanded && collectionStyles.disclosureIndicatorExpanded,
+                  ).className,
+                )}
+                data-slot="disclosure-indicator"
+              >
+                {indicator}
+              </span>
+            </AriaButton>
+          </Heading>
+          <AriaDisclosurePanel
+            className={() => cn(
+              "hraness-disclosure__panel",
+              stylex.props(
+                collectionStyles.disclosurePanel,
+                !isExpanded && collectionStyles.disclosurePanelHidden,
+              ).className,
+            )}
+            data-slot="disclosure-panel"
+          >
+            {children}
+          </AriaDisclosurePanel>
+        </>
+      )}
     </AriaDisclosure>
   );
 }
@@ -227,7 +330,11 @@ export function Accordion({ children, className, ...props }: AccordionProps) {
   return (
     <AriaDisclosureGroup
       {...props}
-      className={cn("hraness-accordion", className)}
+      className={cn(
+        "hraness-accordion",
+        stylex.props(collectionStyles.accordionRoot).className,
+        className,
+      )}
       data-slot="accordion"
     >
       {children}
@@ -274,7 +381,14 @@ export function ToggleGroup<Id extends string>({
   return (
     <ToggleButtonGroup
       aria-label={ariaLabel}
-      className={cn("hraness-toggle-group", className)}
+      className={cn(
+        "hraness-toggle-group",
+        stylex.props(
+          collectionStyles.toggleGroupRoot,
+          orientation === "vertical" && collectionStyles.toggleGroupRootVertical,
+        ).className,
+        className,
+      )}
       data-slot="toggle-group"
       isDisabled={isDisabled}
       onSelectionChange={(keys) => {
@@ -296,7 +410,17 @@ export function ToggleGroup<Id extends string>({
         <ToggleButton
           key={item.id}
           {...(item.textValue === undefined ? {} : { "aria-label": item.textValue })}
-          className="hraness-toggle-group__item"
+          className={(state) => cn(
+            "hraness-toggle-group__item",
+            stylex.props(
+              collectionStyles.toggleItem,
+              collectionStyles.toggleItemNativeFocusFallback,
+              orientation === "vertical" && collectionStyles.toggleItemVertical,
+              state.isDisabled && collectionStyles.toggleItemDisabled,
+              state.isFocusVisible && collectionStyles.toggleItemFocusVisible,
+              state.isSelected && collectionStyles.toggleItemSelected,
+            ).className,
+          )}
           data-slot="toggle-group-item"
           id={item.id}
           {...(item.isDisabled === undefined ? {} : { isDisabled: item.isDisabled })}
@@ -304,13 +428,22 @@ export function ToggleGroup<Id extends string>({
           {item.leading === undefined ? null : (
             <span
               aria-hidden="true"
-              className="hraness-toggle-group__leading"
+              className={cn(
+                "hraness-toggle-group__leading",
+                stylex.props(collectionStyles.toggleLeading).className,
+              )}
               data-slot="toggle-group-leading"
             >
               {item.leading}
             </span>
           )}
-          <span className="hraness-toggle-group__label" data-slot="toggle-group-label">
+          <span
+            className={cn(
+              "hraness-toggle-group__label",
+              stylex.props(collectionStyles.toggleLabel).className,
+            )}
+            data-slot="toggle-group-label"
+          >
             {item.label}
           </span>
         </ToggleButton>
@@ -351,7 +484,14 @@ export function SegmentedControl<Id extends string>({
   return (
     <RadioGroup
       aria-label={ariaLabel}
-      className={cn("hraness-segmented-control", className)}
+      className={cn(
+        "hraness-segmented-control",
+        stylex.props(
+          collectionStyles.segmentedControlRoot,
+          size === "compact" && collectionStyles.segmentedControlRootCompact,
+        ).className,
+        className,
+      )}
       data-slot="segmented-control"
       data-size={size}
       isDisabled={isDisabled}
@@ -366,27 +506,47 @@ export function SegmentedControl<Id extends string>({
         <AriaRadio
           key={item.id}
           {...(item.ariaLabel === undefined ? {} : { "aria-label": item.ariaLabel })}
-          className="hraness-segmented-control__item"
+          className={(state) => cn(
+            "hraness-segmented-control__item",
+            stylex.props(
+              collectionStyles.segmentedItem,
+              collectionStyles.segmentedItemNativeInteractionFallbacks,
+              size === "compact" && collectionStyles.segmentedItemCompact,
+              state.isDisabled && collectionStyles.segmentedItemDisabled,
+              state.isFocusVisible && collectionStyles.segmentedItemFocusVisible,
+              !state.isSelected && state.isHovered && collectionStyles.segmentedItemHovered,
+              state.isSelected && collectionStyles.segmentedItemSelected,
+            ).className,
+          )}
           data-slot="segmented-control-item"
           {...(item.isDisabled === undefined ? {} : { isDisabled: item.isDisabled })}
           value={item.id}
         >
           <span
             aria-hidden="true"
-            className="hraness-segmented-control__indicator"
+            className={cn(
+              "hraness-segmented-control__indicator",
+              stylex.props(collectionStyles.segmentedIndicator).className,
+            )}
             data-slot="segmented-control-indicator"
           />
           {item.leading === undefined ? null : (
             <span
               aria-hidden="true"
-              className="hraness-segmented-control__leading"
+              className={cn(
+                "hraness-segmented-control__leading",
+                stylex.props(collectionStyles.toggleLeading).className,
+              )}
               data-slot="segmented-control-leading"
             >
               {item.leading}
             </span>
           )}
           <span
-            className="hraness-segmented-control__label"
+            className={cn(
+              "hraness-segmented-control__label",
+              stylex.props(collectionStyles.segmentedLabel).className,
+            )}
             data-slot="segmented-control-label"
           >
             {item.label}
@@ -397,12 +557,66 @@ export function SegmentedControl<Id extends string>({
   );
 }
 
-export function Separator({ className, ...props }: AriaSeparatorProps) {
+export type SeparatorProps = Omit<AriaSeparatorProps, "className"> & Readonly<{
+  readonly className?: string;
+  /** Typed StyleX presentation applied after the orientation recipe. */
+  readonly xstyle?: StyleXStyles;
+}>;
+
+export function Separator({
+  className,
+  elementType,
+  orientation,
+  render,
+  style,
+  xstyle,
+  ...props
+}: SeparatorProps) {
+  const inheritedProps = useSlottedContext(SeparatorContext, props.slot);
+  const resolvedOrientation = orientation
+    ?? inheritedProps?.orientation
+    ?? "horizontal";
+  const resolvedElementType = elementType
+    ?? inheritedProps?.elementType
+    ?? "hr";
+  const renderedElementType = resolvedElementType === "hr"
+      && resolvedOrientation === "vertical"
+    ? "div"
+    : resolvedElementType;
+  const resolvedRender = render ?? inheritedProps?.render;
+
   return (
     <AriaSeparator
       {...props}
-      className={cn("hraness-separator", className)}
+      className=""
       data-slot="separator"
+      render={(domProps) => {
+        const presentation = stylex.props(
+          separatorStyles.root,
+          resolvedOrientation === "vertical" && separatorStyles.vertical,
+          xstyle,
+        );
+        const composedProps = {
+          ...domProps,
+          className: cn(
+            domProps.className,
+            "hraness-separator",
+            presentation.className,
+            className,
+          ),
+          style: mergeStylexInlineStyles(
+            presentation.style,
+            domProps.style,
+          ),
+        };
+
+        return resolvedRender === undefined
+          ? createElement(renderedElementType, composedProps)
+          : resolvedRender(composedProps, undefined);
+      }}
+      {...(elementType === undefined ? {} : { elementType })}
+      {...(orientation === undefined ? {} : { orientation })}
+      {...(style === undefined ? {} : { style })}
     />
   );
 }
