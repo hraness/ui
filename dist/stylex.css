@@ -283,16 +283,60 @@
     align-self: stretch;
   }
 
+  .x12epk6h {
+    animation-composition: replace;
+  }
+
+  .x1uzojwf {
+    animation-delay: 0s;
+  }
+
+  .x1s0aqod {
+    animation-direction: normal;
+  }
+
   .xof6966 {
     animation-duration: .7s;
+  }
+
+  .x1sbju2s {
+    animation-duration: 1.4s;
+  }
+
+  .x1ir97tl {
+    animation-fill-mode: none;
   }
 
   .xa4qsjk {
     animation-iteration-count: infinite;
   }
 
+  .x2dizk2 {
+    animation-name: hraness-skeleton;
+  }
+
   .x1442buy {
     animation-name: hraness-spin;
+  }
+
+  .xoj058f {
+    animation-play-state: running;
+  }
+
+  .xymwk3t {
+    animation-range-end: normal;
+  }
+
+  .x10si4xm {
+    animation-range-start: normal;
+  }
+
+  .xyuw9oy {
+    animation-timeline: auto;
+  }
+
+  .x4hg4is {
+    animation-timing-function: ease-in-out;
   }
 
   .x1esw782 {
@@ -395,6 +439,10 @@
     background-color: var(--ui-warning);
   }
 
+  .x5iel4p {
+    background-image: linear-gradient(90deg,var(--ui-muted) 0%,color-mix(in oklch,var(--ui-muted) 72%,var(--ui-foreground)) 50%,var(--ui-muted) 100%);
+  }
+
   .x18o3ruo {
     background-image: none;
   }
@@ -405,6 +453,10 @@
 
   .x182nak8 {
     background-repeat: repeat;
+  }
+
+  .xakli9p {
+    background-size: 200% 100%;
   }
 
   .x103pssi {
@@ -617,6 +669,14 @@
 
   .x1jygkft {
     font-family: var(--ui-font-mono);
+  }
+
+  .xboafo0 {
+    font-size: .75rem;
+  }
+
+  .xngnso2 {
+    font-size: 1.5rem;
   }
 
   .x1qlqyl8 {
@@ -1005,8 +1065,52 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .x1ynp8h1.x1ynp8h1 {
+    .xfajijk.xfajijk {
+      animation-composition: replace;
+    }
+
+    .x14q22ui.x14q22ui {
+      animation-delay: 0s;
+    }
+
+    .x1251dlg.x1251dlg {
+      animation-direction: normal;
+    }
+
+    .x1u6grsq.x1u6grsq {
+      animation-duration: 0s;
+    }
+
+    .xnppv6.xnppv6 {
+      animation-fill-mode: none;
+    }
+
+    .xg0664w.xg0664w {
+      animation-iteration-count: 1;
+    }
+
+    .x1aquc0h.x1aquc0h, .x1ynp8h1.x1ynp8h1 {
       animation-name: none;
+    }
+
+    .xgvt0mf.xgvt0mf {
+      animation-play-state: running;
+    }
+
+    .x1x06gta.x1x06gta {
+      animation-range-end: normal;
+    }
+
+    .x1u0m37a.x1u0m37a {
+      animation-range-start: normal;
+    }
+
+    .x1nsb297.x1nsb297 {
+      animation-timeline: auto;
+    }
+
+    .x1uea3p4.x1uea3p4 {
+      animation-timing-function: ease;
     }
   }
 
@@ -1015,8 +1119,60 @@
       background-color: buttonface;
     }
 
-    .x1mi3ld3.x1mi3ld3 {
+    .x9yvj25.x9yvj25, .x1mi3ld3.x1mi3ld3 {
       background-color: canvas;
+    }
+
+    .xhobzj1.xhobzj1 {
+      background-image: none;
+    }
+
+    .x1ug5rqp.x1ug5rqp {
+      background-size: auto;
+    }
+
+    .x1sz4vi2.x1sz4vi2 {
+      border-image-outset: 0;
+    }
+
+    .x4aylkk.x4aylkk {
+      border-image-repeat: stretch;
+    }
+
+    .x1a4igh8.x1a4igh8 {
+      border-image-slice: 100%;
+    }
+
+    .x1cfjbvc.x1cfjbvc {
+      border-image-source: none;
+    }
+
+    .xsdpl10.xsdpl10 {
+      border-image-width: 1;
+    }
+
+    .x1x0u81l.x1x0u81l {
+      border-inline-end-color: canvastext;
+    }
+
+    .xf1j0q2.xf1j0q2 {
+      border-inline-end-style: solid;
+    }
+
+    .xmzn1mo.xmzn1mo {
+      border-inline-end-width: 1px;
+    }
+
+    .xjslfuv.xjslfuv {
+      border-inline-start-color: canvastext;
+    }
+
+    .x1gbqego.x1gbqego {
+      border-inline-start-style: solid;
+    }
+
+    .xjg5lhu.xjg5lhu {
+      border-inline-start-width: 1px;
     }
 
     .xsrz6cx.xsrz6cx {
@@ -1128,6 +1284,14 @@
 
   .x1k5hnt4 {
     min-height: 1.875rem;
+  }
+
+  .x1xaadd7 {
+    min-height: 1em;
+  }
+
+  .x1aewpuf {
+    min-height: 1rem;
   }
 
   .x1in32aq {
@@ -1299,6 +1463,32 @@
       .x1uqklc0.x1uqklc0.x1uqklc0 {
         height: 100dvh;
       }
+    }
+  }
+
+  @media (forced-colors: active) {
+    .xszdk7l.xszdk7l {
+      border-bottom-color: canvastext;
+    }
+
+    .xe3zi7u.xe3zi7u {
+      border-bottom-style: solid;
+    }
+
+    .x15anc7y.x15anc7y {
+      border-bottom-width: 1px;
+    }
+
+    .x19dwuzr.x19dwuzr {
+      border-top-color: canvastext;
+    }
+
+    .x4z998w.x4z998w {
+      border-top-style: solid;
+    }
+
+    .x1lym3mf.x1lym3mf {
+      border-top-width: 1px;
     }
   }
 

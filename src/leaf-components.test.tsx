@@ -25,7 +25,9 @@ import {
 import {
   Progress,
   Skeleton,
+  type SkeletonProps,
   Spinner,
+  type SpinnerProps,
   normalizeProgress,
 } from "./feedback.js";
 import {
@@ -75,6 +77,33 @@ const keyHintTestStyles = stylex.create({
     paddingInline: "var(--space-2)",
   },
 });
+
+const feedbackTestStyles = stylex.create({
+  skeletonMinimum: (minimum: string) => ({ minHeight: minimum }),
+  skeletonOverride: {
+    backgroundColor: "var(--ui-primary)",
+    borderRadius: "var(--radius-round)",
+  },
+  spinnerOverride: {
+    display: "inline-flex",
+    fontSize: "2rem",
+  },
+  spinnerWidth: (width: string) => ({ width }),
+});
+
+const typedSpinner: SpinnerProps = {
+  label: "Loading preferences",
+  xstyle: feedbackTestStyles.spinnerOverride,
+};
+const typedSkeleton: SkeletonProps = {
+  isText: true,
+  xstyle: feedbackTestStyles.skeletonOverride,
+};
+// @ts-expect-error Feedback primitives accept compiled StyleX recipes rather than raw CSS objects.
+const rawSpinnerXstyle: SpinnerProps = { xstyle: { display: "flex" } };
+// @ts-expect-error Feedback primitives accept compiled StyleX recipes rather than raw CSS objects.
+const rawSkeletonXstyle: SkeletonProps = { xstyle: { minHeight: "2rem" } };
+void [rawSkeletonXstyle, rawSpinnerXstyle, typedSkeleton, typedSpinner];
 
 type KeyHintTestElement = ReactElement<{
   ref: Ref<HTMLElement>;
@@ -128,6 +157,58 @@ test("feedback components expose decorative and labelled semantics", () => {
   expect(html).toContain("50%");
   expect(html).toMatch(/<span[^>]+id="([^"]+)-label"[^>]*>Upload<\/span>/u);
   expect(html).toMatch(/<progress[^>]+aria-labelledby="[^"]+-label"/u);
+});
+
+test("Spinner and Skeleton compile their recipes before caller presentation", async () => {
+  const spinner = renderToStaticMarkup(
+    <Spinner
+      className="consumer-spinner"
+      label="Checking settings"
+      size="small"
+      style={{ color: "rgb(1, 2, 3)", width: "3rem" }}
+      xstyle={[
+        feedbackTestStyles.spinnerOverride,
+        feedbackTestStyles.spinnerWidth("2rem"),
+      ]}
+    />,
+  );
+  const skeleton = renderToStaticMarkup(
+    <Skeleton
+      className="consumer-skeleton"
+      height="4rem"
+      isText
+      style={{ height: "2rem", minHeight: "3rem", width: "5rem" }}
+      width="7rem"
+      xstyle={[
+        feedbackTestStyles.skeletonOverride,
+        feedbackTestStyles.skeletonMinimum("2rem"),
+      ]}
+    />,
+  );
+  const spinnerTag = spinner.slice(0, spinner.indexOf(">") + 1);
+  const skeletonTag = skeleton.slice(0, skeleton.indexOf(">") + 1);
+  const spinnerClasses = spinnerTag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+  const skeletonClasses = skeletonTag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+  const [components, source] = await Promise.all([
+    Bun.file(new URL("./components.css", import.meta.url)).text(),
+    Bun.file(new URL("./feedback.stylex.ts", import.meta.url)).text(),
+  ]);
+
+  expect(spinnerClasses[0]).toBe("hraness-spinner");
+  expect(spinnerClasses.at(-1)).toBe("consumer-spinner");
+  expect(spinnerClasses.slice(1, -1).some((name) => name.startsWith("x"))).toBe(true);
+  expect(spinnerTag).toMatch(/style="--[^:]+:2rem;color:rgb\(1, 2, 3\);width:3rem"/u);
+  expect(skeletonClasses[0]).toBe("hraness-skeleton");
+  expect(skeletonClasses.at(-1)).toBe("consumer-skeleton");
+  expect(skeletonClasses.slice(1, -1).some((name) => name.startsWith("x"))).toBe(true);
+  expect(skeletonTag).toMatch(/style="--[^:]+:2rem;height:4rem;min-height:3rem;width:7rem"/u);
+  expect(components).not.toMatch(/\.hraness-(?:spinner|skeleton)(?![A-Za-z0-9_-])/u);
+  expect(components.match(/@keyframes hraness-spin/gu)).toHaveLength(1);
+  expect(components.match(/@keyframes hraness-skeleton/gu)).toHaveLength(1);
+  expect(source).toContain('default: "700ms"');
+  expect(source).toContain('default: "1.4s"');
+  expect(source).toContain('[forcedColors]: "Canvas"');
+  expect(source).toContain('[reducedMotion]: "none"');
 });
 
 test("content primitives preserve heading levels, slots, and live-region intent", () => {

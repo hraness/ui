@@ -5,44 +5,78 @@ import {
   type ReactNode,
   useId,
 } from "react";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 
+import { feedbackStyles } from "./feedback.stylex.js";
+import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 
-export interface SpinnerProps extends HTMLAttributes<HTMLSpanElement> {
+export interface SpinnerProps extends Omit<
+  HTMLAttributes<HTMLSpanElement>,
+  "className"
+> {
+  readonly className?: string;
   readonly label?: string;
   readonly size?: "default" | "large" | "small";
+  readonly xstyle?: StyleXStyles;
 }
 
 /** A decorative spinner unless a status label is supplied. */
 export const Spinner = forwardRef<HTMLSpanElement, SpinnerProps>(
-  ({ className, label, size = "default", ...props }, ref) => (
-    <span
-      {...props}
-      aria-hidden={label === undefined ? "true" : undefined}
-      className={cn("hraness-spinner", className)}
-      data-size={size}
-      data-slot="spinner"
-      ref={ref}
-      role={label === undefined ? undefined : "status"}
-    >
-      {label === undefined ? null : (
-        <span
-          className="hraness-visually-hidden"
-          data-slot="spinner-label"
-        >
-          {label}
-        </span>
-      )}
-    </span>
-  ),
+  (
+    {
+      className,
+      label,
+      size = "default",
+      style,
+      xstyle,
+      ...props
+    },
+    ref,
+  ) => {
+    const presentation = stylex.props(
+      feedbackStyles.spinnerRoot,
+      size === "small" && feedbackStyles.spinnerSmall,
+      size === "large" && feedbackStyles.spinnerLarge,
+      xstyle,
+    );
+
+    return (
+      <span
+        {...props}
+        aria-hidden={label === undefined ? "true" : undefined}
+        className={cn("hraness-spinner", presentation.className, className)}
+        data-size={size}
+        data-slot="spinner"
+        ref={ref}
+        role={label === undefined ? undefined : "status"}
+        style={mergeStylexInlineStyles(presentation.style, style)}
+      >
+        {label === undefined ? null : (
+          <span
+            className="hraness-visually-hidden"
+            data-slot="spinner-label"
+          >
+            {label}
+          </span>
+        )}
+      </span>
+    );
+  },
 );
 
 Spinner.displayName = "Spinner";
 
-export interface SkeletonProps extends HTMLAttributes<HTMLDivElement> {
+export interface SkeletonProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  "className"
+> {
+  readonly className?: string;
   readonly height?: CSSProperties["height"];
   readonly isText?: boolean;
   readonly width?: CSSProperties["width"];
+  readonly xstyle?: StyleXStyles;
 }
 
 /** A presentation-only placeholder that is hidden from assistive technology. */
@@ -54,24 +88,33 @@ export const Skeleton = forwardRef<HTMLDivElement, SkeletonProps>(
       isText = false,
       style,
       width,
+      xstyle,
       ...props
     },
     ref,
-  ) => (
-    <div
-      {...props}
-      aria-hidden="true"
-      className={cn("hraness-skeleton", className)}
-      data-slot="skeleton"
-      data-text={isText || undefined}
-      ref={ref}
-      style={{
-        ...style,
-        ...(height === undefined ? {} : { height }),
-        ...(width === undefined ? {} : { width }),
-      }}
-    />
-  ),
+  ) => {
+    const presentation = stylex.props(
+      feedbackStyles.skeletonRoot,
+      isText && feedbackStyles.skeletonText,
+      xstyle,
+    );
+
+    return (
+      <div
+        {...props}
+        aria-hidden="true"
+        className={cn("hraness-skeleton", presentation.className, className)}
+        data-slot="skeleton"
+        data-text={isText || undefined}
+        ref={ref}
+        style={{
+          ...mergeStylexInlineStyles(presentation.style, style),
+          ...(height === undefined ? {} : { height }),
+          ...(width === undefined ? {} : { width }),
+        }}
+      />
+    );
+  },
 );
 
 Skeleton.displayName = "Skeleton";

@@ -865,29 +865,6 @@
     pointer-events: none;
   }
 
-  .hraness-spinner {
-    display: inline-block;
-    width: 1em;
-    height: 1em;
-    border: 0.125em solid color-mix(in oklch, currentColor 25%, transparent);
-    border-block-start-color: currentColor;
-    border-radius: var(--radius-round);
-    animation: hraness-spin 700ms linear infinite;
-  }
-
-  .hraness-skeleton {
-    min-height: 1rem;
-    border-radius: var(--radius-md);
-    background: linear-gradient(
-      90deg,
-      var(--ui-muted) 0%,
-      color-mix(in oklch, var(--ui-muted) 72%, var(--ui-foreground)) 50%,
-      var(--ui-muted) 100%
-    );
-    background-size: 200% 100%;
-    animation: hraness-skeleton 1.4s ease-in-out infinite;
-  }
-
   .hraness-empty-state {
     display: grid;
     min-height: 12rem;
@@ -1193,19 +1170,6 @@
   .hraness-progress__control::-moz-progress-bar {
     border-radius: inherit;
     background: var(--ui-primary);
-  }
-
-  .hraness-spinner[data-size="small"] {
-    font-size: 0.75rem;
-  }
-
-  .hraness-spinner[data-size="large"] {
-    font-size: 1.5rem;
-  }
-
-  .hraness-skeleton[data-text] {
-    min-height: 1em;
-    border-radius: var(--radius-sm);
   }
 
   .hraness-data-table {
@@ -1654,8 +1618,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :where(.hraness-spinner, .hraness-skeleton,
-    .hraness-progress-bar__fill[data-indeterminate]) {
+  .hraness-progress-bar__fill[data-indeterminate] {
     animation: none;
   }
 
@@ -1742,9 +1705,5 @@
     stroke: Highlight;
   }
 
-  .hraness-skeleton {
-    border: 1px solid CanvasText;
-    background: Canvas;
-  }
 }
 }
