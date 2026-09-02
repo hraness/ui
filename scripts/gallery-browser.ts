@@ -5607,7 +5607,8 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
 
   const rtlEvidence = await page.evaluate(async () => {
     const root = document.documentElement;
-    const previousDirection = root.dir;
+    const previousDirection = root.getAttribute("dir");
+    const previousLanguage = root.getAttribute("lang");
     const thumb = document.querySelector(
       '[data-gallery-field="switch"] [data-slot="switch-thumb"]',
     );
@@ -5631,18 +5632,30 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       };
     };
     const ltrSelect = selectEvidence();
-    root.dir = "rtl";
-    for (const animation of thumb.getAnimations()) animation.finish();
-    await new Promise<void>((resolveFrame) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
-    });
-    const rtlTransform = getComputedStyle(thumb).transform;
-    const rtlSelect = selectEvidence();
-    root.dir = previousDirection;
-    for (const animation of thumb.getAnimations()) animation.finish();
-    await new Promise<void>((resolveFrame) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
-    });
+    let rtlTransform: string | undefined;
+    let rtlSelect: ReturnType<typeof selectEvidence> | undefined;
+    try {
+      root.lang = "ar";
+      root.dir = "rtl";
+      for (const animation of thumb.getAnimations()) animation.finish();
+      await new Promise<void>((resolveFrame) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+      });
+      rtlTransform = getComputedStyle(thumb).transform;
+      rtlSelect = selectEvidence();
+    } finally {
+      if (previousLanguage === null) root.removeAttribute("lang");
+      else root.setAttribute("lang", previousLanguage);
+      if (previousDirection === null) root.removeAttribute("dir");
+      else root.setAttribute("dir", previousDirection);
+      for (const animation of thumb.getAnimations()) animation.finish();
+      await new Promise<void>((resolveFrame) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+      });
+    }
+    if (rtlTransform === undefined || rtlSelect === undefined) {
+      throw new Error("The RTL Fields affordances did not settle.");
+    }
     return {
       ltrSelect,
       restoredSelect: selectEvidence(),
