@@ -26,9 +26,9 @@ const CARD_DESCRIPTION_BRIDGE_PATTERN =
   /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
 const HUGEICONS_VERSION = "4.2.2";
 const PACKAGE_LAYER_PRELUDE =
-  /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3/u;
+  /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*,\s*components\.hraness-ui\.priority4/u;
 const STYLED_GALLERY_LAYER_PRELUDES =
-  /@layer\s+base\s*,\s*components\s*;\s*@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*;/u;
+  /@layer\s+base\s*,\s*components\s*;\s*@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*,\s*components\.hraness-ui\.priority4\s*;/u;
 const REACT_VERSION = "19.2.3";
 
 interface BrowserEvidence {
@@ -192,7 +192,7 @@ interface BrowserEvidence {
   readonly toolbarOrientationContracts: boolean;
   readonly toolbarOverrideContract: boolean;
   readonly transitionDuration: string;
-  readonly quietSitePriority3LayerSentinel: string;
+  readonly quietSitePriority4LayerSentinel: string;
   readonly viewportFrameCallerClassLast: boolean;
   readonly viewportFrameClassIsSemantic: boolean;
   readonly viewportFrameHasGeneratedClass: boolean;
@@ -316,7 +316,7 @@ interface ArtifactSet {
 interface CheckboxFocusRuleEvidence {
   readonly className: string;
   readonly declaration: string;
-  readonly layer: "components.hraness-ui.priority2";
+  readonly layer: "components.hraness-ui.priority3";
   readonly selector: string;
 }
 
@@ -695,6 +695,169 @@ function checkboxRuleBodies(
     .map((match) => match[2]!);
 }
 
+function normalizedAtomicDeclaration(body: string): string {
+  return body
+    .toLowerCase()
+    .replace(/,/gu, " ")
+    .replace(/\s+/gu, " ")
+    .replace(/\s*:\s*/gu, ":")
+    .replace(/\s*!important/gu, "!important")
+    .replace(/\s*;\s*/gu, ";")
+    .trim()
+    .replace(/;?$/u, ";");
+}
+
+const VISUALLY_HIDDEN_DECLARATIONS = new Set([
+  "border-color:currentcolor!important;",
+  "border-image-outset:0!important;",
+  "border-image-repeat:stretch!important;",
+  "border-image-slice:100%!important;",
+  "border-image-source:none!important;",
+  "border-image-width:1!important;",
+  "border-style:none!important;",
+  "border-width:0!important;",
+  "clip:rect(0 0 0 0)!important;",
+  "height:1px!important;",
+  "overflow:hidden!important;",
+  "padding:0!important;",
+  "position:absolute!important;",
+  "white-space:nowrap!important;",
+  "width:1px!important;",
+]);
+
+function packedVisuallyHiddenClassNames(
+  javaScript: string,
+  css: string,
+): ReadonlySet<string> {
+  const candidates: ReadonlySet<string>[] = [];
+  const candidateKeys = new Set<string>();
+  const fingerprints = new Set([
+    "clip:rect(0 0 0 0)!important;",
+    "height:1px!important;",
+    "overflow:hidden!important;",
+    "position:absolute!important;",
+    "white-space:nowrap!important;",
+    "width:1px!important;",
+  ]);
+  const addCandidate = (classNames: ReadonlySet<string>): void => {
+    const declarations = new Set(
+      checkboxRuleBodies(css, classNames)
+        .map((body) => normalizedAtomicDeclaration(body)),
+    );
+    const key = [...classNames].sort().join(" ");
+    if (
+      [...declarations].filter((value) => fingerprints.has(value)).length >= 4
+      && !candidateKeys.has(key)
+    ) {
+      candidateKeys.add(key);
+      candidates.push(classNames);
+    }
+  };
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*root\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(
+      javaScript,
+      open,
+      "packed visuallyHiddenStyles JavaScript",
+    );
+    const objectBody = object.slice(1, -1);
+    const rootMatch = /(?:^|,)\s*root\s*:\s*\{/u.exec(objectBody);
+    if (rootMatch === null) continue;
+    const rootOpen = (rootMatch.index ?? 0) + rootMatch[0].lastIndexOf("{");
+    const root = balancedBlock(
+      objectBody,
+      rootOpen,
+      "packed visuallyHiddenStyles.root",
+    );
+    const rootEnd = rootOpen + root.length;
+    if (objectBody.slice(rootEnd).replace(/^\s*,?\s*/u, "").length !== 0) {
+      continue;
+    }
+    const classNames = new Set<string>();
+    for (const classMatch of root.matchAll(
+      /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    )) {
+      for (const className of classMatch[1]!.split(/\s+/u)) {
+        classNames.add(className);
+      }
+    }
+    if (classNames.size === 0) continue;
+    addCandidate(classNames);
+  }
+  for (const match of javaScript.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+){3,})["']/gu,
+  )) {
+    addCandidate(new Set(match[1]!.split(/\s+/u)));
+  }
+  if (candidates.length === 0) {
+    const classNames = new Set<string>();
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+      if (!VISUALLY_HIDDEN_DECLARATIONS.has(
+        normalizedAtomicDeclaration(match[2] ?? ""),
+      )) continue;
+      const className = match[1]?.trim().match(
+        /^\.((?:x[A-Za-z0-9_-]+))$/u,
+      )?.[1];
+      if (className !== undefined) classNames.add(className);
+    }
+    if (
+      classNames.size === VISUALLY_HIDDEN_DECLARATIONS.size
+      && [...classNames].every((className) => javaScript.includes(className))
+    ) {
+      candidates.push(classNames);
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "the packed JavaScript must contain exactly one compiled visuallyHiddenStyles class set",
+  );
+  return candidates[0]!;
+}
+
+function requirePackedVisuallyHiddenStyles(
+  javaScript: string,
+  css: string,
+): void {
+  const classNames = packedVisuallyHiddenClassNames(javaScript, css);
+  assert.equal(
+    classNames.size,
+    15,
+    "visuallyHiddenStyles.root must preserve exactly 15 packed atomic classes",
+  );
+  const actualDeclarations = new Set<string>();
+  for (const className of classNames) {
+    const escapedClassName = className.replace(
+      /[.*+?^${}()|[\]\\]/gu,
+      "\\$&",
+    );
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter(
+      (match) => new RegExp(
+        `\\.${escapedClassName}(?![A-Za-z0-9_-])`,
+        "u",
+      ).test(match[1]!),
+    );
+    assert.equal(
+      rules.length,
+      1,
+      `packed CSS must contain one rule for visually-hidden class ${className}`,
+    );
+    assert.doesNotMatch(
+      rules[0]?.[1] ?? "",
+      /:/u,
+      `packed visually-hidden class ${className} must remain unconditional`,
+    );
+    actualDeclarations.add(normalizedAtomicDeclaration(rules[0]?.[2] ?? ""));
+  }
+  assert.deepEqual(
+    [...actualDeclarations].sort(),
+    [...VISUALLY_HIDDEN_DECLARATIONS].sort(),
+    "packed visuallyHiddenStyles.root must preserve the exact important declaration set",
+  );
+}
+
 function exactLayerCss(css: string, layer: string): string {
   const bodies: string[] = [];
   for (const match of css.matchAll(/@layer\s+[A-Za-z0-9_.-]+\s*\{/gu)) {
@@ -726,7 +889,7 @@ function requireFinalBundleLayerOrder(css: string): void {
   );
   const preludeEnd = preludeStart + preludes[0].length;
   const firstNamedLayerBlock = css.search(
-    /@layer\s+(?:base|components\.hraness-ui\.(?:legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3))\s*\{/u,
+    /@layer\s+(?:base|components\.hraness-ui\.(?:legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3|priority4))\s*\{/u,
   );
   assert.notEqual(
     firstNamedLayerBlock,
@@ -739,11 +902,11 @@ function requireFinalBundleLayerOrder(css: string): void {
   );
 
   const firstBlockPositions = new Map<
-    "legacy" | "priority1" | "priority2" | "priority3",
+    "legacy" | "priority1" | "priority2" | "priority3" | "priority4",
     number
   >();
   const packageLayerBlocks = [...css.matchAll(
-    /@layer\s+components\.hraness-ui\.(legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3)\s*\{/gu,
+    /@layer\s+components\.hraness-ui\.(legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3|priority4)\s*\{/gu,
   )];
   assert.notEqual(
     packageLayerBlocks.length,
@@ -765,13 +928,14 @@ function requireFinalBundleLayerOrder(css: string): void {
       layer === "legacy"
       || layer === "priority1"
       || layer === "priority2"
-      || layer === "priority3",
+      || layer === "priority3"
+      || layer === "priority4",
       `the final styled gallery bundle contains an unknown package layer: ${layer}`,
     );
     if (!firstBlockPositions.has(layer)) firstBlockPositions.set(layer, position);
   }
 
-  const orderedLayers = ["legacy", "priority1", "priority2", "priority3"] as const;
+  const orderedLayers = ["legacy", "priority1", "priority2", "priority3", "priority4"] as const;
   const positions = orderedLayers.map((layer) => {
     const position = firstBlockPositions.get(layer);
     assert.ok(
@@ -782,7 +946,7 @@ function requireFinalBundleLayerOrder(css: string): void {
   });
   assert.ok(
     positions.every((position, index) => index === 0 || positions[index - 1]! < position),
-    "the first package named-layer blocks must be ordered legacy, priority1, priority2, then priority3",
+    "the first package named-layer blocks must be ordered legacy, priority1, priority2, priority3, then priority4",
   );
 }
 
@@ -830,7 +994,7 @@ function requirePackedCheckboxFocusContract(
   javaScript: string,
   css: string,
 ): CheckboxFocusContract {
-  const layer = "components.hraness-ui.priority2" as const;
+  const layer = "components.hraness-ui.priority3" as const;
   const classNames = packedCheckboxStyleClassNames(javaScript, "focusVisible");
   const expectedDeclarations = [
     "outline-color:var(--ui-ring)",
@@ -983,6 +1147,7 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   );
   requireFinalBundleLayerOrder(css);
   requirePackedCheckboxConflictLayer(css);
+  requirePackedVisuallyHiddenStyles(javaScript, css);
   assert.doesNotMatch(
     css,
     /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
@@ -992,6 +1157,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     css,
     /\.hraness-skip-link(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not include the legacy SkipLink recipe",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not include the legacy visually-hidden recipe",
   );
   assert.match(
     css,
@@ -1366,8 +1536,8 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   );
   assert.match(
     css,
-    /\[data-gallery-quiet-site-priority3-conflict=(?:"true"|true)\]\[data-slot=(?:"quiet-site-footer"|quiet-site-footer)\]\{(?=[^}]*--gallery-quiet-site-priority3-conflict:\s*legacy)(?=[^}]*padding-top:\s*9rem)[^}]*\}/u,
-    "the gallery quiet-site priority3 conflict must carry its sentinel and padding declaration",
+    /\[data-gallery-quiet-site-priority4-conflict=(?:"true"|true)\]\[data-slot=(?:"quiet-site-footer"|quiet-site-footer)\]\{(?=[^}]*--gallery-quiet-site-priority4-conflict:\s*legacy)(?=[^}]*padding-top:\s*9rem)[^}]*\}/u,
+    "the gallery quiet-site priority4 conflict must carry its sentinel and padding declaration",
   );
   assert.match(
     css,
@@ -1762,16 +1932,57 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     && /font-size:\s*3rem/u.test(keyHintConflict),
     `the gallery KeyHint conflict must carry every recipe counterexample: ${String(keyHintConflict)}`,
   );
+  const visuallyHiddenConflict = css.match(
+    /\[data-gallery-visually-hidden-layer-conflict=(?:"true"|true)\][^{]*\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    visuallyHiddenConflict !== undefined,
+    "the packed stylesheet must include the gallery visually-hidden conflict",
+  );
+  assert.match(
+    visuallyHiddenConflict,
+    /\[data-gallery-visually-hidden-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"select-field"|select-field)\]\s*>\s*span/u,
+    "the gallery SelectField conflict must target React Aria's ID-linked label span",
+  );
+  assert.match(
+    visuallyHiddenConflict,
+    /--gallery-visually-hidden-layer-conflict:\s*consumer-important(?:;|\})/u,
+    "the gallery visually-hidden sentinel must remain non-important",
+  );
+  for (const declaration of [
+    /border-color:[^;}]+\s*!important/u,
+    /border-image-outset:\s*9\s*!important/u,
+    /border-image-repeat:\s*round\s*!important/u,
+    /border-image-slice:\s*1%\s*!important/u,
+    /border-image-source:\s*linear-gradient\([^;}]+\s*!important/u,
+    /border-image-width:\s*9\s*!important/u,
+    /border-style:\s*dashed\s*!important/u,
+    /border-width:\s*9px\s*!important/u,
+    /clip:\s*auto\s*!important/u,
+    /height:\s*99px\s*!important/u,
+    /overflow:\s*visible\s*!important/u,
+    /padding:\s*9px\s*!important/u,
+    /position:\s*static\s*!important/u,
+    /white-space:\s*normal\s*!important/u,
+    /width:\s*99px\s*!important/u,
+  ] as const) {
+    assert.match(
+      visuallyHiddenConflict,
+      declaration,
+      "the gallery visually-hidden conflict must carry every important counterexample",
+    );
+  }
 }
 
-function placePriority3BeforeLegacy(css: string): string {
+function placePriority4BeforeLegacy(css: string): string {
   const prelude = css.match(PACKAGE_LAYER_PRELUDE)?.[0];
   assert.ok(prelude !== undefined, "the packed stylesheet layer prelude is missing");
   const counterfactualPrelude = [
-    "@layer components.hraness-ui.priority3",
+    "@layer components.hraness-ui.priority4",
     "components.hraness-ui.legacy",
     "components.hraness-ui.priority1",
     "components.hraness-ui.priority2",
+    "components.hraness-ui.priority3",
   ].join(", ");
   const counterfactual = [
     "@layer base, components;",
@@ -1786,8 +1997,8 @@ function placePriority3BeforeLegacy(css: string): string {
   );
   assert.match(
     counterfactual,
-    /@layer\s+components\.hraness-ui\.priority3\s*,\s*components\.hraness-ui\.legacy/u,
-    "the browser counterfactual must create legacy after priority3",
+    /@layer\s+components\.hraness-ui\.priority4\s*,\s*components\.hraness-ui\.legacy/u,
+    "the browser counterfactual must create legacy after priority4",
   );
   return counterfactual;
 }
@@ -4106,8 +4317,8 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
           && toolbar.width === 208,
       ),
       transitionDuration: buttonStyle.transitionDuration,
-      quietSitePriority3LayerSentinel: footerStyle
-        .getPropertyValue("--gallery-quiet-site-priority3-conflict")
+      quietSitePriority4LayerSentinel: footerStyle
+        .getPropertyValue("--gallery-quiet-site-priority4-conflict")
         .trim(),
       viewportFrameCallerClassLast:
         viewportFrameClasses.at(-1) === "gallery-viewport-frame",
@@ -4342,6 +4553,182 @@ function verifySegmentedControlRecipe(
     && nearlyEqual(evidence.selectedBlockInset, 3)
     && evidence.inactiveBackgrounds.every((background) => background === "rgba(0, 0, 0, 0)"),
     `${id}: segmented-control selection surface is ${JSON.stringify(evidence)}`,
+  );
+}
+
+async function verifyVisuallyHiddenPresentation(
+  page: Page,
+  id: string,
+): Promise<void> {
+  const evidence = await page.evaluate(() => {
+    const roots = {
+      checkbox: document.querySelector(
+        '[data-gallery-checkbox="override"][data-gallery-visually-hidden-layer-conflict="true"]',
+      ),
+      select: document.querySelector(
+        '[data-gallery-select="true"][data-gallery-visually-hidden-layer-conflict="true"]',
+      ),
+      spinner: document.querySelector(
+        '[data-slot="spinner"][data-gallery-visually-hidden-layer-conflict="true"]',
+      ),
+    };
+    if (
+      !(roots.checkbox instanceof HTMLElement)
+      || !(roots.select instanceof HTMLElement)
+      || !(roots.spinner instanceof HTMLElement)
+    ) {
+      throw new Error("The gallery visually-hidden specimens are incomplete.");
+    }
+    const read = (root: HTMLElement) => {
+      const hidden = root.querySelector(".hraness-visually-hidden");
+      if (!(hidden instanceof HTMLElement)) {
+        throw new Error("A gallery visually-hidden specimen has no hidden child.");
+      }
+      const classes = [...hidden.classList];
+      const hiddenIndex = classes.indexOf("hraness-visually-hidden");
+      const style = getComputedStyle(hidden);
+      const box = hidden.getBoundingClientRect();
+      return {
+        borderColor: style.borderColor,
+        borderImageOutset: style.borderImageOutset,
+        borderImageRepeat: style.borderImageRepeat,
+        borderImageSlice: style.borderImageSlice,
+        borderImageSource: style.borderImageSource,
+        borderImageWidth: style.borderImageWidth,
+        borderStyle: style.borderStyle,
+        borderWidth: style.borderWidth,
+        classes,
+        clip: style.clip,
+        color: style.color,
+        height: box.height,
+        hiddenAtoms: classes.slice(hiddenIndex + 1)
+          .filter((className) => className.startsWith("x")),
+        hiddenIndex,
+        inlineHeight: style.height,
+        inlineWidth: style.width,
+        overflow: style.overflow,
+        padding: [
+          style.paddingTop,
+          style.paddingRight,
+          style.paddingBottom,
+          style.paddingLeft,
+        ],
+        position: style.position,
+        rootSlot: root.getAttribute("data-slot"),
+        sentinel: style
+          .getPropertyValue("--gallery-visually-hidden-layer-conflict")
+          .trim(),
+        slot: hidden.getAttribute("data-slot"),
+        styleAttribute: hidden.getAttribute("style") ?? "",
+        tagName: hidden.tagName,
+        text: hidden.textContent?.trim() ?? "",
+        whiteSpace: style.whiteSpace,
+        width: box.width,
+      };
+    };
+    const checkboxControl = roots.checkbox.querySelector(
+      '[data-slot="checkbox-control"]',
+    );
+    const checkboxInput = roots.checkbox.querySelector(
+      'input[type="checkbox"][name="gallery-override-checkbox"]',
+    );
+    const checkboxHidden = roots.checkbox.querySelector(
+      ".hraness-visually-hidden",
+    );
+    const selectLabel = roots.select.querySelector(
+      ".hraness-visually-hidden",
+    );
+    const selectTrigger = roots.select.querySelector("button");
+    return {
+      checkbox: read(roots.checkbox),
+      checkboxAssociation: checkboxControl instanceof HTMLLabelElement
+        && checkboxInput instanceof HTMLInputElement
+        && checkboxHidden instanceof HTMLElement
+        && checkboxControl.contains(checkboxInput)
+        && checkboxControl.contains(checkboxHidden)
+        && [...(checkboxInput.labels ?? [])].includes(checkboxControl),
+      select: read(roots.select),
+      selectAssociation: selectLabel instanceof HTMLSpanElement
+        && selectTrigger instanceof HTMLButtonElement
+        && selectLabel.id.length > 0
+        && (selectTrigger.getAttribute("aria-labelledby") ?? "")
+          .split(/\s+/u)
+          .includes(selectLabel.id),
+      spinner: read(roots.spinner),
+      spinnerRole: roots.spinner.getAttribute("role"),
+    };
+  });
+  const canonicalAtoms = new Set(evidence.spinner.hiddenAtoms);
+  invariant(
+    evidence.spinner.hiddenAtoms.length === 15 && canonicalAtoms.size === 15,
+    `${id}: Spinner did not expose the canonical 15 visually-hidden atoms: ${JSON.stringify(evidence.spinner)}`,
+  );
+  const allPartsEqual = (
+    value: string,
+    expected: readonly string[],
+  ): boolean => value.split(/\s+/u).every((part) => expected.includes(part));
+  const hiddenContract = (
+    specimen: typeof evidence.spinner,
+    expected: Readonly<{
+      rootSlot: string;
+      slot: string | null;
+      tagName: string;
+      text: string;
+    }>,
+  ): boolean => specimen.hiddenIndex >= 0
+    && specimen.hiddenAtoms.length === canonicalAtoms.size
+    && [...canonicalAtoms].every(
+      (className) => specimen.classes.indexOf(className) > specimen.hiddenIndex,
+    )
+    && specimen.rootSlot === expected.rootSlot
+    && specimen.slot === expected.slot
+    && specimen.tagName === expected.tagName
+    && specimen.text === expected.text
+    && specimen.sentinel === "consumer-important"
+    && specimen.styleAttribute === ""
+    && specimen.position === "absolute"
+    && specimen.overflow === "hidden"
+    && specimen.whiteSpace === "nowrap"
+    && specimen.clip !== "auto"
+    && specimen.inlineHeight === "1px"
+    && specimen.inlineWidth === "1px"
+    && specimen.height <= 1.5
+    && specimen.width <= 1.5
+    && specimen.padding.every((value) => value === "0px")
+    && specimen.borderColor === specimen.color
+    && allPartsEqual(specimen.borderImageOutset, ["0", "0px"])
+    && allPartsEqual(specimen.borderImageRepeat, ["stretch"])
+    && allPartsEqual(specimen.borderImageSlice, ["100%"])
+    && specimen.borderImageSource === "none"
+    && allPartsEqual(specimen.borderImageWidth, ["1"])
+    && allPartsEqual(specimen.borderStyle, ["none"])
+    && allPartsEqual(specimen.borderWidth, ["0px"]);
+  invariant(
+    hiddenContract(evidence.spinner, {
+      rootSlot: "spinner",
+      slot: "spinner-label",
+      tagName: "SPAN",
+      text: "Checking primitives",
+    }) && evidence.spinnerRole === "status",
+    `${id}: Spinner visually-hidden presentation failed: ${JSON.stringify(evidence.spinner)}`,
+  );
+  invariant(
+    hiddenContract(evidence.select, {
+      rootSlot: "select-field",
+      slot: null,
+      tagName: "SPAN",
+      text: "Profile metric",
+    }) && evidence.selectAssociation,
+    `${id}: SelectField visually-hidden presentation failed: ${JSON.stringify(evidence.select)}`,
+  );
+  invariant(
+    hiddenContract(evidence.checkbox, {
+      rootSlot: "checkbox-field",
+      slot: "checkbox-label",
+      tagName: "SPAN",
+      text: "Select archived projects",
+    }) && evidence.checkboxAssociation,
+    `${id}: CheckboxField visually-hidden presentation failed: ${JSON.stringify(evidence.checkbox)}`,
   );
 }
 
@@ -6342,6 +6729,7 @@ try {
     access(resolve(installedRoot, "src/actions.stylex.ts")),
     access(resolve(installedRoot, "src/checkbox-field.stylex.ts")),
     access(resolve(installedRoot, "src/skip-link.stylex.ts")),
+    access(resolve(installedRoot, "src/visually-hidden.stylex.ts")),
   ]);
   await assert.rejects(
     access(resolve(installedRoot, "gallery/styles.css")),
@@ -6357,7 +6745,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|checkbox-field|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -6404,6 +6792,11 @@ try {
     installedPackageCss,
     /\.hraness-skip-link(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate SkipLink declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate visually-hidden declarations in legacy CSS",
   );
 
   const productionDirectory = resolve(consumer, "dist/browser");
@@ -6471,7 +6864,7 @@ try {
   assert.match(html, /data-appearance-icon="system"/u);
   assert.match(html, /data-gallery-quiet-site-layer-conflict="true"/u);
   assert.match(html, /data-gallery-quiet-site-page="true"/u);
-  assert.match(html, /data-gallery-quiet-site-priority3-conflict="true"/u);
+  assert.match(html, /data-gallery-quiet-site-priority4-conflict="true"/u);
   assert.match(html, /data-gallery-quiet-site-footer="true"/u);
   assert.match(html, /data-slot="quiet-site-page"/u);
   assert.match(html, /data-slot="quiet-site-footer"/u);
@@ -6544,12 +6937,29 @@ try {
   assert.match(html, /class="hraness-link [^"]+gallery-link gallery-link--default"/u);
   assert.match(html, /href="\/reference"/u);
   assert.match(html, /href="\/reference\?presentation=override"/u);
+  assert.equal(
+    html.match(/data-gallery-visually-hidden-layer-conflict="true"/gu)?.length,
+    3,
+    "SSR must include the CheckboxField, SelectField, and Spinner hidden-layer specimens",
+  );
+  assert.match(
+    html,
+    /<span[^>]*class="hraness-select-field__label hraness-visually-hidden x[^"]+"[^>]*>Profile metric<\/span>/u,
+  );
+  assert.match(
+    html,
+    /<span[^>]*class="hraness-checkbox-field__label [^"]* hraness-visually-hidden x[^"]+"[^>]*data-slot="checkbox-label"[^>]*>Select archived projects<\/span>/u,
+  );
+  assert.match(
+    html,
+    /<span[^>]*class="hraness-visually-hidden x[^"]+"[^>]*data-slot="spinner-label"[^>]*>Checking primitives<\/span>/u,
+  );
   assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
 
-  const counterfactualDocumentName = "priority3-before-legacy.html";
-  const counterfactualStylesheetName = "priority3-before-legacy.css";
+  const counterfactualDocumentName = "priority4-before-legacy.html";
+  const counterfactualStylesheetName = "priority4-before-legacy.css";
   const counterfactualDocumentPath = resolve(
     productionDirectory,
     counterfactualDocumentName,
@@ -6567,7 +6977,7 @@ try {
     writeFile(counterfactualDocumentPath, counterfactualHtml),
     writeFile(
       counterfactualStylesheetPath,
-      placePriority3BeforeLegacy(production.css),
+      placePriority4BeforeLegacy(production.css),
     ),
   ]);
 
@@ -6593,7 +7003,7 @@ try {
     });
     try {
       const origin = `http://${server.hostname}:${String(server.port)}`;
-      let productionPriority3PaddingTop: number | undefined;
+      let productionPriority4PaddingTop: number | undefined;
       for (const layout of layouts) {
         const context = await browser.newContext(layout.context);
         try {
@@ -6686,9 +7096,9 @@ try {
             `${layout.id}: the matched quiet-site measure conflict resolved to ${String(light.pageMaxInlineSize)}`,
           );
           invariant(
-            light.quietSitePriority3LayerSentinel === "legacy"
+            light.quietSitePriority4LayerSentinel === "legacy"
             && nearlyEqual(light.footerPaddingTop, 1.25 * 16),
-            `${layout.id}: the matched quiet-site priority3 conflict resolved to ${String(light.footerPaddingTop)}`,
+            `${layout.id}: the matched quiet-site priority4 conflict resolved to ${String(light.footerPaddingTop)}`,
           );
           invariant(
             light.wrappingRowClassIsSemantic
@@ -6807,12 +7217,12 @@ try {
             && light.toolbarOverrideContract,
             `${layout.id}: Toolbar parity failed: ${light.toolbarDiagnostics}`,
           );
-          if (productionPriority3PaddingTop === undefined) {
-            productionPriority3PaddingTop = light.footerPaddingTop;
+          if (productionPriority4PaddingTop === undefined) {
+            productionPriority4PaddingTop = light.footerPaddingTop;
           } else {
             invariant(
-              nearlyEqual(light.footerPaddingTop, productionPriority3PaddingTop),
-              `${layout.id}: production priority3 padding changed across layouts`,
+              nearlyEqual(light.footerPaddingTop, productionPriority4PaddingTop),
+              `${layout.id}: production priority4 padding changed across layouts`,
             );
           }
           const vertical = await verticalWritingEvidence(page);
@@ -6934,6 +7344,7 @@ try {
             );
           }
 
+          await verifyVisuallyHiddenPresentation(page, layout.id);
           await verifyCheckboxFocusCascadeIsolation(
             page,
             layout.id,
@@ -7114,31 +7525,31 @@ try {
           page,
           failures,
           requestedPaths,
-          "priority3-before-legacy counterfactual",
+          "priority4-before-legacy counterfactual",
         );
         const counterfactual = await browserEvidence(page);
         invariant(
           counterfactual.hydrationStarted
           && counterfactual.rootHydrated
           && counterfactual.recoverableErrors.length === 0,
-          "priority3-before-legacy counterfactual: hydration did not settle cleanly",
+          "priority4-before-legacy counterfactual: hydration did not settle cleanly",
         );
         invariant(
-          productionPriority3PaddingTop !== undefined
-          && nearlyEqual(productionPriority3PaddingTop, 1.25 * 16)
-          && counterfactual.quietSitePriority3LayerSentinel === "legacy"
+          productionPriority4PaddingTop !== undefined
+          && nearlyEqual(productionPriority4PaddingTop, 1.25 * 16)
+          && counterfactual.quietSitePriority4LayerSentinel === "legacy"
           && nearlyEqual(counterfactual.footerPaddingTop, 9 * 16),
-          `priority3-before-legacy counterfactual: production ${String(productionPriority3PaddingTop)}, counterfactual ${String(counterfactual.footerPaddingTop)}, sentinel ${counterfactual.quietSitePriority3LayerSentinel}`,
+          `priority4-before-legacy counterfactual: production ${String(productionPriority4PaddingTop)}, counterfactual ${String(counterfactual.footerPaddingTop)}, sentinel ${counterfactual.quietSitePriority4LayerSentinel}`,
         );
         invariant(
           counterfactual.stylesheetCount === 1
           && counterfactual.stylesheetMarked
           && counterfactual.stylexRuntimeStyleCount === 0,
-          "priority3-before-legacy counterfactual: stylesheet delivery is ambiguous",
+          "priority4-before-legacy counterfactual: stylesheet delivery is ambiguous",
         );
         invariant(
           failures.length === 0,
-          `priority3-before-legacy counterfactual: ${failures.join("; ")}`,
+          `priority4-before-legacy counterfactual: ${failures.join("; ")}`,
         );
       } finally {
         await Promise.all([
@@ -7303,11 +7714,11 @@ try {
       invariant(requestedPaths.has(`/${stylesheetName}`), "the browser never requested the packed default stylesheet");
       invariant(
         requestedPaths.has(`/${counterfactualDocumentName}`),
-        "the browser never requested the priority3 counterfactual document",
+        "the browser never requested the priority4 counterfactual document",
       );
       invariant(
         requestedPaths.has(`/${counterfactualStylesheetName}`),
-        "the browser never requested the priority3 counterfactual stylesheet",
+        "the browser never requested the priority4 counterfactual stylesheet",
       );
     } finally {
       await browser.close();
@@ -7318,7 +7729,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

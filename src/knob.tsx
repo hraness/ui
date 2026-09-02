@@ -31,6 +31,7 @@ import {
   resolveKnobTouchIntent,
 } from "./knob-model.js";
 import { cn } from "./lib/utils.js";
+import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
 
 export type KnobDensity = "compact" | "default";
 export type KnobOutputVisibility = "visible" | "visually-hidden";
@@ -392,6 +393,9 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
                     "hraness-knob__value",
                     outputVisibility === "visually-hidden"
                       && "hraness-visually-hidden",
+                    visuallyHiddenClassName(
+                      outputVisibility === "visually-hidden",
+                    ),
                   )}
                   data-slot="knob-value"
                 />
@@ -403,6 +407,9 @@ export const Knob = forwardRef<HTMLDivElement, KnobProps>(
                     "hraness-knob__value",
                     outputVisibility === "visually-hidden"
                       && "hraness-visually-hidden",
+                    visuallyHiddenClassName(
+                      outputVisibility === "visually-hidden",
+                    ),
                   )}
                   data-slot="knob-value"
                 >

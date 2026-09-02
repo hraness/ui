@@ -11,6 +11,7 @@ import type { StyleXStyles } from "@stylexjs/stylex";
 import { feedbackStyles } from "./feedback.stylex.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
+import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
 
 export interface SpinnerProps extends Omit<
   HTMLAttributes<HTMLSpanElement>,
@@ -55,7 +56,10 @@ export const Spinner = forwardRef<HTMLSpanElement, SpinnerProps>(
       >
         {label === undefined ? null : (
           <span
-            className="hraness-visually-hidden"
+            className={cn(
+              "hraness-visually-hidden",
+              visuallyHiddenClassName(),
+            )}
             data-slot="spinner-label"
           >
             {label}

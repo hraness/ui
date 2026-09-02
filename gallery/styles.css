@@ -227,8 +227,8 @@
     max-inline-size: 12rem;
   }
 
-  html body [data-gallery-quiet-site-priority3-conflict="true"][data-slot="quiet-site-footer"] {
-    --gallery-quiet-site-priority3-conflict: legacy;
+  html body [data-gallery-quiet-site-priority4-conflict="true"][data-slot="quiet-site-footer"] {
+    --gallery-quiet-site-priority4-conflict: legacy;
     padding-top: 9rem;
   }
 
@@ -533,6 +533,27 @@
       forced-color-adjust: none;
     }
   }
+}
+
+html body [data-gallery-visually-hidden-layer-conflict="true"] [data-slot="spinner-label"],
+html body [data-gallery-visually-hidden-layer-conflict="true"] [data-slot="checkbox-label"],
+html body [data-gallery-visually-hidden-layer-conflict="true"][data-slot="select-field"] > span {
+  --gallery-visually-hidden-layer-conflict: consumer-important;
+  border-color: rgb(255 0 255) !important;
+  border-image-outset: 9 !important;
+  border-image-repeat: round !important;
+  border-image-slice: 1% !important;
+  border-image-source: linear-gradient(red, blue) !important;
+  border-image-width: 9 !important;
+  border-style: dashed !important;
+  border-width: 9px !important;
+  clip: auto !important;
+  height: 99px !important;
+  overflow: visible !important;
+  padding: 9px !important;
+  position: static !important;
+  white-space: normal !important;
+  width: 99px !important;
 }
 
 .gallery-card--class-variable {

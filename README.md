@@ -100,7 +100,7 @@ The package also exports portable spacing, typography, target-size, motion, elev
 - `@hraness/ui/stylex.css` provides package-compiled StyleX recipes.
 - `@hraness/ui/tailwind.css` provides Tailwind source detection, the dark variant, and semantic utility mappings.
 
-`styles.css` keeps the reset `base` below `components`, then fixes the component sublayers from lowest to highest as `legacy`, `priority1`, `priority2`, and `priority3`. Migrated StyleX declarations win over remaining package recipes without depending on generated class names or import timing. The complete stylesheet expects Tailwind CSS v4 processing during this transition, but it does not import Tailwind itself. This prevents duplicate Preflight and utility output.
+`styles.css` keeps the reset `base` below `components`, then fixes the component sublayers from lowest to highest as `legacy`, `priority1`, `priority2`, `priority3`, and `priority4`. Migrated StyleX declarations win over remaining package recipes without depending on generated class names or import timing. The complete stylesheet expects Tailwind CSS v4 processing during this transition, but it does not import Tailwind itself. This prevents duplicate Preflight and utility output.
 
 Set `data-theme="dark"` or the `dark` class on a root element to select the dark recipe. Set `data-theme="light"` for an explicit light island. Override namespaced roles after the imports to apply a product theme.
 
@@ -113,7 +113,7 @@ For a standards-only or narrower integration, import the required layers directl
 @import "@hraness/ui/stylex.css";
 ```
 
-The built-in recipes are already compiled. Consumers do not need a StyleX compiler to render them. Applications that author local StyleX declarations or pass a typed `xstyle` override must compile their own source with the matching StyleX 0.19 contract. The package disables runtime CSS injection and uses property-specificity resolution. Tailwind utilities and unlayered product CSS retain their existing override authority.
+The built-in recipes are already compiled. Consumers do not need a StyleX compiler to render them. Applications that author local StyleX declarations or pass a typed `xstyle` override must compile their own source with the matching StyleX 0.19 contract. The package disables runtime CSS injection and uses property-specificity resolution. Tailwind utilities and unlayered product CSS retain their existing override authority, except for the shared visually-hidden accessibility recipe. Its offscreen reset uses layered important declarations so conflicting unlayered important rules cannot accidentally expose accessible-only copy. Change the component visibility prop instead of overriding this helper.
 
 ## Composition patterns
 
@@ -272,6 +272,16 @@ empty conditional overrides. An effective control recipe selects explicit
 React Aria state composition so the caller remains last; native `style`
 declarations still resolve after StyleX. `Button` and `LinkButton` accept only
 the documented `partXstyles.label` part.
+
+The shared visually-hidden helper protects accessible-only content without
+inline presentation. It owns the `CopyButton` live region, labeled `Spinner`,
+hidden labels for `TextField`, `TextAreaField`, `SearchField`, `NumberField`,
+`CheckboxField`, `NativeSelectField`, `FileField`, and `SelectField`, and a
+`Knob` whose `outputVisibility` is `"visually-hidden"`. These elements retain
+the stable `hraness-visually-hidden` hook before their generated StyleX atoms.
+Use `showLabel` or `outputVisibility` to change visibility; generated classes
+and the helper's important offscreen declarations are implementation details.
+
 `SkipLink` applies `xstyle` to its native anchor without changing its hash,
 focus-transfer, or native `:focus` reveal behavior. Native `style` declarations
 resolve after the StyleX recipe.

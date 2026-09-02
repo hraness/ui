@@ -116,6 +116,10 @@ interface PackageLinkStyleMap extends LinkPrecedenceProbe {
   readonly classNamesByKey: Readonly<Record<LinkStyleKey, ReadonlySet<string>>>;
 }
 
+interface PackageVisuallyHiddenStyleMap {
+  readonly classNames: ReadonlySet<string>;
+}
+
 function packageCheckboxStyleMap(javaScript: string): PackageCheckboxStyleMap {
   const candidates: string[] = [];
   for (const match of javaScript.matchAll(
@@ -252,6 +256,129 @@ function packageCheckboxRuleBodies(
       new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(match[1]!)
     ))
     .map((match) => match[2]!);
+}
+
+function normalizedAtomicDeclaration(body: string): string {
+  return body
+    .toLowerCase()
+    .replace(/,/gu, " ")
+    .replace(/\s+/gu, " ")
+    .replace(/\s*:\s*/gu, ":")
+    .replace(/\s*!important/gu, "!important")
+    .replace(/\s*;\s*/gu, ";")
+    .trim()
+    .replace(/;?$/u, ";");
+}
+
+const VISUALLY_HIDDEN_DECLARATIONS = new Set([
+  "border-color:currentcolor!important;",
+  "border-image-outset:0!important;",
+  "border-image-repeat:stretch!important;",
+  "border-image-slice:100%!important;",
+  "border-image-source:none!important;",
+  "border-image-width:1!important;",
+  "border-style:none!important;",
+  "border-width:0!important;",
+  "clip:rect(0 0 0 0)!important;",
+  "height:1px!important;",
+  "overflow:hidden!important;",
+  "padding:0!important;",
+  "position:absolute!important;",
+  "white-space:nowrap!important;",
+  "width:1px!important;",
+]);
+
+function packageVisuallyHiddenStyleMap(
+  javaScript: string,
+  css: string,
+): PackageVisuallyHiddenStyleMap {
+  const candidates: PackageVisuallyHiddenStyleMap[] = [];
+  const candidateKeys = new Set<string>();
+  const fingerprints = new Set([
+    "clip:rect(0 0 0 0)!important;",
+    "height:1px!important;",
+    "overflow:hidden!important;",
+    "position:absolute!important;",
+    "white-space:nowrap!important;",
+    "width:1px!important;",
+  ]);
+  const addCandidate = (classNames: ReadonlySet<string>): void => {
+    const declarations = new Set(
+      packageCheckboxRuleBodies(css, classNames)
+        .map((body) => normalizedAtomicDeclaration(body)),
+    );
+    const key = [...classNames].sort().join(" ");
+    if (
+      [...declarations].filter((value) => fingerprints.has(value)).length >= 4
+      && !candidateKeys.has(key)
+    ) {
+      candidateKeys.add(key);
+      candidates.push({ classNames });
+    }
+  };
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*root\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(
+      javaScript,
+      open,
+      "packed visuallyHiddenStyles JavaScript",
+    );
+    const objectBody = object.slice(1, -1);
+    const rootMatch = /(?:^|,)\s*root\s*:\s*\{/u.exec(objectBody);
+    if (rootMatch === null) continue;
+    const rootOpen = (rootMatch.index ?? 0) + rootMatch[0].lastIndexOf("{");
+    const root = balancedBlock(
+      objectBody,
+      rootOpen,
+      "packed visuallyHiddenStyles.root",
+    );
+    const rootEnd = rootOpen + root.length;
+    if (objectBody.slice(rootEnd).replace(/^\s*,?\s*/u, "").length !== 0) {
+      continue;
+    }
+    const classNames = new Set<string>();
+    for (const classMatch of root.matchAll(
+      /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    )) {
+      for (const className of classMatch[1]!.split(/\s+/u)) {
+        classNames.add(className);
+      }
+    }
+    if (classNames.size === 0) continue;
+    addCandidate(classNames);
+  }
+  for (const match of javaScript.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+){3,})["']/gu,
+  )) {
+    const classNames = new Set(match[1]!.split(/\s+/u));
+    addCandidate(classNames);
+  }
+  if (candidates.length === 0) {
+    const classNames = new Set<string>();
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+      if (!VISUALLY_HIDDEN_DECLARATIONS.has(
+        normalizedAtomicDeclaration(match[2] ?? ""),
+      )) continue;
+      const className = match[1]?.trim().match(
+        /^\.((?:x[A-Za-z0-9_-]+))$/u,
+      )?.[1];
+      if (className !== undefined) classNames.add(className);
+    }
+    if (
+      classNames.size === VISUALLY_HIDDEN_DECLARATIONS.size
+      && [...classNames].every((className) => javaScript.includes(className))
+    ) {
+      candidates.push({ classNames });
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "packed JavaScript must contain exactly one compiled visuallyHiddenStyles class set",
+  );
+  return candidates[0]!;
 }
 
 interface PackageStyleRule {
@@ -393,6 +520,48 @@ function requirePackageCheckboxStyles(javaScript: string, css: string): void {
     /forced-color-adjust:\s*auto/u,
     "checkboxFieldStyles must own the forced-color adjustment inside the exact conditional block",
   );
+}
+
+function requirePackageVisuallyHiddenStyles(
+  javaScript: string,
+  css: string,
+): readonly string[] {
+  const { classNames } = packageVisuallyHiddenStyleMap(javaScript, css);
+  assert.equal(
+    classNames.size,
+    15,
+    "visuallyHiddenStyles.root must preserve exactly 15 packed atomic classes",
+  );
+  const actualDeclarations = new Set<string>();
+  for (const className of classNames) {
+    const escapedClassName = className.replace(
+      /[.*+?^${}()|[\]\\]/gu,
+      "\\$&",
+    );
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter(
+      (match) => new RegExp(
+        `\\.${escapedClassName}(?![A-Za-z0-9_-])`,
+        "u",
+      ).test(match[1]!),
+    );
+    assert.equal(
+      rules.length,
+      1,
+      `packed CSS must contain one rule for visually-hidden class ${className}`,
+    );
+    assert.doesNotMatch(
+      rules[0]?.[1] ?? "",
+      /:/u,
+      `packed visually-hidden class ${className} must remain unconditional`,
+    );
+    actualDeclarations.add(normalizedAtomicDeclaration(rules[0]?.[2] ?? ""));
+  }
+  assert.deepEqual(
+    [...actualDeclarations].sort(),
+    [...VISUALLY_HIDDEN_DECLARATIONS].sort(),
+    "packed visuallyHiddenStyles.root must preserve the exact important declaration set",
+  );
+  return [...classNames];
 }
 
 function requirePackageLinkStyles(javaScript: string, css: string): void {
@@ -551,6 +720,7 @@ function ssrProbe(
   release: ReactRelease,
   checkboxProbe: CheckboxPrecedenceProbe,
   linkProbe: LinkPrecedenceProbe,
+  visuallyHiddenClasses: readonly string[],
 ): string {
   return String.raw`import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
@@ -603,6 +773,7 @@ const linkXstyle = {
   $$css: true,
 };
 const linkBaseClasses = ${JSON.stringify(linkProbe.baseClasses)};
+const visuallyHiddenClasses = ${JSON.stringify(visuallyHiddenClasses)};
 
 const reactDomPackageUrl = import.meta.resolve("react-dom/package.json");
 const reactDomPackage = JSON.parse(await readFile(new URL(reactDomPackageUrl), "utf8"));
@@ -613,6 +784,7 @@ assert.equal(new URL(stylexCssUrl).protocol, "file:");
 const stylexCss = await readFile(new URL(stylexCssUrl), "utf8");
 assert.ok(stylexCss.trim().length > 0, "@hraness/ui/stylex.css must not be empty");
 assert.match(stylexCss, /@layer components\.hraness-ui\.priority3/u);
+assert.match(stylexCss, /@layer components\.hraness-ui\.priority4/u);
 assert.match(stylexCss, /max-inline-size:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
 assert.doesNotMatch(stylexCss, /max-width:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
 assert.match(stylexCss, /gap:\s*var\(--space-3\)/u);
@@ -713,6 +885,7 @@ assert.equal(
 const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
 const componentsCss = await readFile(new URL(componentsCssUrl), "utf8");
 await access(new URL("./skip-link.stylex.ts", componentsCssUrl));
+await access(new URL("./visually-hidden.stylex.ts", componentsCssUrl));
 assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-(?:viewport-frame|wrapping-row)(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-themed-surface(?![A-Za-z0-9_-])/u);
@@ -739,6 +912,10 @@ assert.doesNotMatch(
   componentsCss,
   /\.hraness-skip-link(?![A-Za-z0-9_-])/u,
 );
+assert.doesNotMatch(
+  componentsCss,
+  /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u,
+);
 assert.match(
   componentsCss,
   /--hraness-action-coarse-min:\s*var\(--interactive-target-min\)/u,
@@ -764,7 +941,7 @@ assert.equal(
 );
 assert.match(
   stylesCss,
-  /@layer components\.hraness-ui\.legacy, components\.hraness-ui\.priority1, components\.hraness-ui\.priority2, components\.hraness-ui\.priority3;/u,
+  /@layer components\.hraness-ui\.legacy, components\.hraness-ui\.priority1, components\.hraness-ui\.priority2, components\.hraness-ui\.priority3, components\.hraness-ui\.priority4;/u,
 );
 
 const markup = renderToStaticMarkup(React.createElement(Icon, {
@@ -1037,6 +1214,18 @@ assert.match(checkboxMarkup, /hraness-checkbox-field__label [^"]+ hraness-visual
 assert.match(checkboxMarkup, />Package checkbox<\/span>/u);
 assert.match(checkboxMarkup, /Package checkbox description/u);
 assert.match(checkboxMarkup, /style="width:15rem"/u);
+const checkboxLabelTag = checkboxMarkup.match(/<span[^>]*data-slot="checkbox-label"[^>]*>/u)?.[0] ?? "";
+const checkboxLabelClasses = checkboxLabelTag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+const checkboxHiddenIndex = checkboxLabelClasses.indexOf("hraness-visually-hidden");
+assert.equal(checkboxLabelClasses[0], "hraness-checkbox-field__label");
+assert.ok(checkboxHiddenIndex > 0, "packed CheckboxField must retain its stable hidden hook");
+assert.ok(
+  visuallyHiddenClasses.every(
+    (className) => checkboxLabelClasses.indexOf(className) > checkboxHiddenIndex,
+  ),
+  "packed CheckboxField must retain every generated visually-hidden atom after the stable hook",
+);
+assert.doesNotMatch(checkboxLabelTag, /style=/u);
 const checkboxRootTag = checkboxMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
 const checkboxControlTag = checkboxMarkup.match(/<label[^>]*data-slot="checkbox-control"[^>]*>/u)?.[0] ?? "";
 assert.match(
@@ -1609,6 +1798,7 @@ createRoot(root).render(React.createElement(React.Fragment, null,
 function viteSsrProbe(
   checkboxProbe: CheckboxPrecedenceProbe,
   linkProbe: LinkPrecedenceProbe,
+  visuallyHiddenClasses: readonly string[],
 ): string {
   return `import assert from "node:assert/strict";
 import { CheckboxField, Link } from "@hraness/ui";
@@ -1633,10 +1823,20 @@ const markup = renderToStaticMarkup(React.createElement(CheckboxField, {
   controlXstyle,
   label: "Vite runtime checkbox",
   name: "vite-runtime-checkbox",
+  showLabel: false,
   xstyle: rootXstyle,
 }));
 const rootTag = markup.match(/^<div[^>]*>/u)?.[0] ?? "";
 const controlTag = markup.match(/<label[^>]*data-slot="checkbox-control"[^>]*>/u)?.[0] ?? "";
+const labelTag = markup.match(/<span[^>]*data-slot="checkbox-label"[^>]*>/u)?.[0] ?? "";
+const labelClasses = labelTag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+const hiddenIndex = labelClasses.indexOf("hraness-visually-hidden");
+assert.equal(labelClasses[0], "hraness-checkbox-field__label");
+assert.ok(hiddenIndex > 0);
+assert.ok(${JSON.stringify(visuallyHiddenClasses)}.every(
+  (className) => labelClasses.indexOf(className) > hiddenIndex,
+));
+assert.doesNotMatch(labelTag, /style=/u);
 assert.match(rootTag, /class="hraness-checkbox-field [^"]*vite-checkbox-root-xstyle vite-checkbox-root-class"/u);
 assert.match(controlTag, /class="hraness-checkbox-field__control [^"]*vite-checkbox-control-xstyle vite-checkbox-control-class"/u);
 for (const baseClass of ${JSON.stringify(checkboxProbe.rootBaseClasses)}) {
@@ -1746,6 +1946,9 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "checkbox-field.stylex.ts"),
   );
   await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "visually-hidden.stylex.ts"),
+  );
+  await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "actions.stylex.ts"),
   );
   await access(
@@ -1765,6 +1968,10 @@ async function verifyConsumer(
   const linkProbe = packageLinkStyleMap(installedJavaScript);
   requirePackageCheckboxStyles(installedJavaScript, installedStylexCss);
   requirePackageLinkStyles(installedJavaScript, installedStylexCss);
+  const visuallyHiddenClasses = requirePackageVisuallyHiddenStyles(
+    installedJavaScript,
+    installedStylexCss,
+  );
 
   // A restored package-manager cache can retain this valid duplicate topology.
   // Public source types must remain portable when React Aria resolves through it.
@@ -1783,7 +1990,7 @@ async function verifyConsumer(
 
   await writeFile(
     join(consumer, "ssr.mjs"),
-    ssrProbe(release, checkboxProbe, linkProbe),
+    ssrProbe(release, checkboxProbe, linkProbe, visuallyHiddenClasses),
   );
   await run([nodeExecutable, "./ssr.mjs"], consumer);
 
@@ -1802,7 +2009,7 @@ async function verifyConsumer(
     writeFile(join(consumer, "vite-client.ts"), viteClient),
     writeFile(
       join(consumer, "vite-ssr.ts"),
-      viteSsrProbe(checkboxProbe, linkProbe),
+      viteSsrProbe(checkboxProbe, linkProbe, visuallyHiddenClasses),
     ),
     writeFile(join(consumer, "vite.config.ts"), viteConfig),
   ]);
@@ -1825,6 +2032,7 @@ async function verifyConsumer(
   ]);
   requirePackageCheckboxStyles(viteJavaScript, viteCss);
   requirePackageLinkStyles(viteJavaScript, viteCss);
+  requirePackageVisuallyHiddenStyles(viteJavaScript, viteCss);
   assert.match(viteJavaScript, /hraness-pressable-card/u);
   assert.match(viteJavaScript, /hraness-toolbar/u);
   assert.match(viteJavaScript, /hraness-key-hint/u);
@@ -1854,6 +2062,7 @@ async function verifyConsumer(
   assert.doesNotMatch(viteCss, /\.hraness-toolbar(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(viteCss, /\.hraness-key-hint(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(viteCss, /\.hraness-link(?![A-Za-z0-9_-])/u);
+  assert.doesNotMatch(viteCss, /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u);
 
   await run([
     process.execPath,

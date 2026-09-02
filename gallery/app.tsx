@@ -390,6 +390,7 @@ export function PrimitiveGallery() {
               ]}
               data-gallery-checkbox="override"
               data-gallery-checkbox-field-layer-conflict="true"
+              data-gallery-visually-hidden-layer-conflict="true"
               description="The accessible name remains when visible label copy is hidden."
               isDisabled
               isInvalid
@@ -407,6 +408,7 @@ export function PrimitiveGallery() {
           <SelectField
             className="gallery-select"
             data-gallery-select="true"
+            data-gallery-visually-hidden-layer-conflict="true"
             defaultValue="followers"
             label="Profile metric"
             options={gallerySelectOptions}
@@ -523,7 +525,11 @@ export function PrimitiveGallery() {
           <div data-gallery-status-row="true">
             <Badge tone="success"><StatusDot tone="success" /> Ready</Badge>
             <Tag variant="muted">package consumer</Tag>
-            <Spinner label="Checking primitives" size="small" />
+            <Spinner
+              data-gallery-visually-hidden-layer-conflict="true"
+              label="Checking primitives"
+              size="small"
+            />
           </div>
           <InlineAlert title="Migration boundary" tone="info">
             Quiet-site landmarks now use package-compiled StyleX while later families
@@ -1054,7 +1060,7 @@ export function PrimitiveGallery() {
       </QuietSitePage>
       <QuietSiteFooter
         className="gallery-quiet-site-footer"
-        data-gallery-quiet-site-priority3-conflict="true"
+        data-gallery-quiet-site-priority4-conflict="true"
         data-gallery-quiet-site-footer="true"
         xstyle={galleryStyles.quietSiteFooterOverride}
       >

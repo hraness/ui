@@ -8,7 +8,7 @@ const CARD_DESCRIPTION_BRIDGE_PATTERN =
 const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-stylex-layer-conflict",
   "data-gallery-quiet-site-layer-conflict",
-  "data-gallery-quiet-site-priority3-conflict",
+  "data-gallery-quiet-site-priority4-conflict",
   "data-gallery-viewport-frame-layer-conflict",
   "data-gallery-wrapping-row-layer-conflict",
   "data-gallery-themed-surface-layer-conflict",
@@ -21,6 +21,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-checkbox-field-layer-conflict",
   "data-gallery-action-family-layer-conflict",
   "data-gallery-skip-link-layer-conflict",
+  "data-gallery-visually-hidden-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -28,12 +29,13 @@ const LEGACY_LAYERS = [
   LEGACY_LAYER,
 ] as const;
 const LAYER_PRELUDE =
-  "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3;";
+  "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;";
 const STYLEX_IMPORT = '@import "../dist/stylex.css";';
 const STYLEX_LAYERS = [
   "components.hraness-ui.priority1",
   "components.hraness-ui.priority2",
   "components.hraness-ui.priority3",
+  "components.hraness-ui.priority4",
 ] as const;
 const TOP_LEVEL_LAYER_PRELUDE = "@layer base, components;";
 
@@ -357,6 +359,20 @@ interface CompiledStyleMap {
   readonly properties: ReadonlyMap<string, CompiledObjectProperty>;
 }
 
+interface VisuallyHiddenArtifact {
+  readonly classNames: ReadonlySet<string>;
+  readonly rules: readonly CssRule[];
+}
+
+interface VisuallyHiddenSources {
+  readonly actions: string;
+  readonly fields: string;
+  readonly feedback: string;
+  readonly helper: string;
+  readonly knob: string;
+  readonly selectField: string;
+}
+
 function compiledObjectProperties(
   object: string,
   description: string,
@@ -609,6 +625,115 @@ function rulesForClassNames(
       new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header),
     ),
   );
+}
+
+function normalizedAtomicDeclaration(body: string): string {
+  return body
+    .toLowerCase()
+    .replace(/,/gu, " ")
+    .replace(/\s+/gu, " ")
+    .replace(/\s*:\s*/gu, ":")
+    .replace(/\s*!important/gu, "!important")
+    .replace(/\s*;\s*/gu, ";")
+    .trim()
+    .replace(/;?$/u, ";");
+}
+
+function visuallyHiddenArtifact(
+  compiledJavaScript: string,
+  compiledCss: string,
+): VisuallyHiddenArtifact {
+  const allRules = cssRules(compiledCss, "dist/stylex.css");
+  const candidates: VisuallyHiddenArtifact[] = [];
+  const candidateKeys = new Set<string>();
+  const fingerprints = new Set([
+    "clip:rect(0 0 0 0)!important;",
+    "height:1px!important;",
+    "overflow:hidden!important;",
+    "position:absolute!important;",
+    "white-space:nowrap!important;",
+    "width:1px!important;",
+  ]);
+  const addCandidate = (classNames: ReadonlySet<string>): void => {
+    const rules = rulesForClassNames(allRules, classNames);
+    const fingerprintCount = [
+      ...new Set(rules.map((rule) => normalizedAtomicDeclaration(rule.body))),
+    ].filter((declaration) => fingerprints.has(declaration)).length;
+    const key = [...classNames].sort().join(" ");
+    if (fingerprintCount >= 4 && !candidateKeys.has(key)) {
+      candidateKeys.add(key);
+      candidates.push({ classNames, rules });
+    }
+  };
+
+  for (const match of compiledJavaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*root\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedObject(
+      compiledJavaScript,
+      open,
+      "dist/index.js visuallyHiddenStyles class map",
+    );
+    const properties = compiledObjectProperties(
+      object,
+      "dist/index.js visuallyHiddenStyles class map",
+    );
+    const root = properties.get("root");
+    if (properties.size !== 1 || root === undefined || !root.value.startsWith("{")) {
+      continue;
+    }
+    const classNames = generatedClassNames(
+      root.value,
+      "the compiled visuallyHiddenStyles.root class map",
+    );
+    addCandidate(classNames);
+  }
+
+  for (const match of compiledJavaScript.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+){3,})["']/gu,
+  )) {
+    addCandidate(
+      generatedClassNames(
+        match[0],
+        "the compiled visually-hidden helper class set",
+      ),
+    );
+  }
+
+  if (candidates.length !== 1) {
+    throw new Error(
+      `dist/index.js must contain exactly one compiled visuallyHiddenStyles class set; found ${String(candidates.length)}`,
+    );
+  }
+  return candidates[0]!;
+}
+
+function replaceVisuallyHiddenDeclaration(
+  compiledJavaScript: string,
+  compiledCss: string,
+  declaration: RegExp,
+  replacement: string,
+  description: string,
+): string {
+  const matches = visuallyHiddenArtifact(compiledJavaScript, compiledCss).rules.filter(
+    (rule) => declaration.test(rule.body),
+  );
+  if (matches.length !== 1) {
+    throw new Error(`${description} mutation expected one visually-hidden rule`);
+  }
+  const rule = matches[0]!;
+  const mutatedRule = rule.source.replace(declaration, replacement);
+  if (mutatedRule === rule.source) {
+    throw new Error(`${description} mutation did not change its exact rule`);
+  }
+  const ruleIndex = compiledCss.indexOf(rule.source);
+  if (ruleIndex < 0 || ruleIndex !== compiledCss.lastIndexOf(rule.source)) {
+    throw new Error(`${description} mutation requires one exact visually-hidden rule`);
+  }
+  return `${compiledCss.slice(0, ruleIndex)}${mutatedRule}${compiledCss.slice(
+    ruleIndex + rule.source.length,
+  )}`;
 }
 
 function actionRecipeStyleRules(
@@ -1239,7 +1364,7 @@ function requirePublicLayerContract(
     )
   ) {
     throw new Error(
-      "dist/stylex.css must contain the exact priority1 < priority2 < priority3 layer sequence",
+      "dist/stylex.css must contain the exact priority1 < priority2 < priority3 < priority4 layer sequence",
     );
   }
   for (const expectedLayer of STYLEX_LAYERS) {
@@ -1266,7 +1391,7 @@ function requirePublicLayerContract(
     || lines.some((line, index) => line !== expectedLines[index])
   ) {
     throw new Error(
-      "src/styles.css must contain the exact base < components and legacy < priority1 < priority2 < priority3 preludes and ordered public imports",
+      "src/styles.css must contain the exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes and ordered public imports",
     );
   }
 }
@@ -1275,7 +1400,7 @@ function requireEarliestLayerPrelude(resetStylesheet: string): void {
   const expectedPrefix = `${TOP_LEVEL_LAYER_PRELUDE}\n${LAYER_PRELUDE}\n`;
   if (!resetStylesheet.startsWith(expectedPrefix)) {
     throw new Error(
-      "src/reset.css must begin with the exact base < components and legacy < priority1 < priority2 < priority3 preludes",
+      "src/reset.css must begin with the exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes",
     );
   }
 }
@@ -2357,6 +2482,188 @@ function requireSkipLinkContract(
   }
 }
 
+function requireExactSourceMatches(
+  source: string,
+  pattern: RegExp,
+  expected: number,
+  description: string,
+): void {
+  const matches = source.match(pattern)?.length ?? 0;
+  if (matches !== expected) {
+    throw new Error(
+      `StyleX source must contain ${String(expected)} ${description}; found ${String(matches)}`,
+    );
+  }
+}
+
+function requireVisuallyHiddenContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+  sources: VisuallyHiddenSources,
+): void {
+  forbid(
+    legacyComponents,
+    /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u,
+    "a legacy visually-hidden recipe",
+  );
+  const artifact = visuallyHiddenArtifact(compiledJavaScript, compiledCss);
+  if (artifact.classNames.size !== 15) {
+    throw new Error(
+      `visuallyHiddenStyles.root must own exactly 15 atomic classes; found ${String(artifact.classNames.size)}`,
+    );
+  }
+
+  const expectedDeclarations = new Set([
+    "border-color:currentcolor!important;",
+    "border-image-outset:0!important;",
+    "border-image-repeat:stretch!important;",
+    "border-image-slice:100%!important;",
+    "border-image-source:none!important;",
+    "border-image-width:1!important;",
+    "border-style:none!important;",
+    "border-width:0!important;",
+    "clip:rect(0 0 0 0)!important;",
+    "height:1px!important;",
+    "overflow:hidden!important;",
+    "padding:0!important;",
+    "position:absolute!important;",
+    "white-space:nowrap!important;",
+    "width:1px!important;",
+  ]);
+  const allRules = cssRules(compiledCss, "dist/stylex.css");
+  const actualDeclarations = new Set<string>();
+  for (const className of artifact.classNames) {
+    const escapedClassName = className.replace(
+      /[.*+?^${}()|[\]\\]/gu,
+      "\\$&",
+    );
+    const ownedRules = allRules.filter((rule) =>
+      new RegExp(`\\.${escapedClassName}(?![A-Za-z0-9_-])`, "u")
+        .test(rule.header)
+    );
+    if (ownedRules.length !== 1) {
+      throw new Error(
+        `dist/stylex.css must contain one rule for visually-hidden class ${className}; found ${String(ownedRules.length)}`,
+      );
+    }
+    const rule = ownedRules[0]!;
+    if (
+      rule.header.includes(":")
+      || rule.ancestors.some((ancestor) => !ancestor.header.startsWith("@layer "))
+    ) {
+      throw new Error(
+        `visually-hidden class ${className} must remain an unconditional atomic rule`,
+      );
+    }
+    actualDeclarations.add(normalizedAtomicDeclaration(rule.body));
+  }
+  if (
+    actualDeclarations.size !== expectedDeclarations.size
+    || [...actualDeclarations].some(
+      (declaration) => !expectedDeclarations.has(declaration),
+    )
+  ) {
+    throw new Error(
+      `visuallyHiddenStyles.root does not preserve its exact important declaration set: ${JSON.stringify([...actualDeclarations].sort())}`,
+    );
+  }
+
+  requireMatch(
+    sources.helper,
+    /export const visuallyHiddenStyles\s*=\s*stylex\.create\(\{\s*root:\s*\{/u,
+    "the shared visually-hidden StyleX recipe",
+  );
+  requireMatch(
+    sources.helper,
+    /visuallyHiddenClassName\(hidden\s*=\s*true\)[\s\S]*?stylex\.props\(hidden\s*&&\s*visuallyHiddenStyles\.root\)\.className/u,
+    "the default-on conditional visually-hidden helper",
+  );
+  if ((sources.helper.match(/!important/gu)?.length ?? 0) !== 15) {
+    throw new Error(
+      "the visually-hidden source recipe must preserve all 15 important declarations",
+    );
+  }
+
+  for (const [source, description] of [
+    [sources.actions, "actions"],
+    [sources.feedback, "feedback"],
+    [sources.fields, "fields"],
+    [sources.knob, "knob"],
+    [sources.selectField, "select-field"],
+  ] as const) {
+    requireMatch(
+      source,
+      /from ["']\.\/visually-hidden\.stylex\.js["']/u,
+      `the shared visually-hidden import in ${description}`,
+    );
+  }
+  requireExactSourceMatches(
+    sources.actions,
+    /visuallyHiddenClassName\(\)/gu,
+    1,
+    "CopyButton visually-hidden helper call",
+  );
+  requireExactSourceMatches(
+    sources.feedback,
+    /visuallyHiddenClassName\(\)/gu,
+    1,
+    "Spinner visually-hidden helper call",
+  );
+  requireExactSourceMatches(
+    sources.fields,
+    /visuallyHiddenClassName\(\s*!showLabel\s*\)/gu,
+    7,
+    "field visually-hidden helper calls",
+  );
+  requireExactSourceMatches(
+    sources.selectField,
+    /visuallyHiddenClassName\(\s*!showLabel\s*\)/gu,
+    1,
+    "SelectField visually-hidden helper call",
+  );
+  requireExactSourceMatches(
+    sources.knob,
+    /visuallyHiddenClassName\(\s*outputVisibility\s*===\s*["']visually-hidden["'],?\s*\)/gu,
+    2,
+    "Knob visually-hidden helper calls",
+  );
+  for (const [source, pattern, expected, description] of [
+    [
+      sources.actions,
+      /["']hraness-visually-hidden["'],\s*visuallyHiddenClassName\(\)/gu,
+      1,
+      "CopyButton stable-before-generated order",
+    ],
+    [
+      sources.feedback,
+      /["']hraness-visually-hidden["'],\s*visuallyHiddenClassName\(\)/gu,
+      1,
+      "Spinner stable-before-generated order",
+    ],
+    [
+      sources.fields,
+      /!showLabel\s*&&\s*["']hraness-visually-hidden["'],\s*visuallyHiddenClassName\(\s*!showLabel\s*\)/gu,
+      7,
+      "field stable-before-generated order",
+    ],
+    [
+      sources.selectField,
+      /!showLabel\s*&&\s*["']hraness-visually-hidden["'],\s*visuallyHiddenClassName\(\s*!showLabel\s*\)/gu,
+      1,
+      "SelectField stable-before-generated order",
+    ],
+    [
+      sources.knob,
+      /outputVisibility\s*===\s*["']visually-hidden["']\s*&&\s*["']hraness-visually-hidden["'],\s*visuallyHiddenClassName\(\s*outputVisibility\s*===\s*["']visually-hidden["'],?\s*\)/gu,
+      2,
+      "Knob stable-before-generated order",
+    ],
+  ] as const) {
+    requireExactSourceMatches(source, pattern, expected, description);
+  }
+}
+
 function requireCheckboxFieldContract(
   legacyComponents: string,
   compiledCss: string,
@@ -2460,7 +2767,12 @@ function requireCheckboxFieldSourceContract(fieldsSource: string): void {
   requireMatch(
     checkboxSource,
     /!showLabel\s*&&\s*["']hraness-visually-hidden["']/u,
-    "the shared visually-hidden CheckboxField label helper",
+    "the stable visually-hidden CheckboxField label hook",
+  );
+  requireMatch(
+    checkboxSource,
+    /visuallyHiddenClassName\(\s*!showLabel\s*\)/u,
+    "the generated visually-hidden CheckboxField label helper",
   );
   requireMatch(
     checkboxSource,
@@ -2530,6 +2842,10 @@ const [
   contentSource,
   actionsSource,
   fieldsSource,
+  visuallyHiddenSource,
+  feedbackSource,
+  knobSource,
+  selectFieldSource,
   resetStylesheet,
   skipLinkSource,
 ] =
@@ -2543,9 +2859,22 @@ const [
     readFile(resolve(repository, "src/content.tsx"), "utf8"),
     readFile(resolve(repository, "src/actions.tsx"), "utf8"),
     readFile(resolve(repository, "src/fields.tsx"), "utf8"),
+    readFile(resolve(repository, "src/visually-hidden.stylex.ts"), "utf8"),
+    readFile(resolve(repository, "src/feedback.tsx"), "utf8"),
+    readFile(resolve(repository, "src/knob.tsx"), "utf8"),
+    readFile(resolve(repository, "src/select-field.tsx"), "utf8"),
     readFile(resolve(repository, "src/reset.css"), "utf8"),
     readFile(resolve(repository, "src/skip-link.tsx"), "utf8"),
   ]);
+
+const visuallyHiddenSources: VisuallyHiddenSources = {
+  actions: actionsSource,
+  feedback: feedbackSource,
+  fields: fieldsSource,
+  helper: visuallyHiddenSource,
+  knob: knobSource,
+  selectField: selectFieldSource,
+};
 
 if (compiledCss.trim().length === 0) {
   throw new Error("dist/stylex.css is empty");
@@ -2565,6 +2894,11 @@ requireMatch(
   compiledCss,
   /@layer components\.hraness-ui\.priority3\s*\{/u,
   "the package-owned priority3 layer",
+);
+requireMatch(
+  compiledCss,
+  /@layer components\.hraness-ui\.priority4\s*\{/u,
+  "the package-owned priority4 layer",
 );
 requireMatch(compiledCss, /flex:\s*none;/u, "the icon flex declaration");
 requireMatch(
@@ -2660,6 +2994,12 @@ requireActionFamilyContract(
   actionsSource,
 );
 requireSkipLinkContract(legacyComponents, compiledCss, skipLinkSource);
+requireVisuallyHiddenContract(
+  legacyComponents,
+  compiledCss,
+  compiledJavaScript,
+  visuallyHiddenSources,
+);
 requireCheckboxFieldContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCheckboxFieldSourceContract(fieldsSource);
 requireEarliestLayerPrelude(resetStylesheet);
@@ -2757,6 +3097,7 @@ for (const [pattern, description] of [
   [/hraness-key-hint/u, "the KeyHint semantic hook"],
   [/hraness-link/u, "the Link semantic hook"],
   [/hraness-skip-link/u, "the SkipLink semantic hook"],
+  [/hraness-visually-hidden/u, "the shared visually-hidden semantic hook"],
   [/hraness-checkbox-field/u, "the CheckboxField semantic hook"],
   [/hraness-checkbox-field__control/u, "the CheckboxField control semantic hook"],
   [/hraness-checkbox-field__indicator/u, "the CheckboxField indicator semantic hook"],
@@ -2799,11 +3140,11 @@ assert.throws(
       legacyComponents,
       orderedStylesheet.replace(
         LAYER_PRELUDE,
-        "@layer components.hraness-ui.priority3, components.hraness-ui.priority2, components.hraness-ui.priority1, components.hraness-ui.legacy;",
+        "@layer components.hraness-ui.priority4, components.hraness-ui.priority3, components.hraness-ui.priority2, components.hraness-ui.priority1, components.hraness-ui.legacy;",
       ),
       compiledCss,
     ),
-  /exact base < components and legacy < priority1 < priority2 < priority3 preludes/u,
+  /exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes/u,
   "the layer guard must reject a priority inversion",
 );
 assert.throws(
@@ -2811,13 +3152,13 @@ assert.throws(
     requirePublicLayerContract(
       legacyComponents,
       orderedStylesheet.replace(
-        ", components.hraness-ui.priority3",
+        ", components.hraness-ui.priority4",
         "",
       ),
       compiledCss,
     ),
-  /exact base < components and legacy < priority1 < priority2 < priority3 preludes/u,
-  "the layer guard must reject an omitted generated priority3 declaration",
+  /exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes/u,
+  "the layer guard must reject an omitted generated priority4 declaration",
 );
 assert.throws(
   () =>
@@ -2825,8 +3166,8 @@ assert.throws(
       legacyComponents,
       orderedStylesheet,
       compiledCss.replace(
-        "components.hraness-ui.priority3",
         "components.hraness-ui.priority4",
+        "components.hraness-ui.priority5",
       ),
     ),
   /top-level content outside its allowed named layers/u,
@@ -2842,7 +3183,7 @@ assert.throws(
       ),
       compiledCss,
     ),
-  /exact base < components and legacy < priority1 < priority2 < priority3 preludes/u,
+  /exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes/u,
   "the layer guard must reject a top-level reset/component priority inversion",
 );
 assert.throws(
@@ -3633,6 +3974,122 @@ assert.throws(
     ),
   /gallery-only data-gallery-skip-link-layer-conflict sentinel/u,
   "the SkipLink guard must reject gallery sentinel leakage",
+);
+const changedVisuallyHiddenWidth = replaceVisuallyHiddenDeclaration(
+  compiledJavaScript,
+  compiledCss,
+  /width:\s*1px\s*!important;/u,
+  "width: 2px !important;",
+  "visually-hidden width",
+);
+const changedVisuallyHiddenClip = replaceVisuallyHiddenDeclaration(
+  compiledJavaScript,
+  compiledCss,
+  /clip:\s*rect\(0,?\s*0,?\s*0,?\s*0\)\s*!important;/u,
+  "clip: auto !important;",
+  "visually-hidden clip",
+);
+const changedVisuallyHiddenBorderImage = replaceVisuallyHiddenDeclaration(
+  compiledJavaScript,
+  compiledCss,
+  /border-image-source:\s*none\s*!important;/u,
+  "border-image-source: linear-gradient(red, blue) !important;",
+  "visually-hidden border-image source",
+);
+const nonImportantVisuallyHiddenOverflow = replaceVisuallyHiddenDeclaration(
+  compiledJavaScript,
+  compiledCss,
+  /overflow:\s*hidden\s*!important;/u,
+  "overflow: hidden;",
+  "visually-hidden important overflow",
+);
+for (const [mutatedCss, description] of [
+  [changedVisuallyHiddenWidth, "one-pixel width"],
+  [changedVisuallyHiddenClip, "clipping rectangle"],
+  [changedVisuallyHiddenBorderImage, "border-image reset"],
+  [nonImportantVisuallyHiddenOverflow, "important overflow"],
+] as const) {
+  assert.throws(
+    () =>
+      requireVisuallyHiddenContract(
+        legacyComponents,
+        mutatedCss,
+        compiledJavaScript,
+        visuallyHiddenSources,
+      ),
+    /exact important declaration set/u,
+    `the visually-hidden guard must reject a changed ${description}`,
+  );
+}
+assert.throws(
+  () =>
+    requireVisuallyHiddenContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-visually-hidden { position: absolute !important; } }`,
+      compiledCss,
+      compiledJavaScript,
+      visuallyHiddenSources,
+    ),
+  /legacy visually-hidden recipe/u,
+  "the visually-hidden guard must reject a restored legacy selector",
+);
+assert.throws(
+  () =>
+    requireVisuallyHiddenContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      {
+        ...visuallyHiddenSources,
+        helper: visuallyHiddenSource.replace("hidden && ", ""),
+      },
+    ),
+  /default-on conditional visually-hidden helper/u,
+  "the visually-hidden guard must reject an unconditional helper",
+);
+assert.throws(
+  () =>
+    requireVisuallyHiddenContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      {
+        ...visuallyHiddenSources,
+        feedback: feedbackSource.replace("visuallyHiddenClassName(),", ""),
+      },
+    ),
+  /Spinner visually-hidden helper call/u,
+  "the visually-hidden guard must reject a consumer that drops the helper",
+);
+const reorderedFieldVisuallyHiddenSource = fieldsSource.replace(
+  /!showLabel\s*&&\s*["']hraness-visually-hidden["'],\s*(visuallyHiddenClassName\(\s*!showLabel\s*\),)/u,
+  "$1\n          !showLabel && \"hraness-visually-hidden\",",
+);
+assert.notEqual(
+  reorderedFieldVisuallyHiddenSource,
+  fieldsSource,
+  "the visually-hidden caller-order mutation must change one field",
+);
+assert.throws(
+  () =>
+    requireVisuallyHiddenContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      {
+        ...visuallyHiddenSources,
+        fields: reorderedFieldVisuallyHiddenSource,
+      },
+    ),
+  /field stable-before-generated order/u,
+  "the visually-hidden guard must reject generated classes before the stable hook",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-visually-hidden-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-visually-hidden-layer-conflict sentinel/u,
+  "the visually-hidden guard must reject gallery sentinel leakage",
 );
 const changedCheckboxDefaultTarget = replaceCheckboxDeclaration(
   compiledJavaScript,

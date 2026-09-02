@@ -51,6 +51,7 @@ import {
 import { checkboxFieldStyles } from "./checkbox-field.stylex.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
+import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
 
 export type FieldSize = "compact" | "default" | "large";
 export type FieldSurface = "card" | "default" | "pane";
@@ -151,7 +152,11 @@ export const TextField = forwardRef<HTMLDivElement, TextFieldProps>(
       ref={ref}
     >
       <Label
-        className={cn("hraness-field__label", !showLabel && "hraness-visually-hidden")}
+        className={cn(
+          "hraness-field__label",
+          !showLabel && "hraness-visually-hidden",
+          visuallyHiddenClassName(!showLabel),
+        )}
         data-slot="field-label"
       >
         {label}
@@ -211,7 +216,11 @@ export function TextAreaField({
       ref={fieldRef}
     >
       <Label
-        className={cn("hraness-field__label", !showLabel && "hraness-visually-hidden")}
+        className={cn(
+          "hraness-field__label",
+          !showLabel && "hraness-visually-hidden",
+          visuallyHiddenClassName(!showLabel),
+        )}
         data-slot="field-label"
       >
         {label}
@@ -281,7 +290,11 @@ export function SearchField({
       {({ isEmpty }) => (
         <>
           <Label
-            className={cn("hraness-field__label", !showLabel && "hraness-visually-hidden")}
+            className={cn(
+              "hraness-field__label",
+              !showLabel && "hraness-visually-hidden",
+              visuallyHiddenClassName(!showLabel),
+            )}
             data-slot="field-label"
           >
             {label}
@@ -361,7 +374,11 @@ export function NumberField({
       ref={fieldRef}
     >
       <Label
-        className={cn("hraness-field__label", !showLabel && "hraness-visually-hidden")}
+        className={cn(
+          "hraness-field__label",
+          !showLabel && "hraness-visually-hidden",
+          visuallyHiddenClassName(!showLabel),
+        )}
         data-slot="field-label"
       >
         {label}
@@ -525,6 +542,7 @@ export function CheckboxField({
                   "hraness-checkbox-field__label",
                   labelPresentation.className,
                   !showLabel && "hraness-visually-hidden",
+                  visuallyHiddenClassName(!showLabel),
                 )}
                 data-slot="checkbox-label"
               >
@@ -761,7 +779,11 @@ export function NativeSelectField<Id extends string>({
       data-surface={surface}
     >
       <label
-        className={cn("hraness-field__label", !showLabel && "hraness-visually-hidden")}
+        className={cn(
+          "hraness-field__label",
+          !showLabel && "hraness-visually-hidden",
+          visuallyHiddenClassName(!showLabel),
+        )}
         data-slot="field-label"
         htmlFor={controlId}
       >
@@ -878,7 +900,11 @@ export function FileField({
       data-surface={surface}
     >
       <label
-        className={cn("hraness-field__label", !showLabel && "hraness-visually-hidden")}
+        className={cn(
+          "hraness-field__label",
+          !showLabel && "hraness-visually-hidden",
+          visuallyHiddenClassName(!showLabel),
+        )}
         data-slot="field-label"
         htmlFor={controlId}
       >
