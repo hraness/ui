@@ -23,7 +23,8 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-skip-link-layer-conflict",
   "data-gallery-visually-hidden-layer-conflict",
   "data-gallery-form-layer-conflict",
-  "data-gallery-field-family-layer-conflict",
+  "data-gallery-fields-layer-conflict",
+  "data-gallery-select-option-layer-conflict",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -3186,12 +3187,18 @@ function requireCompiledConditionalDeclaration(
   declaration: RegExp,
   description: string,
 ): void {
-  if (!rules.some((rule) =>
-    declaration.test(rule.body)
-    && rule.ancestors.some((ancestor) =>
-      condition.test(normalizedHeader(ancestor.header))
-    )
-  )) {
+  const matches = rules.filter((rule) => declaration.test(rule.body));
+  if (matches.length === 0 || matches.some((rule) => {
+    const directAncestor = normalizedHeader(
+      rule.ancestors.at(-1)?.header ?? "",
+    );
+    const hasExtraRestriction = rule.ancestors.slice(0, -1).some((ancestor) =>
+      /^@(?:container|media|supports)/u.test(
+        normalizedHeader(ancestor.header),
+      )
+    );
+    return !condition.test(directAncestor) || hasExtraRestriction;
+  })) {
     throw new Error(`StyleX artifact is missing ${description}`);
   }
 }
@@ -3201,9 +3208,13 @@ function requireCompiledUnconditionalDeclaration(
   declaration: RegExp,
   description: string,
 ): void {
-  if (!rules.some((rule) =>
-    declaration.test(rule.body)
-    && rule.ancestors.every((ancestor) => !ancestor.header.startsWith("@media"))
+  const matches = rules.filter((rule) => declaration.test(rule.body));
+  if (matches.length === 0 || matches.some((rule) =>
+    rule.ancestors.some((ancestor) =>
+      /^@(?:container|media|supports)/u.test(
+        normalizedHeader(ancestor.header),
+      )
+    )
   )) {
     throw new Error(`StyleX artifact is missing ${description}`);
   }
@@ -3220,10 +3231,17 @@ function mutateCompiledRule(
   const matches = compiledStyleRules(compiledCss, map, key).filter((rule) =>
     declaration.test(rule.body)
     && (condition === undefined
-      ? rule.ancestors.every((ancestor) => !ancestor.header.startsWith("@media"))
-      : rule.ancestors.some((ancestor) =>
-        condition.test(normalizedHeader(ancestor.header))
-      ))
+      ? rule.ancestors.every((ancestor) =>
+        !/^@(?:container|media|supports)/u.test(
+          normalizedHeader(ancestor.header),
+        )
+      )
+      : condition.test(normalizedHeader(rule.ancestors.at(-1)?.header ?? ""))
+        && rule.ancestors.slice(0, -1).every((ancestor) =>
+          !/^@(?:container|media|supports)/u.test(
+            normalizedHeader(ancestor.header),
+          )
+        ))
   );
   if (matches.length === 0) {
     throw new Error(`negative control cannot find ${key} rule to ${mode}`);
@@ -3233,6 +3251,20 @@ function mutateCompiledRule(
   return mode === "remove"
     ? removed
     : `${removed}\n@layer components.hraness-ui.priority4 { ${rule.source} }`;
+}
+
+function requirePositiveFocusVisibleDeclaration(
+  rules: readonly CssRule[],
+  declaration: RegExp,
+  description: string,
+): void {
+  const matches = rules.filter((rule) => declaration.test(rule.body));
+  if (matches.length === 0 || matches.some((rule) =>
+    !/:focus-visible(?![A-Za-z0-9_-])/u.test(rule.header)
+    || /:not\(\s*:focus-visible(?![A-Za-z0-9_-])/u.test(rule.header)
+  )) {
+    throw new Error(`StyleX artifact is missing ${description}`);
+  }
 }
 
 function requireFieldAndSelectContract(
@@ -3401,6 +3433,17 @@ function requireFieldAndSelectContract(
       `the field focus ${description}`,
     );
   }
+
+  requirePositiveFocusVisibleDeclaration(
+    compiledStyleRules(compiledCss, fieldMap, "radioSwitchNativeFocus"),
+    /outline-width:\s*2px;/u,
+    "the positive native RadioOption/SwitchField :focus-visible selector",
+  );
+  requirePositiveFocusVisibleDeclaration(
+    compiledStyleRules(compiledCss, selectMap, "triggerNativeInteractions"),
+    /outline-width:\s*2px;/u,
+    "the positive native Select trigger :focus-visible selector",
+  );
 
   for (const key of ["numberStepFocusVisible", "numberStepNativeInteractions"] as const) {
     const rules = compiledStyleRules(compiledCss, fieldMap, key);
@@ -3978,6 +4021,47 @@ assert.throws(
   /RTL native-select arrow position/u,
   "the Fields/Select guard must reject the native-select arrow moved to LTR",
 );
+for (const [map, key, description] of [
+  [fieldGuardMap, "radioSwitchNativeFocus", "RadioOption/SwitchField"],
+  [selectGuardMap, "triggerNativeInteractions", "Select trigger"],
+] as const) {
+  const focusRule = compiledStyleRules(compiledCss, map, key).find((rule) =>
+    /outline-width:\s*2px;/u.test(rule.body)
+    && /:focus-visible(?![A-Za-z0-9_-])/u.test(rule.header)
+  );
+  if (focusRule === undefined) {
+    throw new Error(`negative control cannot find the native ${description} focus rule`);
+  }
+  assert.throws(
+    () => requireFieldAndSelectContract(
+      legacyComponents,
+      compiledCss.replace(
+        focusRule.source,
+        focusRule.source.replaceAll(":focus-visible", ":not(:focus-visible)"),
+      ),
+      compiledJavaScript,
+      fieldsSource,
+      fieldStyleSource,
+      selectFieldSource,
+      selectFieldStyleSource,
+    ),
+    /positive native .* :focus-visible selector/u,
+    `the Fields/Select guard must reject a negated native ${description} focus selector`,
+  );
+}
+for (const sentinel of [
+  "data-gallery-fields-layer-conflict",
+  "data-gallery-select-option-layer-conflict",
+] as const) {
+  assert.throws(
+    () =>
+      requireNoGallerySentinels(
+        `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[${sentinel}] { display: block; }`,
+      ),
+    new RegExp(`gallery-only ${sentinel} sentinel`, "u"),
+    `the Fields/Select guard must reject ${sentinel} leakage`,
+  );
+}
 requireEarliestLayerPrelude(resetStylesheet);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(

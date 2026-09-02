@@ -16,6 +16,7 @@ import { basename, join, relative, resolve } from "node:path";
 import {
   chromium,
   type BrowserContextOptions,
+  type Locator,
   type Page,
 } from "playwright-core";
 
@@ -5065,6 +5066,72 @@ async function settleFieldPresentation(page: Page): Promise<void> {
   });
 }
 
+async function verifyNativeFieldFocusFallback(
+  page: Page,
+  id: string,
+  target: Locator,
+  contract: Readonly<{
+    borderUsesRing?: boolean;
+    label: string;
+    outlineOffset: number;
+    selector: string;
+  }>,
+): Promise<void> {
+  invariant(
+    await target.count() === 1,
+    `${id}: the ${contract.label} native-focus specimen is not unique`,
+  );
+  invariant(
+    await target.evaluate((element, selector) => element.matches(selector), contract.selector),
+    `${id}: the ${contract.label} accessible target does not match ${contract.selector}`,
+  );
+
+  await target.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await page.waitForFunction((selector) => {
+    const element = document.querySelector(selector);
+    return element instanceof HTMLElement
+      && document.activeElement === element
+      && element.matches(":focus-visible")
+      && element.hasAttribute("data-focus-visible");
+  }, contract.selector, { polling: "raf", timeout: 2_000 });
+  await settleFieldPresentation(page);
+
+  const evidence = await target.evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.setProperty("outline-color", "var(--ui-ring)");
+    document.body.append(probe);
+    const ring = getComputedStyle(probe).outlineColor;
+    probe.remove();
+    const style = getComputedStyle(element);
+    return {
+      active: document.activeElement === element,
+      borderColor: style.borderColor,
+      dataFocusVisible: element.getAttribute("data-focus-visible"),
+      focusVisible: element.matches(":focus-visible"),
+      forcedColorsActive: matchMedia("(forced-colors: active)").matches,
+      outlineColor: style.outlineColor,
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+      ring,
+    };
+  });
+  invariant(
+    evidence.active
+    && evidence.dataFocusVisible !== null
+    && evidence.focusVisible
+    && !evidence.forcedColorsActive
+    && evidence.outlineColor === evidence.ring
+    && nearlyEqual(evidence.outlineOffset, contract.outlineOffset)
+    && evidence.outlineStyle === "solid"
+    && nearlyEqual(evidence.outlineWidth, 2)
+    && (!contract.borderUsesRing || evidence.borderColor === evidence.ring),
+    `${id}: ${contract.label} native keyboard-focus fallback changed: ${JSON.stringify(evidence)}`,
+  );
+}
+
 async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<void> {
   const evidence = await page.evaluate(() => {
     const required = <ElementType extends Element>(
@@ -5354,6 +5421,43 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     && evidence.syntheticIncrementWidth >= 48
     && evidence.syntheticTriggerHeight >= 48,
     `${id}: synthetic coarse Fields geometry changed: ${JSON.stringify(evidence)}`,
+  );
+
+  await verifyNativeFieldFocusFallback(
+    page,
+    id,
+    page.getByRole("radio", { exact: true, name: "Calm" }),
+    {
+      label: "default Calm RadioOption",
+      outlineOffset: 3,
+      selector:
+        '[data-gallery-field="radio-group"] [data-slot="radio-control"][data-selected]',
+    },
+  );
+  await verifyNativeFieldFocusFallback(
+    page,
+    id,
+    page.getByRole("switch", { exact: true, name: "Digest" }),
+    {
+      label: "default Digest SwitchField",
+      outlineOffset: 3,
+      selector:
+        '[data-gallery-field="switch-unselected"] [data-slot="switch-control"]',
+    },
+  );
+  await verifyNativeFieldFocusFallback(
+    page,
+    id,
+    page.locator(
+      '[data-gallery-field="synthetic-select"] .hraness-select-field__trigger',
+    ),
+    {
+      borderUsesRing: true,
+      label: "default synthetic Select trigger",
+      outlineOffset: 2,
+      selector:
+        '[data-gallery-field="synthetic-select"] .hraness-select-field__trigger',
+    },
   );
 
   const file = page.locator('input[data-gallery-field="file"]');
@@ -7989,7 +8093,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|form|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|fields|form|key-hint|link|select-option|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(

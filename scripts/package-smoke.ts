@@ -967,6 +967,22 @@ function requirePackageFieldSelectStyles(javaScript: string, css: string): void 
       assert.match(keyCss, declaration, `packed ${key} must retain its ordinary focus contract`);
     }
   }
+  for (const [map, key] of [
+    [field, "radioSwitchNativeFocus"],
+    [select, "triggerNativeInteractions"],
+  ] as const) {
+    const keyCss = entryCss(map, key);
+    assert.match(
+      keyCss,
+      /:focus-visible(?![A-Za-z0-9_-])/u,
+      `packed ${key} must retain a positive native :focus-visible selector`,
+    );
+    assert.doesNotMatch(
+      keyCss,
+      /:not\(\s*:focus-visible(?![A-Za-z0-9_-])/u,
+      `packed ${key} must not negate its native :focus-visible selector`,
+    );
+  }
   const nativeSelectCss = entryCss(field, "nativeSelect");
   assert.match(nativeSelectCss, /appearance:\s*none/u);
   assert.match(
