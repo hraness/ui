@@ -207,6 +207,8 @@ test("Spinner and Skeleton compile their recipes before caller presentation", as
   expect(components.match(/@keyframes hraness-skeleton/gu)).toHaveLength(1);
   expect(source).toContain('default: "700ms"');
   expect(source).toContain('default: "1.4s"');
+  expect(source).toContain('const forcedColors = "@media(forced-colors: active)"');
+  expect(source).toContain('const reducedMotion = "@media(prefers-reduced-motion: reduce)"');
   expect(source).toContain('[forcedColors]: "Canvas"');
   expect(source).toContain('[reducedMotion]: "none"');
 });

@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 
-const forcedColors = "@media (forced-colors: active)";
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
+const forcedColors = "@media(forced-colors: active)";
+const reducedMotion = "@media(prefers-reduced-motion: reduce)";
 const skeletonGradient =
   "linear-gradient(90deg, var(--ui-muted) 0%, color-mix(in oklch, var(--ui-muted) 72%, var(--ui-foreground)) 50%, var(--ui-muted) 100%)";
 
