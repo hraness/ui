@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 
-const coarsePointer = "@media (pointer: coarse)";
-const forcedColors = "@media (forced-colors: active)";
+const coarsePointer = "@media(pointer: coarse)";
+const forcedColors = "@media(forced-colors: active)";
 
 export const askAiStyles = stylex.create({
   icon: {

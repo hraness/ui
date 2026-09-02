@@ -103,7 +103,6 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   ]) expect(tokens).toContain(role);
 
   for (const contract of [
-    ".hraness-button__control",
     ".hraness-field__control",
     ".hraness-select-field__popover",
     ".hraness-dialog-overlay",
@@ -157,6 +156,9 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
     "",
   );
   expect(renderedComponents).not.toMatch(/\.hraness-(?:tabs|disclosure|accordion|toggle-group|segmented-control|separator)(?![A-Za-z0-9_-])/u);
+  expect(components).not.toMatch(
+    /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
+  );
   expect(tailwind).toContain(
     ':not(:where([data-theme="light"], [data-theme="light"] *))',
   );
@@ -233,56 +235,50 @@ test("Separator owns its physical orientation and shorthand resets in StyleX", a
 });
 
 test("inline icon links keep typographic scale without losing interaction states", async () => {
-  const components = await stylesheet("./components.css");
-  const control = declarationBlock(
-    components,
-    ".hraness-inline-icon-link__control {",
-  );
-  const content = declarationBlock(
-    components,
-    ".hraness-inline-icon-link__content {",
-  );
-  const hover = declarationBlock(
-    components,
-    ".hraness-inline-icon-link__control:where([data-hovered], :hover) {",
-  );
-  const focus = declarationBlock(
-    components,
-    ".hraness-inline-icon-link__control:where([data-focus-visible], :focus-visible) {",
-  );
+  const source = await stylesheet("./actions.stylex.ts");
 
-  expect(control).toContain("width: 1.5rem;");
-  expect(control).toContain("height: 1.5rem;");
-  expect(control).toContain("min-height: 1.5rem;");
-  expect(control).toContain("border: 0;");
-  expect(control).toContain("background: transparent;");
-  expect(control).toContain("color: var(--ui-primary);");
-  expect(hover).toContain("background: var(--ui-accent);");
-  expect(focus).toContain("outline: 2px solid var(--ui-ring);");
-  expect(content).toContain("width: 100%;");
-  expect(content).toContain("height: 100%;");
-  expect(content).toContain("place-items: center;");
-  expect(content).toContain("line-height: 0;");
+  expect(source).toContain('inlineControl: {');
+  expect(source).toContain('height: "1.5rem"');
+  expect(source).toContain('minHeight: "1.5rem"');
+  expect(source).toContain('minWidth: "1.5rem"');
+  expect(source).toContain('width: "1.5rem"');
+  expect(source).toContain('backgroundColor: "var(--ui-accent)"');
+  expect(source).toContain('outlineColor: "var(--ui-ring)"');
+  expect(source).toContain('inlineContent: {');
+  expect(source).toContain('lineHeight: 0');
+});
+
+test("coarse-pointer seams preserve every action density without widening icon toggles", async () => {
+  const [components, source] = await Promise.all([
+    stylesheet("./components.css"),
+    stylesheet("./actions.stylex.ts"),
+  ]);
+
+  expect(source).toContain('const coarsePointer = "@media(pointer: coarse)"');
+  expect(source).toContain('[coarsePointer]: "var(--interactive-target-min)"');
+  expect(source).toContain('[coarsePointer]: "var(--control-height-primary)"');
+  expect(source).toContain('[coarsePointer]: "var(--control-height-transport)"');
+  expect(source).toContain('iconOnlyToggle: {');
+  expect(source).toContain('max(var(--interactive-target-compact), ${syntheticCoarseMinimum})');
+  const inlineControl = source.slice(
+    source.indexOf("inlineControl: {"),
+    source.indexOf("labeledDanger: {"),
+  );
+  expect(inlineControl).not.toContain("[coarsePointer]");
+  expect(components).toContain(
+    '--hraness-action-coarse-min: var(--interactive-target-min);',
+  );
+  expect(components).not.toMatch(
+    /\.hraness-(?:(?:button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
+  );
 });
 
 test("copy buttons reserve both transient labels without layout shift", async () => {
-  const components = await stylesheet("./components.css");
-  const labels = declarationBlock(
-    components,
-    ".hraness-copy-button__labels {",
-  );
-  const label = declarationBlock(
-    components,
-    ".hraness-copy-button__label {",
-  );
-  const hidden = declarationBlock(
-    components,
-    '.hraness-copy-button__label[aria-hidden="true"] {',
-  );
+  const source = await stylesheet("./actions.stylex.ts");
 
-  expect(labels).toContain("display: inline-grid;");
-  expect(label).toContain("grid-area: 1 / 1;");
-  expect(hidden).toContain("visibility: hidden;");
+  expect(source).toContain('copyLabels: {\n    display: "inline-grid"');
+  expect(source).toContain('copyLabel: {\n    gridColumn: "1",\n    gridRow: "1"');
+  expect(source).toContain('hiddenCopyLabel: {\n    visibility: "hidden"');
 });
 
 test("breadcrumbs keep the current page on one shrinkable line", async () => {
@@ -327,11 +323,10 @@ test("collapsed disclosure panels do not retain their expanded inset", async () 
 });
 
 test("transport actions and slider thumbs use their shared geometry", async () => {
-  const components = await stylesheet("./components.css");
-  const transport = declarationBlock(
-    components,
-    '.hraness-icon-button[data-size="transport"] > .hraness-icon-button__control {',
-  );
+  const [actions, components] = await Promise.all([
+    stylesheet("./actions.stylex.ts"),
+    stylesheet("./components.css"),
+  ]);
   const horizontalThumb = declarationBlock(
     components,
     '.hraness-slider[data-orientation="horizontal"] .hraness-slider__thumb {',
@@ -341,8 +336,13 @@ test("transport actions and slider thumbs use their shared geometry", async () =
     '.hraness-slider[data-orientation="vertical"] .hraness-slider__thumb {',
   );
 
-  expect(transport).toContain("width: var(--control-height-transport);");
-  expect(transport).toContain("min-height: var(--control-height-transport);");
+  expect(actions).toContain('transportIconControl: {');
+  expect(actions).toContain(
+    '`max(var(--control-height-transport), ${syntheticCoarseMinimum})`',
+  );
+  expect(actions).toContain(
+    '[coarsePointer]: "var(--control-height-transport)"',
+  );
   expect(horizontalThumb).toContain("top: 50%;");
   expect(verticalThumb).toContain("left: 50%;");
 });

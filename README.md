@@ -163,7 +163,7 @@ literal full URL. The component has no client state or framework dependency,
 works in server-rendered layouts, wraps on narrow surfaces, and rejects
 relative, non-HTTPS, credentialed, or malformed subject URLs.
 
-Use React Aria's `onPress` event for actions. Action controls use the semantic `primary`, `secondary`, `quiet`, and `danger` variants and the `compact`, `default`, and `large` sizes. `CopyButton` writes one string to the clipboard, announces success, and temporarily swaps to its `copiedLabel`; both labels always occupy the same grid cell, so the button keeps the wider intrinsic width throughout the transition. `IconButton` and `IconLink` require an accessible name and own their hover/focus tooltip; `aria-label` supplies the default visible copy, while controls named by `aria-labelledby` must also provide `tooltip`. Set `IconLink` to `presentation="inline"` when an icon-only destination sits beside typographic content. The inline presentation keeps the link semantics, tooltip, centered glyph, and focus treatment without persistent action-control chrome, and it intentionally does not accept action sizes or variants.
+Use React Aria's `onPress` event for actions. Action controls use the semantic `primary`, `secondary`, `quiet`, and `danger` variants and the `compact`, `default`, `large`, and `transport` sizes. Compact and default controls grow to a 48-by-48-pixel minimum target for coarse pointers; large and transport controls keep their larger block sizes and at least the same inline minimum. Icon-only toggles retain the compact inline size at large and transport densities. `CopyButton` writes one string to the clipboard, announces success, and temporarily swaps to its `copiedLabel`; both labels always occupy the same grid cell, so the button keeps the wider intrinsic width throughout the transition. `IconButton` and `IconLink` require an accessible name and own their hover/focus tooltip; `aria-label` supplies the default visible copy, while controls named by `aria-labelledby` must also provide `tooltip`. Set `IconLink` to `presentation="inline"` when an icon-only destination sits beside typographic content. The inline presentation keeps the link semantics, tooltip, centered 24-pixel glyph target, and focus treatment without persistent action-control chrome, and it intentionally does not accept action sizes or variants or join the coarse action-target family.
 
 `Knob` is a circular, single-value slider for compact numeric controls. It
 requires a visible label and a controlled `value` or uncontrolled
@@ -234,15 +234,31 @@ Override semantic roles after the imports to reskin the whole system without dep
 }
 ```
 
-Every primitive accepts `className`. Actions also expose `controlClassName` when the nested semantic control needs a focused override:
+Every primitive accepts `className`. Actions expose separate wrapper and semantic-control classes plus typed StyleX seams. `Button` and `LinkButton` also expose the closed `partXstyles.label` part for product-owned label layout:
 
 ```tsx
-<Button className="max-w-full" controlClassName="rounded-xl" variant="quiet">
+import * as stylex from "@stylexjs/stylex";
+
+const styles = stylex.create({
+  actionControl: { borderRadius: "var(--radius-lg)" },
+  actionLabel: { overflow: "hidden", textOverflow: "ellipsis" },
+  actionWrapper: { maxWidth: "100%" },
+});
+
+<Button
+  className="max-w-full"
+  controlClassName="rounded-xl"
+  controlXstyle={styles.actionControl}
+  partXstyles={{ label: styles.actionLabel }}
+  variant="quiet"
+  xstyle={styles.actionWrapper}
+>
   Open application
 </Button>
 ```
 
-`AskAiAboutThis`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
+`AskAiAboutThis`, `Button`, `CopyButton`, `IconButton`, `IconLink`, `ToggleButton`,
+`LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `KeyHint`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `ViewportFrame`, `WrappingRow`, `ThemedSurface`, `Toolbar`, and `CheckboxField`
@@ -250,6 +266,12 @@ accept a typed StyleX override. Base declarations are applied first, finite
 size, tone, shape, and interaction recipes come next, and the caller recipe is
 applied last. `CheckboxField` exposes `controlXstyle` separately for its
 semantic checkbox label.
+Action wrappers accept `xstyle`, while their nested button or anchor accepts
+`controlXstyle`. Native hover, press, and focus fallbacks remain active for
+empty conditional overrides. An effective control recipe selects explicit
+React Aria state composition so the caller remains last; native `style`
+declarations still resolve after StyleX. `Button` and `LinkButton` accept only
+the documented `partXstyles.label` part.
 Quiet-site landmarks and these surfaces also preserve dynamic StyleX inline
 values when merging the native `style` prop, with caller inline declarations
 taking precedence.

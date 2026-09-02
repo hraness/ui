@@ -1,289 +1,4 @@
 @layer components.hraness-ui.legacy.base {
-  :where(
-    .hraness-button,
-    .hraness-icon-button,
-    .hraness-toggle-button,
-    .hraness-link-button
-  ) {
-    display: inline-flex;
-    max-width: 100%;
-    vertical-align: middle;
-  }
-
-  :where(
-    .hraness-button__control,
-    .hraness-icon-button__control,
-    .hraness-toggle-button__control,
-    .hraness-link-button__control
-  ) {
-    display: inline-flex;
-    width: 100%;
-    min-height: var(--interactive-target-compact);
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-    padding-inline: var(--space-4);
-    border: 1px solid transparent;
-    border-radius: var(--radius-md);
-    outline: none;
-    background: var(--ui-primary);
-    color: var(--ui-primary-foreground);
-    font: inherit;
-    font-size: var(--text-label);
-    font-weight: var(--font-weight-medium);
-    line-height: 1;
-    text-decoration: none;
-    white-space: nowrap;
-    user-select: none;
-    transition:
-      background-color var(--motion-duration-fast) var(--motion-easing-standard),
-      border-color var(--motion-duration-fast) var(--motion-easing-standard),
-      box-shadow var(--motion-duration-fast) var(--motion-easing-standard),
-      color var(--motion-duration-fast) var(--motion-easing-standard),
-      opacity var(--motion-duration-fast) var(--motion-easing-standard),
-      transform var(--motion-duration-fast) var(--motion-easing-standard);
-  }
-
-  :where(
-    .hraness-button__control,
-    .hraness-icon-button__control,
-    .hraness-toggle-button__control,
-    .hraness-link-button__control
-  ):where([data-hovered], :hover) {
-    background: color-mix(in oklch, var(--ui-primary) 88%, var(--ui-background));
-  }
-
-  :where(
-    .hraness-button__control,
-    .hraness-icon-button__control,
-    .hraness-toggle-button__control,
-    .hraness-link-button__control
-  ):where([data-pressed], :active) {
-    transform: translateY(1px);
-  }
-
-  :where(
-    .hraness-button__control,
-    .hraness-icon-button__control,
-    .hraness-toggle-button__control,
-    .hraness-link-button__control
-  ):where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 2px;
-    box-shadow: 0 0 0 4px color-mix(in oklch, var(--ui-ring) 24%, transparent);
-  }
-
-  :where(
-    .hraness-button__control,
-    .hraness-icon-button__control,
-    .hraness-toggle-button__control,
-    .hraness-link-button__control
-  ):where([data-disabled], [data-pending], :disabled) {
-    cursor: not-allowed;
-    opacity: 0.5;
-  }
-
-  :where(.hraness-button, .hraness-icon-button, .hraness-toggle-button,
-    .hraness-link-button)[data-variant="secondary"] > :where(
-      .hraness-button__control,
-      .hraness-icon-button__control,
-      .hraness-toggle-button__control,
-      .hraness-link-button__control
-    ) {
-    background: var(--ui-secondary);
-    color: var(--ui-secondary-foreground);
-  }
-
-  :where(.hraness-button, .hraness-icon-button, .hraness-toggle-button,
-    .hraness-link-button)[data-variant="secondary"] > :where(
-      .hraness-button__control,
-      .hraness-icon-button__control,
-      .hraness-toggle-button__control,
-      .hraness-link-button__control
-    ):where([data-hovered], :hover) {
-    background: color-mix(in oklch, var(--ui-secondary) 82%, var(--ui-foreground));
-  }
-
-  :where(.hraness-button, .hraness-icon-button, .hraness-toggle-button,
-    .hraness-link-button)[data-variant="quiet"] > :where(
-        .hraness-button__control,
-        .hraness-icon-button__control,
-        .hraness-toggle-button__control,
-        .hraness-link-button__control
-      ) {
-    border-color: var(--ui-input);
-    background: var(--ui-background);
-    color: var(--ui-foreground);
-  }
-
-  :where(.hraness-button, .hraness-icon-button, .hraness-toggle-button,
-    .hraness-link-button)[data-variant="quiet"] > :where(
-        .hraness-button__control,
-        .hraness-icon-button__control,
-        .hraness-toggle-button__control,
-        .hraness-link-button__control
-      ):where([data-hovered], :hover) {
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  :where(.hraness-button, .hraness-icon-button, .hraness-toggle-button,
-    .hraness-link-button)[data-variant="danger"]
-    > :where(
-      .hraness-button__control,
-      .hraness-icon-button__control,
-      .hraness-toggle-button__control,
-      .hraness-link-button__control
-    ) {
-    background: var(--ui-destructive);
-    color: var(--ui-destructive-foreground);
-  }
-
-  :where(.hraness-button, .hraness-toggle-button,
-    .hraness-link-button)[data-size="compact"] > :where(
-    .hraness-button__control,
-    .hraness-toggle-button__control,
-    .hraness-link-button__control
-  ) {
-    min-height: 2rem;
-    padding-inline: var(--space-3);
-  }
-
-  :where(.hraness-button, .hraness-toggle-button,
-    .hraness-link-button)[data-size="large"] > :where(
-    .hraness-button__control,
-    .hraness-toggle-button__control,
-    .hraness-link-button__control
-  ) {
-    min-height: var(--control-height-primary);
-    padding-inline: var(--space-6);
-  }
-
-  :where(.hraness-button, .hraness-toggle-button,
-    .hraness-link-button)[data-size="transport"] > :where(
-    .hraness-button__control,
-    .hraness-toggle-button__control,
-    .hraness-link-button__control
-  ) {
-    min-height: var(--control-height-transport);
-    padding-inline: var(--space-8);
-  }
-
-  .hraness-icon-button__control,
-  .hraness-toggle-button[data-icon-only] > .hraness-toggle-button__control {
-    width: var(--interactive-target-compact);
-    min-width: var(--interactive-target-compact);
-    padding: 0;
-  }
-
-  .hraness-icon-button[data-size="compact"] > .hraness-icon-button__control {
-    width: 2rem;
-    min-width: 2rem;
-    min-height: 2rem;
-  }
-
-  .hraness-icon-button[data-size="large"] > .hraness-icon-button__control {
-    width: var(--control-height-primary);
-    min-width: var(--control-height-primary);
-    min-height: var(--control-height-primary);
-  }
-
-  .hraness-icon-button[data-size="transport"] > .hraness-icon-button__control {
-    width: var(--control-height-transport);
-    min-width: var(--control-height-transport);
-    min-height: var(--control-height-transport);
-  }
-
-  .hraness-inline-icon-link {
-    display: inline-flex;
-    max-width: 100%;
-    vertical-align: middle;
-  }
-
-  .hraness-inline-icon-link__control {
-    display: inline-grid;
-    width: 1.5rem;
-    height: 1.5rem;
-    min-width: 1.5rem;
-    min-height: 1.5rem;
-    padding: 0;
-    place-items: center;
-    border: 0;
-    border-radius: var(--radius-sm);
-    outline: none;
-    background: transparent;
-    color: var(--ui-primary);
-    line-height: 1;
-    text-decoration: none;
-    transition:
-      background-color var(--motion-duration-fast) var(--motion-easing-standard),
-      box-shadow var(--motion-duration-fast) var(--motion-easing-standard),
-      color var(--motion-duration-fast) var(--motion-easing-standard),
-      opacity var(--motion-duration-fast) var(--motion-easing-standard);
-  }
-
-  .hraness-inline-icon-link__control:where([data-hovered], :hover) {
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  .hraness-inline-icon-link__control:where([data-focus-visible], :focus-visible) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 2px;
-    box-shadow: 0 0 0 4px color-mix(in oklch, var(--ui-ring) 24%, transparent);
-  }
-
-  .hraness-inline-icon-link__control:where([data-disabled]) {
-    cursor: not-allowed;
-    opacity: 0.5;
-  }
-
-  .hraness-inline-icon-link__content {
-    display: inline-grid;
-    width: 100%;
-    height: 100%;
-    place-items: center;
-    line-height: 0;
-  }
-
-  .hraness-toggle-button__control[data-selected] {
-    border-color: var(--ui-primary);
-    background: var(--ui-primary);
-    color: var(--ui-primary-foreground);
-  }
-
-  :where(.hraness-button__leading, .hraness-toggle-button__leading,
-    .hraness-link-button__leading, .hraness-icon-button__content) {
-    display: inline-grid;
-    flex: 0 0 auto;
-    place-items: center;
-  }
-
-  .hraness-button__leading[data-empty="true"] {
-    visibility: hidden;
-  }
-
-  .hraness-copy-button__labels {
-    display: inline-grid;
-  }
-
-  .hraness-copy-button__label {
-    grid-area: 1 / 1;
-  }
-
-  .hraness-copy-button__label[aria-hidden="true"] {
-    visibility: hidden;
-  }
-
-  .hraness-action__spinner {
-    width: 1em;
-    height: 1em;
-    border: 0.125em solid color-mix(in oklch, currentColor 25%, transparent);
-    border-block-start-color: currentColor;
-    border-radius: var(--radius-round);
-    animation: hraness-spin 700ms linear infinite;
-  }
-
   /* Public field DOM contracts. */
   .hraness-visually-hidden {
     position: absolute !important;
@@ -1874,10 +1589,10 @@
 @layer components.hraness-ui.legacy {
 @media (pointer: coarse) {
   :where(
-    .hraness-button__control,
-    .hraness-icon-button__control,
-    .hraness-toggle-button__control,
-    .hraness-link-button__control,
+    .hraness-tabs__tab,
+    .hraness-disclosure__trigger,
+    .hraness-toggle-group__item,
+    .hraness-segmented-control__item,
     .hraness-list-box__item,
     .hraness-menu__item,
     .hraness-select-field__option,
@@ -1891,8 +1606,7 @@
     min-height: var(--interactive-target-min);
   }
 
-  .hraness-icon-button__control {
-    width: var(--interactive-target-min);
+  .hraness-segmented-control__item {
     min-width: var(--interactive-target-min);
   }
 
@@ -1902,11 +1616,15 @@
   }
 }
 
+:root[data-verification-pointer="coarse"] {
+  --hraness-action-coarse-min: var(--interactive-target-min);
+}
+
 :root[data-verification-pointer="coarse"] :where(
-  .hraness-button__control,
-  .hraness-icon-button__control,
-  .hraness-toggle-button__control,
-  .hraness-link-button__control,
+  .hraness-tabs__tab,
+  .hraness-disclosure__trigger,
+  .hraness-toggle-group__item,
+  .hraness-segmented-control__item,
   .hraness-list-box__item,
   .hraness-menu__item,
   .hraness-select-field__option,
@@ -1918,6 +1636,10 @@
   .hraness-pagination__boundary
 ) {
   min-height: var(--interactive-target-min);
+}
+
+:root[data-verification-pointer="coarse"] .hraness-segmented-control__item {
+  min-width: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
@@ -1932,7 +1654,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :where(.hraness-spinner, .hraness-action__spinner, .hraness-skeleton,
+  :where(.hraness-spinner, .hraness-skeleton,
     .hraness-progress-bar__fill[data-indeterminate]) {
     animation: none;
   }
@@ -1970,10 +1692,6 @@
   }
 
   :where(
-    .hraness-button__control,
-    .hraness-icon-button__control,
-    .hraness-toggle-button__control,
-    .hraness-link-button__control,
     .hraness-field__control,
     .hraness-number-field__control,
     .hraness-radio-option__indicator,
@@ -1990,8 +1708,8 @@
     forced-color-adjust: auto;
   }
 
-  :where(.hraness-button__control, .hraness-toggle-button__control,
-    .hraness-link-button__control) {
+  :where(.hraness-tabs__tab[data-selected], .hraness-toggle-group__item[data-selected],
+    .hraness-segmented-control__item[data-selected]) {
     background: ButtonFace;
     color: ButtonText;
   }

@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 
-const forcedColors = "@media (forced-colors: active)";
+const forcedColors = "@media(forced-colors: active)";
 
 export const statusStyles = stylex.create({
   badgeDanger: {
