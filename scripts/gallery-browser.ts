@@ -26,9 +26,9 @@ const CARD_DESCRIPTION_BRIDGE_PATTERN =
   /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
 const HUGEICONS_VERSION = "4.2.2";
 const PACKAGE_LAYER_PRELUDE =
-  /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3/u;
+  /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*,\s*components\.hraness-ui\.priority4/u;
 const STYLED_GALLERY_LAYER_PRELUDES =
-  /@layer\s+base\s*,\s*components\s*;\s*@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*;/u;
+  /@layer\s+base\s*,\s*components\s*;\s*@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*,\s*components\.hraness-ui\.priority4\s*;/u;
 const REACT_VERSION = "19.2.3";
 
 interface BrowserEvidence {
@@ -192,7 +192,7 @@ interface BrowserEvidence {
   readonly toolbarOrientationContracts: boolean;
   readonly toolbarOverrideContract: boolean;
   readonly transitionDuration: string;
-  readonly quietSitePriority3LayerSentinel: string;
+  readonly quietSitePriority4LayerSentinel: string;
   readonly viewportFrameCallerClassLast: boolean;
   readonly viewportFrameClassIsSemantic: boolean;
   readonly viewportFrameHasGeneratedClass: boolean;
@@ -703,14 +703,34 @@ function normalizedAtomicDeclaration(body: string): string {
     .replace(/\s*:\s*/gu, ":")
     .replace(/\s*!important/gu, "!important")
     .replace(/\s*;\s*/gu, ";")
-    .trim();
+    .trim()
+    .replace(/;?$/u, ";");
 }
+
+const VISUALLY_HIDDEN_DECLARATIONS = new Set([
+  "border-color:currentcolor!important;",
+  "border-image-outset:0!important;",
+  "border-image-repeat:stretch!important;",
+  "border-image-slice:100%!important;",
+  "border-image-source:none!important;",
+  "border-image-width:1!important;",
+  "border-style:none!important;",
+  "border-width:0!important;",
+  "clip:rect(0 0 0 0)!important;",
+  "height:1px!important;",
+  "overflow:hidden!important;",
+  "padding:0!important;",
+  "position:absolute!important;",
+  "white-space:nowrap!important;",
+  "width:1px!important;",
+]);
 
 function packedVisuallyHiddenClassNames(
   javaScript: string,
   css: string,
 ): ReadonlySet<string> {
   const candidates: ReadonlySet<string>[] = [];
+  const candidateKeys = new Set<string>();
   const fingerprints = new Set([
     "clip:rect(0 0 0 0)!important;",
     "height:1px!important;",
@@ -719,6 +739,20 @@ function packedVisuallyHiddenClassNames(
     "white-space:nowrap!important;",
     "width:1px!important;",
   ]);
+  const addCandidate = (classNames: ReadonlySet<string>): void => {
+    const declarations = new Set(
+      checkboxRuleBodies(css, classNames)
+        .map((body) => normalizedAtomicDeclaration(body)),
+    );
+    const key = [...classNames].sort().join(" ");
+    if (
+      [...declarations].filter((value) => fingerprints.has(value)).length >= 4
+      && !candidateKeys.has(key)
+    ) {
+      candidateKeys.add(key);
+      candidates.push(classNames);
+    }
+  };
   for (const match of javaScript.matchAll(
     /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*root\s*:\s*\{/gu,
   )) {
@@ -750,18 +784,35 @@ function packedVisuallyHiddenClassNames(
       }
     }
     if (classNames.size === 0) continue;
-    const declarations = new Set(
-      checkboxRuleBodies(css, classNames)
-        .map((body) => normalizedAtomicDeclaration(body)),
-    );
-    if ([...declarations].filter((value) => fingerprints.has(value)).length >= 4) {
+    addCandidate(classNames);
+  }
+  for (const match of javaScript.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+){3,})["']/gu,
+  )) {
+    addCandidate(new Set(match[1]!.split(/\s+/u)));
+  }
+  if (candidates.length === 0) {
+    const classNames = new Set<string>();
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+      if (!VISUALLY_HIDDEN_DECLARATIONS.has(
+        normalizedAtomicDeclaration(match[2] ?? ""),
+      )) continue;
+      const className = match[1]?.trim().match(
+        /^\.((?:x[A-Za-z0-9_-]+))$/u,
+      )?.[1];
+      if (className !== undefined) classNames.add(className);
+    }
+    if (
+      classNames.size === VISUALLY_HIDDEN_DECLARATIONS.size
+      && [...classNames].every((className) => javaScript.includes(className))
+    ) {
       candidates.push(classNames);
     }
   }
   assert.equal(
     candidates.length,
     1,
-    "the packed JavaScript must contain exactly one compiled visuallyHiddenStyles class map",
+    "the packed JavaScript must contain exactly one compiled visuallyHiddenStyles class set",
   );
   return candidates[0]!;
 }
@@ -776,23 +827,6 @@ function requirePackedVisuallyHiddenStyles(
     15,
     "visuallyHiddenStyles.root must preserve exactly 15 packed atomic classes",
   );
-  const expectedDeclarations = new Set([
-    "border-color:currentcolor!important;",
-    "border-image-outset:0!important;",
-    "border-image-repeat:stretch!important;",
-    "border-image-slice:100%!important;",
-    "border-image-source:none!important;",
-    "border-image-width:1!important;",
-    "border-style:none!important;",
-    "border-width:0!important;",
-    "clip:rect(0 0 0 0)!important;",
-    "height:1px!important;",
-    "overflow:hidden!important;",
-    "padding:0!important;",
-    "position:absolute!important;",
-    "white-space:nowrap!important;",
-    "width:1px!important;",
-  ]);
   const actualDeclarations = new Set<string>();
   for (const className of classNames) {
     const escapedClassName = className.replace(
@@ -819,7 +853,7 @@ function requirePackedVisuallyHiddenStyles(
   }
   assert.deepEqual(
     [...actualDeclarations].sort(),
-    [...expectedDeclarations].sort(),
+    [...VISUALLY_HIDDEN_DECLARATIONS].sort(),
     "packed visuallyHiddenStyles.root must preserve the exact important declaration set",
   );
 }
@@ -855,7 +889,7 @@ function requireFinalBundleLayerOrder(css: string): void {
   );
   const preludeEnd = preludeStart + preludes[0].length;
   const firstNamedLayerBlock = css.search(
-    /@layer\s+(?:base|components\.hraness-ui\.(?:legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3))\s*\{/u,
+    /@layer\s+(?:base|components\.hraness-ui\.(?:legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3|priority4))\s*\{/u,
   );
   assert.notEqual(
     firstNamedLayerBlock,
@@ -868,11 +902,11 @@ function requireFinalBundleLayerOrder(css: string): void {
   );
 
   const firstBlockPositions = new Map<
-    "legacy" | "priority1" | "priority2" | "priority3",
+    "legacy" | "priority1" | "priority2" | "priority3" | "priority4",
     number
   >();
   const packageLayerBlocks = [...css.matchAll(
-    /@layer\s+components\.hraness-ui\.(legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3)\s*\{/gu,
+    /@layer\s+components\.hraness-ui\.(legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3|priority4)\s*\{/gu,
   )];
   assert.notEqual(
     packageLayerBlocks.length,
@@ -894,13 +928,14 @@ function requireFinalBundleLayerOrder(css: string): void {
       layer === "legacy"
       || layer === "priority1"
       || layer === "priority2"
-      || layer === "priority3",
+      || layer === "priority3"
+      || layer === "priority4",
       `the final styled gallery bundle contains an unknown package layer: ${layer}`,
     );
     if (!firstBlockPositions.has(layer)) firstBlockPositions.set(layer, position);
   }
 
-  const orderedLayers = ["legacy", "priority1", "priority2", "priority3"] as const;
+  const orderedLayers = ["legacy", "priority1", "priority2", "priority3", "priority4"] as const;
   const positions = orderedLayers.map((layer) => {
     const position = firstBlockPositions.get(layer);
     assert.ok(
@@ -911,7 +946,7 @@ function requireFinalBundleLayerOrder(css: string): void {
   });
   assert.ok(
     positions.every((position, index) => index === 0 || positions[index - 1]! < position),
-    "the first package named-layer blocks must be ordered legacy, priority1, priority2, then priority3",
+    "the first package named-layer blocks must be ordered legacy, priority1, priority2, priority3, then priority4",
   );
 }
 
@@ -1501,8 +1536,8 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   );
   assert.match(
     css,
-    /\[data-gallery-quiet-site-priority3-conflict=(?:"true"|true)\]\[data-slot=(?:"quiet-site-footer"|quiet-site-footer)\]\{(?=[^}]*--gallery-quiet-site-priority3-conflict:\s*legacy)(?=[^}]*padding-top:\s*9rem)[^}]*\}/u,
-    "the gallery quiet-site priority3 conflict must carry its sentinel and padding declaration",
+    /\[data-gallery-quiet-site-priority4-conflict=(?:"true"|true)\]\[data-slot=(?:"quiet-site-footer"|quiet-site-footer)\]\{(?=[^}]*--gallery-quiet-site-priority4-conflict:\s*legacy)(?=[^}]*padding-top:\s*9rem)[^}]*\}/u,
+    "the gallery quiet-site priority4 conflict must carry its sentinel and padding declaration",
   );
   assert.match(
     css,
@@ -1934,14 +1969,15 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   }
 }
 
-function placePriority3BeforeLegacy(css: string): string {
+function placePriority4BeforeLegacy(css: string): string {
   const prelude = css.match(PACKAGE_LAYER_PRELUDE)?.[0];
   assert.ok(prelude !== undefined, "the packed stylesheet layer prelude is missing");
   const counterfactualPrelude = [
-    "@layer components.hraness-ui.priority3",
+    "@layer components.hraness-ui.priority4",
     "components.hraness-ui.legacy",
     "components.hraness-ui.priority1",
     "components.hraness-ui.priority2",
+    "components.hraness-ui.priority3",
   ].join(", ");
   const counterfactual = [
     "@layer base, components;",
@@ -1956,8 +1992,8 @@ function placePriority3BeforeLegacy(css: string): string {
   );
   assert.match(
     counterfactual,
-    /@layer\s+components\.hraness-ui\.priority3\s*,\s*components\.hraness-ui\.legacy/u,
-    "the browser counterfactual must create legacy after priority3",
+    /@layer\s+components\.hraness-ui\.priority4\s*,\s*components\.hraness-ui\.legacy/u,
+    "the browser counterfactual must create legacy after priority4",
   );
   return counterfactual;
 }
@@ -4276,8 +4312,8 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
           && toolbar.width === 208,
       ),
       transitionDuration: buttonStyle.transitionDuration,
-      quietSitePriority3LayerSentinel: footerStyle
-        .getPropertyValue("--gallery-quiet-site-priority3-conflict")
+      quietSitePriority4LayerSentinel: footerStyle
+        .getPropertyValue("--gallery-quiet-site-priority4-conflict")
         .trim(),
       viewportFrameCallerClassLast:
         viewportFrameClasses.at(-1) === "gallery-viewport-frame",
@@ -6709,7 +6745,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority3)-conflict|(?:avatar|card-family|checkbox-field|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|key-hint|link|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -6828,7 +6864,7 @@ try {
   assert.match(html, /data-appearance-icon="system"/u);
   assert.match(html, /data-gallery-quiet-site-layer-conflict="true"/u);
   assert.match(html, /data-gallery-quiet-site-page="true"/u);
-  assert.match(html, /data-gallery-quiet-site-priority3-conflict="true"/u);
+  assert.match(html, /data-gallery-quiet-site-priority4-conflict="true"/u);
   assert.match(html, /data-gallery-quiet-site-footer="true"/u);
   assert.match(html, /data-slot="quiet-site-page"/u);
   assert.match(html, /data-slot="quiet-site-footer"/u);
@@ -6922,8 +6958,8 @@ try {
   assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
   await cp(htmlPath, resolve(productionDirectory, "index.html"));
 
-  const counterfactualDocumentName = "priority3-before-legacy.html";
-  const counterfactualStylesheetName = "priority3-before-legacy.css";
+  const counterfactualDocumentName = "priority4-before-legacy.html";
+  const counterfactualStylesheetName = "priority4-before-legacy.css";
   const counterfactualDocumentPath = resolve(
     productionDirectory,
     counterfactualDocumentName,
@@ -6941,7 +6977,7 @@ try {
     writeFile(counterfactualDocumentPath, counterfactualHtml),
     writeFile(
       counterfactualStylesheetPath,
-      placePriority3BeforeLegacy(production.css),
+      placePriority4BeforeLegacy(production.css),
     ),
   ]);
 
@@ -6967,7 +7003,7 @@ try {
     });
     try {
       const origin = `http://${server.hostname}:${String(server.port)}`;
-      let productionPriority3PaddingTop: number | undefined;
+      let productionPriority4PaddingTop: number | undefined;
       for (const layout of layouts) {
         const context = await browser.newContext(layout.context);
         try {
@@ -7060,9 +7096,9 @@ try {
             `${layout.id}: the matched quiet-site measure conflict resolved to ${String(light.pageMaxInlineSize)}`,
           );
           invariant(
-            light.quietSitePriority3LayerSentinel === "legacy"
+            light.quietSitePriority4LayerSentinel === "legacy"
             && nearlyEqual(light.footerPaddingTop, 1.25 * 16),
-            `${layout.id}: the matched quiet-site priority3 conflict resolved to ${String(light.footerPaddingTop)}`,
+            `${layout.id}: the matched quiet-site priority4 conflict resolved to ${String(light.footerPaddingTop)}`,
           );
           invariant(
             light.wrappingRowClassIsSemantic
@@ -7181,12 +7217,12 @@ try {
             && light.toolbarOverrideContract,
             `${layout.id}: Toolbar parity failed: ${light.toolbarDiagnostics}`,
           );
-          if (productionPriority3PaddingTop === undefined) {
-            productionPriority3PaddingTop = light.footerPaddingTop;
+          if (productionPriority4PaddingTop === undefined) {
+            productionPriority4PaddingTop = light.footerPaddingTop;
           } else {
             invariant(
-              nearlyEqual(light.footerPaddingTop, productionPriority3PaddingTop),
-              `${layout.id}: production priority3 padding changed across layouts`,
+              nearlyEqual(light.footerPaddingTop, productionPriority4PaddingTop),
+              `${layout.id}: production priority4 padding changed across layouts`,
             );
           }
           const vertical = await verticalWritingEvidence(page);
@@ -7489,31 +7525,31 @@ try {
           page,
           failures,
           requestedPaths,
-          "priority3-before-legacy counterfactual",
+          "priority4-before-legacy counterfactual",
         );
         const counterfactual = await browserEvidence(page);
         invariant(
           counterfactual.hydrationStarted
           && counterfactual.rootHydrated
           && counterfactual.recoverableErrors.length === 0,
-          "priority3-before-legacy counterfactual: hydration did not settle cleanly",
+          "priority4-before-legacy counterfactual: hydration did not settle cleanly",
         );
         invariant(
-          productionPriority3PaddingTop !== undefined
-          && nearlyEqual(productionPriority3PaddingTop, 1.25 * 16)
-          && counterfactual.quietSitePriority3LayerSentinel === "legacy"
+          productionPriority4PaddingTop !== undefined
+          && nearlyEqual(productionPriority4PaddingTop, 1.25 * 16)
+          && counterfactual.quietSitePriority4LayerSentinel === "legacy"
           && nearlyEqual(counterfactual.footerPaddingTop, 9 * 16),
-          `priority3-before-legacy counterfactual: production ${String(productionPriority3PaddingTop)}, counterfactual ${String(counterfactual.footerPaddingTop)}, sentinel ${counterfactual.quietSitePriority3LayerSentinel}`,
+          `priority4-before-legacy counterfactual: production ${String(productionPriority4PaddingTop)}, counterfactual ${String(counterfactual.footerPaddingTop)}, sentinel ${counterfactual.quietSitePriority4LayerSentinel}`,
         );
         invariant(
           counterfactual.stylesheetCount === 1
           && counterfactual.stylesheetMarked
           && counterfactual.stylexRuntimeStyleCount === 0,
-          "priority3-before-legacy counterfactual: stylesheet delivery is ambiguous",
+          "priority4-before-legacy counterfactual: stylesheet delivery is ambiguous",
         );
         invariant(
           failures.length === 0,
-          `priority3-before-legacy counterfactual: ${failures.join("; ")}`,
+          `priority4-before-legacy counterfactual: ${failures.join("; ")}`,
         );
       } finally {
         await Promise.all([
@@ -7678,11 +7714,11 @@ try {
       invariant(requestedPaths.has(`/${stylesheetName}`), "the browser never requested the packed default stylesheet");
       invariant(
         requestedPaths.has(`/${counterfactualDocumentName}`),
-        "the browser never requested the priority3 counterfactual document",
+        "the browser never requested the priority4 counterfactual document",
       );
       invariant(
         requestedPaths.has(`/${counterfactualStylesheetName}`),
-        "the browser never requested the priority3 counterfactual stylesheet",
+        "the browser never requested the priority4 counterfactual stylesheet",
       );
     } finally {
       await browser.close();
@@ -7693,7 +7729,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority3 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority3-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await rm(work, { force: true, recursive: true });

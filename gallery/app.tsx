@@ -1060,7 +1060,7 @@ export function PrimitiveGallery() {
       </QuietSitePage>
       <QuietSiteFooter
         className="gallery-quiet-site-footer"
-        data-gallery-quiet-site-priority3-conflict="true"
+        data-gallery-quiet-site-priority4-conflict="true"
         data-gallery-quiet-site-footer="true"
         xstyle={galleryStyles.quietSiteFooterOverride}
       >

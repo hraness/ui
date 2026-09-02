@@ -100,7 +100,7 @@ The package also exports portable spacing, typography, target-size, motion, elev
 - `@hraness/ui/stylex.css` provides package-compiled StyleX recipes.
 - `@hraness/ui/tailwind.css` provides Tailwind source detection, the dark variant, and semantic utility mappings.
 
-`styles.css` keeps the reset `base` below `components`, then fixes the component sublayers from lowest to highest as `legacy`, `priority1`, `priority2`, and `priority3`. Migrated StyleX declarations win over remaining package recipes without depending on generated class names or import timing. The complete stylesheet expects Tailwind CSS v4 processing during this transition, but it does not import Tailwind itself. This prevents duplicate Preflight and utility output.
+`styles.css` keeps the reset `base` below `components`, then fixes the component sublayers from lowest to highest as `legacy`, `priority1`, `priority2`, `priority3`, and `priority4`. Migrated StyleX declarations win over remaining package recipes without depending on generated class names or import timing. The complete stylesheet expects Tailwind CSS v4 processing during this transition, but it does not import Tailwind itself. This prevents duplicate Preflight and utility output.
 
 Set `data-theme="dark"` or the `dark` class on a root element to select the dark recipe. Set `data-theme="light"` for an explicit light island. Override namespaced roles after the imports to apply a product theme.
 

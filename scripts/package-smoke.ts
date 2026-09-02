@@ -266,14 +266,34 @@ function normalizedAtomicDeclaration(body: string): string {
     .replace(/\s*:\s*/gu, ":")
     .replace(/\s*!important/gu, "!important")
     .replace(/\s*;\s*/gu, ";")
-    .trim();
+    .trim()
+    .replace(/;?$/u, ";");
 }
+
+const VISUALLY_HIDDEN_DECLARATIONS = new Set([
+  "border-color:currentcolor!important;",
+  "border-image-outset:0!important;",
+  "border-image-repeat:stretch!important;",
+  "border-image-slice:100%!important;",
+  "border-image-source:none!important;",
+  "border-image-width:1!important;",
+  "border-style:none!important;",
+  "border-width:0!important;",
+  "clip:rect(0 0 0 0)!important;",
+  "height:1px!important;",
+  "overflow:hidden!important;",
+  "padding:0!important;",
+  "position:absolute!important;",
+  "white-space:nowrap!important;",
+  "width:1px!important;",
+]);
 
 function packageVisuallyHiddenStyleMap(
   javaScript: string,
   css: string,
 ): PackageVisuallyHiddenStyleMap {
   const candidates: PackageVisuallyHiddenStyleMap[] = [];
+  const candidateKeys = new Set<string>();
   const fingerprints = new Set([
     "clip:rect(0 0 0 0)!important;",
     "height:1px!important;",
@@ -282,6 +302,20 @@ function packageVisuallyHiddenStyleMap(
     "white-space:nowrap!important;",
     "width:1px!important;",
   ]);
+  const addCandidate = (classNames: ReadonlySet<string>): void => {
+    const declarations = new Set(
+      packageCheckboxRuleBodies(css, classNames)
+        .map((body) => normalizedAtomicDeclaration(body)),
+    );
+    const key = [...classNames].sort().join(" ");
+    if (
+      [...declarations].filter((value) => fingerprints.has(value)).length >= 4
+      && !candidateKeys.has(key)
+    ) {
+      candidateKeys.add(key);
+      candidates.push({ classNames });
+    }
+  };
   for (const match of javaScript.matchAll(
     /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*root\s*:\s*\{/gu,
   )) {
@@ -313,18 +347,36 @@ function packageVisuallyHiddenStyleMap(
       }
     }
     if (classNames.size === 0) continue;
-    const declarations = new Set(
-      packageCheckboxRuleBodies(css, classNames)
-        .map((body) => normalizedAtomicDeclaration(body)),
-    );
-    if ([...declarations].filter((value) => fingerprints.has(value)).length >= 4) {
+    addCandidate(classNames);
+  }
+  for (const match of javaScript.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+){3,})["']/gu,
+  )) {
+    const classNames = new Set(match[1]!.split(/\s+/u));
+    addCandidate(classNames);
+  }
+  if (candidates.length === 0) {
+    const classNames = new Set<string>();
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+      if (!VISUALLY_HIDDEN_DECLARATIONS.has(
+        normalizedAtomicDeclaration(match[2] ?? ""),
+      )) continue;
+      const className = match[1]?.trim().match(
+        /^\.((?:x[A-Za-z0-9_-]+))$/u,
+      )?.[1];
+      if (className !== undefined) classNames.add(className);
+    }
+    if (
+      classNames.size === VISUALLY_HIDDEN_DECLARATIONS.size
+      && [...classNames].every((className) => javaScript.includes(className))
+    ) {
       candidates.push({ classNames });
     }
   }
   assert.equal(
     candidates.length,
     1,
-    "packed JavaScript must contain exactly one compiled visuallyHiddenStyles class map",
+    "packed JavaScript must contain exactly one compiled visuallyHiddenStyles class set",
   );
   return candidates[0]!;
 }
@@ -480,23 +532,6 @@ function requirePackageVisuallyHiddenStyles(
     15,
     "visuallyHiddenStyles.root must preserve exactly 15 packed atomic classes",
   );
-  const expectedDeclarations = new Set([
-    "border-color:currentcolor!important;",
-    "border-image-outset:0!important;",
-    "border-image-repeat:stretch!important;",
-    "border-image-slice:100%!important;",
-    "border-image-source:none!important;",
-    "border-image-width:1!important;",
-    "border-style:none!important;",
-    "border-width:0!important;",
-    "clip:rect(0 0 0 0)!important;",
-    "height:1px!important;",
-    "overflow:hidden!important;",
-    "padding:0!important;",
-    "position:absolute!important;",
-    "white-space:nowrap!important;",
-    "width:1px!important;",
-  ]);
   const actualDeclarations = new Set<string>();
   for (const className of classNames) {
     const escapedClassName = className.replace(
@@ -523,7 +558,7 @@ function requirePackageVisuallyHiddenStyles(
   }
   assert.deepEqual(
     [...actualDeclarations].sort(),
-    [...expectedDeclarations].sort(),
+    [...VISUALLY_HIDDEN_DECLARATIONS].sort(),
     "packed visuallyHiddenStyles.root must preserve the exact important declaration set",
   );
   return [...classNames];
@@ -749,6 +784,7 @@ assert.equal(new URL(stylexCssUrl).protocol, "file:");
 const stylexCss = await readFile(new URL(stylexCssUrl), "utf8");
 assert.ok(stylexCss.trim().length > 0, "@hraness/ui/stylex.css must not be empty");
 assert.match(stylexCss, /@layer components\.hraness-ui\.priority3/u);
+assert.match(stylexCss, /@layer components\.hraness-ui\.priority4/u);
 assert.match(stylexCss, /max-inline-size:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
 assert.doesNotMatch(stylexCss, /max-width:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
 assert.match(stylexCss, /gap:\s*var\(--space-3\)/u);
@@ -905,7 +941,7 @@ assert.equal(
 );
 assert.match(
   stylesCss,
-  /@layer components\.hraness-ui\.legacy, components\.hraness-ui\.priority1, components\.hraness-ui\.priority2, components\.hraness-ui\.priority3;/u,
+  /@layer components\.hraness-ui\.legacy, components\.hraness-ui\.priority1, components\.hraness-ui\.priority2, components\.hraness-ui\.priority3, components\.hraness-ui\.priority4;/u,
 );
 
 const markup = renderToStaticMarkup(React.createElement(Icon, {

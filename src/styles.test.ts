@@ -115,7 +115,7 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
 
   expect(reset.trimStart().startsWith([
     "@layer base, components;",
-    "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3;",
+    "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;",
     "",
     "@layer base {",
   ].join("\n"))).toBe(true);

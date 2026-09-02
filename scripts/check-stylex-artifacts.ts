@@ -8,7 +8,7 @@ const CARD_DESCRIPTION_BRIDGE_PATTERN =
 const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-stylex-layer-conflict",
   "data-gallery-quiet-site-layer-conflict",
-  "data-gallery-quiet-site-priority3-conflict",
+  "data-gallery-quiet-site-priority4-conflict",
   "data-gallery-viewport-frame-layer-conflict",
   "data-gallery-wrapping-row-layer-conflict",
   "data-gallery-themed-surface-layer-conflict",
@@ -29,12 +29,13 @@ const LEGACY_LAYERS = [
   LEGACY_LAYER,
 ] as const;
 const LAYER_PRELUDE =
-  "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3;";
+  "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;";
 const STYLEX_IMPORT = '@import "../dist/stylex.css";';
 const STYLEX_LAYERS = [
   "components.hraness-ui.priority1",
   "components.hraness-ui.priority2",
   "components.hraness-ui.priority3",
+  "components.hraness-ui.priority4",
 ] as const;
 const TOP_LEVEL_LAYER_PRELUDE = "@layer base, components;";
 
@@ -361,7 +362,6 @@ interface CompiledStyleMap {
 interface VisuallyHiddenArtifact {
   readonly classNames: ReadonlySet<string>;
   readonly rules: readonly CssRule[];
-  readonly styleMap: CompiledStyleMap;
 }
 
 interface VisuallyHiddenSources {
@@ -635,7 +635,8 @@ function normalizedAtomicDeclaration(body: string): string {
     .replace(/\s*:\s*/gu, ":")
     .replace(/\s*!important/gu, "!important")
     .replace(/\s*;\s*/gu, ";")
-    .trim();
+    .trim()
+    .replace(/;?$/u, ";");
 }
 
 function visuallyHiddenArtifact(
@@ -644,6 +645,7 @@ function visuallyHiddenArtifact(
 ): VisuallyHiddenArtifact {
   const allRules = cssRules(compiledCss, "dist/stylex.css");
   const candidates: VisuallyHiddenArtifact[] = [];
+  const candidateKeys = new Set<string>();
   const fingerprints = new Set([
     "clip:rect(0 0 0 0)!important;",
     "height:1px!important;",
@@ -652,6 +654,17 @@ function visuallyHiddenArtifact(
     "white-space:nowrap!important;",
     "width:1px!important;",
   ]);
+  const addCandidate = (classNames: ReadonlySet<string>): void => {
+    const rules = rulesForClassNames(allRules, classNames);
+    const fingerprintCount = [
+      ...new Set(rules.map((rule) => normalizedAtomicDeclaration(rule.body))),
+    ].filter((declaration) => fingerprints.has(declaration)).length;
+    const key = [...classNames].sort().join(" ");
+    if (fingerprintCount >= 4 && !candidateKeys.has(key)) {
+      candidateKeys.add(key);
+      candidates.push({ classNames, rules });
+    }
+  };
 
   for (const match of compiledJavaScript.matchAll(
     /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*root\s*:\s*\{/gu,
@@ -674,22 +687,23 @@ function visuallyHiddenArtifact(
       root.value,
       "the compiled visuallyHiddenStyles.root class map",
     );
-    const rules = rulesForClassNames(allRules, classNames);
-    const fingerprintCount = [
-      ...new Set(rules.map((rule) => normalizedAtomicDeclaration(rule.body))),
-    ].filter((declaration) => fingerprints.has(declaration)).length;
-    if (fingerprintCount >= 4) {
-      candidates.push({
-        classNames,
-        rules,
-        styleMap: { object, properties },
-      });
-    }
+    addCandidate(classNames);
+  }
+
+  for (const match of compiledJavaScript.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+){3,})["']/gu,
+  )) {
+    addCandidate(
+      generatedClassNames(
+        match[0],
+        "the compiled visually-hidden helper class set",
+      ),
+    );
   }
 
   if (candidates.length !== 1) {
     throw new Error(
-      `dist/index.js must contain exactly one compiled visuallyHiddenStyles class map; found ${String(candidates.length)}`,
+      `dist/index.js must contain exactly one compiled visuallyHiddenStyles class set; found ${String(candidates.length)}`,
     );
   }
   return candidates[0]!;
@@ -1350,7 +1364,7 @@ function requirePublicLayerContract(
     )
   ) {
     throw new Error(
-      "dist/stylex.css must contain the exact priority1 < priority2 < priority3 layer sequence",
+      "dist/stylex.css must contain the exact priority1 < priority2 < priority3 < priority4 layer sequence",
     );
   }
   for (const expectedLayer of STYLEX_LAYERS) {
@@ -1377,7 +1391,7 @@ function requirePublicLayerContract(
     || lines.some((line, index) => line !== expectedLines[index])
   ) {
     throw new Error(
-      "src/styles.css must contain the exact base < components and legacy < priority1 < priority2 < priority3 preludes and ordered public imports",
+      "src/styles.css must contain the exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes and ordered public imports",
     );
   }
 }
@@ -1386,7 +1400,7 @@ function requireEarliestLayerPrelude(resetStylesheet: string): void {
   const expectedPrefix = `${TOP_LEVEL_LAYER_PRELUDE}\n${LAYER_PRELUDE}\n`;
   if (!resetStylesheet.startsWith(expectedPrefix)) {
     throw new Error(
-      "src/reset.css must begin with the exact base < components and legacy < priority1 < priority2 < priority3 preludes",
+      "src/reset.css must begin with the exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes",
     );
   }
 }
@@ -2494,12 +2508,6 @@ function requireVisuallyHiddenContract(
     "a legacy visually-hidden recipe",
   );
   const artifact = visuallyHiddenArtifact(compiledJavaScript, compiledCss);
-  if (
-    artifact.styleMap.properties.size !== 1
-    || !artifact.styleMap.properties.has("root")
-  ) {
-    throw new Error("visuallyHiddenStyles must expose exactly one root recipe");
-  }
   if (artifact.classNames.size !== 15) {
     throw new Error(
       `visuallyHiddenStyles.root must own exactly 15 atomic classes; found ${String(artifact.classNames.size)}`,
@@ -2887,6 +2895,11 @@ requireMatch(
   /@layer components\.hraness-ui\.priority3\s*\{/u,
   "the package-owned priority3 layer",
 );
+requireMatch(
+  compiledCss,
+  /@layer components\.hraness-ui\.priority4\s*\{/u,
+  "the package-owned priority4 layer",
+);
 requireMatch(compiledCss, /flex:\s*none;/u, "the icon flex declaration");
 requireMatch(
   compiledCss,
@@ -3127,11 +3140,11 @@ assert.throws(
       legacyComponents,
       orderedStylesheet.replace(
         LAYER_PRELUDE,
-        "@layer components.hraness-ui.priority3, components.hraness-ui.priority2, components.hraness-ui.priority1, components.hraness-ui.legacy;",
+        "@layer components.hraness-ui.priority4, components.hraness-ui.priority3, components.hraness-ui.priority2, components.hraness-ui.priority1, components.hraness-ui.legacy;",
       ),
       compiledCss,
     ),
-  /exact base < components and legacy < priority1 < priority2 < priority3 preludes/u,
+  /exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes/u,
   "the layer guard must reject a priority inversion",
 );
 assert.throws(
@@ -3139,13 +3152,13 @@ assert.throws(
     requirePublicLayerContract(
       legacyComponents,
       orderedStylesheet.replace(
-        ", components.hraness-ui.priority3",
+        ", components.hraness-ui.priority4",
         "",
       ),
       compiledCss,
     ),
-  /exact base < components and legacy < priority1 < priority2 < priority3 preludes/u,
-  "the layer guard must reject an omitted generated priority3 declaration",
+  /exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes/u,
+  "the layer guard must reject an omitted generated priority4 declaration",
 );
 assert.throws(
   () =>
@@ -3153,8 +3166,8 @@ assert.throws(
       legacyComponents,
       orderedStylesheet,
       compiledCss.replace(
-        "components.hraness-ui.priority3",
         "components.hraness-ui.priority4",
+        "components.hraness-ui.priority5",
       ),
     ),
   /top-level content outside its allowed named layers/u,
@@ -3170,7 +3183,7 @@ assert.throws(
       ),
       compiledCss,
     ),
-  /exact base < components and legacy < priority1 < priority2 < priority3 preludes/u,
+  /exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes/u,
   "the layer guard must reject a top-level reset/component priority inversion",
 );
 assert.throws(
