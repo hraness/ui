@@ -63,6 +63,7 @@
     "src/components.css",
     "src/content.tsx",
     "src/data-display.tsx",
+    "src/feedback.stylex.ts",
     "src/feedback.tsx",
     "src/fields.tsx",
     "src/form.tsx",

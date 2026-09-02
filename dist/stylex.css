@@ -283,16 +283,60 @@
     align-self: stretch;
   }
 
+  .x12epk6h {
+    animation-composition: replace;
+  }
+
+  .x1uzojwf {
+    animation-delay: 0s;
+  }
+
+  .x1s0aqod {
+    animation-direction: normal;
+  }
+
   .xof6966 {
     animation-duration: .7s;
+  }
+
+  .x1sbju2s {
+    animation-duration: 1.4s;
+  }
+
+  .x1ir97tl {
+    animation-fill-mode: none;
   }
 
   .xa4qsjk {
     animation-iteration-count: infinite;
   }
 
+  .x2dizk2 {
+    animation-name: hraness-skeleton;
+  }
+
   .x1442buy {
     animation-name: hraness-spin;
+  }
+
+  .xoj058f {
+    animation-play-state: running;
+  }
+
+  .xymwk3t {
+    animation-range-end: normal;
+  }
+
+  .x10si4xm {
+    animation-range-start: normal;
+  }
+
+  .xyuw9oy {
+    animation-timeline: auto;
+  }
+
+  .x4hg4is {
+    animation-timing-function: ease-in-out;
   }
 
   .x1esw782 {
@@ -395,6 +439,10 @@
     background-color: var(--ui-warning);
   }
 
+  .x5iel4p {
+    background-image: linear-gradient(90deg,var(--ui-muted) 0%,color-mix(in oklch,var(--ui-muted) 72%,var(--ui-foreground)) 50%,var(--ui-muted) 100%);
+  }
+
   .x18o3ruo {
     background-image: none;
   }
@@ -405,6 +453,10 @@
 
   .x182nak8 {
     background-repeat: repeat;
+  }
+
+  .xakli9p {
+    background-size: 200% 100%;
   }
 
   .x103pssi {
@@ -617,6 +669,14 @@
 
   .x1jygkft {
     font-family: var(--ui-font-mono);
+  }
+
+  .xboafo0 {
+    font-size: .75rem;
+  }
+
+  .xngnso2 {
+    font-size: 1.5rem;
   }
 
   .x1qlqyl8 {
@@ -1005,8 +1065,52 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .xmzkp9f.xmzkp9f {
+      animation-composition: replace;
+    }
+
+    .x1qvbe4r.x1qvbe4r {
+      animation-delay: 0s;
+    }
+
+    .xpk7f7d.xpk7f7d {
+      animation-direction: normal;
+    }
+
+    .x958gol.x958gol {
+      animation-duration: 0s;
+    }
+
+    .x15inb9f.x15inb9f {
+      animation-fill-mode: none;
+    }
+
+    .xd81xr2.xd81xr2 {
+      animation-iteration-count: 1;
+    }
+
     .x1ynp8h1.x1ynp8h1 {
       animation-name: none;
+    }
+
+    .x6qw1r7.x6qw1r7 {
+      animation-play-state: running;
+    }
+
+    .x1pixhli.x1pixhli {
+      animation-range-end: normal;
+    }
+
+    .x1gfwfhs.x1gfwfhs {
+      animation-range-start: normal;
+    }
+
+    .xa806cr.xa806cr {
+      animation-timeline: auto;
+    }
+
+    .xw3qwi6.xw3qwi6 {
+      animation-timing-function: ease;
     }
   }
 
@@ -1017,6 +1121,58 @@
 
     .x1mi3ld3.x1mi3ld3 {
       background-color: canvas;
+    }
+
+    .xaxwvs9.xaxwvs9 {
+      background-image: none;
+    }
+
+    .x3lgspj.x3lgspj {
+      background-size: auto;
+    }
+
+    .xdnqiaj.xdnqiaj {
+      border-image-outset: 0;
+    }
+
+    .x1mjg4os.x1mjg4os {
+      border-image-repeat: stretch;
+    }
+
+    .x1luk9ee.x1luk9ee {
+      border-image-slice: 100%;
+    }
+
+    .x1cjzfx6.x1cjzfx6 {
+      border-image-source: none;
+    }
+
+    .xotrrsn.xotrrsn {
+      border-image-width: 1;
+    }
+
+    .x1bk1lk1.x1bk1lk1 {
+      border-inline-end-color: canvastext;
+    }
+
+    .xn828t1.xn828t1 {
+      border-inline-end-style: solid;
+    }
+
+    .x1rmpjmf.x1rmpjmf {
+      border-inline-end-width: 1px;
+    }
+
+    .x11apkjs.x11apkjs {
+      border-inline-start-color: canvastext;
+    }
+
+    .xvxnyyj.xvxnyyj {
+      border-inline-start-style: solid;
+    }
+
+    .xzyy8p7.xzyy8p7 {
+      border-inline-start-width: 1px;
     }
 
     .xsrz6cx.xsrz6cx {
@@ -1128,6 +1284,14 @@
 
   .x1k5hnt4 {
     min-height: 1.875rem;
+  }
+
+  .x1xaadd7 {
+    min-height: 1em;
+  }
+
+  .x1aewpuf {
+    min-height: 1rem;
   }
 
   .x1in32aq {
@@ -1299,6 +1463,32 @@
       .x1uqklc0.x1uqklc0.x1uqklc0 {
         height: 100dvh;
       }
+    }
+  }
+
+  @media (forced-colors: active) {
+    .x1odqkhc.x1odqkhc {
+      border-bottom-color: canvastext;
+    }
+
+    .x1b45ly2.x1b45ly2 {
+      border-bottom-style: solid;
+    }
+
+    .xhv30r1.xhv30r1 {
+      border-bottom-width: 1px;
+    }
+
+    .xfdlk4p.xfdlk4p {
+      border-top-color: canvastext;
+    }
+
+    .x1ew3qar.x1ew3qar {
+      border-top-style: solid;
+    }
+
+    .x1v8ni4k.x1v8ni4k {
+      border-top-width: 1px;
     }
   }
 
