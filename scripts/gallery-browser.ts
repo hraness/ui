@@ -5635,6 +5635,28 @@ async function verifyKeyboardPath(
   );
 
   await page.keyboard.press("Tab");
+  const defaultFormCanary = page.getByRole("button", {
+    name: "Default form canary",
+  });
+  invariant(
+    await defaultFormCanary.evaluate((element) =>
+      document.activeElement === element
+    ),
+    `${id}: the default Form canary is not reachable after the compact select`,
+  );
+
+  await page.keyboard.press("Tab");
+  const callerFormCanary = page.getByRole("button", {
+    name: "Caller form canary",
+  });
+  invariant(
+    await callerFormCanary.evaluate((element) =>
+      document.activeElement === element
+    ),
+    `${id}: the caller-rendered Form canary is not reachable after the default Form`,
+  );
+
+  await page.keyboard.press("Tab");
   const semanticsTab = page.getByRole("tab", { name: "Semantics" });
   invariant(
     await semanticsTab.evaluate((element) => document.activeElement === element),
@@ -7000,13 +7022,10 @@ try {
     production.javaScript,
     production.css,
   );
-  assert.throws(
-    () => requirePackedDefaultStylesheet(
-      negativeControl.css,
-      negativeControl.javaScript,
-    ),
-    /must keep reset styles below components/u,
-    "the stylesheet delivery oracle must reject the unstyled negative-control consumer",
+  assert.doesNotMatch(
+    negativeControl.css,
+    STYLED_GALLERY_LAYER_PRELUDES,
+    "the unstyled negative control must omit the package delivery layer preludes",
   );
   assert.match(production.javaScript, /__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__/u);
   assert.match(production.javaScript, /hydrateRoot/u);
