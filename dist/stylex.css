@@ -297,6 +297,10 @@
     text-decoration: underline;
   }
 
+  .x4dpq5y:focus-within, .xojh9ox:focus-visible {
+    border-color: var(--ui-destructive);
+  }
+
   .x1c7m8e0:focus-within, .x1k5f354:focus-visible {
     border-color: var(--ui-ring);
   }
@@ -311,6 +315,10 @@
 
   .x19pv2u9:hover {
     border-color: color-mix(in oklch,var(--ui-primary) 35%,var(--ui-border));
+  }
+
+  .xxubsxb:hover {
+    border-color: var(--ui-destructive);
   }
 
   .x1sw2twm:hover {
@@ -1295,6 +1303,22 @@
   }
 
   .x16gxa91:focus-within, .x784prv:focus-visible {
+    outline-width: 2px;
+  }
+
+  .x104nlkd:has(input:focus-visible) {
+    outline-color: var(--ui-ring);
+  }
+
+  .x1elebxb:has(input:focus-visible) {
+    outline-offset: 3px;
+  }
+
+  .x1ae5oaz:has(input:focus-visible) {
+    outline-style: solid;
+  }
+
+  .x1yuyh71:has(input:focus-visible) {
     outline-width: 2px;
   }
 
