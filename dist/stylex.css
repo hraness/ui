@@ -731,6 +731,14 @@
     inline-size: 100%;
   }
 
+  .xu5r6vy {
+    inset-block-start: var(--space-3);
+  }
+
+  .x1cpllo3 {
+    inset-inline-start: var(--space-3);
+  }
+
   .xl56j7k {
     justify-content: center;
   }
@@ -843,6 +851,10 @@
     overflow-wrap: anywhere;
   }
 
+  .xixxii4 {
+    position: fixed;
+  }
+
   .x1rohswg {
     scrollbar-width: none;
   }
@@ -873,6 +885,10 @@
 
   .xavs3du {
     transform: translateY(1px);
+  }
+
+  .xvf0mkp {
+    transform: translateY(calc(-100% - var(--space-6)));
   }
 
   .xjdmepg {
@@ -968,6 +984,10 @@
     white-space: nowrap;
   }
 
+  .x1visetc {
+    z-index: var(--z-skip-link);
+  }
+
   .x1t7rt7m:focus-visible {
     box-shadow: 0 0 0 4px color-mix(in oklch,var(--ui-ring) 24%,transparent);
   }
@@ -1058,6 +1078,10 @@
 
   .x1itt8ug:hover {
     text-decoration-thickness: 2px;
+  }
+
+  .x1wfrlr2:focus {
+    transform: translateY(0);
   }
 
   .xymg228:active {

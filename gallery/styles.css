@@ -232,6 +232,25 @@
     padding-top: 9rem;
   }
 
+  html body [data-gallery-skip-link-layer-conflict="true"][data-slot="skip-link"] {
+    --gallery-skip-link-layer-conflict: legacy;
+    background-attachment: fixed;
+    background-clip: content-box;
+    background-image: linear-gradient(red, blue);
+    background-origin: content-box;
+    background-position: 50% 50%;
+    background-repeat: no-repeat;
+    background-size: cover;
+    border-radius: 99px;
+    position: static;
+    transform: translateY(-50rem);
+    z-index: -1;
+  }
+
+  html body [data-gallery-skip-link-layer-conflict="true"][data-slot="skip-link"]:focus {
+    transform: translateY(-50rem);
+  }
+
   html body [data-gallery-wrapping-row-layer-conflict="true"][data-slot="wrapping-row"] {
     --gallery-wrapping-row-layer-conflict: legacy;
     display: grid;
