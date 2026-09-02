@@ -1,4 +1,10 @@
 @layer components.hraness-ui.priority1 {
+  .x1732f5w {
+    padding: 0 !important;
+  }
+}
+
+@layer components.hraness-ui.priority2 {
   .x1y4qj14 {
     background-position: 0 0;
   }
@@ -29,6 +35,10 @@
 
   .xfk30nb {
     border-color: color-mix(in oklch,var(--ui-warning) 45%,var(--ui-border));
+  }
+
+  .x11d1vu1 {
+    border-color: currentColor !important;
   }
 
   .x1r7ld26 {
@@ -83,12 +93,20 @@
     border-radius: var(--radius-sm);
   }
 
+  .x1lkz4a {
+    border-style: none !important;
+  }
+
   .xng3xce {
     border-style: none;
   }
 
   .x1y0btm7 {
     border-style: solid;
+  }
+
+  .x1toeqfw {
+    border-width: 0 !important;
   }
 
   .xc342km {
@@ -165,6 +183,10 @@
 
   .x7giv3 {
     overflow: clip;
+  }
+
+  .x22f3wc {
+    overflow: hidden !important;
   }
 
   .xb3r6kr {
@@ -270,7 +292,7 @@
   }
 }
 
-@layer components.hraness-ui.priority2 {
+@layer components.hraness-ui.priority3 {
   .x6s0dn4 {
     align-items: center;
   }
@@ -479,20 +501,40 @@
     border-block-end-width: 2px;
   }
 
+  .x1jkkyqx {
+    border-image-outset: 0 !important;
+  }
+
   .x1e53mt7 {
     border-image-outset: 0;
+  }
+
+  .x1m9pfrh {
+    border-image-repeat: stretch !important;
   }
 
   .xgkqhyc {
     border-image-repeat: stretch;
   }
 
+  .xmn6ne6 {
+    border-image-slice: 100% !important;
+  }
+
   .x1jleocg {
     border-image-slice: 100%;
   }
 
+  .xfq58d {
+    border-image-source: none !important;
+  }
+
   .x18sabzy {
     border-image-source: none;
+  }
+
+  .x1rjp9do {
+    border-image-width: 1 !important;
   }
 
   .x1pjjote {
@@ -537,6 +579,10 @@
 
   .x9f619 {
     box-sizing: border-box;
+  }
+
+  .x1me6c3g {
+    clip: rect(0,0,0,0) !important;
   }
 
   .x1heor9g {
@@ -851,6 +897,10 @@
     overflow-wrap: anywhere;
   }
 
+  .xj8z8mm {
+    position: absolute !important;
+  }
+
   .xixxii4 {
     position: fixed;
   }
@@ -978,6 +1028,10 @@
 
   .xlshs6z {
     visibility: hidden;
+  }
+
+  .x7z1v8h {
+    white-space: nowrap !important;
   }
 
   .xuxw1ft {
@@ -1221,7 +1275,7 @@
   }
 }
 
-@layer components.hraness-ui.priority3 {
+@layer components.hraness-ui.priority4 {
   .x1dtpm5y {
     border-bottom-color: color-mix(in oklch,currentColor 25%,transparent);
   }
@@ -1276,6 +1330,10 @@
 
   .xlzyvqe {
     height: 1em;
+  }
+
+  .x1b109bh {
+    height: 1px !important;
   }
 
   .xjm9jq1 {
@@ -1436,6 +1494,10 @@
 
   .x15vhz18 {
     width: 1em;
+  }
+
+  .x1r97y75 {
+    width: 1px !important;
   }
 
   .x1i1rx1s {
