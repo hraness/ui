@@ -6136,7 +6136,10 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       root.dir = "rtl";
       nativeSelect.lang = "ar";
       nativeSelect.dir = "rtl";
-      for (const animation of thumb.getAnimations()) animation.finish();
+      for (const animation of [
+        ...thumb.getAnimations(),
+        ...nativeSelect.getAnimations(),
+      ]) animation.finish();
       await new Promise<void>((resolveFrame) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
       });
@@ -6151,7 +6154,10 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       else nativeSelect.setAttribute("lang", previousSelectLanguage);
       if (previousSelectDirection === null) nativeSelect.removeAttribute("dir");
       else nativeSelect.setAttribute("dir", previousSelectDirection);
-      for (const animation of thumb.getAnimations()) animation.finish();
+      for (const animation of [
+        ...thumb.getAnimations(),
+        ...nativeSelect.getAnimations(),
+      ]) animation.finish();
       await new Promise<void>((resolveFrame) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
       });
