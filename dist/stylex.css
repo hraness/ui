@@ -677,6 +677,10 @@
     border-block-end-width: 2px;
   }
 
+  .x1mwwwfo {
+    border-collapse: collapse;
+  }
+
   .x1jkkyqx {
     border-image-outset: 0 !important;
   }
@@ -1237,8 +1241,16 @@
     stroke: var(--ui-primary);
   }
 
+  .x118tb2h {
+    text-align: center !important;
+  }
+
   .x2b8uid {
     text-align: center;
+  }
+
+  .xp4054r {
+    text-align: end;
   }
 
   .x1yc453h {
@@ -1408,6 +1420,10 @@
 
   .xxymvpz {
     vertical-align: middle;
+  }
+
+  .x16dsc37 {
+    vertical-align: top;
   }
 
   .xlshs6z {
@@ -1906,6 +1922,10 @@
 
   .x1pizb70 {
     height: 3rem;
+  }
+
+  .x17frcva {
+    height: 6rem;
   }
 
   .xt7dq6l {
