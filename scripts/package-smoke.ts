@@ -767,7 +767,7 @@ function packageDataTableDeclarationProbe(
   description: string,
 ): Readonly<{ baseClasses: readonly string[]; property: string }> {
   const candidates = [...packageNamedStyleEntry(map, key).matchAll(
-    /(?:^|,)\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    /(?:^|[,{])\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
   )].filter((binding) => {
     const classNames = new Set(binding[2]!.split(/\s+/u));
     return packageStyleRules(css, classNames).some((rule) =>
@@ -832,7 +832,7 @@ function requirePackageDataTableStyles(
   for (const key of PACKAGE_DATA_TABLE_STYLE_KEYS) {
     const entry = packageNamedStyleEntry(map, key);
     const bindings = [...entry.matchAll(
-      /(?:^|,)\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+      /(?:^|[,{])\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
     )];
     const expectedDeclarations = PACKAGE_DATA_TABLE_DECLARATIONS[key];
     assert.equal(
@@ -4739,6 +4739,7 @@ if (
 function viteSsrProbe(
   checkboxProbe: CheckboxPrecedenceProbe,
   contentProbe: ContentPrecedenceProbe,
+  dataTableProbe: PackageDataTableProbe,
   fieldSelectProbe: PackageFieldSelectProbe,
   formProbe: FormPrecedenceProbe,
   indicatorKnobProbe: PackageIndicatorKnobProbe,
@@ -4746,7 +4747,7 @@ function viteSsrProbe(
   visuallyHiddenClasses: readonly string[],
 ): string {
   return `import assert from "node:assert/strict";
-import { CheckboxField, EmptyState, Form, InlineAlert, Knob, Link, Meter, NativeSelectField, PageIntro, ProgressBar, SelectField, SettingsCard, Slider, TextField } from "@hraness/ui";
+import { CheckboxField, DataTable, EmptyState, Form, InlineAlert, Knob, Link, Meter, NativeSelectField, PageIntro, ProgressBar, SelectField, SettingsCard, Slider, TextField } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -4763,6 +4764,16 @@ const contentRootXstyle = {
   $$css: true,
 };
 const contentRootBaseClasses = ${JSON.stringify(contentProbe.rootBaseClasses)};
+const dataTableXstyle = {
+  ${JSON.stringify(dataTableProbe.tableProperty)}: "vite-data-table-xstyle",
+  $$css: true,
+};
+const dataTableWrapperXstyle = {
+  ${JSON.stringify(dataTableProbe.wrapperProperty)}: "vite-data-table-wrapper-xstyle",
+  $$css: true,
+};
+const dataTableBaseClasses = ${JSON.stringify(dataTableProbe.tableBaseClasses)};
+const dataTableWrapperBaseClasses = ${JSON.stringify(dataTableProbe.wrapperBaseClasses)};
 const fieldRootXstyle = {
   ${JSON.stringify(fieldSelectProbe.fieldRootProperty)}: "vite-field-root-xstyle",
   $$css: true,
@@ -4912,6 +4923,50 @@ const settingsCardMarkup = renderToStaticMarkup(React.createElement(SettingsCard
   title: "Vite settings",
 }, "Settings body"));
 assert.match(settingsCardMarkup, /data-shape="rectangular"/u);
+const dataTableColumns = [
+  { cell: (row) => row.project, header: "Project", id: "project" },
+  { align: "end", cell: (row) => row.runs, header: "Runs", id: "runs" },
+];
+const dataTableMarkup = renderToStaticMarkup(React.createElement(DataTable, {
+  caption: "Vite projects",
+  className: "vite-data-table-class",
+  columns: dataTableColumns,
+  getRowId: (row) => row.id,
+  rows: [{ id: "ocean", project: "Ocean", runs: 3 }],
+  style: { width: "42rem" },
+  wrapperClassName: "vite-data-table-wrapper-class",
+  wrapperXstyle: dataTableWrapperXstyle,
+  xstyle: dataTableXstyle,
+}));
+const dataTableWrapperTag = dataTableMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+const dataTableTag = dataTableMarkup.match(/<table[^>]*data-slot="data-table"[^>]*>/u)?.[0] ?? "";
+assert.match(
+  dataTableWrapperTag,
+  /class="hraness-data-table [^"]*vite-data-table-wrapper-xstyle vite-data-table-wrapper-class"/u,
+);
+assert.match(
+  dataTableTag,
+  /class="hraness-data-table__table [^"]*vite-data-table-xstyle vite-data-table-class"/u,
+);
+assert.match(dataTableTag, /style="[^"]*width:42rem[^"]*"/u);
+for (const baseClass of dataTableWrapperBaseClasses) {
+  assert.ok(!dataTableWrapperTag.split(/[\\s"]/u).includes(baseClass));
+}
+for (const baseClass of dataTableBaseClasses) {
+  assert.ok(!dataTableTag.split(/[\\s"]/u).includes(baseClass));
+}
+assert.equal(dataTableMarkup.match(/data-slot="data-table-header"/gu)?.length, 2);
+assert.equal(dataTableMarkup.match(/data-slot="data-table-cell"/gu)?.length, 2);
+assert.match(dataTableMarkup, /data-align="end"/u);
+const emptyDataTableMarkup = renderToStaticMarkup(React.createElement(DataTable, {
+  columns: dataTableColumns,
+  empty: "No Vite projects",
+  getRowId: (row) => row.id,
+  rows: [],
+}));
+assert.match(emptyDataTableMarkup, /data-slot="data-table-empty-row"/u);
+assert.match(emptyDataTableMarkup, /col[Ss]pan="2"/u);
+assert.match(emptyDataTableMarkup, />No Vite projects</u);
 const progressMarkup = renderToStaticMarkup(React.createElement(ProgressBar, {
   className: "vite-progress-class",
   label: "Vite progress",
@@ -4967,7 +5022,7 @@ for (const baseClass of ${JSON.stringify(indicatorKnobProbe.knobControlBaseClass
 for (const focusClass of ${JSON.stringify(indicatorKnobProbe.knobControlNativeFocusClasses)}) {
   assert.ok(!knobControlTag.split(/[\\s"]/u).includes(focusClass));
 }
-console.log("Vite SSR CheckboxField, Form, Link, Content, indicators, and Knob xstyle runtime passed");
+console.log("Vite SSR CheckboxField, Form, Link, Content, DataTable, indicators, and Knob xstyle runtime passed");
 `;
 }
 
