@@ -816,8 +816,85 @@ function packageVisuallyHiddenStyleMap(
 
 interface PackageStyleRule {
   readonly body: string;
+  readonly conditions: readonly string[];
   readonly header: string;
   readonly source: string;
+}
+
+function normalizedPackageCondition(header: string): string {
+  const normalized = header.replace(/\s+/gu, "").toLowerCase();
+  if (
+    normalized === "@media(max-width:40rem)"
+    || normalized === "@media(width<=40rem)"
+  ) {
+    return "@media(width<=40rem)";
+  }
+  return normalized;
+}
+
+function packageCssRules(
+  css: string,
+  conditions: readonly string[] = [],
+): PackageStyleRule[] {
+  const rules: PackageStyleRule[] = [];
+  let statementStart = 0;
+  let index = 0;
+  while (index < css.length) {
+    const character = css[index];
+    const nextCharacter = css[index + 1];
+    if (character === "/" && nextCharacter === "*") {
+      const end = css.indexOf("*/", index + 2);
+      assert.notEqual(end, -1, "packed CSS contains an unterminated comment");
+      index = end + 2;
+      continue;
+    }
+    if (character === "\"" || character === "'") {
+      const quote = character;
+      index += 1;
+      let escaped = false;
+      while (index < css.length) {
+        const quotedCharacter = css[index];
+        if (escaped) escaped = false;
+        else if (quotedCharacter === "\\") escaped = true;
+        else if (quotedCharacter === quote) {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      continue;
+    }
+    if (character === ";") {
+      statementStart = index + 1;
+      index += 1;
+      continue;
+    }
+    if (character !== "{") {
+      index += 1;
+      continue;
+    }
+
+    const rawHeader = css.slice(statementStart, index);
+    const header = rawHeader.replace(/\/\*[\s\S]*?\*\//gu, " ").trim();
+    const block = balancedBlock(css, index, `packed CSS block ${header}`);
+    const body = block.slice(1, -1);
+    if (header.startsWith("@")) {
+      const nestedConditions = /^@layer(?:\s|$)/iu.test(header)
+        ? conditions
+        : [...conditions, normalizedPackageCondition(header)];
+      rules.push(...packageCssRules(body, nestedConditions));
+    } else if (header.length > 0) {
+      rules.push({
+        body,
+        conditions,
+        header,
+        source: `${header}{${body}}`,
+      });
+    }
+    index += block.length;
+    statementStart = index;
+  }
+  return rules;
 }
 
 function packageSelectorList(header: string): readonly string[] {
@@ -854,15 +931,12 @@ function packageStyleRules(
   css: string,
   classNames: ReadonlySet<string>,
 ): PackageStyleRule[] {
-  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
-    .filter((match) => [...classNames].some((className) =>
-      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(match[1]!)
-    ))
-    .map((match) => ({
-      body: match[2]!,
-      header: match[1]!.trim(),
-      source: match[0],
-    }));
+  return packageCssRules(css).filter((rule) => [...classNames].some(
+    (className) => new RegExp(
+      `\\.${className}(?![A-Za-z0-9_-])`,
+      "u",
+    ).test(rule.header),
+  ));
 }
 
 function packageDeclarationSelectors(
@@ -941,7 +1015,9 @@ function requirePackageExactBaseDeclaration(
   description: string,
 ): void {
   const selectors = packageDeclarationSelectors(
-    packageStyleRules(css, classNames),
+    packageStyleRules(css, classNames).filter(
+      (rule) => rule.conditions.length === 0,
+    ),
     classNames,
     declaration,
     description,
@@ -961,18 +1037,17 @@ function requirePackageExactBaseDeclaration(
 }
 
 function packageExactConditionalCss(css: string, condition: string): string {
-  const bodies: string[] = [];
-  for (const match of css.matchAll(/@media\s*\([^{}]+\)\s*\{/gu)) {
-    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
-    const header = css.slice(match.index, open).replace(/\s+/gu, "")
-      .toLowerCase();
-    if (header === condition) {
-      const block = balancedBlock(css, open, `packed ${condition} CSS`);
-      bodies.push(block.slice(1, -1));
-    }
-  }
-  assert.notEqual(bodies.length, 0, `packed CSS must contain an exact ${condition} block`);
-  return bodies.join("\n");
+  const normalizedCondition = normalizedPackageCondition(condition);
+  const rules = packageCssRules(css).filter((rule) => (
+    rule.conditions.length === 1
+    && rule.conditions[0] === normalizedCondition
+  ));
+  assert.notEqual(
+    rules.length,
+    0,
+    `packed CSS must contain rules in an exact ${condition} block`,
+  );
+  return rules.map((rule) => rule.source).join("\n");
 }
 
 function requirePackageCheckboxStyles(javaScript: string, css: string): void {
@@ -1312,8 +1387,9 @@ function requirePackageContentStyles(javaScript: string, css: string): void {
     ["settingsCardHeader", /border-bottom-width:\s*1px/u, "SettingsCard header divider"],
     ["settingsCardRectangular", /border-radius:\s*var\(--radius-sharp\)/u, "rectangular SettingsCard shape"],
   ] as const) {
-    assert.match(
-      entryCss(key),
+    requirePackageExactBaseDeclaration(
+      css,
+      packageEntryClassNames(content, key),
       declaration,
       `packed ${description} must remain in its compiled recipe`,
     );
@@ -1343,11 +1419,20 @@ function requirePackageContentStyles(javaScript: string, css: string): void {
       `packed normal ${description}`,
     );
   }
-  const normalizedCss = css.replace(/\s+/gu, "").toLowerCase();
-  const compactCondition = normalizedCss.includes("@media(width<=40rem){")
-    ? "@media(width<=40rem)"
-    : "@media(max-width:40rem)";
-  const compactCss = packageExactConditionalCss(css, compactCondition);
+  const compactCondition = normalizedPackageCondition("@media(width<=40rem)");
+  const compactRules = packageStyleRules(
+    css,
+    packageEntryClassNames(content, "pageIntroRoot"),
+  ).filter((rule) => (
+    rule.conditions.length === 1
+    && rule.conditions[0] === compactCondition
+  ));
+  assert.notEqual(
+    compactRules.length,
+    0,
+    "packed PageIntro must own rules in an exact equivalent 40rem media condition",
+  );
+  const compactCss = compactRules.map((rule) => rule.source).join("\n");
   assert.match(
     entryCss("pageIntroRoot", compactCss),
     /grid-template-columns:\s*minmax\(0,\s*1fr\)/u,
