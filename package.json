@@ -63,6 +63,7 @@
     "src/components.css",
     "src/content.stylex.ts",
     "src/content.tsx",
+    "src/data-table.stylex.ts",
     "src/data-display.tsx",
     "src/feedback.stylex.ts",
     "src/feedback.tsx",

@@ -449,53 +449,6 @@
     background: var(--ui-primary);
   }
 
-  .hraness-data-table {
-    max-width: 100%;
-    overflow-x: auto;
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-  }
-
-  .hraness-data-table__table {
-    width: 100%;
-    border-collapse: collapse;
-    color: var(--ui-foreground);
-    font-size: var(--text-label);
-  }
-
-  .hraness-data-table__table caption {
-    padding: var(--space-3) var(--space-4);
-    color: var(--ui-muted-foreground);
-    text-align: start;
-  }
-
-  .hraness-data-table__table :where(th, td) {
-    padding: var(--space-3) var(--space-4);
-    border-block-end: 1px solid var(--ui-border);
-    text-align: start;
-    vertical-align: top;
-  }
-
-  .hraness-data-table__table :where(th, td)[data-align="center"] {
-    text-align: center;
-  }
-
-  .hraness-data-table__table :where(th, td)[data-align="end"] {
-    text-align: end;
-  }
-
-  .hraness-data-table__table th {
-    background: var(--ui-muted);
-    color: var(--ui-muted-foreground);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .hraness-data-table__empty {
-    height: 6rem;
-    color: var(--ui-muted-foreground);
-    text-align: center !important;
-  }
-
   .hraness-toast-region {
     position: fixed;
     z-index: var(--z-modal);

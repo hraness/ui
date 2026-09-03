@@ -61,6 +61,18 @@ const LINK_STYLE_KEYS = [
   "nativeInteractionFallbacks",
   "root",
 ] as const;
+const PACKAGE_DATA_TABLE_STYLE_KEYS = [
+  "alignCenter",
+  "alignEnd",
+  "alignStart",
+  "caption",
+  "cell",
+  "empty",
+  "header",
+  "table",
+  "wrapper",
+] as const;
+type PackageDataTableStyleKey = (typeof PACKAGE_DATA_TABLE_STYLE_KEYS)[number];
 type LinkStyleKey = (typeof LINK_STYLE_KEYS)[number];
 
 function balancedBlock(source: string, open: number, description: string): string {
@@ -157,6 +169,16 @@ interface PackageIndicatorKnobProbe {
 interface ContentPrecedenceProbe {
   readonly rootBaseClasses: readonly string[];
   readonly rootProperty: string;
+}
+
+interface PackageDataTableProbe {
+  readonly classNamesByKey: Readonly<
+    Record<PackageDataTableStyleKey, readonly string[]>
+  >;
+  readonly tableBaseClasses: readonly string[];
+  readonly tableProperty: string;
+  readonly wrapperBaseClasses: readonly string[];
+  readonly wrapperProperty: string;
 }
 
 interface PackageNamedStyleMap {
@@ -574,6 +596,291 @@ const PACKAGE_CONTENT_STYLE_KEYS = [
   "settingsCardRoot",
   "settingsCardTitle",
 ] as const;
+
+const PACKAGE_DATA_TABLE_DECLARATIONS: Readonly<
+  Record<
+    PackageDataTableStyleKey,
+    readonly Readonly<{ declaration: RegExp; description: string }>[]
+  >
+> = {
+  alignCenter: [
+    { declaration: /text-align:\s*center;/u, description: "center alignment" },
+  ],
+  alignEnd: [
+    { declaration: /text-align:\s*end;/u, description: "logical end alignment" },
+  ],
+  alignStart: [
+    { declaration: /text-align:\s*start;/u, description: "logical start alignment" },
+  ],
+  caption: [
+    {
+      declaration: /color:\s*var\(--ui-muted-foreground\);/u,
+      description: "caption foreground",
+    },
+    {
+      declaration: /padding-block:\s*var\(--space-3\);/u,
+      description: "caption block padding",
+    },
+    {
+      declaration: /padding-inline:\s*var\(--space-4\);/u,
+      description: "caption inline padding",
+    },
+    { declaration: /text-align:\s*start;/u, description: "caption alignment" },
+  ],
+  cell: [
+    {
+      declaration: /border-block-end-color:\s*var\(--ui-border\);/u,
+      description: "logical cell divider color",
+    },
+    {
+      declaration: /border-block-end-style:\s*solid;/u,
+      description: "logical cell divider style",
+    },
+    {
+      declaration: /border-block-end-width:\s*1px;/u,
+      description: "logical cell divider width",
+    },
+    {
+      declaration: /padding-block:\s*var\(--space-3\);/u,
+      description: "cell block padding",
+    },
+    {
+      declaration: /padding-inline:\s*var\(--space-4\);/u,
+      description: "cell inline padding",
+    },
+    { declaration: /vertical-align:\s*top;/u, description: "cell vertical alignment" },
+  ],
+  empty: [
+    {
+      declaration: /color:\s*var\(--ui-muted-foreground\);/u,
+      description: "empty-state foreground",
+    },
+    { declaration: /height:\s*6rem;/u, description: "empty-state height" },
+    {
+      declaration: /text-align:\s*center\s*!important;/u,
+      description: "important empty-state centering",
+    },
+  ],
+  header: [
+    {
+      declaration: /background-attachment:\s*scroll;/u,
+      description: "header background attachment reset",
+    },
+    {
+      declaration: /background-clip:\s*border-box;/u,
+      description: "header background clip reset",
+    },
+    {
+      declaration: /background-color:\s*var\(--ui-muted\);/u,
+      description: "header background color reset",
+    },
+    {
+      declaration: /background-image:\s*none;/u,
+      description: "header background image reset",
+    },
+    {
+      declaration: /background-origin:\s*padding-box;/u,
+      description: "header background origin reset",
+    },
+    {
+      declaration: /background-position:\s*0(?:%?)\s+0(?:%?);/u,
+      description: "header background position reset",
+    },
+    {
+      declaration: /background-repeat:\s*repeat;/u,
+      description: "header background repeat reset",
+    },
+    {
+      declaration: /background-size:\s*auto(?:\s+auto)?;/u,
+      description: "header background size reset",
+    },
+    {
+      declaration: /color:\s*var\(--ui-muted-foreground\);/u,
+      description: "header foreground",
+    },
+    {
+      declaration: /font-weight:\s*var\(--font-weight-medium\);/u,
+      description: "header weight",
+    },
+  ],
+  table: [
+    { declaration: /border-collapse:\s*collapse;/u, description: "table border collapse" },
+    {
+      declaration: /color:\s*var\(--ui-foreground\);/u,
+      description: "table foreground",
+    },
+    {
+      declaration: /font-size:\s*var\(--text-label\);/u,
+      description: "table type size",
+    },
+    { declaration: /width:\s*100%;/u, description: "table width" },
+  ],
+  wrapper: [
+    {
+      declaration: /border-color:\s*var\(--ui-border\);/u,
+      description: "wrapper border color",
+    },
+    {
+      declaration: /border-image-outset:\s*0;/u,
+      description: "wrapper border-image outset reset",
+    },
+    {
+      declaration: /border-image-repeat:\s*stretch;/u,
+      description: "wrapper border-image repeat reset",
+    },
+    {
+      declaration: /border-image-slice:\s*100%;/u,
+      description: "wrapper border-image slice reset",
+    },
+    {
+      declaration: /border-image-source:\s*none;/u,
+      description: "wrapper border-image source reset",
+    },
+    {
+      declaration: /border-image-width:\s*1;/u,
+      description: "wrapper border-image width reset",
+    },
+    {
+      declaration: /border-radius:\s*var\(--radius-lg\);/u,
+      description: "wrapper radius",
+    },
+    { declaration: /border-style:\s*solid;/u, description: "wrapper border style" },
+    { declaration: /border-width:\s*1px;/u, description: "wrapper border width" },
+    { declaration: /max-width:\s*100%;/u, description: "wrapper maximum width" },
+    { declaration: /overflow-x:\s*auto;/u, description: "wrapper overflow" },
+  ],
+};
+
+function packageDataTableStyleMap(javaScript: string): PackageNamedStyleMap {
+  return packageNamedStyleMap(
+    javaScript,
+    PACKAGE_DATA_TABLE_STYLE_KEYS,
+    "dataTableStyles class map",
+  );
+}
+
+function packageDataTableDeclarationProbe(
+  map: PackageNamedStyleMap,
+  key: PackageDataTableStyleKey,
+  css: string,
+  declaration: RegExp,
+  description: string,
+): Readonly<{ baseClasses: readonly string[]; property: string }> {
+  const candidates = [...packageNamedStyleEntry(map, key).matchAll(
+    /(?:^|,)\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )].filter((binding) => {
+    const classNames = new Set(binding[2]!.split(/\s+/u));
+    return packageStyleRules(css, classNames).some((rule) =>
+      rule.conditions.length === 0 && declaration.test(rule.body)
+    );
+  });
+  assert.equal(
+    candidates.length,
+    1,
+    `packed dataTableStyles.${key} must bind exactly one ${description} property`,
+  );
+  return {
+    baseClasses: candidates[0]![2]!.split(/\s+/u),
+    property: candidates[0]![1]!,
+  };
+}
+
+function packageDataTableProbe(
+  javaScript: string,
+  css: string,
+): PackageDataTableProbe {
+  const map = packageDataTableStyleMap(javaScript);
+  const table = packageDataTableDeclarationProbe(
+    map,
+    "table",
+    css,
+    /width:\s*100%;/u,
+    "width",
+  );
+  const wrapper = packageDataTableDeclarationProbe(
+    map,
+    "wrapper",
+    css,
+    /max-width:\s*100%;/u,
+    "max-width",
+  );
+  return {
+    classNamesByKey: Object.fromEntries(
+      PACKAGE_DATA_TABLE_STYLE_KEYS.map((key) => [
+        key,
+        [...packageEntryClassNames(map, key)],
+      ]),
+    ) as Record<PackageDataTableStyleKey, readonly string[]>,
+    tableBaseClasses: table.baseClasses,
+    tableProperty: table.property,
+    wrapperBaseClasses: wrapper.baseClasses,
+    wrapperProperty: wrapper.property,
+  };
+}
+
+function requirePackageDataTableStyles(
+  javaScript: string,
+  css: string,
+): void {
+  const map = packageDataTableStyleMap(javaScript);
+  assert.deepEqual(
+    packageTopLevelStyleKeys(map.object, "packed dataTableStyles class map"),
+    PACKAGE_DATA_TABLE_STYLE_KEYS,
+    "packed dataTableStyles must retain its exact finite recipe keys and order",
+  );
+  const familyRules: PackageStyleRule[] = [];
+  for (const key of PACKAGE_DATA_TABLE_STYLE_KEYS) {
+    const entry = packageNamedStyleEntry(map, key);
+    const bindings = [...entry.matchAll(
+      /(?:^|,)\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+    )];
+    const expectedDeclarations = PACKAGE_DATA_TABLE_DECLARATIONS[key];
+    assert.equal(
+      bindings.length,
+      expectedDeclarations.length,
+      `packed dataTableStyles.${key} must retain its exact declaration binding count`,
+    );
+    const classNames = packageEntryClassNames(map, key);
+    const rules = packageStyleRules(css, classNames);
+    familyRules.push(...rules);
+    assert.ok(
+      rules.every((rule) => rule.conditions.length === 0),
+      `packed dataTableStyles.${key} declarations must remain unconditional`,
+    );
+    assert.equal(
+      new Set(rules.map((rule) => normalizedAtomicDeclaration(rule.body))).size,
+      expectedDeclarations.length,
+      `packed dataTableStyles.${key} must retain only its exact declaration set`,
+    );
+    for (const className of classNames) {
+      assert.ok(
+        rules.some((rule) =>
+          new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+        ),
+        `packed dataTableStyles.${key} class ${className} must own CSS`,
+      );
+    }
+    for (const { declaration, description } of expectedDeclarations) {
+      requirePackageExactBaseDeclaration(
+        css,
+        classNames,
+        declaration,
+        `packed DataTable ${description}`,
+      );
+    }
+  }
+  const familyCss = [...new Set(familyRules.map((rule) => rule.source))].join("\n");
+  assert.doesNotMatch(
+    familyCss,
+    /border-bottom(?:-[a-z-]+)?\s*:/u,
+    "packed dataTableStyles must not lower its logical divider to border-bottom",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-data-table(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+    "packed StyleX CSS must contain no DataTable semantic selectors",
+  );
+}
 
 function packageContentPrecedenceProbe(
   javaScript: string,
@@ -1470,6 +1777,7 @@ function requireNoMigratedGallerySentinels(...sources: string[]): void {
     "data-gallery-indicators-layer-conflict",
     "data-gallery-knob-layer-conflict",
     "data-gallery-content-layer-conflict",
+    "data-gallery-data-table-layer-conflict",
   ]) {
     assert.doesNotMatch(
       output,
@@ -2109,6 +2417,7 @@ function ssrProbe(
   release: ReactRelease,
   checkboxProbe: CheckboxPrecedenceProbe,
   contentProbe: ContentPrecedenceProbe,
+  dataTableProbe: PackageDataTableProbe,
   fieldSelectProbe: PackageFieldSelectProbe,
   formProbe: FormPrecedenceProbe,
   indicatorKnobProbe: PackageIndicatorKnobProbe,
@@ -2132,6 +2441,7 @@ import {
   CardTitle,
   CheckboxGroup,
   CheckboxField,
+  DataTable,
   EmptyState,
   FileField,
   Form,
@@ -2185,6 +2495,17 @@ const contentRootXstyle = {
   $$css: true,
 };
 const contentRootBaseClasses = ${JSON.stringify(contentProbe.rootBaseClasses)};
+const dataTableXstyle = {
+  ${JSON.stringify(dataTableProbe.tableProperty)}: "package-data-table-xstyle",
+  $$css: true,
+};
+const dataTableWrapperXstyle = {
+  ${JSON.stringify(dataTableProbe.wrapperProperty)}: "package-data-table-wrapper-xstyle",
+  $$css: true,
+};
+const dataTableClasses = ${JSON.stringify(dataTableProbe.classNamesByKey)};
+const dataTableBaseClasses = ${JSON.stringify(dataTableProbe.tableBaseClasses)};
+const dataTableWrapperBaseClasses = ${JSON.stringify(dataTableProbe.wrapperBaseClasses)};
 const fieldRootXstyle = {
   ${JSON.stringify(fieldSelectProbe.fieldRootProperty)}: "package-field-root-xstyle",
   $$css: true,
@@ -2340,7 +2661,7 @@ assert.ok(
 assert.equal(
   stylexCss.match(/(?:^|[\s{;])width:\s*100%/gu)?.length,
   1,
-  "the packed CSS must contain exactly one shared physical 100% width declaration for Avatar children and PressableCard",
+  "the packed CSS must contain exactly one shared physical 100% width declaration for Avatar children, PressableCard, and DataTable",
 );
 assert.equal(
   stylexCss.match(/(?:^|[\s{;])min-width:\s*0/gu)?.length,
@@ -2358,6 +2679,8 @@ await access(new URL("./select-field.stylex.ts", componentsCssUrl));
 await access(new URL("./indicators.stylex.ts", componentsCssUrl));
 await access(new URL("./knob.stylex.ts", componentsCssUrl));
 await access(new URL("./content.stylex.ts", componentsCssUrl));
+await access(new URL("./data-table.stylex.ts", componentsCssUrl));
+await access(new URL("./data-display.tsx", componentsCssUrl));
 assert.match(
   componentsCss,
   /@keyframes\s+hraness-progress-indeterminate\s*\{\s*from\s*\{\s*transform:\s*translateX\(-125%\);\s*\}\s*to\s*\{\s*transform:\s*translateX\(250%\);\s*\}\s*\}/u,
@@ -2376,6 +2699,11 @@ assert.doesNotMatch(
   componentsCss,
   /\.hraness-(?:page-intro|empty-state|inline-alert|settings-card)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
   "components.css must not retain migrated content-family recipes",
+);
+assert.doesNotMatch(
+  componentsCss,
+  /\.hraness-data-table(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+  "components.css must not retain migrated DataTable recipes",
 );
 assert.doesNotMatch(componentsCss, /\.hraness-form(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
@@ -2791,6 +3119,167 @@ assert.match(settingsCardMarkup, /data-shape="rectangular"/u);
 assert.match(settingsCardMarkup, /data-slot="settings-card"/u);
 assert.match(settingsCardMarkup, /data-slot="settings-card-header"/u);
 assert.match(settingsCardMarkup, /data-slot="settings-card-body"/u);
+
+const dataTableColumns = [
+  {
+    cell: (row) => row.project,
+    header: "Project",
+    id: "project",
+  },
+  {
+    align: "center",
+    cell: (row) => row.owner,
+    header: "Owner",
+    id: "owner",
+  },
+  {
+    align: "end",
+    cell: (row) => row.runs,
+    header: "Runs",
+    id: "runs",
+  },
+];
+const dataTableMarkup = renderToStaticMarkup(React.createElement(DataTable, {
+  "aria-describedby": "package-projects-description",
+  caption: React.createElement("span", null, "Recent package projects"),
+  className: "consumer-data-table",
+  columns: dataTableColumns,
+  "data-product": "package-smoke",
+  getRowId: (row) => row.id,
+  id: "package-projects",
+  rows: [{ id: "ocean", owner: "Ada", project: "Ocean", runs: 3 }],
+  style: { color: "rgb(1, 2, 3)", width: "42rem" },
+  wrapperClassName: "consumer-data-table-wrapper",
+  wrapperXstyle: dataTableWrapperXstyle,
+  xstyle: dataTableXstyle,
+}));
+const dataTableWrapperTag = dataTableMarkup.match(/^<div[^>]*>/u)?.[0] ?? "";
+const dataTableTag = dataTableMarkup.match(
+  /<table[^>]*data-slot="data-table"[^>]*>/u,
+)?.[0] ?? "";
+const dataTableCaptionTag = dataTableMarkup.match(
+  /<caption[^>]*data-slot="data-table-caption"[^>]*>/u,
+)?.[0] ?? "";
+const dataTableHeaderTags = [...dataTableMarkup.matchAll(
+  /<th[^>]*data-slot="data-table-header"[^>]*>/gu,
+)].map((match) => match[0]);
+const dataTableCellTags = [...dataTableMarkup.matchAll(
+  /<td[^>]*data-slot="data-table-cell"[^>]*>/gu,
+)].map((match) => match[0]);
+const dataTableTagClassNames = (tag) =>
+  tag.match(/class="([^"]+)"/u)?.[1]?.split(/\s+/u).filter(Boolean) ?? [];
+const assertDataTableRecipeClasses = (tag, keys, description) => {
+  const classNames = dataTableTagClassNames(tag);
+  for (const key of keys) {
+    for (const className of dataTableClasses[key]) {
+      assert.ok(
+        classNames.includes(className),
+        description + " must retain every dataTableStyles." + key + " class",
+      );
+    }
+  }
+};
+assert.match(
+  dataTableWrapperTag,
+  /class="hraness-data-table [^"]*package-data-table-wrapper-xstyle consumer-data-table-wrapper"/u,
+  "packed DataTable wrapper classes must keep stable, generated caller, and caller class order",
+);
+assert.match(
+  dataTableTag,
+  /class="hraness-data-table__table [^"]*package-data-table-xstyle consumer-data-table"/u,
+  "packed DataTable table classes must keep stable, generated caller, and caller class order",
+);
+for (const baseClass of dataTableWrapperBaseClasses) {
+  assert.ok(
+    !dataTableTagClassNames(dataTableWrapperTag).includes(baseClass),
+    "DataTable wrapperXstyle must replace its package max-width class",
+  );
+}
+for (const baseClass of dataTableBaseClasses) {
+  assert.ok(
+    !dataTableTagClassNames(dataTableTag).includes(baseClass),
+    "DataTable xstyle must replace its package width class",
+  );
+}
+for (const className of dataTableClasses.wrapper) {
+  if (!dataTableWrapperBaseClasses.includes(className)) {
+    assert.ok(dataTableTagClassNames(dataTableWrapperTag).includes(className));
+  }
+}
+for (const className of dataTableClasses.table) {
+  if (!dataTableBaseClasses.includes(className)) {
+    assert.ok(dataTableTagClassNames(dataTableTag).includes(className));
+  }
+}
+assert.match(dataTableTag, /aria-describedby="package-projects-description"/u);
+assert.match(dataTableTag, /data-product="package-smoke"/u);
+assert.match(dataTableTag, /id="package-projects"/u);
+assert.match(dataTableTag, /style="[^"]*color:rgb\(1, 2, 3\)[^"]*"/u);
+assert.match(
+  dataTableTag,
+  /style="[^"]*width:42rem[^"]*"/u,
+  "packed DataTable native table style must remain final after caller xstyle",
+);
+assert.match(dataTableCaptionTag, /^<caption/u);
+assertDataTableRecipeClasses(dataTableCaptionTag, ["caption"], "DataTable caption");
+assert.match(dataTableMarkup, /<span>Recent package projects<\/span>/u);
+assert.match(dataTableMarkup, /<thead data-slot="data-table-head">/u);
+assert.match(dataTableMarkup, /<tr data-slot="data-table-header-row">/u);
+assert.match(dataTableMarkup, /<tbody data-slot="data-table-body">/u);
+assert.match(dataTableMarkup, /<tr data-slot="data-table-row">/u);
+assert.equal(dataTableHeaderTags.length, 3);
+assert.equal(dataTableCellTags.length, 3);
+for (const [index, alignment] of ["start", "center", "end"].entries()) {
+  const alignmentKey = alignment === "start"
+    ? "alignStart"
+    : alignment === "center"
+      ? "alignCenter"
+      : "alignEnd";
+  const headerTag = dataTableHeaderTags[index] ?? "";
+  const cellTag = dataTableCellTags[index] ?? "";
+  assert.match(headerTag, new RegExp('data-align="' + alignment + '"', "u"));
+  assert.match(headerTag, /scope="col"/u);
+  assert.match(cellTag, new RegExp('data-align="' + alignment + '"', "u"));
+  assertDataTableRecipeClasses(
+    headerTag,
+    ["cell", "header", alignmentKey],
+    "DataTable header",
+  );
+  assertDataTableRecipeClasses(
+    cellTag,
+    ["cell", alignmentKey],
+    "DataTable cell",
+  );
+}
+assert.match(dataTableMarkup, />Ocean</u);
+assert.match(dataTableMarkup, />Ada</u);
+
+const emptyDataTableMarkup = renderToStaticMarkup(React.createElement(DataTable, {
+  columns: dataTableColumns,
+  empty: React.createElement("strong", null, "No package projects"),
+  getRowId: (row) => row.id,
+  rows: [],
+}));
+const emptyDataTableRowTag = emptyDataTableMarkup.match(
+  /<tr[^>]*data-slot="data-table-empty-row"[^>]*>/u,
+)?.[0] ?? "";
+const emptyDataTableCellTag = emptyDataTableMarkup.match(
+  /<td[^>]*data-slot="data-table-empty"[^>]*>/u,
+)?.[0] ?? "";
+assert.match(emptyDataTableRowTag, /^<tr/u);
+assert.match(
+  emptyDataTableCellTag,
+  /class="hraness-data-table__empty [^"]+"/u,
+  "packed empty DataTable must keep its stable hook before generated classes",
+);
+assert.match(emptyDataTableCellTag, /col[Ss]pan="3"/u);
+assert.doesNotMatch(emptyDataTableCellTag, /data-align=/u);
+assertDataTableRecipeClasses(
+  emptyDataTableCellTag,
+  ["cell", "empty"],
+  "empty DataTable cell",
+);
+assert.match(emptyDataTableMarkup, /<strong>No package projects<\/strong>/u);
 
 const linkMarkup = renderToStaticMarkup(React.createElement(Link, {
   className: "consumer-link",
@@ -3301,6 +3790,9 @@ import {
   CardTitle,
   CheckboxGroup,
   CheckboxField,
+  DataTable,
+  type DataTableColumn,
+  type DataTableProps,
   EmptyState,
   FileField,
   Form,
@@ -3358,6 +3850,18 @@ const styles = stylex.create({
     borderColor: "var(--ui-primary)",
     display: "flex",
   },
+  dataTable: {
+    borderCollapse: "separate",
+    color: "var(--ui-primary)",
+    width: "80%",
+  },
+  dataTableDynamic: (width: string) => ({ width }),
+  dataTableWrapper: {
+    borderColor: "var(--ui-primary)",
+    maxWidth: "60rem",
+    overflowX: "scroll",
+  },
+  dataTableWrapperDynamic: (maxWidth: string) => ({ maxWidth }),
   checkbox: {
     color: "var(--ui-primary)",
     display: "flex",
@@ -3644,6 +4148,52 @@ const settingsCardMarkup: string = renderToStaticMarkup(createElement(SettingsCa
   title: "Profile",
   xstyle: styles.content,
 }));
+type PackageDataTableRow = Readonly<{
+  id: string;
+  owner: string;
+  project: string;
+  runs: number;
+}>;
+const packageDataTableColumns = [
+  {
+    cell: (row) => row.project,
+    header: "Project",
+    id: "project",
+  },
+  {
+    align: "center",
+    cell: (row) => row.owner,
+    header: "Owner",
+    id: "owner",
+  },
+  {
+    align: "end",
+    cell: (row) => row.runs,
+    header: "Runs",
+    id: "runs",
+  },
+] as const satisfies readonly [
+  DataTableColumn<PackageDataTableRow>,
+  ...DataTableColumn<PackageDataTableRow>[],
+];
+const packageDataTableProps: DataTableProps<PackageDataTableRow> = {
+  caption: "Recent projects",
+  columns: packageDataTableColumns,
+  getRowId: (row) => row.id,
+  rows: [{ id: "ocean", owner: "Ada", project: "Ocean", runs: 3 }],
+  style: { width: "42rem" },
+  wrapperXstyle: [
+    styles.dataTableWrapper,
+    styles.dataTableWrapperDynamic("40rem"),
+  ],
+  xstyle: [styles.dataTable, styles.dataTableDynamic("41rem")],
+};
+const packageDataTableRef = createRef<HTMLTableElement>();
+const TypedPackageDataTable = DataTable<PackageDataTableRow>;
+const dataTableMarkup: string = renderToStaticMarkup(createElement(
+  TypedPackageDataTable,
+  { ...packageDataTableProps, ref: packageDataTableRef },
+));
 const linkRef = createRef<HTMLAnchorElement>();
 const linkMarkup: string = renderToStaticMarkup(createElement(Link, {
   children: ({ isHovered }) => isHovered ? "Hovered reference" : "Reference",
@@ -3903,6 +4453,38 @@ const invalidInlineAlertToneMarkup = renderToStaticMarkup(createElement(InlineAl
 const invalidSettingsCardShapeMarkup = renderToStaticMarkup(createElement(SettingsCard, { shape: "pill", title: "Settings" }));
 // @ts-expect-error Content roots accept compiled StyleX recipes rather than raw CSS objects.
 const invalidContentXstyleMarkup = renderToStaticMarkup(createElement(PageIntro, { title: "Projects", xstyle: { display: "flex" } }));
+const invalidDataTableAlignmentColumn: DataTableColumn<PackageDataTableRow> = {
+  // @ts-expect-error DataTable keeps its alignment set finite and logical.
+  align: "right",
+  cell: (row) => row.project,
+  header: "Project",
+  id: "project",
+};
+const invalidDataTableRows: DataTableProps<PackageDataTableRow> = {
+  ...packageDataTableProps,
+  rows: [{
+    id: "invalid",
+    owner: "Ada",
+    project: "Invalid",
+    // @ts-expect-error DataTable rows preserve their declared generic row type.
+    runs: "3",
+  }],
+};
+const invalidDataTableRefMarkup = createElement(TypedPackageDataTable, {
+  ...packageDataTableProps,
+  // @ts-expect-error DataTable forwards only a native HTMLTableElement ref.
+  ref: createRef<HTMLDivElement>(),
+});
+const invalidDataTableXstyle: DataTableProps<PackageDataTableRow> = {
+  ...packageDataTableProps,
+  // @ts-expect-error DataTable accepts compiled StyleX recipes, not raw table CSS.
+  xstyle: { width: "80%" },
+};
+const invalidDataTableWrapperXstyle: DataTableProps<PackageDataTableRow> = {
+  ...packageDataTableProps,
+  // @ts-expect-error DataTable accepts compiled StyleX recipes, not raw wrapper CSS.
+  wrapperXstyle: { overflowX: "scroll" },
+};
 // @ts-expect-error AskAiAboutThis requires one explicit canonical HTTPS URL.
 const missingAskAiUrlMarkup = renderToStaticMarkup(createElement(AskAiAboutThis, {}));
 // @ts-expect-error CheckboxField requires a label even when visible copy is hidden.
@@ -3939,6 +4521,7 @@ void pageIntroMarkup;
 void emptyStateMarkup;
 void inlineAlertMarkup;
 void settingsCardMarkup;
+void dataTableMarkup;
 void linkMarkup;
 void progressMarkup;
 void meterMarkup;
@@ -3988,6 +4571,11 @@ void invalidLinkXstyleMarkup;
 void invalidInlineAlertToneMarkup;
 void invalidSettingsCardShapeMarkup;
 void invalidContentXstyleMarkup;
+void invalidDataTableAlignmentColumn;
+void invalidDataTableRows;
+void invalidDataTableRefMarkup;
+void invalidDataTableXstyle;
+void invalidDataTableWrapperXstyle;
 void missingAskAiUrlMarkup;
 void unnamedCheckboxMarkup;
 void compactCheckboxMarkup;
@@ -3999,9 +4587,12 @@ void invalidKnobDensityMarkup;
 void invalidKnobControlXstyleMarkup;
 `;
 
-function viteClientProbe(contentProbe: ContentPrecedenceProbe): string {
+function viteClientProbe(
+  contentProbe: ContentPrecedenceProbe,
+  dataTableProbe: PackageDataTableProbe,
+): string {
   return `import "@hraness/ui/styles.css";
-import { AskAiAboutThis, Card, CardDescription, CheckboxField, EmptyState, FileField, Form, InlineAlert, KeyHint, Knob, Link, Meter, NativeSelectField, PageIntro, PressableCard, ProgressBar, SelectField, SettingsCard, Slider, TextField, Toolbar } from "@hraness/ui";
+import { AskAiAboutThis, Card, CardDescription, CheckboxField, DataTable, EmptyState, FileField, Form, InlineAlert, KeyHint, Knob, Link, Meter, NativeSelectField, PageIntro, PressableCard, ProgressBar, SelectField, SettingsCard, Slider, TextField, Toolbar } from "@hraness/ui";
 import * as React from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -4013,6 +4604,16 @@ const contentRootXstyle = {
   $$css: true,
 };
 const contentRootBaseClasses = ${JSON.stringify(contentProbe.rootBaseClasses)};
+const dataTableXstyle = {
+  ${JSON.stringify(dataTableProbe.tableProperty)}: "vite-data-table-xstyle",
+  $$css: true,
+};
+const dataTableWrapperXstyle = {
+  ${JSON.stringify(dataTableProbe.wrapperProperty)}: "vite-data-table-wrapper-xstyle",
+  $$css: true,
+};
+const dataTableBaseClasses = ${JSON.stringify(dataTableProbe.tableBaseClasses)};
+const dataTableWrapperBaseClasses = ${JSON.stringify(dataTableProbe.wrapperBaseClasses)};
 const reactRoot = createRoot(root);
 flushSync(() => reactRoot.render(React.createElement(React.Fragment, null,
   React.createElement(Card, { tone: "accent" },
@@ -4032,6 +4633,20 @@ flushSync(() => reactRoot.render(React.createElement(React.Fragment, null,
     style: { display: "inline-block" },
     title: "Vite projects",
     xstyle: contentRootXstyle,
+  }),
+  React.createElement(DataTable, {
+    caption: "Vite projects",
+    className: "vite-data-table-class",
+    columns: [
+      { cell: (row) => row.project, header: "Project", id: "project" },
+      { align: "end", cell: (row) => row.runs, header: "Runs", id: "runs" },
+    ],
+    getRowId: (row) => row.id,
+    rows: [{ id: "ocean", project: "Ocean", runs: 3 }],
+    style: { width: "42rem" },
+    wrapperClassName: "vite-data-table-wrapper-class",
+    wrapperXstyle: dataTableWrapperXstyle,
+    xstyle: dataTableXstyle,
   }),
   React.createElement(EmptyState, { title: "No Vite projects" }),
   React.createElement(InlineAlert, { tone: "success" }, "Vite is ready"),
@@ -4086,6 +4701,37 @@ if (contentRootBaseClasses.some((className) => contentRoot.classList.contains(cl
 }
 if (contentRoot.style.display !== "inline-block") {
   throw new Error("Vite client Content native style did not win last");
+}
+const dataTable = root.querySelector('[data-slot="data-table"]');
+const dataTableWrapper = root.querySelector('[data-slot="data-table-wrapper"]');
+if (!(dataTable instanceof HTMLTableElement) || !(dataTableWrapper instanceof HTMLElement)) {
+  throw new Error("Vite client DataTable semantic roots are missing");
+}
+if (
+  !dataTable.classList.contains("vite-data-table-xstyle")
+  || !dataTable.classList.contains("vite-data-table-class")
+  || !dataTableWrapper.classList.contains("vite-data-table-wrapper-xstyle")
+  || !dataTableWrapper.classList.contains("vite-data-table-wrapper-class")
+) {
+  throw new Error("Vite client DataTable caller class order is missing");
+}
+if (dataTableBaseClasses.some((className) => dataTable.classList.contains(className))) {
+  throw new Error("Vite client DataTable xstyle did not replace the base width class");
+}
+if (dataTableWrapperBaseClasses.some(
+  (className) => dataTableWrapper.classList.contains(className),
+)) {
+  throw new Error("Vite client DataTable wrapperXstyle did not replace the base max-width class");
+}
+if (dataTable.style.width !== "42rem") {
+  throw new Error("Vite client DataTable native table style did not win last");
+}
+if (
+  dataTable.querySelectorAll('[data-slot="data-table-header"]').length !== 2
+  || dataTable.querySelectorAll('[data-slot="data-table-cell"]').length !== 2
+  || dataTable.querySelector('[data-align="end"]') === null
+) {
+  throw new Error("Vite client DataTable native semantics are missing");
 }
 `;
 }
@@ -4436,6 +5082,12 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "content.stylex.ts"),
   );
   await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "data-table.stylex.ts"),
+  );
+  await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "data-display.tsx"),
+  );
+  await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "lib", "stylex.ts"),
   );
   const installedPackageRoot = join(
@@ -4460,6 +5112,10 @@ async function verifyConsumer(
     installedJavaScript,
     installedStylexCss,
   );
+  const dataTableProbe = packageDataTableProbe(
+    installedJavaScript,
+    installedStylexCss,
+  );
   const fieldSelectProbe = packageFieldSelectProbe(installedJavaScript);
   const formProbe = packageFormStyleMap(installedJavaScript, installedStylexCss);
   const indicatorKnobProbe = packageIndicatorKnobProbe(installedJavaScript);
@@ -4474,6 +5130,7 @@ async function verifyConsumer(
   requirePackageFormStyles(installedJavaScript, installedStylexCss);
   requirePackageIndicatorKnobStyles(installedJavaScript, installedStylexCss);
   requirePackageContentStyles(installedJavaScript, installedStylexCss);
+  requirePackageDataTableStyles(installedJavaScript, installedStylexCss);
   requireNoMigratedGallerySentinels(
     installedJavaScript,
     installedStylexCss,
@@ -4502,6 +5159,7 @@ async function verifyConsumer(
       release,
       checkboxProbe,
       contentProbe,
+      dataTableProbe,
       fieldSelectProbe,
       formProbe,
       indicatorKnobProbe,
@@ -4523,12 +5181,16 @@ async function verifyConsumer(
 
   await Promise.all([
     writeFile(join(consumer, "index.html"), viteHtml),
-    writeFile(join(consumer, "vite-client.ts"), viteClientProbe(contentProbe)),
+    writeFile(
+      join(consumer, "vite-client.ts"),
+      viteClientProbe(contentProbe, dataTableProbe),
+    ),
     writeFile(
       join(consumer, "vite-ssr.ts"),
       viteSsrProbe(
         checkboxProbe,
         contentProbe,
+        dataTableProbe,
         fieldSelectProbe,
         formProbe,
         indicatorKnobProbe,

@@ -18,6 +18,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-toolbar-layer-conflict",
   "data-gallery-key-hint-layer-conflict",
   "data-gallery-content-layer-conflict",
+  "data-gallery-data-table-layer-conflict",
   "data-gallery-link-layer-conflict",
   "data-gallery-checkbox-field-layer-conflict",
   "data-gallery-action-family-layer-conflict",
@@ -280,7 +281,19 @@ const CONTENT_STYLE_KEYS = [
   "settingsCardRoot",
   "settingsCardTitle",
 ] as const;
+const DATA_TABLE_STYLE_KEYS = [
+  "alignCenter",
+  "alignEnd",
+  "alignStart",
+  "caption",
+  "cell",
+  "empty",
+  "header",
+  "table",
+  "wrapper",
+] as const;
 type CheckboxStyleKey = (typeof CHECKBOX_STYLE_KEYS)[number];
+type DataTableStyleKey = (typeof DATA_TABLE_STYLE_KEYS)[number];
 type LinkStyleKey = (typeof LINK_STYLE_KEYS)[number];
 type ToolbarStyleKey = (typeof TOOLBAR_STYLE_KEYS)[number];
 
@@ -2395,6 +2408,452 @@ function requireContentFamilyContract(
       `the compiled contentStyles.${key} composition binding`,
     );
   }
+}
+
+const DATA_TABLE_DECLARATIONS: Readonly<
+  Record<
+    DataTableStyleKey,
+    readonly Readonly<{ declaration: RegExp; description: string }>[]
+  >
+> = {
+  alignCenter: [
+    { declaration: /text-align:\s*center;/u, description: "center alignment" },
+  ],
+  alignEnd: [
+    { declaration: /text-align:\s*end;/u, description: "logical end alignment" },
+  ],
+  alignStart: [
+    { declaration: /text-align:\s*start;/u, description: "logical start alignment" },
+  ],
+  caption: [
+    {
+      declaration: /color:\s*var\(--ui-muted-foreground\);/u,
+      description: "caption foreground",
+    },
+    {
+      declaration: /padding-block:\s*var\(--space-3\);/u,
+      description: "caption block padding",
+    },
+    {
+      declaration: /padding-inline:\s*var\(--space-4\);/u,
+      description: "caption inline padding",
+    },
+    { declaration: /text-align:\s*start;/u, description: "caption alignment" },
+  ],
+  cell: [
+    {
+      declaration: /border-block-end-color:\s*var\(--ui-border\);/u,
+      description: "logical cell divider color",
+    },
+    {
+      declaration: /border-block-end-style:\s*solid;/u,
+      description: "logical cell divider style",
+    },
+    {
+      declaration: /border-block-end-width:\s*1px;/u,
+      description: "logical cell divider width",
+    },
+    {
+      declaration: /padding-block:\s*var\(--space-3\);/u,
+      description: "cell block padding",
+    },
+    {
+      declaration: /padding-inline:\s*var\(--space-4\);/u,
+      description: "cell inline padding",
+    },
+    { declaration: /vertical-align:\s*top;/u, description: "cell vertical alignment" },
+  ],
+  empty: [
+    {
+      declaration: /color:\s*var\(--ui-muted-foreground\);/u,
+      description: "empty-state foreground",
+    },
+    { declaration: /height:\s*6rem;/u, description: "empty-state height" },
+    {
+      declaration: /text-align:\s*center\s*!important;/u,
+      description: "important empty-state centering",
+    },
+  ],
+  header: [
+    {
+      declaration: /background-attachment:\s*scroll;/u,
+      description: "header background attachment reset",
+    },
+    {
+      declaration: /background-clip:\s*border-box;/u,
+      description: "header background clip reset",
+    },
+    {
+      declaration: /background-color:\s*var\(--ui-muted\);/u,
+      description: "header background color reset",
+    },
+    {
+      declaration: /background-image:\s*none;/u,
+      description: "header background image reset",
+    },
+    {
+      declaration: /background-origin:\s*padding-box;/u,
+      description: "header background origin reset",
+    },
+    {
+      declaration: /background-position:\s*0(?:%?)\s+0(?:%?);/u,
+      description: "header background position reset",
+    },
+    {
+      declaration: /background-repeat:\s*repeat;/u,
+      description: "header background repeat reset",
+    },
+    {
+      declaration: /background-size:\s*auto(?:\s+auto)?;/u,
+      description: "header background size reset",
+    },
+    {
+      declaration: /color:\s*var\(--ui-muted-foreground\);/u,
+      description: "header foreground",
+    },
+    {
+      declaration: /font-weight:\s*var\(--font-weight-medium\);/u,
+      description: "header weight",
+    },
+  ],
+  table: [
+    { declaration: /border-collapse:\s*collapse;/u, description: "table border collapse" },
+    {
+      declaration: /color:\s*var\(--ui-foreground\);/u,
+      description: "table foreground",
+    },
+    {
+      declaration: /font-size:\s*var\(--text-label\);/u,
+      description: "table type size",
+    },
+    { declaration: /width:\s*100%;/u, description: "table width" },
+  ],
+  wrapper: [
+    {
+      declaration: /border-color:\s*var\(--ui-border\);/u,
+      description: "wrapper border color",
+    },
+    {
+      declaration: /border-image-outset:\s*0;/u,
+      description: "wrapper border-image outset reset",
+    },
+    {
+      declaration: /border-image-repeat:\s*stretch;/u,
+      description: "wrapper border-image repeat reset",
+    },
+    {
+      declaration: /border-image-slice:\s*100%;/u,
+      description: "wrapper border-image slice reset",
+    },
+    {
+      declaration: /border-image-source:\s*none;/u,
+      description: "wrapper border-image source reset",
+    },
+    {
+      declaration: /border-image-width:\s*1;/u,
+      description: "wrapper border-image width reset",
+    },
+    {
+      declaration: /border-radius:\s*var\(--radius-lg\);/u,
+      description: "wrapper radius",
+    },
+    { declaration: /border-style:\s*solid;/u, description: "wrapper border style" },
+    { declaration: /border-width:\s*1px;/u, description: "wrapper border width" },
+    { declaration: /max-width:\s*100%;/u, description: "wrapper maximum width" },
+    { declaration: /overflow-x:\s*auto;/u, description: "wrapper overflow" },
+  ],
+};
+
+function dataTableCompiledStyleMap(
+  compiledJavaScript: string,
+): NamedCompiledStyleMap {
+  return namedCompiledStyleMap(
+    compiledJavaScript,
+    DATA_TABLE_STYLE_KEYS,
+    "dataTableStyles class map",
+  );
+}
+
+function requireDataTableContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+  dataDisplaySource: string,
+  dataTableStyleSource: string,
+): void {
+  const sourceKeys = sourceStyleKeys(dataTableStyleSource, "dataTableStyles");
+  if (sourceKeys.join("\n") !== DATA_TABLE_STYLE_KEYS.join("\n")) {
+    throw new Error(
+      "dataTableStyles must retain its exact finite recipe keys and order",
+    );
+  }
+  const map = dataTableCompiledStyleMap(compiledJavaScript);
+  const mapKeys = [...map.properties.keys()];
+  if (mapKeys.join("\n") !== DATA_TABLE_STYLE_KEYS.join("\n")) {
+    throw new Error(
+      "compiled dataTableStyles must retain its exact finite recipe keys and order",
+    );
+  }
+
+  forbid(
+    legacyComponents,
+    /\.hraness-data-table(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+    "a legacy DataTable recipe",
+  );
+  forbid(
+    dataTableStyleSource,
+    /borderBlockEnd|borderBottom|border-bottom/u,
+    "a non-canonical DataTable cell divider source property",
+  );
+
+  const dataTableSource = boundedSource(
+    dataDisplaySource,
+    "export interface DataTableColumn",
+    undefined,
+    "src/data-display.tsx DataTable family",
+  ).body;
+  forbid(
+    dataDisplaySource,
+    /^\s*["']use client["'];?/u,
+    "a client boundary on the server-compatible data-display module",
+  );
+  for (const [pattern, description] of [
+    [
+      /type ForwardedRef,[\s\S]*type RefAttributes,[\s\S]*type TableHTMLAttributes,/u,
+      "the native DataTable React type imports",
+    ],
+    [
+      /import \* as stylex from ["']@stylexjs\/stylex["'];/u,
+      "the DataTable StyleX runtime import",
+    ],
+    [
+      /import type \{ StyleXStyles \} from ["']@stylexjs\/stylex["'];/u,
+      "the DataTable typed StyleX import",
+    ],
+    [
+      /import \{ dataTableStyles \} from ["']\.\/data-table\.stylex\.js["'];/u,
+      "the dataTableStyles source import",
+    ],
+    [
+      /import \{ mergeStylexInlineStyles \} from ["']\.\/lib\/stylex\.js["'];/u,
+      "the DataTable inline-style merge import",
+    ],
+    [
+      /extends Omit<\s*TableHTMLAttributes<HTMLTableElement>,\s*["']children["']\s*>/u,
+      "the native table prop seam without caller children",
+    ],
+    [
+      /readonly columns:\s*readonly \[DataTableColumn<Row>,\s*\.\.\.DataTableColumn<Row>\[\]\];/u,
+      "the non-empty typed DataTable columns",
+    ],
+    [
+      /const dataTableAlignmentStyles\s*=\s*\{\s*center:\s*dataTableStyles\.alignCenter,\s*end:\s*dataTableStyles\.alignEnd,\s*start:\s*dataTableStyles\.alignStart,?\s*\}\s*as const satisfies Readonly<Record<DataTableAlignment, StyleXStyles>>;/u,
+      "the exact finite DataTable alignment map",
+    ],
+    [
+      /const wrapperPresentation = stylex\.props\(\s*dataTableStyles\.wrapper,\s*wrapperXstyle,?\s*\);/u,
+      "the DataTable wrapper base-before-caller recipe order",
+    ],
+    [
+      /const tablePresentation = stylex\.props\(\s*dataTableStyles\.table,\s*xstyle,?\s*\);/u,
+      "the DataTable table base-before-caller recipe order",
+    ],
+    [
+      /const captionPresentation = stylex\.props\(dataTableStyles\.caption\);/u,
+      "the DataTable caption recipe",
+    ],
+    [
+      /const emptyPresentation = stylex\.props\(\s*dataTableStyles\.cell,\s*dataTableStyles\.empty,?\s*\);/u,
+      "the DataTable cell-before-empty recipe order",
+    ],
+    [
+      /stylex\.props\(\s*dataTableStyles\.cell,\s*dataTableStyles\.header,\s*dataTableAlignmentStyles\[alignment\],?\s*\)/u,
+      "the DataTable cell, header, and alignment recipe order",
+    ],
+    [
+      /stylex\.props\(\s*dataTableStyles\.cell,\s*dataTableAlignmentStyles\[alignment\],?\s*\)/u,
+      "the DataTable cell-before-alignment recipe order",
+    ],
+    [
+      /<div\s+\{\.\.\.wrapperPresentation\}\s+className=\{cn\(\s*["']hraness-data-table["'],\s*wrapperPresentation\.className,\s*wrapperClassName,?\s*\)\}/u,
+      "the DataTable stable, generated, and caller wrapper class order",
+    ],
+    [
+      /<table\s+\{\.\.\.props\}\s+\{\.\.\.tablePresentation\}\s+className=\{cn\(\s*["']hraness-data-table__table["'],\s*tablePresentation\.className,\s*className,?\s*\)\}/u,
+      "the DataTable stable, generated, and caller table class order",
+    ],
+    [
+      /className=\{cn\(\s*["']hraness-data-table__empty["'],\s*emptyPresentation\.className,?\s*\)\}/u,
+      "the DataTable stable-before-generated empty class order",
+    ],
+    [
+      /style=\{mergeStylexInlineStyles\(tablePresentation\.style,\s*style\)\}/u,
+      "the DataTable StyleX-before-native table style order",
+    ],
+    [
+      /const ForwardedDataTable = forwardRef\(DataTableInner\);/u,
+      "the DataTable generic forwardRef bridge",
+    ],
+    [
+      /props:\s*DataTableProps<Row>\s*&\s*RefAttributes<HTMLTableElement>/u,
+      "the DataTable native table ref seam",
+    ],
+  ] as const) {
+    requireMatch(dataDisplaySource, pattern, description);
+  }
+  requireExactSourceMatches(
+    dataTableSource,
+    /readonly (?:wrapperXstyle|xstyle)\?: StyleXStyles;/gu,
+    2,
+    "typed DataTable table and wrapper xstyle seams",
+  );
+  requireExactSourceMatches(
+    dataTableSource,
+    /const alignment = column\.align \?\? ["']start["'];/gu,
+    2,
+    "default-logical-start DataTable alignment branches",
+  );
+
+  const familyRules: CssRule[] = [];
+  for (const key of DATA_TABLE_STYLE_KEYS) {
+    const entry = map.properties.get(key);
+    if (entry === undefined || !entry.value.startsWith("{")) {
+      throw new Error(`compiled dataTableStyles.${key} must remain an object entry`);
+    }
+    const entryProperties = compiledObjectProperties(
+      entry.value,
+      `compiled dataTableStyles.${key}`,
+    );
+    const classBindings = [...entryProperties.entries()].filter(
+      ([property, binding]) => property !== "$$css" && /["']x[A-Za-z0-9_-]+/u.test(binding.value),
+    );
+    const expectedDeclarations = DATA_TABLE_DECLARATIONS[key];
+    if (
+      entryProperties.get("$$css") === undefined
+      || classBindings.length !== expectedDeclarations.length
+    ) {
+      throw new Error(
+        `compiled dataTableStyles.${key} must retain exactly ${String(expectedDeclarations.length)} declaration bindings`,
+      );
+    }
+    const classNames = generatedClassNames(
+      entry.value,
+      `compiled dataTableStyles.${key}`,
+    );
+    const rules = compiledStyleRules(compiledCss, map, key);
+    familyRules.push(...rules);
+    for (const className of classNames) {
+      if (!rules.some((rule) =>
+        new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+      )) {
+        throw new Error(
+          `compiled dataTableStyles.${key} class ${className} has no CSS rule`,
+        );
+      }
+    }
+    for (const { declaration, description } of expectedDeclarations) {
+      requireCompiledUnconditionalDeclaration(
+        rules,
+        declaration,
+        `the DataTable ${description}`,
+      );
+      requireExactBaseDeclarations(
+        rules,
+        classNames,
+        [{ declaration }],
+        `DataTable ${description}`,
+      );
+    }
+    requireMatch(
+      compiledJavaScript,
+      new RegExp(`${map.identifier}\\.${key}(?![A-Za-z0-9_$])`, "u"),
+      `the compiled dataTableStyles.${key} composition binding`,
+    );
+  }
+  const familyCss = [...new Set(familyRules.map((rule) => rule.source))].join("\n");
+  forbid(
+    familyCss,
+    /border-bottom(?:-[a-z-]+)?\s*:/u,
+    "a physical border-bottom declaration owned by dataTableStyles",
+  );
+
+  for (const hook of [
+    "hraness-data-table",
+    "hraness-data-table__table",
+    "hraness-data-table__empty",
+  ]) {
+    requireMatch(
+      compiledJavaScript,
+      new RegExp(`["']${hook}["']`, "u"),
+      `the ${hook} semantic hook`,
+    );
+  }
+  for (const slot of [
+    "data-table-wrapper",
+    "data-table",
+    "data-table-caption",
+    "data-table-head",
+    "data-table-header-row",
+    "data-table-header",
+    "data-table-body",
+    "data-table-empty-row",
+    "data-table-empty",
+    "data-table-row",
+    "data-table-cell",
+  ]) {
+    requireMatch(
+      compiledJavaScript,
+      new RegExp(`["']${slot}["']`, "u"),
+      `the ${slot} semantic slot`,
+    );
+  }
+}
+
+function replaceDataTableDeclaration(
+  compiledCss: string,
+  map: NamedCompiledStyleMap,
+  key: DataTableStyleKey,
+  declaration: RegExp,
+  replacement: string,
+  description: string,
+): string {
+  const matches = compiledStyleRules(compiledCss, map, key).filter((rule) =>
+    declaration.test(rule.body)
+  );
+  if (matches.length !== 1) {
+    throw new Error(`${description} mutation expected one DataTable rule`);
+  }
+  const rule = matches[0]!;
+  const changedRule = rule.source.replace(declaration, replacement);
+  if (changedRule === rule.source) {
+    throw new Error(`${description} mutation did not change its DataTable rule`);
+  }
+  const ruleIndex = compiledCss.indexOf(rule.source);
+  if (ruleIndex < 0 || ruleIndex !== compiledCss.lastIndexOf(rule.source)) {
+    throw new Error(`${description} mutation requires one exact DataTable rule`);
+  }
+  return `${compiledCss.slice(0, ruleIndex)}${changedRule}${compiledCss.slice(
+    ruleIndex + rule.source.length,
+  )}`;
+}
+
+function disconnectDataTableCompiledKey(
+  compiledJavaScript: string,
+  map: NamedCompiledStyleMap,
+  key: DataTableStyleKey,
+): string {
+  const binding = new RegExp(
+    `${map.identifier}\\.${key}(?![A-Za-z0-9_$])`,
+    "gu",
+  );
+  const matches = [...compiledJavaScript.matchAll(binding)];
+  if (matches.length === 0) {
+    throw new Error(`negative control cannot find dataTableStyles.${key}`);
+  }
+  return compiledJavaScript.replace(
+    binding,
+    `disconnectedDataTableStyles.${key}`,
+  );
 }
 
 function requireLinkContract(
@@ -4751,6 +5210,8 @@ const [
   formStyleSource,
   fieldStyleSource,
   selectFieldStyleSource,
+  dataDisplaySource,
+  dataTableStyleSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -4777,6 +5238,8 @@ const [
     readFile(resolve(repository, "src/form.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/fields.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/select-field.stylex.ts"), "utf8"),
+    readFile(resolve(repository, "src/data-display.tsx"), "utf8"),
+    readFile(resolve(repository, "src/data-table.stylex.ts"), "utf8"),
   ]);
 
 const visuallyHiddenSources: VisuallyHiddenSources = {
@@ -4904,6 +5367,13 @@ requireContentFamilyContract(
   contentSource,
   contentStyleSource,
 );
+requireDataTableContract(
+  legacyComponents,
+  compiledCss,
+  compiledJavaScript,
+  dataDisplaySource,
+  dataTableStyleSource,
+);
 requireLinkContract(legacyComponents, compiledCss, compiledJavaScript);
 requireLinkSourceContract(actionsSource);
 requireActionFamilyContract(
@@ -4952,6 +5422,177 @@ requireIndicatorAndKnobContract(
   indicatorStyleSource,
   knobSource,
   knobStyleSource,
+);
+
+const dataTableGuardMap = dataTableCompiledStyleMap(compiledJavaScript);
+const reversedDataTableWrapperRecipe = replaceExactlyOnce(
+  dataDisplaySource,
+  /stylex\.props\(\s*dataTableStyles\.wrapper,\s*wrapperXstyle,?\s*\)/u,
+  () => "stylex.props(wrapperXstyle, dataTableStyles.wrapper)",
+  "DataTable wrapper recipe precedence",
+);
+const reversedDataTableRecipe = replaceExactlyOnce(
+  dataDisplaySource,
+  /stylex\.props\(\s*dataTableStyles\.table,\s*xstyle,?\s*\)/u,
+  () => "stylex.props(xstyle, dataTableStyles.table)",
+  "DataTable table recipe precedence",
+);
+const reversedDataTableHeaderRecipe = replaceExactlyOnce(
+  dataDisplaySource,
+  /stylex\.props\(\s*dataTableStyles\.cell,\s*dataTableStyles\.header,\s*dataTableAlignmentStyles\[alignment\],?\s*\)/u,
+  () =>
+    "stylex.props(dataTableStyles.header, dataTableStyles.cell, dataTableAlignmentStyles[alignment])",
+  "DataTable header recipe precedence",
+);
+const reversedDataTableNativeStyle = replaceExactlyOnce(
+  dataDisplaySource,
+  /mergeStylexInlineStyles\(tablePresentation\.style,\s*style\)/u,
+  () => "mergeStylexInlineStyles(style, tablePresentation.style)",
+  "DataTable native table style precedence",
+);
+const reversedDataTableClassOrder = replaceExactlyOnce(
+  dataDisplaySource,
+  /["']hraness-data-table__table["'],\s*tablePresentation\.className,\s*className,/u,
+  () => '"hraness-data-table__table", className, tablePresentation.className,',
+  "DataTable table class precedence",
+);
+const physicalDataTableDivider = replaceDataTableDeclaration(
+  compiledCss,
+  dataTableGuardMap,
+  "cell",
+  /border-block-end-width:\s*1px;/u,
+  "border-bottom-width: 1px;",
+  "DataTable logical divider",
+);
+const changedDataTableHeaderReset = replaceDataTableDeclaration(
+  compiledCss,
+  dataTableGuardMap,
+  "header",
+  /background-clip:\s*border-box;/u,
+  "background-clip: content-box;",
+  "DataTable header background reset",
+);
+const changedDataTableWrapperReset = replaceDataTableDeclaration(
+  compiledCss,
+  dataTableGuardMap,
+  "wrapper",
+  /border-image-source:\s*none;/u,
+  "border-image-source: linear-gradient(red, red);",
+  "DataTable wrapper border-image reset",
+);
+const nonImportantDataTableEmpty = replaceDataTableDeclaration(
+  compiledCss,
+  dataTableGuardMap,
+  "empty",
+  /text-align:\s*center\s*!important;/u,
+  "text-align: center;",
+  "DataTable important empty centering",
+);
+assert.throws(
+  () => requireDataTableContract(
+    `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-data-table__table { width: 100%; } }`,
+    compiledCss,
+    compiledJavaScript,
+    dataDisplaySource,
+    dataTableStyleSource,
+  ),
+  /legacy DataTable recipe/u,
+  "the DataTable guard must reject a restored legacy selector",
+);
+for (const [source, error, description] of [
+  [
+    reversedDataTableWrapperRecipe,
+    /wrapper base-before-caller recipe order/u,
+    "wrapper recipe precedence",
+  ],
+  [
+    reversedDataTableRecipe,
+    /table base-before-caller recipe order/u,
+    "table recipe precedence",
+  ],
+  [
+    reversedDataTableHeaderRecipe,
+    /cell, header, and alignment recipe order/u,
+    "header recipe precedence",
+  ],
+  [
+    reversedDataTableNativeStyle,
+    /StyleX-before-native table style order/u,
+    "native table style precedence",
+  ],
+  [
+    reversedDataTableClassOrder,
+    /stable, generated, and caller table class order/u,
+    "table class precedence",
+  ],
+] as const) {
+  assert.throws(
+    () => requireDataTableContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      source,
+      dataTableStyleSource,
+    ),
+    error,
+    `the DataTable guard must reject reversed ${description}`,
+  );
+}
+for (const [css, error, description] of [
+  [
+    physicalDataTableDivider,
+    /logical cell divider width|physical border-bottom/u,
+    "a physical cell divider regression",
+  ],
+  [
+    changedDataTableHeaderReset,
+    /header background clip reset/u,
+    "a missing header background reset",
+  ],
+  [
+    changedDataTableWrapperReset,
+    /wrapper border-image source reset/u,
+    "a missing wrapper border-image reset",
+  ],
+  [
+    nonImportantDataTableEmpty,
+    /important empty-state centering/u,
+    "lost important empty-state centering",
+  ],
+] as const) {
+  assert.throws(
+    () => requireDataTableContract(
+      legacyComponents,
+      css,
+      compiledJavaScript,
+      dataDisplaySource,
+      dataTableStyleSource,
+    ),
+    error,
+    `the DataTable guard must reject ${description}`,
+  );
+}
+assert.throws(
+  () => requireDataTableContract(
+    legacyComponents,
+    compiledCss,
+    disconnectDataTableCompiledKey(
+      compiledJavaScript,
+      dataTableGuardMap,
+      "caption",
+    ),
+    dataDisplaySource,
+    dataTableStyleSource,
+  ),
+  /compiled dataTableStyles\.caption composition binding/u,
+  "the DataTable guard must reject a disconnected compiled recipe key",
+);
+assert.throws(
+  () => requireNoGallerySentinels(
+    `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-data-table-layer-conflict] { display: block; }`,
+  ),
+  /gallery-only data-gallery-data-table-layer-conflict sentinel/u,
+  "the DataTable guard must reject gallery sentinel leakage",
 );
 assert.throws(
   () => requireFieldAndSelectContract(
@@ -5484,7 +6125,7 @@ const physicalHundredPercentWidths = [
 ];
 if (physicalHundredPercentWidths.length !== 1) {
   throw new Error(
-    "dist/stylex.css must contain exactly one shared physical 100% width declaration for Avatar children and PressableCard without lowering ViewportFrame's logical inline size",
+    "dist/stylex.css must contain exactly one shared physical 100% width declaration for Avatar children, PressableCard, and DataTable without lowering ViewportFrame's logical inline size",
   );
 }
 const physicalZeroMinimumWidths = [

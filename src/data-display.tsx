@@ -12,6 +12,7 @@ import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
 
 import { avatarStyles } from "./avatar.stylex.js";
+import { dataTableStyles } from "./data-table.stylex.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 
@@ -145,7 +146,19 @@ export interface DataTableProps<Row> extends Omit<
   readonly getRowId: (row: Row) => string;
   readonly rows: readonly Row[];
   readonly wrapperClassName?: string;
+  /** Typed StyleX presentation applied after the table recipe. */
+  readonly xstyle?: StyleXStyles;
+  /** Typed StyleX presentation applied after the wrapper recipe. */
+  readonly wrapperXstyle?: StyleXStyles;
 }
+
+type DataTableAlignment = NonNullable<DataTableColumn<unknown>["align"]>;
+
+const dataTableAlignmentStyles = {
+  center: dataTableStyles.alignCenter,
+  end: dataTableStyles.alignEnd,
+  start: dataTableStyles.alignStart,
+} as const satisfies Readonly<Record<DataTableAlignment, StyleXStyles>>;
 
 function DataTableInner<Row>(
   {
@@ -155,44 +168,88 @@ function DataTableInner<Row>(
     empty = "No results.",
     getRowId,
     rows,
+    style,
     wrapperClassName,
+    wrapperXstyle,
+    xstyle,
     ...props
   }: DataTableProps<Row>,
   ref: ForwardedRef<HTMLTableElement>,
 ) {
+  const wrapperPresentation = stylex.props(
+    dataTableStyles.wrapper,
+    wrapperXstyle,
+  );
+  const tablePresentation = stylex.props(dataTableStyles.table, xstyle);
+  const captionPresentation = stylex.props(dataTableStyles.caption);
+  const emptyPresentation = stylex.props(
+    dataTableStyles.cell,
+    dataTableStyles.empty,
+  );
+
   return (
     <div
-      className={cn("hraness-data-table", wrapperClassName)}
+      {...wrapperPresentation}
+      className={cn(
+        "hraness-data-table",
+        wrapperPresentation.className,
+        wrapperClassName,
+      )}
       data-slot="data-table-wrapper"
     >
       <table
         {...props}
-        className={cn("hraness-data-table__table", className)}
+        {...tablePresentation}
+        className={cn(
+          "hraness-data-table__table",
+          tablePresentation.className,
+          className,
+        )}
         data-slot="data-table"
         ref={ref}
+        style={mergeStylexInlineStyles(tablePresentation.style, style)}
       >
         {caption === undefined ? null : (
-          <caption data-slot="data-table-caption">{caption}</caption>
+          <caption
+            data-slot="data-table-caption"
+            {...captionPresentation}
+          >
+            {caption}
+          </caption>
         )}
         <thead data-slot="data-table-head">
           <tr data-slot="data-table-header-row">
-            {columns.map((column) => (
-              <th
-                data-align={column.align ?? "start"}
-                data-slot="data-table-header"
-                key={column.id}
-                scope="col"
-              >
-                {column.header}
-              </th>
-            ))}
+            {columns.map((column) => {
+              const alignment = column.align ?? "start";
+              const presentation = stylex.props(
+                dataTableStyles.cell,
+                dataTableStyles.header,
+                dataTableAlignmentStyles[alignment],
+              );
+
+              return (
+                <th
+                  data-align={alignment}
+                  {...presentation}
+                  data-slot="data-table-header"
+                  key={column.id}
+                  scope="col"
+                >
+                  {column.header}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody data-slot="data-table-body">
           {rows.length === 0 ? (
             <tr data-slot="data-table-empty-row">
               <td
-                className="hraness-data-table__empty"
+                {...emptyPresentation}
+                className={cn(
+                  "hraness-data-table__empty",
+                  emptyPresentation.className,
+                )}
                 colSpan={columns.length}
                 data-slot="data-table-empty"
               >
@@ -201,15 +258,24 @@ function DataTableInner<Row>(
             </tr>
           ) : rows.map((row) => (
             <tr data-slot="data-table-row" key={getRowId(row)}>
-              {columns.map((column) => (
-                <td
-                  data-align={column.align ?? "start"}
-                  data-slot="data-table-cell"
-                  key={column.id}
-                >
-                  {column.cell(row)}
-                </td>
-              ))}
+              {columns.map((column) => {
+                const alignment = column.align ?? "start";
+                const presentation = stylex.props(
+                  dataTableStyles.cell,
+                  dataTableAlignmentStyles[alignment],
+                );
+
+                return (
+                  <td
+                    data-align={alignment}
+                    {...presentation}
+                    data-slot="data-table-cell"
+                    key={column.id}
+                  >
+                    {column.cell(row)}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

@@ -346,6 +346,23 @@ interface ContentFamilyEvidence {
   readonly toneContracts: boolean;
 }
 
+interface DataTableEvidence {
+  readonly alignmentContracts: boolean;
+  readonly boundaryContracts: boolean;
+  readonly classContracts: boolean;
+  readonly diagnostics: string;
+  readonly emptyContracts: boolean;
+  readonly headerBackground: string;
+  readonly layerSentinels: boolean;
+  readonly mutedColor: string;
+  readonly overflowContracts: boolean;
+  readonly presentationContracts: boolean;
+  readonly tableColor: string;
+  readonly theme: string;
+  readonly treeContracts: boolean;
+  readonly verticalContracts: boolean;
+}
+
 const layouts = [
   {
     context: {
@@ -1217,6 +1234,149 @@ function requirePackedCheckboxStyles(javaScript: string, css: string): void {
   );
 }
 
+const DATA_TABLE_STYLE_KEYS = [
+  "alignCenter",
+  "alignEnd",
+  "alignStart",
+  "caption",
+  "cell",
+  "empty",
+  "header",
+  "table",
+  "wrapper",
+] as const;
+
+function packedDataTableStyleMap(javaScript: string): string {
+  const candidates: string[] = [];
+  for (const match of javaScript.matchAll(
+    /(?:\b(?:const|let|var)\s+|,)([A-Za-z_$][\w$]*)\s*=\s*\{\s*alignCenter\s*:\s*\{/gu,
+  )) {
+    const open = (match.index ?? 0) + match[0].indexOf("{");
+    const object = balancedBlock(javaScript, open, "packed DataTable JavaScript");
+    const body = object.slice(1, -1);
+    if (DATA_TABLE_STYLE_KEYS.every((key) =>
+      new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u").test(body)
+    )) {
+      candidates.push(object);
+    }
+  }
+  assert.equal(
+    candidates.length,
+    1,
+    "the packed JavaScript must contain exactly one compiled dataTableStyles class map",
+  );
+  return candidates[0]!;
+}
+
+function packedDataTableStyleClassNames(
+  javaScript: string,
+  key: typeof DATA_TABLE_STYLE_KEYS[number],
+): ReadonlySet<string> {
+  const styleMap = packedDataTableStyleMap(javaScript);
+  const matches = [...styleMap.matchAll(
+    new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+  )];
+  assert.equal(
+    matches.length,
+    1,
+    `the packed dataTableStyles map must contain exactly one ${key} entry`,
+  );
+  const match = matches[0]!;
+  const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+  const nestedMap = balancedBlock(
+    styleMap,
+    open,
+    `packed DataTable ${key} JavaScript`,
+  );
+  const classNames = new Set<string>();
+  for (const classMatch of nestedMap.matchAll(
+    /["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )) {
+    for (const className of classMatch[1]!.split(/\s+/u)) {
+      classNames.add(className);
+    }
+  }
+  assert.notEqual(
+    classNames.size,
+    0,
+    `the packed dataTableStyles ${key} entry has no generated classes`,
+  );
+  return classNames;
+}
+
+function requirePackedDataTableStyles(javaScript: string, css: string): void {
+  const expectedDeclarations = {
+    alignCenter: ["text-align:center;"],
+    alignEnd: ["text-align:end;"],
+    alignStart: ["text-align:start;"],
+    caption: [
+      "color:var(--ui-muted-foreground);",
+      "padding-block:var(--space-3);",
+      "padding-inline:var(--space-4);",
+      "text-align:start;",
+    ],
+    cell: [
+      "border-block-end-color:var(--ui-border);",
+      "border-block-end-style:solid;",
+      "border-block-end-width:1px;",
+      "padding-block:var(--space-3);",
+      "padding-inline:var(--space-4);",
+      "vertical-align:top;",
+    ],
+    empty: [
+      "color:var(--ui-muted-foreground);",
+      "height:6rem;",
+      "text-align:center!important;",
+    ],
+    header: [
+      "background-attachment:scroll;",
+      "background-clip:border-box;",
+      "background-color:var(--ui-muted);",
+      "background-image:none;",
+      "background-origin:padding-box;",
+      "background-position:0 0;",
+      "background-repeat:repeat;",
+      "background-size:auto;",
+      "color:var(--ui-muted-foreground);",
+      "font-weight:var(--font-weight-medium);",
+    ],
+    table: [
+      "border-collapse:collapse;",
+      "color:var(--ui-foreground);",
+      "font-size:var(--text-label);",
+      "width:100%;",
+    ],
+    wrapper: [
+      "border-color:var(--ui-border);",
+      "border-image-outset:0;",
+      "border-image-repeat:stretch;",
+      "border-image-slice:100%;",
+      "border-image-source:none;",
+      "border-image-width:1;",
+      "border-radius:var(--radius-lg);",
+      "border-style:solid;",
+      "border-width:1px;",
+      "max-width:100%;",
+      "overflow-x:auto;",
+    ],
+  } as const satisfies Readonly<
+    Record<typeof DATA_TABLE_STYLE_KEYS[number], readonly string[]>
+  >;
+
+  for (const key of DATA_TABLE_STYLE_KEYS) {
+    const classNames = packedDataTableStyleClassNames(javaScript, key);
+    const declarations = new Set(
+      checkboxRuleBodies(css, classNames)
+        .map((body) => normalizedAtomicDeclaration(body)),
+    );
+    assert.deepEqual(
+      [...declarations].sort(),
+      [...expectedDeclarations[key]].sort(),
+      `dataTableStyles.${key} must own its exact packed declaration set`,
+    );
+  }
+}
+
 function requirePackedFormStyles(javaScript: string, css: string): void {
   const classNames = packedFormClassNames(javaScript, css);
   assert.equal(
@@ -1236,6 +1396,7 @@ function requirePackedFormStyles(javaScript: string, css: string): void {
 }
 
 function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
+  requirePackedDataTableStyles(javaScript, css);
   requirePackedFormStyles(javaScript, css);
   assert.match(
     css,
@@ -1566,6 +1727,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     /\.hraness-(?:page-intro(?:__(?:actions|copy|description|eyebrow|title))?|empty-state(?:__(?:action|description|icon|title))?|inline-alert(?:__(?:body|content|icon|title))?|settings-card(?:__(?:actions|body|description|header|title))?)(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain legacy Content-family selectors",
   );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-data-table(?:__table|__empty)?(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain legacy DataTable selectors",
+  );
   assert.equal(
     css.match(CARD_DESCRIPTION_BRIDGE_PATTERN)?.length,
     1,
@@ -1615,6 +1781,108 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     css,
     /data-gallery-content-layer-conflict/u,
     "the harness bundle must include its Content-family legacy conflicts",
+  );
+  assert.match(
+    css,
+    /data-gallery-data-table-layer-conflict/u,
+    "the harness bundle must include its DataTable legacy conflicts",
+  );
+  const dataTableWrapperConflict = css.match(
+    /\[data-gallery-data-table-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"data-table-wrapper"|data-table-wrapper)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    dataTableWrapperConflict !== undefined
+    && /--gallery-data-table-layer-conflict:\s*legacy/u.test(dataTableWrapperConflict)
+    && /max-width:\s*9rem/u.test(dataTableWrapperConflict)
+    && /overflow-x:\s*hidden/u.test(dataTableWrapperConflict)
+    && /border:\s*7px dashed/u.test(dataTableWrapperConflict)
+    && /border-image:\s*linear-gradient/u.test(dataTableWrapperConflict)
+    && /border-radius:\s*99px/u.test(dataTableWrapperConflict),
+    `the gallery DataTable wrapper conflict is incomplete: ${String(dataTableWrapperConflict)}`,
+  );
+  const dataTableRootConflict = css.match(
+    /\[data-gallery-data-table-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"data-table"|data-table)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    dataTableRootConflict !== undefined
+    && /border-collapse:\s*separate/u.test(dataTableRootConflict)
+    && /width:\s*8rem/u.test(dataTableRootConflict)
+    && /color:\s*(?:rgb\(4(?:,\s*|\s+)5(?:,\s*|\s+)6\)|#040506)/u.test(dataTableRootConflict)
+    && /font-size:\s*3rem/u.test(dataTableRootConflict),
+    `the gallery DataTable root conflict is incomplete: ${String(dataTableRootConflict)}`,
+  );
+  const dataTableCaptionConflict = css.match(
+    /\[data-gallery-data-table-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"data-table-caption"|data-table-caption)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    dataTableCaptionConflict !== undefined
+    && /padding:\s*5rem/u.test(dataTableCaptionConflict)
+    && /color:\s*(?:rgb\(255(?:,\s*|\s+)0(?:,\s*|\s+)255\)|#f0f|#ff00ff|magenta)/u.test(dataTableCaptionConflict)
+    && /text-align:\s*end/u.test(dataTableCaptionConflict),
+    `the gallery DataTable caption conflict is incomplete: ${String(dataTableCaptionConflict)}`,
+  );
+  const dataTableCellConflict = css.match(
+    /\[data-gallery-data-table-layer-conflict=(?:"true"|true)\]\s+:where\([^{}]+\)\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    dataTableCellConflict !== undefined
+    && /data-table-header/u.test(dataTableCellConflict)
+    && /data-table-cell/u.test(dataTableCellConflict)
+    && /data-table-empty/u.test(dataTableCellConflict)
+    && /padding:\s*5rem/u.test(dataTableCellConflict)
+    && /border-block-end:\s*7px dashed/u.test(dataTableCellConflict)
+    && /text-align:\s*left/u.test(dataTableCellConflict)
+    && /vertical-align:\s*middle/u.test(dataTableCellConflict),
+    `the gallery DataTable cell conflict is incomplete: ${String(dataTableCellConflict)}`,
+  );
+  const dataTableHeaderConflict = css.match(
+    /\[data-gallery-data-table-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"data-table-header"|data-table-header)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    dataTableHeaderConflict !== undefined,
+    "the packed stylesheet must include the gallery DataTable header conflict",
+  );
+  for (const declaration of [
+    /background-attachment:\s*fixed/u,
+    /background-clip:\s*content-box/u,
+    /background-color:/u,
+    /background-image:\s*linear-gradient/u,
+    /background-origin:\s*content-box/u,
+    /background-position:\s*50% 50%/u,
+    /background-repeat:\s*no-repeat/u,
+    /background-size:\s*7rem 7rem/u,
+    /color:/u,
+    /font-weight:\s*100/u,
+  ] as const) {
+    assert.match(
+      dataTableHeaderConflict,
+      declaration,
+      "the gallery DataTable header conflict must carry every background and text counterexample",
+    );
+  }
+  for (const [align, value] of [
+    ["start", "end"],
+    ["center", "start"],
+    ["end", "center"],
+  ] as const) {
+    assert.match(
+      css,
+      new RegExp(
+        `\\[data-gallery-data-table-layer-conflict=(?:"true"|true)\\]\\s+\\[data-align=(?:"${align}"|${align})\\]\\{[^}]*text-align:\\s*${value}[^}]*\\}`,
+        "u",
+      ),
+      `the gallery DataTable ${align} conflict must carry its alignment counterexample`,
+    );
+  }
+  const dataTableEmptyConflict = css.match(
+    /\[data-gallery-data-table-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"data-table-empty"|data-table-empty)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    dataTableEmptyConflict !== undefined
+    && /height:\s*2rem/u.test(dataTableEmptyConflict)
+    && /color:/u.test(dataTableEmptyConflict)
+    && /text-align:\s*end/u.test(dataTableEmptyConflict),
+    `the gallery DataTable empty conflict is incomplete: ${String(dataTableEmptyConflict)}`,
   );
   const contentPageIntroConflict = css.match(
     /\[data-gallery-content-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"page-intro"|page-intro)\]\{[^}]*\}/u,
@@ -8488,6 +8756,499 @@ function verifyActionCoarsePointerEvidence(
   );
 }
 
+async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
+  return page.evaluate(() => {
+    const fixtureNames = ["ltr", "rtl", "overflow", "empty", "vertical"] as const;
+    type FixtureName = typeof fixtureNames[number];
+    const expectedRows = {
+      empty: 0,
+      ltr: 2,
+      overflow: 2,
+      rtl: 2,
+      vertical: 1,
+    } as const satisfies Readonly<Record<FixtureName, number>>;
+    const nearly = (actual: number, expected: number, tolerance = 1): boolean =>
+      Number.isFinite(actual) && Math.abs(actual - expected) <= tolerance;
+    const number = (value: string): number => Number.parseFloat(value);
+    const generatedOnly = (element: Element): boolean => {
+      const classes = [...element.classList];
+      return classes.length > 0
+        && classes.every((name) => name.startsWith("x"))
+        && new Set(classes).size === classes.length;
+    };
+    const semanticRecipe = (
+      element: Element,
+      semantic: string,
+      caller?: string,
+    ): boolean => {
+      const classes = [...element.classList];
+      const end = caller === undefined ? classes.length : classes.length - 1;
+      return classes[0] === semantic
+        && (caller === undefined || classes.at(-1) === caller)
+        && end > 1
+        && classes.slice(1, end).every((name) => name.startsWith("x"))
+        && new Set(classes).size === classes.length;
+    };
+    const resolveStyle = (property: string, value: string): string => {
+      const probe = document.createElement("div");
+      probe.style.setProperty(property, value);
+      document.body.append(probe);
+      const resolved = getComputedStyle(probe).getPropertyValue(property).trim();
+      probe.remove();
+      return resolved;
+    };
+    const required = <ElementType extends Element>(
+      root: ParentNode,
+      selector: string,
+      description: string,
+    ): ElementType => {
+      const element = root.querySelector<ElementType>(selector);
+      if (element === null) throw new Error(`The DataTable ${description} is missing.`);
+      return element;
+    };
+
+    const section = required<HTMLElement>(
+      document,
+      '[data-gallery-section="data-tables"]',
+      "section",
+    );
+    const grid = required<HTMLElement>(
+      section,
+      '[data-gallery-data-table-grid="true"]',
+      "grid",
+    );
+    const fixtures = fixtureNames.map((name) => {
+      const fixture = required<HTMLElement>(
+        grid,
+        `[data-gallery-data-table-fixture="${name}"]`,
+        `${name} fixture`,
+      );
+      const wrapper = required<HTMLElement>(
+        fixture,
+        ':scope > [data-slot="data-table-wrapper"]',
+        `${name} wrapper`,
+      );
+      const table = required<HTMLTableElement>(
+        wrapper,
+        ':scope > [data-slot="data-table"]',
+        `${name} table`,
+      );
+      const caption = required<HTMLTableCaptionElement>(
+        table,
+        ':scope > [data-slot="data-table-caption"]',
+        `${name} caption`,
+      );
+      const head = required<HTMLTableSectionElement>(
+        table,
+        ':scope > [data-slot="data-table-head"]',
+        `${name} head`,
+      );
+      const headerRow = required<HTMLTableRowElement>(
+        head,
+        ':scope > [data-slot="data-table-header-row"]',
+        `${name} header row`,
+      );
+      const body = required<HTMLTableSectionElement>(
+        table,
+        ':scope > [data-slot="data-table-body"]',
+        `${name} body`,
+      );
+      const headers = [...headerRow.querySelectorAll<HTMLTableCellElement>(
+        ':scope > [data-slot="data-table-header"]',
+      )];
+      const rows = [...body.querySelectorAll<HTMLTableRowElement>(
+        ':scope > [data-slot="data-table-row"]',
+      )];
+      const cells = rows.flatMap((row) => [
+        ...row.querySelectorAll<HTMLTableCellElement>(
+          ':scope > [data-slot="data-table-cell"]',
+        ),
+      ]);
+      return { body, caption, cells, fixture, head, headerRow, headers, name, rows, table, wrapper };
+    });
+    const byName = new Map(fixtures.map((fixture) => [fixture.name, fixture]));
+    const ltr = byName.get("ltr")!;
+    const rtl = byName.get("rtl")!;
+    const overflow = byName.get("overflow")!;
+    const empty = byName.get("empty")!;
+    const vertical = byName.get("vertical")!;
+
+    const slotCounts = {
+      body: document.querySelectorAll('[data-slot="data-table-body"]').length,
+      caption: document.querySelectorAll('[data-slot="data-table-caption"]').length,
+      cell: document.querySelectorAll('[data-slot="data-table-cell"]').length,
+      empty: document.querySelectorAll('[data-slot="data-table-empty"]').length,
+      emptyRow: document.querySelectorAll('[data-slot="data-table-empty-row"]').length,
+      head: document.querySelectorAll('[data-slot="data-table-head"]').length,
+      header: document.querySelectorAll('[data-slot="data-table-header"]').length,
+      headerRow: document.querySelectorAll('[data-slot="data-table-header-row"]').length,
+      row: document.querySelectorAll('[data-slot="data-table-row"]').length,
+      table: document.querySelectorAll('[data-slot="data-table"]').length,
+      wrapper: document.querySelectorAll('[data-slot="data-table-wrapper"]').length,
+    };
+    const treeContracts = section.getAttribute("aria-labelledby") === "gallery-data-tables-heading"
+      && required<HTMLElement>(section, "#gallery-data-tables-heading", "heading").tagName === "H2"
+      && grid.children.length === fixtureNames.length
+      && fixtures.every(({ body, caption, fixture, head, headerRow, headers, name, rows, table, wrapper }) =>
+        fixture.tagName === "DIV"
+        && fixture.parentElement === grid
+        && wrapper.tagName === "DIV"
+        && wrapper.parentElement === fixture
+        && wrapper.childElementCount === 1
+        && table.tagName === "TABLE"
+        && table.parentElement === wrapper
+        && table.dataset.galleryDataTable === name
+        && table.children.length === 3
+        && caption.tagName === "CAPTION"
+        && caption.parentElement === table
+        && head.tagName === "THEAD"
+        && head.parentElement === table
+        && headerRow.tagName === "TR"
+        && headerRow.parentElement === head
+        && headers.length === 3
+        && headers.every((header) => header.tagName === "TH" && header.scope === "col")
+        && body.tagName === "TBODY"
+        && body.parentElement === table
+        && rows.length === expectedRows[name]
+        && rows.every((row) => row.parentElement === body && row.cells.length === 3)
+      )
+      && slotCounts.wrapper === 5
+      && slotCounts.table === 5
+      && slotCounts.caption === 5
+      && slotCounts.head === 5
+      && slotCounts.headerRow === 5
+      && slotCounts.header === 15
+      && slotCounts.body === 5
+      && slotCounts.row === 7
+      && slotCounts.cell === 21
+      && slotCounts.emptyRow === 1
+      && slotCounts.empty === 1;
+
+    const emptyCell = required<HTMLTableCellElement>(
+      empty.body,
+      ':scope > [data-slot="data-table-empty-row"] > [data-slot="data-table-empty"]',
+      "empty cell",
+    );
+    const classContracts = fixtures.every(({ caption, cells, head, headerRow, headers, name, table, wrapper, body, rows }) =>
+      semanticRecipe(
+        wrapper,
+        "hraness-data-table",
+        name === "overflow" ? "gallery-data-table--override" : undefined,
+      )
+      && semanticRecipe(
+        table,
+        "hraness-data-table__table",
+        name === "overflow" ? "gallery-data-table__table--override" : undefined,
+      )
+      && generatedOnly(caption)
+      && headers.every(generatedOnly)
+      && cells.every(generatedOnly)
+      && !head.hasAttribute("class")
+      && !headerRow.hasAttribute("class")
+      && !body.hasAttribute("class")
+      && rows.every((row) => !row.hasAttribute("class"))
+    )
+      && semanticRecipe(emptyCell, "hraness-data-table__empty");
+
+    const tokens = {
+      bodyFont: getComputedStyle(section).fontFamily,
+      bodySize: number(resolveStyle("font-size", "var(--text-body)")),
+      border: resolveStyle("border-color", "var(--ui-border)"),
+      foreground: resolveStyle("color", "var(--ui-foreground)"),
+      labelSize: number(resolveStyle("font-size", "var(--text-label)")),
+      largeRadius: number(resolveStyle("border-radius", "var(--radius-lg)")),
+      mediumWeight: resolveStyle("font-weight", "var(--font-weight-medium)"),
+      muted: resolveStyle("background-color", "var(--ui-muted)"),
+      mutedForeground: resolveStyle("color", "var(--ui-muted-foreground)"),
+      primary: resolveStyle("border-color", "var(--ui-primary)"),
+      smallRadius: number(resolveStyle("border-radius", "var(--radius-sm)")),
+      space3: number(resolveStyle("padding-left", "var(--space-3)")),
+      space4: number(resolveStyle("padding-left", "var(--space-4)")),
+    };
+    const completeBorder = (
+      element: HTMLElement,
+      color: string,
+      radius: number,
+    ): boolean => {
+      const style = getComputedStyle(element);
+      return [style.borderTopStyle, style.borderRightStyle, style.borderBottomStyle, style.borderLeftStyle]
+        .every((value) => value === "solid")
+        && [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth]
+          .every((value) => nearly(number(value), 1, 0.01))
+        && [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor]
+          .every((value) => value === color)
+        && nearly(number(style.borderTopLeftRadius), radius, 0.01)
+        && nearly(number(style.borderTopRightRadius), radius, 0.01)
+        && nearly(number(style.borderBottomRightRadius), radius, 0.01)
+        && nearly(number(style.borderBottomLeftRadius), radius, 0.01)
+        && style.borderImageOutset === "0"
+        && style.borderImageRepeat.split(/\s+/u).every((value) => value === "stretch")
+        && style.borderImageSlice === "100%"
+        && style.borderImageSource === "none"
+        && style.borderImageWidth === "1";
+    };
+    const boundaryContracts = fixtures.every(({ name, wrapper }) =>
+      completeBorder(
+        wrapper,
+        name === "overflow" ? tokens.primary : tokens.border,
+        name === "overflow" ? tokens.smallRadius : tokens.largeRadius,
+      )
+    )
+      && fixtures.filter(({ name }) => name !== "overflow").every(({ wrapper }) => {
+        const style = getComputedStyle(wrapper);
+        return style.maxWidth === "100%" && style.overflowX === "auto";
+      });
+
+    const horizontalRecords = fixtures.filter(({ name }) => name !== "vertical");
+    const horizontalCells = horizontalRecords.flatMap(({ cells, headers, name }) =>
+      name === "empty" ? [...headers, emptyCell] : [...headers, ...cells]
+    );
+    const horizontalCellContract = horizontalCells.every((cell) => {
+      const style = getComputedStyle(cell);
+      return nearly(number(style.paddingTop), 12, 0.01)
+        && nearly(number(style.paddingBottom), 12, 0.01)
+        && nearly(number(style.paddingLeft), 16, 0.01)
+        && nearly(number(style.paddingRight), 16, 0.01)
+        && nearly(number(style.paddingTop), tokens.space3, 0.01)
+        && nearly(number(style.paddingLeft), tokens.space4, 0.01)
+        && style.borderBottomStyle === "solid"
+        && nearly(number(style.borderBottomWidth), 1, 0.01)
+        && style.borderBottomColor === tokens.border
+        && style.verticalAlign === "top";
+    });
+    const captionContract = horizontalRecords.every(({ caption }) => {
+      const style = getComputedStyle(caption);
+      return nearly(number(style.paddingTop), 12, 0.01)
+        && nearly(number(style.paddingBottom), 12, 0.01)
+        && nearly(number(style.paddingLeft), 16, 0.01)
+        && nearly(number(style.paddingRight), 16, 0.01)
+        && style.color === tokens.mutedForeground
+        && style.textAlign === "start";
+    });
+    const headerContract = fixtures.flatMap(({ headers }) => headers).every((header) => {
+      const style = getComputedStyle(header);
+      return style.backgroundAttachment === "scroll"
+        && style.backgroundClip === "border-box"
+        && style.backgroundColor === tokens.muted
+        && style.backgroundImage === "none"
+        && style.backgroundOrigin === "padding-box"
+        && (style.backgroundPosition === "0% 0%" || style.backgroundPosition === "0px 0px")
+        && style.backgroundRepeat === "repeat"
+        && (style.backgroundSize === "auto" || style.backgroundSize === "auto auto")
+        && style.color === tokens.mutedForeground
+        && style.fontWeight === tokens.mediumWeight;
+    });
+    const baseTables = [ltr, rtl, empty, vertical];
+    const tableContract = baseTables.every(({ fixture, table }) => {
+      const style = getComputedStyle(table);
+      return style.borderCollapse === "collapse"
+        && style.color === tokens.foreground
+        && nearly(number(style.fontSize), tokens.labelSize, 0.01)
+        && style.fontFamily === getComputedStyle(fixture).fontFamily;
+    })
+      && [ltr, rtl, empty].every(({ table, wrapper }) =>
+        nearly(table.getBoundingClientRect().width, wrapper.clientWidth, 1)
+      );
+    const presentationContracts = horizontalCellContract
+      && captionContract
+      && headerContract
+      && tableContract;
+
+    const alignedGeometry = (
+      cell: HTMLTableCellElement,
+      marker: HTMLElement,
+      expected: "center" | "end" | "start",
+      direction: "ltr" | "rtl",
+    ): boolean => {
+      const cellBox = cell.getBoundingClientRect();
+      const markerBox = marker.getBoundingClientRect();
+      const style = getComputedStyle(cell);
+      const left = cellBox.left + number(style.paddingLeft);
+      const right = cellBox.right - number(style.paddingRight);
+      if (style.textAlign !== expected || style.direction !== direction) return false;
+      if (expected === "center") {
+        return nearly((markerBox.left + markerBox.right) / 2, (left + right) / 2, 2);
+      }
+      if ((expected === "start") === (direction === "ltr")) {
+        return nearly(markerBox.left, left, 2);
+      }
+      return nearly(markerBox.right, right, 2);
+    };
+    const rowAlignment = (
+      fixture: typeof ltr,
+      direction: "ltr" | "rtl",
+    ): boolean => [...fixture.headers, ...fixture.cells].every((cell) => {
+      const align = cell.dataset.align;
+      if (align !== "start" && align !== "center" && align !== "end") return false;
+      const marker = cell.querySelector<HTMLElement>(
+        "[data-gallery-data-table-heading], [data-gallery-data-table-value]",
+      );
+      return marker !== null && alignedGeometry(cell, marker, align, direction);
+    });
+    const captionGeometry = (
+      caption: HTMLTableCaptionElement,
+      direction: "ltr" | "rtl",
+    ): boolean => {
+      const range = document.createRange();
+      range.selectNodeContents(caption);
+      const textBox = range.getBoundingClientRect();
+      const box = caption.getBoundingClientRect();
+      const style = getComputedStyle(caption);
+      const left = box.left + number(style.paddingLeft);
+      const right = box.right - number(style.paddingRight);
+      return style.direction === direction
+        && style.textAlign === "start"
+        && (direction === "ltr"
+          ? nearly(textBox.left, left, 2)
+          : nearly(textBox.right, right, 2));
+    };
+    const alignmentCounts = (fixture: typeof ltr) => ({
+      center: fixture.table.querySelectorAll('[data-align="center"]').length,
+      end: fixture.table.querySelectorAll('[data-align="end"]').length,
+      start: fixture.table.querySelectorAll('[data-align="start"]').length,
+    });
+    const alignmentContracts = rowAlignment(ltr, "ltr")
+      && rowAlignment(rtl, "rtl")
+      && captionGeometry(ltr.caption, "ltr")
+      && captionGeometry(rtl.caption, "rtl")
+      && Object.values(alignmentCounts(ltr)).every((count) => count === 3)
+      && Object.values(alignmentCounts(rtl)).every((count) => count === 3);
+
+    const overflowWrapperStyle = getComputedStyle(overflow.wrapper);
+    const overflowTableStyle = getComputedStyle(overflow.table);
+    const nativeColor = resolveStyle("color", "rgb(1, 2, 3)");
+    const overflowContracts = nearly(number(overflowWrapperStyle.maxWidth), 18 * 16, 0.01)
+      && overflowWrapperStyle.overflowX === "scroll"
+      && overflow.wrapper.scrollWidth > overflow.wrapper.clientWidth
+      && overflow.wrapper.scrollWidth - overflow.wrapper.clientWidth > 1
+      && nearly(overflow.table.getBoundingClientRect().width, 36 * 16, 1)
+      && nearly(number(overflowTableStyle.minWidth), 36 * 16, 0.01)
+      && nearly(number(overflowTableStyle.width), 36 * 16, 0.01)
+      && overflowTableStyle.borderCollapse === "separate"
+      && overflowTableStyle.color === nativeColor
+      && nearly(number(overflowTableStyle.fontSize), tokens.bodySize, 0.01)
+      && overflow.table.style.color === "rgb(1, 2, 3)"
+      && overflow.table.style.minWidth === "36rem"
+      && overflow.table.style.width === "36rem"
+      && document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1;
+
+    const emptyCopy = required<HTMLElement>(
+      emptyCell,
+      '[data-gallery-data-table-empty-copy="true"]',
+      "empty copy",
+    );
+    const emptyStyle = getComputedStyle(emptyCell);
+    const emptyBox = emptyCell.getBoundingClientRect();
+    const emptyCopyBox = emptyCopy.getBoundingClientRect();
+    const emptyContentCenter = (
+      emptyBox.left + number(emptyStyle.paddingLeft)
+      + emptyBox.right - number(emptyStyle.paddingRight)
+    ) / 2;
+    const emptyContracts = emptyCell.colSpan === 3
+      && emptyCell.parentElement?.dataset.slot === "data-table-empty-row"
+      && emptyCell.dataset.align === undefined
+      && emptyStyle.textAlign === "center"
+      && emptyStyle.verticalAlign === "top"
+      && emptyStyle.color === tokens.mutedForeground
+      && nearly(emptyBox.height, 96, 1)
+      && nearly((emptyCopyBox.left + emptyCopyBox.right) / 2, emptyContentCenter, 2)
+      && nearly(
+        emptyCopyBox.top,
+        emptyBox.top + number(emptyStyle.paddingTop),
+        2,
+      );
+
+    const verticalCells = [...vertical.headers, ...vertical.cells];
+    const verticalContracts = getComputedStyle(vertical.table).writingMode === "vertical-rl"
+      && verticalCells.every((cell) => {
+        const style = getComputedStyle(cell);
+        return style.writingMode === "vertical-rl"
+          && nearly(number(style.paddingLeft), 12, 0.01)
+          && nearly(number(style.paddingRight), 12, 0.01)
+          && nearly(number(style.paddingTop), 16, 0.01)
+          && nearly(number(style.paddingBottom), 16, 0.01)
+          && style.borderLeftStyle === "solid"
+          && nearly(number(style.borderLeftWidth), 1, 0.01)
+          && style.borderLeftColor === tokens.border
+          && nearly(number(style.borderBottomWidth), 0, 0.01)
+          && style.verticalAlign === "top";
+      });
+    const layerSentinels = fixtures.every(({ wrapper }) =>
+      getComputedStyle(wrapper)
+        .getPropertyValue("--gallery-data-table-layer-conflict")
+        .trim() === "legacy"
+    );
+
+    const diagnostics = JSON.stringify({
+      empty: {
+        height: emptyBox.height,
+        textAlign: emptyStyle.textAlign,
+        verticalAlign: emptyStyle.verticalAlign,
+      },
+      fixtures: fixtures.map(({ name, table, wrapper }) => ({
+        name,
+        tableClasses: [...table.classList],
+        tableWidth: table.getBoundingClientRect().width,
+        wrapperClasses: [...wrapper.classList],
+        wrapperClientWidth: wrapper.clientWidth,
+        wrapperScrollWidth: wrapper.scrollWidth,
+      })),
+      overflow: {
+        borderCollapse: overflowTableStyle.borderCollapse,
+        color: overflowTableStyle.color,
+        maxWidth: overflowWrapperStyle.maxWidth,
+        minWidth: overflowTableStyle.minWidth,
+        overflowX: overflowWrapperStyle.overflowX,
+        width: overflowTableStyle.width,
+      },
+      slotCounts,
+      theme: document.documentElement.dataset.theme ?? "",
+      tokens,
+      vertical: verticalCells.map((cell) => {
+        const style = getComputedStyle(cell);
+        return {
+          borderBottomWidth: style.borderBottomWidth,
+          borderLeftWidth: style.borderLeftWidth,
+          padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+          writingMode: style.writingMode,
+        };
+      }),
+    });
+
+    return {
+      alignmentContracts,
+      boundaryContracts,
+      classContracts,
+      diagnostics,
+      emptyContracts,
+      headerBackground: getComputedStyle(ltr.headers[0]!).backgroundColor,
+      layerSentinels,
+      mutedColor: getComputedStyle(ltr.caption).color,
+      overflowContracts,
+      presentationContracts,
+      tableColor: getComputedStyle(ltr.table).color,
+      theme: document.documentElement.dataset.theme ?? "",
+      treeContracts,
+      verticalContracts,
+    };
+  });
+}
+
+function verifyDataTableEvidence(evidence: DataTableEvidence, id: string): void {
+  invariant(
+    evidence.alignmentContracts
+    && evidence.boundaryContracts
+    && evidence.classContracts
+    && evidence.emptyContracts
+    && evidence.layerSentinels
+    && evidence.overflowContracts
+    && evidence.presentationContracts
+    && evidence.treeContracts
+    && evidence.verticalContracts,
+    `${id}: DataTable parity failed: ${evidence.diagnostics}`,
+  );
+}
+
 async function contentFamilyEvidence(page: Page): Promise<ContentFamilyEvidence> {
   return page.evaluate(() => {
     const pageIntros = [...document.querySelectorAll<HTMLElement>(
@@ -11114,6 +11875,8 @@ try {
           const light = await browserEvidence(page);
           const lightContent = await contentFamilyEvidence(page);
           verifyContentFamilyEvidence(lightContent, layout.id);
+          const lightDataTable = await dataTableEvidence(page);
+          verifyDataTableEvidence(lightDataTable, layout.id);
           const lightIndicators = await indicatorKnobEvidence(page);
           verifyIndicatorKnobEvidence(lightIndicators, layout.id);
           await verifyFormPresentation(page, layout.id);
@@ -11466,6 +12229,8 @@ try {
           const dark = await browserEvidence(page);
           const darkContent = await contentFamilyEvidence(page);
           verifyContentFamilyEvidence(darkContent, `${layout.id} dark`);
+          const darkDataTable = await dataTableEvidence(page);
+          verifyDataTableEvidence(darkDataTable, `${layout.id} dark`);
           const darkIndicators = await indicatorKnobEvidence(page);
           verifyIndicatorKnobEvidence(darkIndicators, `${layout.id} dark`);
           const darkSegmented = await segmentedControlEvidence(page);
@@ -11485,6 +12250,14 @@ try {
             && darkContent.alertInfoBackground !== lightContent.alertInfoBackground
             && darkContent.settingsCardBackground !== lightContent.settingsCardBackground,
             `${layout.id}: Content-family theme tokens did not change: light ${lightContent.diagnostics}; dark ${darkContent.diagnostics}`,
+          );
+          invariant(
+            lightDataTable.theme === "light"
+            && darkDataTable.theme === "dark"
+            && darkDataTable.headerBackground !== lightDataTable.headerBackground
+            && darkDataTable.mutedColor !== lightDataTable.mutedColor
+            && darkDataTable.tableColor !== lightDataTable.tableColor,
+            `${layout.id}: DataTable theme tokens did not change: light ${lightDataTable.diagnostics}; dark ${darkDataTable.diagnostics}`,
           );
           invariant(
             dark.themedSurfaceBoundaryContracts
@@ -11860,7 +12633,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, PageIntro wide/compact layout and heading hierarchy, EmptyState composition, all four InlineAlert tone/live-region contracts, both SettingsCard shapes, Content-family semantic/generated/caller ordering, native-style precedence, light/dark tokens, forced colors, collision, SSR, and cleanup, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, 3 ProgressBar, 4 Meter, 4 Slider, and 4 Knob packed specimens with semantic/generated/caller ordering, determinate and indeterminate motion, tone, LTR/RTL/vertical keyboard and form behavior, 20px Slider visuals inside 48px real and synthetic coarse hit targets, Knob density, pointer gesture, disabled, caller xstyle/controlXstyle/native-style precedence, forced-color SVG, collision, SSR, and hydration contracts, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, PageIntro wide/compact layout and heading hierarchy, EmptyState composition, all four InlineAlert tone/live-region contracts, both SettingsCard shapes, Content-family semantic/generated/caller ordering, native-style precedence, light/dark tokens, forced colors, collision, SSR, and cleanup, DataTable native semantics, finite alignment, overflow, logical dividers, empty-state, caller precedence, light/dark, legacy-layer collision, vertical writing, SSR, and hydration contracts, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, 3 ProgressBar, 4 Meter, 4 Slider, and 4 Knob packed specimens with semantic/generated/caller ordering, determinate and indeterminate motion, tone, LTR/RTL/vertical keyboard and form behavior, 20px Slider visuals inside 48px real and synthetic coarse hit targets, Knob density, pointer gesture, disabled, caller xstyle/controlXstyle/native-style precedence, forced-color SVG, collision, SSR, and hydration contracts, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await removeTemporaryTree(work);
