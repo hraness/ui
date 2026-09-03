@@ -272,7 +272,7 @@ const styles = stylex.create({
 
 `AskAiAboutThis`, `Button`, `CopyButton`, `IconButton`, `IconLink`, `ToggleButton`,
 `LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
-`KeyHint`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
+`KeyHint`, `PageIntro`, `EmptyState`, `InlineAlert`, `SettingsCard`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `SkipLink`, `Separator`, `Form`, `FieldDescription`, `FieldError`, `TextField`,
 `TextAreaField`, `SearchField`, `NumberField`, `CheckboxField`, `CheckboxGroup`,
@@ -391,6 +391,17 @@ authority.
 slot, ref, attributes, and children remain stable while a typed caller `xstyle`
 recipe resolves after its compact presentation. Dynamic StyleX values merge
 before the native `style` prop, so native declarations remain final.
+
+`PageIntro`, `EmptyState`, `InlineAlert`, and `SettingsCard` remain
+server-compatible native content boundaries. They preserve their optional
+regions, caller-selected heading levels, semantic classes, slots, refs, native
+attributes, and finite tone or shape attributes. Their base recipe resolves
+before a tone or shape recipe and a typed caller `xstyle`; native `style`
+declarations remain final. `InlineAlert` is non-live by default. With `isLive`,
+danger feedback becomes an assertive alert and the other tones become polite
+status regions, while an explicit caller `role` or `aria-live` remains
+authoritative. Every alert tone uses the system `CanvasText` border in
+forced-colors mode.
 
 `Link` remains an ordinary React Aria destination with a required `href`, stable
 semantic class and slot, optional link ref, native attributes, render-prop

@@ -154,6 +154,11 @@ interface PackageIndicatorKnobProbe {
   readonly knobRootProperty: string;
 }
 
+interface ContentPrecedenceProbe {
+  readonly rootBaseClasses: readonly string[];
+  readonly rootProperty: string;
+}
+
 interface PackageNamedStyleMap {
   readonly classNames: ReadonlySet<string>;
   readonly entries: ReadonlyMap<string, string>;
@@ -542,6 +547,63 @@ const PACKAGE_KNOB_STYLE_KEYS = [
   "thumb",
   "value",
 ] as const;
+const PACKAGE_CONTENT_STYLE_KEYS = [
+  "actions",
+  "emptyStateDescription",
+  "emptyStateIcon",
+  "emptyStateRoot",
+  "emptyStateTitle",
+  "inlineAlertBody",
+  "inlineAlertContent",
+  "inlineAlertDanger",
+  "inlineAlertIcon",
+  "inlineAlertInfo",
+  "inlineAlertRoot",
+  "inlineAlertSuccess",
+  "inlineAlertTitle",
+  "inlineAlertWarning",
+  "pageIntroCopy",
+  "pageIntroDescription",
+  "pageIntroEyebrow",
+  "pageIntroRoot",
+  "pageIntroTitle",
+  "settingsCardBody",
+  "settingsCardDescription",
+  "settingsCardHeader",
+  "settingsCardRectangular",
+  "settingsCardRoot",
+  "settingsCardTitle",
+] as const;
+
+function packageContentPrecedenceProbe(
+  javaScript: string,
+  css: string,
+): ContentPrecedenceProbe {
+  const content = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_CONTENT_STYLE_KEYS,
+    "contentStyles class map",
+  );
+  const root = packageNamedStyleEntry(content, "pageIntroRoot");
+  const displayDeclarations = [...root.matchAll(
+    /(?:^|,)\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu,
+  )].filter((entry) => {
+    const entryClasses = new Set(entry[2]!.split(/\s+/u));
+    return packageCheckboxRuleBodies(css, entryClasses)
+      .map((body) => normalizedAtomicDeclaration(body))
+      .includes("display:grid;");
+  });
+  assert.equal(
+    displayDeclarations.length,
+    1,
+    "packed contentStyles.pageIntroRoot must bind exactly one compiled display property",
+  );
+  const display = displayDeclarations[0]!;
+  return {
+    rootBaseClasses: display[2]!.split(/\s+/u),
+    rootProperty: display[1]!,
+  };
+}
 
 function packageFieldSelectProbe(javaScript: string): PackageFieldSelectProbe {
   const field = packageNamedStyleMap(
@@ -1213,11 +1275,116 @@ function requirePackageIndicatorKnobStyles(
   );
 }
 
-function requireNoIndicatorKnobGallerySentinels(...sources: string[]): void {
+function requirePackageContentStyles(javaScript: string, css: string): void {
+  const content = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_CONTENT_STYLE_KEYS,
+    "contentStyles class map",
+  );
+  assert.deepEqual(
+    packageTopLevelStyleKeys(content.object, "packed contentStyles class map"),
+    PACKAGE_CONTENT_STYLE_KEYS,
+    "packed contentStyles must retain its exact finite recipe keys and order",
+  );
+  const entryCss = (key: string, source = css) => packageStyleRules(
+    source,
+    packageEntryClassNames(content, key),
+  ).map((rule) => rule.source).join("\n");
+  for (const [key, declaration, description] of [
+    ["actions", /display:\s*flex/u, "shared content actions layout"],
+    ["actions", /flex-wrap:\s*wrap/u, "shared content actions wrapping"],
+    ["emptyStateRoot", /border-style:\s*dashed/u, "EmptyState boundary"],
+    ["emptyStateRoot", /min-height:\s*12rem/u, "EmptyState minimum height"],
+    ["emptyStateDescription", /max-width:\s*36rem/u, "EmptyState description measure"],
+    ["pageIntroRoot", /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/u, "PageIntro wide grid"],
+    ["pageIntroCopy", /max-width:\s*48rem/u, "PageIntro copy measure"],
+    ["pageIntroTitle", /text-wrap:\s*balance/u, "PageIntro balanced title"],
+    ["inlineAlertRoot", /grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)/u, "InlineAlert grid"],
+    ["inlineAlertInfo", /background-color:\s*var\(--ui-info-soft\)/u, "info InlineAlert tone"],
+    ["inlineAlertSuccess", /background-color:\s*var\(--ui-success-soft\)/u, "success InlineAlert tone"],
+    ["inlineAlertWarning", /background-color:\s*var\(--ui-warning-soft\)/u, "warning InlineAlert tone"],
+    [
+      "inlineAlertDanger",
+      /background-color:\s*color-mix\(in oklch,\s*var\(--ui-destructive\)\s+9%,\s*var\(--ui-card\)\)/u,
+      "danger InlineAlert tone",
+    ],
+    ["settingsCardRoot", /overflow:\s*hidden/u, "SettingsCard clipping"],
+    ["settingsCardHeader", /border-bottom-width:\s*1px/u, "SettingsCard header divider"],
+    ["settingsCardRectangular", /border-radius:\s*var\(--radius-sharp\)/u, "rectangular SettingsCard shape"],
+  ] as const) {
+    assert.match(
+      entryCss(key),
+      declaration,
+      `packed ${description} must remain in its compiled recipe`,
+    );
+  }
+  for (const [key, declaration, description] of [
+    ["inlineAlertInfo", /border-color:\s*var\(--ui-border\)/u, "info InlineAlert border"],
+    [
+      "inlineAlertSuccess",
+      /border-color:\s*color-mix\(in oklch,\s*var\(--ui-success\)\s+55%,\s*var\(--ui-border\)\)/u,
+      "success InlineAlert border",
+    ],
+    [
+      "inlineAlertWarning",
+      /border-color:\s*color-mix\(in oklch,\s*var\(--ui-warning\)\s+55%,\s*var\(--ui-border\)\)/u,
+      "warning InlineAlert border",
+    ],
+    [
+      "inlineAlertDanger",
+      /border-color:\s*color-mix\(in oklch,\s*var\(--ui-destructive\)\s+55%,\s*var\(--ui-border\)\)/u,
+      "danger InlineAlert border",
+    ],
+  ] as const) {
+    requirePackageExactBaseDeclaration(
+      css,
+      packageEntryClassNames(content, key),
+      declaration,
+      `packed normal ${description}`,
+    );
+  }
+  const normalizedCss = css.replace(/\s+/gu, "").toLowerCase();
+  const compactCondition = normalizedCss.includes("@media(width<=40rem){")
+    ? "@media(width<=40rem)"
+    : "@media(max-width:40rem)";
+  const compactCss = packageExactConditionalCss(css, compactCondition);
+  assert.match(
+    entryCss("pageIntroRoot", compactCss),
+    /grid-template-columns:\s*minmax\(0,\s*1fr\)/u,
+    "packed compact PageIntro grid must remain in its exact media block",
+  );
+  assert.match(
+    entryCss("pageIntroRoot", compactCss),
+    /align-items:\s*start/u,
+    "packed compact PageIntro alignment must remain in its exact media block",
+  );
+  const forcedCss = packageExactConditionalCss(css, "@media(forced-colors:active)");
+  for (const key of [
+    "inlineAlertRoot",
+    "inlineAlertInfo",
+    "inlineAlertSuccess",
+    "inlineAlertWarning",
+    "inlineAlertDanger",
+  ]) {
+    assert.match(
+      entryCss(key, forcedCss),
+      /border-color:\s*canvastext/u,
+      `packed forced-colors ${key} must retain its system border`,
+    );
+  }
+  assert.match(
+    entryCss("inlineAlertRoot", forcedCss),
+    /forced-color-adjust:\s*auto/u,
+    "packed forced-colors InlineAlert must retain automatic system adjustment",
+  );
+}
+
+function requireNoMigratedGallerySentinels(...sources: string[]): void {
   const output = sources.join("\n");
   for (const sentinel of [
     "data-gallery-indicators-layer-conflict",
     "data-gallery-knob-layer-conflict",
+    "data-gallery-content-layer-conflict",
   ]) {
     assert.doesNotMatch(
       output,
@@ -1856,6 +2023,7 @@ function resolveGenuineNodeExecutable(): string {
 function ssrProbe(
   release: ReactRelease,
   checkboxProbe: CheckboxPrecedenceProbe,
+  contentProbe: ContentPrecedenceProbe,
   fieldSelectProbe: PackageFieldSelectProbe,
   formProbe: FormPrecedenceProbe,
   indicatorKnobProbe: PackageIndicatorKnobProbe,
@@ -1879,14 +2047,17 @@ import {
   CardTitle,
   CheckboxGroup,
   CheckboxField,
+  EmptyState,
   FileField,
   Form,
   Icon,
+  InlineAlert,
   KeyHint,
   Knob,
   Link,
   Meter,
   NativeSelectField,
+  PageIntro,
   PressableCard,
   ProgressBar,
   QuietSiteFooter,
@@ -1897,6 +2068,7 @@ import {
   StatusDot,
   SelectField,
   Slider,
+  SettingsCard,
   Tag,
   ThemedSurface,
   Toolbar,
@@ -1923,6 +2095,11 @@ const checkboxControlXstyle = {
 };
 const checkboxRootBaseClasses = ${JSON.stringify(checkboxProbe.rootBaseClasses)};
 const checkboxControlBaseClasses = ${JSON.stringify(checkboxProbe.controlBaseClasses)};
+const contentRootXstyle = {
+  ${JSON.stringify(contentProbe.rootProperty)}: "package-content-root-xstyle",
+  $$css: true,
+};
+const contentRootBaseClasses = ${JSON.stringify(contentProbe.rootBaseClasses)};
 const fieldRootXstyle = {
   ${JSON.stringify(fieldSelectProbe.fieldRootProperty)}: "package-field-root-xstyle",
   $$css: true,
@@ -2095,6 +2272,7 @@ await access(new URL("./fields.stylex.ts", componentsCssUrl));
 await access(new URL("./select-field.stylex.ts", componentsCssUrl));
 await access(new URL("./indicators.stylex.ts", componentsCssUrl));
 await access(new URL("./knob.stylex.ts", componentsCssUrl));
+await access(new URL("./content.stylex.ts", componentsCssUrl));
 assert.match(
   componentsCss,
   /@keyframes\s+hraness-progress-indeterminate\s*\{\s*from\s*\{\s*transform:\s*translateX\(-125%\);\s*\}\s*to\s*\{\s*transform:\s*translateX\(250%\);\s*\}\s*\}/u,
@@ -2108,6 +2286,11 @@ assert.doesNotMatch(
   componentsCss,
   /\.hraness-(?:progress-bar|meter|slider|knob)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
   "components.css must not retain migrated indicator or Knob recipes",
+);
+assert.doesNotMatch(
+  componentsCss,
+  /\.hraness-(?:page-intro|empty-state|inline-alert|settings-card)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+  "components.css must not retain migrated content-family recipes",
 );
 assert.doesNotMatch(componentsCss, /\.hraness-form(?![A-Za-z0-9_-])/u);
 assert.doesNotMatch(componentsCss, /\.hraness-quiet-site-(?:footer|page)(?![A-Za-z0-9_-])/u);
@@ -2461,6 +2644,68 @@ assert.match(keyHintMarkup, /data-slot="key-hint"/u);
 assert.match(keyHintMarkup, /style="width:2rem"/u);
 assert.match(keyHintMarkup, /title="Open command menu"/u);
 assert.match(keyHintMarkup, />⌘K<\/kbd>/u);
+
+const pageIntroMarkup = renderToStaticMarkup(React.createElement(PageIntro, {
+  actions: React.createElement("button", { type: "button" }, "Create"),
+  className: "consumer-page-intro",
+  description: "Package content overview",
+  eyebrow: "Workspace",
+  style: { display: "inline-block", maxWidth: "50rem" },
+  title: "Projects",
+  titleAs: "h3",
+  xstyle: contentRootXstyle,
+}));
+const pageIntroTag = pageIntroMarkup.match(/^<section[^>]*>/u)?.[0] ?? "";
+assert.match(pageIntroMarkup, /^<section/u);
+assert.match(pageIntroTag, /class="hraness-page-intro [^"]*package-content-root-xstyle consumer-page-intro"/u);
+assert.match(pageIntroMarkup, /data-slot="page-intro"/u);
+assert.match(pageIntroMarkup, /<h3[^>]*data-slot="page-intro-title"[^>]*>Projects<\/h3>/u);
+assert.match(pageIntroTag, /style="display:inline-block;max-width:50rem"/u);
+for (const baseClass of contentRootBaseClasses) {
+  assert.ok(
+    !pageIntroTag.split(/[\s"]/u).includes(baseClass),
+    "PageIntro caller xstyle must replace its package display class before native style wins last",
+  );
+}
+
+const emptyStateMarkup = renderToStaticMarkup(React.createElement(EmptyState, {
+  action: React.createElement("button", { type: "button" }, "Add project"),
+  description: "Create the first project.",
+  icon: "◇",
+  title: "No projects",
+}));
+assert.match(emptyStateMarkup, /^<section/u);
+assert.match(emptyStateMarkup, /class="hraness-empty-state [^"]+"/u);
+assert.match(emptyStateMarkup, /data-slot="empty-state"/u);
+assert.match(emptyStateMarkup, /aria-hidden="true"[^>]*data-slot="empty-state-icon"/u);
+assert.match(emptyStateMarkup, /<h2[^>]*data-slot="empty-state-title"[^>]*>No projects<\/h2>/u);
+
+const inlineAlertMarkup = renderToStaticMarkup(React.createElement(InlineAlert, {
+  className: "consumer-inline-alert",
+  icon: "!",
+  isLive: true,
+  title: "Action required",
+  tone: "danger",
+}, "Review the failed step."));
+assert.match(inlineAlertMarkup, /^<div/u);
+assert.match(inlineAlertMarkup, /aria-live="assertive"/u);
+assert.match(inlineAlertMarkup, /class="hraness-inline-alert [^"]+ consumer-inline-alert"/u);
+assert.match(inlineAlertMarkup, /data-slot="inline-alert"/u);
+assert.match(inlineAlertMarkup, /data-tone="danger"/u);
+assert.match(inlineAlertMarkup, /role="alert"/u);
+
+const settingsCardMarkup = renderToStaticMarkup(React.createElement(SettingsCard, {
+  actions: React.createElement("button", { type: "button" }, "Edit"),
+  description: "Visible to collaborators",
+  shape: "rectangular",
+  title: "Profile",
+}, "Settings body"));
+assert.match(settingsCardMarkup, /^<section/u);
+assert.match(settingsCardMarkup, /class="hraness-settings-card [^"]+"/u);
+assert.match(settingsCardMarkup, /data-shape="rectangular"/u);
+assert.match(settingsCardMarkup, /data-slot="settings-card"/u);
+assert.match(settingsCardMarkup, /data-slot="settings-card-header"/u);
+assert.match(settingsCardMarkup, /data-slot="settings-card-body"/u);
 
 const linkMarkup = renderToStaticMarkup(React.createElement(Link, {
   className: "consumer-link",
@@ -2971,14 +3216,17 @@ import {
   CardTitle,
   CheckboxGroup,
   CheckboxField,
+  EmptyState,
   FileField,
   Form,
   Icon,
+  InlineAlert,
   KeyHint,
   Knob,
   Link,
   Meter,
   NativeSelectField,
+  PageIntro,
   PressableCard,
   ProgressBar,
   QuietSiteFooter,
@@ -2989,6 +3237,7 @@ import {
   StatusDot,
   SelectField,
   Slider,
+  SettingsCard,
   Tag,
   ThemedSurface,
   Toolbar,
@@ -3018,6 +3267,11 @@ const styles = stylex.create({
   },
   cardPart: {
     paddingInline: "var(--space-2)",
+  },
+  content: {
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+    display: "flex",
   },
   checkbox: {
     color: "var(--ui-primary)",
@@ -3263,6 +3517,47 @@ const keyHintMarkup: string = renderToStaticMarkup(createElement(KeyHint, {
   style: { width: "3rem" },
   title: "Open command menu",
   xstyle: [styles.keyHint, styles.keyHintDynamic("2rem")],
+}));
+const pageIntroRef = createRef<HTMLElement>();
+const pageIntroMarkup: string = renderToStaticMarkup(createElement(PageIntro, {
+  actions: createElement("button", { type: "button" }, "Create"),
+  className: "consumer-page-intro",
+  description: "Package content overview",
+  eyebrow: "Workspace",
+  ref: pageIntroRef,
+  style: { maxWidth: "50rem" },
+  title: "Projects",
+  titleAs: "h3",
+  xstyle: styles.content,
+}));
+const emptyStateRef = createRef<HTMLElement>();
+const emptyStateMarkup: string = renderToStaticMarkup(createElement(EmptyState, {
+  action: createElement("button", { type: "button" }, "Add project"),
+  description: "Create the first project.",
+  icon: "◇",
+  ref: emptyStateRef,
+  title: "No projects",
+  xstyle: styles.content,
+}));
+const inlineAlertRef = createRef<HTMLDivElement>();
+const inlineAlertMarkup: string = renderToStaticMarkup(createElement(InlineAlert, {
+  children: "Review the failed step.",
+  className: "consumer-inline-alert",
+  isLive: true,
+  ref: inlineAlertRef,
+  title: "Action required",
+  tone: "danger",
+  xstyle: styles.content,
+}));
+const settingsCardRef = createRef<HTMLElement>();
+const settingsCardMarkup: string = renderToStaticMarkup(createElement(SettingsCard, {
+  actions: createElement("button", { type: "button" }, "Edit"),
+  children: "Settings body",
+  description: "Visible to collaborators",
+  ref: settingsCardRef,
+  shape: "rectangular",
+  title: "Profile",
+  xstyle: styles.content,
 }));
 const linkRef = createRef<HTMLAnchorElement>();
 const linkMarkup: string = renderToStaticMarkup(createElement(Link, {
@@ -3517,6 +3812,12 @@ const missingLinkHrefMarkup = renderToStaticMarkup(createElement(Link, { childre
 const invalidLinkClassMarkup = renderToStaticMarkup(createElement(Link, { children: "Reference", className: () => "dynamic", href: "/reference" }));
 // @ts-expect-error Link accepts compiled StyleX values rather than raw style objects.
 const invalidLinkXstyleMarkup = renderToStaticMarkup(createElement(Link, { children: "Reference", href: "/reference", xstyle: { color: "red" } }));
+// @ts-expect-error InlineAlert keeps its tone set finite.
+const invalidInlineAlertToneMarkup = renderToStaticMarkup(createElement(InlineAlert, { children: "Alert", tone: "accent" }));
+// @ts-expect-error SettingsCard keeps its shape set finite.
+const invalidSettingsCardShapeMarkup = renderToStaticMarkup(createElement(SettingsCard, { shape: "pill", title: "Settings" }));
+// @ts-expect-error Content roots accept compiled StyleX recipes rather than raw CSS objects.
+const invalidContentXstyleMarkup = renderToStaticMarkup(createElement(PageIntro, { title: "Projects", xstyle: { display: "flex" } }));
 // @ts-expect-error AskAiAboutThis requires one explicit canonical HTTPS URL.
 const missingAskAiUrlMarkup = renderToStaticMarkup(createElement(AskAiAboutThis, {}));
 // @ts-expect-error CheckboxField requires a label even when visible copy is hidden.
@@ -3549,6 +3850,10 @@ void cardMarkup;
 void pressableMarkup;
 void toolbarMarkup;
 void keyHintMarkup;
+void pageIntroMarkup;
+void emptyStateMarkup;
+void inlineAlertMarkup;
+void settingsCardMarkup;
 void linkMarkup;
 void progressMarkup;
 void meterMarkup;
@@ -3595,6 +3900,9 @@ void invalidToolbarClassMarkup;
 void missingLinkHrefMarkup;
 void invalidLinkClassMarkup;
 void invalidLinkXstyleMarkup;
+void invalidInlineAlertToneMarkup;
+void invalidSettingsCardShapeMarkup;
+void invalidContentXstyleMarkup;
 void missingAskAiUrlMarkup;
 void unnamedCheckboxMarkup;
 void compactCheckboxMarkup;
@@ -3606,14 +3914,22 @@ void invalidKnobDensityMarkup;
 void invalidKnobControlXstyleMarkup;
 `;
 
-const viteClient = `import "@hraness/ui/styles.css";
-import { AskAiAboutThis, Card, CardDescription, CheckboxField, FileField, Form, KeyHint, Knob, Link, Meter, NativeSelectField, PressableCard, ProgressBar, SelectField, Slider, TextField, Toolbar } from "@hraness/ui";
+function viteClientProbe(contentProbe: ContentPrecedenceProbe): string {
+  return `import "@hraness/ui/styles.css";
+import { AskAiAboutThis, Card, CardDescription, CheckboxField, EmptyState, FileField, Form, InlineAlert, KeyHint, Knob, Link, Meter, NativeSelectField, PageIntro, PressableCard, ProgressBar, SelectField, SettingsCard, Slider, TextField, Toolbar } from "@hraness/ui";
 import * as React from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("Vite package smoke root is missing");
-createRoot(root).render(React.createElement(React.Fragment, null,
+const contentRootXstyle = {
+  ${JSON.stringify(contentProbe.rootProperty)}: "vite-content-root-xstyle",
+  $$css: true,
+};
+const contentRootBaseClasses = ${JSON.stringify(contentProbe.rootBaseClasses)};
+const reactRoot = createRoot(root);
+flushSync(() => reactRoot.render(React.createElement(React.Fragment, null,
   React.createElement(Card, { tone: "accent" },
     React.createElement(CardDescription, null, "Vite card"),
   ),
@@ -3626,6 +3942,15 @@ createRoot(root).render(React.createElement(React.Fragment, null,
     orientation: "vertical",
   }, React.createElement("button", { type: "button" }, "Save")),
   React.createElement(KeyHint, null, "⌘K"),
+  React.createElement(PageIntro, {
+    className: "vite-content-root-class",
+    style: { display: "inline-block" },
+    title: "Vite projects",
+    xstyle: contentRootXstyle,
+  }),
+  React.createElement(EmptyState, { title: "No Vite projects" }),
+  React.createElement(InlineAlert, { tone: "success" }, "Vite is ready"),
+  React.createElement(SettingsCard, { title: "Vite settings" }, "Settings body"),
   React.createElement(AskAiAboutThis, { url: "https://hraness.com/stripe" }),
   React.createElement(Link, { href: "/reference" }, "Reference"),
   React.createElement(ProgressBar, { label: "Vite progress", value: 35 }),
@@ -3663,11 +3988,26 @@ createRoot(root).render(React.createElement(React.Fragment, null,
     method: "post",
     onSubmit: (event) => event.preventDefault(),
   }, React.createElement("button", { type: "button" }, "Save locally")),
-));
+)));
+const contentRoot = root.querySelector('[data-slot="page-intro"]');
+if (!(contentRoot instanceof HTMLElement)) {
+  throw new Error("Vite client content precedence probe is missing");
+}
+if (!contentRoot.classList.contains("vite-content-root-xstyle")) {
+  throw new Error("Vite client Content caller xstyle did not reach the rendered root");
+}
+if (contentRootBaseClasses.some((className) => contentRoot.classList.contains(className))) {
+  throw new Error("Vite client Content caller xstyle did not replace the base display class");
+}
+if (contentRoot.style.display !== "inline-block") {
+  throw new Error("Vite client Content native style did not win last");
+}
 `;
+}
 
 function viteSsrProbe(
   checkboxProbe: CheckboxPrecedenceProbe,
+  contentProbe: ContentPrecedenceProbe,
   fieldSelectProbe: PackageFieldSelectProbe,
   formProbe: FormPrecedenceProbe,
   indicatorKnobProbe: PackageIndicatorKnobProbe,
@@ -3675,7 +4015,7 @@ function viteSsrProbe(
   visuallyHiddenClasses: readonly string[],
 ): string {
   return `import assert from "node:assert/strict";
-import { CheckboxField, Form, Knob, Link, Meter, NativeSelectField, ProgressBar, SelectField, Slider, TextField } from "@hraness/ui";
+import { CheckboxField, EmptyState, Form, InlineAlert, Knob, Link, Meter, NativeSelectField, PageIntro, ProgressBar, SelectField, SettingsCard, Slider, TextField } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -3687,6 +4027,11 @@ const controlXstyle = {
   ${JSON.stringify(checkboxProbe.controlProperty)}: "vite-checkbox-control-xstyle",
   $$css: true,
 };
+const contentRootXstyle = {
+  ${JSON.stringify(contentProbe.rootProperty)}: "vite-content-root-xstyle",
+  $$css: true,
+};
+const contentRootBaseClasses = ${JSON.stringify(contentProbe.rootBaseClasses)};
 const fieldRootXstyle = {
   ${JSON.stringify(fieldSelectProbe.fieldRootProperty)}: "vite-field-root-xstyle",
   $$css: true,
@@ -3804,6 +4149,38 @@ assert.match(linkTag, /class="hraness-link [^"]*vite-link-xstyle vite-link-class
 for (const baseClass of ${JSON.stringify(linkProbe.baseClasses)}) {
   assert.ok(!linkTag.split(/[\\s"]/u).includes(baseClass));
 }
+const pageIntroMarkup = renderToStaticMarkup(React.createElement(PageIntro, {
+  className: "vite-content-root-class",
+  style: { display: "inline-block" },
+  title: "Vite projects",
+  titleAs: "h4",
+  xstyle: contentRootXstyle,
+}));
+const pageIntroTag = pageIntroMarkup.match(/^<section[^>]*>/u)?.[0] ?? "";
+assert.match(pageIntroMarkup, /<h4[^>]*data-slot="page-intro-title"/u);
+assert.match(pageIntroTag, /class="hraness-page-intro [^"]*vite-content-root-xstyle vite-content-root-class"/u);
+assert.match(pageIntroTag, /style="display:inline-block"/u);
+for (const baseClass of contentRootBaseClasses) {
+  assert.ok(
+    !pageIntroTag.split(/[\\s"]/u).includes(baseClass),
+    "Vite SSR PageIntro caller xstyle must replace its package display class before native style wins last",
+  );
+}
+const emptyStateMarkup = renderToStaticMarkup(React.createElement(EmptyState, {
+  title: "No Vite projects",
+}));
+assert.match(emptyStateMarkup, /data-slot="empty-state"/u);
+const inlineAlertMarkup = renderToStaticMarkup(React.createElement(InlineAlert, {
+  isLive: true,
+  tone: "success",
+}, "Vite is ready"));
+assert.match(inlineAlertMarkup, /aria-live="polite"/u);
+assert.match(inlineAlertMarkup, /role="status"/u);
+const settingsCardMarkup = renderToStaticMarkup(React.createElement(SettingsCard, {
+  shape: "rectangular",
+  title: "Vite settings",
+}, "Settings body"));
+assert.match(settingsCardMarkup, /data-shape="rectangular"/u);
 const progressMarkup = renderToStaticMarkup(React.createElement(ProgressBar, {
   className: "vite-progress-class",
   label: "Vite progress",
@@ -3859,7 +4236,7 @@ for (const baseClass of ${JSON.stringify(indicatorKnobProbe.knobControlBaseClass
 for (const focusClass of ${JSON.stringify(indicatorKnobProbe.knobControlNativeFocusClasses)}) {
   assert.ok(!knobControlTag.split(/[\\s"]/u).includes(focusClass));
 }
-console.log("Vite CheckboxField, Form, Link, indicators, and Knob xstyle runtime passed");
+console.log("Vite SSR CheckboxField, Form, Link, Content, indicators, and Knob xstyle runtime passed");
 `;
 }
 
@@ -3971,6 +4348,9 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "knob.stylex.ts"),
   );
   await access(
+    join(consumer, "node_modules", "@hraness", "ui", "src", "content.stylex.ts"),
+  );
+  await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "lib", "stylex.ts"),
   );
   const installedPackageRoot = join(
@@ -3991,6 +4371,10 @@ async function verifyConsumer(
     readFile(join(installedPackageRoot, "src", "styles.css"), "utf8"),
   ]);
   const checkboxProbe = packageCheckboxStyleMap(installedJavaScript);
+  const contentProbe = packageContentPrecedenceProbe(
+    installedJavaScript,
+    installedStylexCss,
+  );
   const fieldSelectProbe = packageFieldSelectProbe(installedJavaScript);
   const formProbe = packageFormStyleMap(installedJavaScript, installedStylexCss);
   const indicatorKnobProbe = packageIndicatorKnobProbe(installedJavaScript);
@@ -4004,7 +4388,8 @@ async function verifyConsumer(
   );
   requirePackageFormStyles(installedJavaScript, installedStylexCss);
   requirePackageIndicatorKnobStyles(installedJavaScript, installedStylexCss);
-  requireNoIndicatorKnobGallerySentinels(
+  requirePackageContentStyles(installedJavaScript, installedStylexCss);
+  requireNoMigratedGallerySentinels(
     installedJavaScript,
     installedStylexCss,
     installedComponentsCss,
@@ -4031,6 +4416,7 @@ async function verifyConsumer(
     ssrProbe(
       release,
       checkboxProbe,
+      contentProbe,
       fieldSelectProbe,
       formProbe,
       indicatorKnobProbe,
@@ -4052,11 +4438,12 @@ async function verifyConsumer(
 
   await Promise.all([
     writeFile(join(consumer, "index.html"), viteHtml),
-    writeFile(join(consumer, "vite-client.ts"), viteClient),
+    writeFile(join(consumer, "vite-client.ts"), viteClientProbe(contentProbe)),
     writeFile(
       join(consumer, "vite-ssr.ts"),
       viteSsrProbe(
         checkboxProbe,
+        contentProbe,
         fieldSelectProbe,
         formProbe,
         indicatorKnobProbe,
@@ -4088,11 +4475,26 @@ async function verifyConsumer(
   requirePackageLinkStyles(viteJavaScript, viteCss);
   requirePackageFormStyles(viteJavaScript, viteCss);
   requirePackageIndicatorKnobStyles(viteJavaScript, viteCss);
+  requirePackageContentStyles(viteJavaScript, viteCss);
   requirePackageVisuallyHiddenStyles(viteJavaScript, viteCss);
-  requireNoIndicatorKnobGallerySentinels(viteJavaScript, viteCss);
+  requireNoMigratedGallerySentinels(viteJavaScript, viteCss);
   assert.match(viteJavaScript, /hraness-pressable-card/u);
   assert.match(viteJavaScript, /hraness-toolbar/u);
   assert.match(viteJavaScript, /hraness-key-hint/u);
+  assert.match(viteJavaScript, /hraness-page-intro/u);
+  assert.match(
+    viteJavaScript,
+    /vite-content-root-xstyle/u,
+    "Vite client must bundle the Content caller xstyle runtime probe",
+  );
+  assert.match(
+    viteJavaScript,
+    /Vite client Content native style did not win last/u,
+    "Vite client must bundle the Content native-style precedence assertion",
+  );
+  assert.match(viteJavaScript, /hraness-empty-state/u);
+  assert.match(viteJavaScript, /hraness-inline-alert/u);
+  assert.match(viteJavaScript, /hraness-settings-card/u);
   assert.match(viteJavaScript, /hraness-link/u);
   assert.match(viteJavaScript, /hraness-form/u);
   assert.match(viteJavaScript, /hraness-progress-bar/u);
@@ -4214,6 +4616,11 @@ async function verifyConsumer(
   );
   assert.match(
     viteSsrBundle,
+    /vite-content-root-xstyle/u,
+    "Vite SSR must bundle the caller Content xstyle probe",
+  );
+  assert.match(
+    viteSsrBundle,
     /hraness-progress-bar/u,
     "Vite SSR must bundle the ProgressBar implementation",
   );
@@ -4237,7 +4644,19 @@ async function verifyConsumer(
     /vite-knob-control-xstyle/u,
     "Vite SSR must bundle the caller Knob controlXstyle probe",
   );
-  requireNoIndicatorKnobGallerySentinels(viteSsrBundle);
+  for (const hook of [
+    "hraness-page-intro",
+    "hraness-empty-state",
+    "hraness-inline-alert",
+    "hraness-settings-card",
+  ]) {
+    assert.match(
+      viteSsrBundle,
+      new RegExp(hook, "u"),
+      `Vite SSR must bundle the ${hook} implementation`,
+    );
+  }
+  requireNoMigratedGallerySentinels(viteSsrBundle);
   assert.doesNotMatch(
     viteSsrBundle,
     /from\s*["']@hraness\/ui["']/u,

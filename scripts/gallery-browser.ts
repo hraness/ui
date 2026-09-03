@@ -332,6 +332,20 @@ interface LinkNativeFallbackContract {
   readonly rootClassNames: readonly string[];
 }
 
+interface ContentFamilyEvidence {
+  readonly alertInfoBackground: string;
+  readonly boundaryContracts: boolean;
+  readonly classContracts: boolean;
+  readonly diagnostics: string;
+  readonly layerSentinels: boolean;
+  readonly layoutContracts: boolean;
+  readonly overrideContracts: boolean;
+  readonly settingsCardBackground: string;
+  readonly shapeContracts: boolean;
+  readonly theme: string;
+  readonly toneContracts: boolean;
+}
+
 const layouts = [
   {
     context: {
@@ -1547,6 +1561,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     /\.hraness-(?:progress-bar(?:__(?:fill|header|label|label-row|track|value))?|meter(?:__(?:fill|header|label|label-row|track|value))?|slider(?:__(?:fill|header|label|label-row|thumb|thumb-indicator|track|value))?|knob(?:__(?:arc|arc--track|arc--value|control|dial|face|gesture|indicator|label|thumb|value))?)(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain legacy Indicators or Knob selectors",
   );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-(?:page-intro(?:__(?:actions|copy|description|eyebrow|title))?|empty-state(?:__(?:action|description|icon|title))?|inline-alert(?:__(?:body|content|icon|title))?|settings-card(?:__(?:actions|body|description|header|title))?)(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain legacy Content-family selectors",
+  );
   assert.equal(
     css.match(CARD_DESCRIPTION_BRIDGE_PATTERN)?.length,
     1,
@@ -1591,6 +1610,44 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     css,
     /data-gallery-knob-layer-conflict/u,
     "the harness bundle must include its Knob legacy conflicts",
+  );
+  assert.match(
+    css,
+    /data-gallery-content-layer-conflict/u,
+    "the harness bundle must include its Content-family legacy conflicts",
+  );
+  const contentPageIntroConflict = css.match(
+    /\[data-gallery-content-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"page-intro"|page-intro)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    contentPageIntroConflict !== undefined
+    && /--gallery-content-layer-conflict:\s*legacy/u.test(contentPageIntroConflict)
+    && /display:\s*block/u.test(contentPageIntroConflict)
+    && /gap:\s*7rem/u.test(contentPageIntroConflict)
+    && /grid-template-columns:\s*7rem 8rem/u.test(contentPageIntroConflict),
+    `the gallery PageIntro conflict is incomplete: ${String(contentPageIntroConflict)}`,
+  );
+  const contentInlineAlertConflict = css.match(
+    /\[data-gallery-content-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"inline-alert"|inline-alert)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    contentInlineAlertConflict !== undefined
+    && /--gallery-content-layer-conflict:\s*legacy/u.test(contentInlineAlertConflict)
+    && /background-image:\s*linear-gradient/u.test(contentInlineAlertConflict)
+    && /border:\s*7px dashed/u.test(contentInlineAlertConflict)
+    && /padding:\s*5rem/u.test(contentInlineAlertConflict),
+    `the gallery InlineAlert conflict is incomplete: ${String(contentInlineAlertConflict)}`,
+  );
+  const contentSettingsCardConflict = css.match(
+    /\[data-gallery-content-layer-conflict=(?:"true"|true)\]\[data-slot=(?:"settings-card"|settings-card)\]\{[^}]*\}/u,
+  )?.[0];
+  assert.ok(
+    contentSettingsCardConflict !== undefined
+    && /--gallery-content-layer-conflict:\s*legacy/u.test(contentSettingsCardConflict)
+    && /background-image:\s*linear-gradient/u.test(contentSettingsCardConflict)
+    && /border-radius:\s*99px/u.test(contentSettingsCardConflict)
+    && /overflow:\s*visible/u.test(contentSettingsCardConflict),
+    `the gallery SettingsCard conflict is incomplete: ${String(contentSettingsCardConflict)}`,
   );
   const fieldRootConflict = css.match(
     /\[data-gallery-fields-layer-conflict=(?:"true"|true)\]\s+:where\([^}]+\)\{[^}]*\}/u,
@@ -7332,16 +7389,46 @@ async function verifyPressableCardCallerStatePrecedence(
   page: Page,
   id: string,
 ): Promise<void> {
+  const themeSelector = '[data-gallery-theme-toggle="true"]';
   const selector = '[data-gallery-card-family-override="pressable"]';
   const pressableCard = page.locator(selector);
+  await page.locator(themeSelector).focus();
+  const traversalBudget = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("*")].filter((element) => {
+      const style = getComputedStyle(element);
+      return element.tabIndex >= 0
+        && element.getClientRects().length > 0
+        && style.display !== "none"
+        && style.visibility !== "hidden"
+        && element.closest("[inert]") === null;
+    }).length + 1
+  );
+  const visited = new Set<number>();
+  const originOrdinal = await page.evaluate(() =>
+    [...document.querySelectorAll("*")].indexOf(document.activeElement as Element)
+  );
+  visited.add(originOrdinal);
   let reachedThroughKeyboard = false;
 
-  for (let step = 0; step < 40; step += 1) {
+  for (let step = 0; step < traversalBudget; step += 1) {
     await page.keyboard.press("Tab");
-    reachedThroughKeyboard = await pressableCard.evaluate(
-      (element) => document.activeElement === element,
+    const traversal = await page.evaluate(
+      (targetSelector) => ({
+        activeOrdinal: [...document.querySelectorAll("*")].indexOf(
+          document.activeElement as Element,
+        ),
+        reachedTarget: document.activeElement
+          === document.querySelector(targetSelector),
+      }),
+      selector,
     );
+    reachedThroughKeyboard = traversal.reachedTarget;
     if (reachedThroughKeyboard) break;
+    invariant(
+      !visited.has(traversal.activeOrdinal),
+      `${id}: keyboard traversal wrapped before the caller-override PressableCard`,
+    );
+    visited.add(traversal.activeOrdinal);
   }
 
   invariant(
@@ -8398,6 +8485,678 @@ function verifyActionCoarsePointerEvidence(
     && nearlyEqual(inline.height, 24)
     && nearlyEqual(inline.width, 24),
     `the inline IconLink incorrectly joined the coarse action family: ${JSON.stringify(inline)}`,
+  );
+}
+
+async function contentFamilyEvidence(page: Page): Promise<ContentFamilyEvidence> {
+  return page.evaluate(() => {
+    const pageIntros = [...document.querySelectorAll<HTMLElement>(
+      "[data-gallery-page-intro]",
+    )];
+    const emptyStates = [...document.querySelectorAll<HTMLElement>(
+      "[data-gallery-empty-state]",
+    )];
+    const alerts = [...document.querySelectorAll<HTMLElement>(
+      "[data-gallery-inline-alert-tone]",
+    )];
+    const settingsCards = [...document.querySelectorAll<HTMLElement>(
+      "[data-gallery-settings-card-shape]",
+    )];
+    const defaultIntro = document.querySelector<HTMLElement>(
+      '[data-gallery-page-intro="default"]',
+    );
+    const overrideIntro = document.querySelector<HTMLElement>(
+      '[data-gallery-page-intro="override"]',
+    );
+    const defaultEmptyState = document.querySelector<HTMLElement>(
+      '[data-gallery-empty-state="default"]',
+    );
+    const overrideEmptyState = document.querySelector<HTMLElement>(
+      '[data-gallery-empty-state="override"]',
+    );
+    const roundedSettingsCard = document.querySelector<HTMLElement>(
+      '[data-gallery-settings-card-shape="rounded"]',
+    );
+    const rectangularSettingsCard = document.querySelector<HTMLElement>(
+      '[data-gallery-settings-card-shape="rectangular"]',
+    );
+    const overrideAlert = document.querySelector<HTMLElement>(
+      '[data-gallery-content-override="inline-alert"]',
+    );
+
+    if (
+      pageIntros.length !== 2
+      || emptyStates.length !== 2
+      || alerts.length !== 4
+      || settingsCards.length !== 2
+      || !(defaultIntro instanceof HTMLElement)
+      || !(overrideIntro instanceof HTMLElement)
+      || !(defaultEmptyState instanceof HTMLElement)
+      || !(overrideEmptyState instanceof HTMLElement)
+      || !(roundedSettingsCard instanceof HTMLElement)
+      || !(rectangularSettingsCard instanceof HTMLElement)
+      || !(overrideAlert instanceof HTMLElement)
+    ) {
+      throw new Error("The Content-family gallery structure is incomplete.");
+    }
+
+    const requiredSlot = (root: Element, slot: string): HTMLElement => {
+      const element = root.querySelector<HTMLElement>(`[data-slot="${slot}"]`);
+      if (!(element instanceof HTMLElement)) {
+        throw new Error(`The Content-family ${slot} slot is missing.`);
+      }
+      return element;
+    };
+    const hasGeneratedClass = (element: Element): boolean =>
+      [...element.classList].some((name) => name.startsWith("x"));
+    const rootClassContract = (
+      element: HTMLElement,
+      semanticClass: string,
+      callerClass: string,
+    ): boolean => {
+      const classes = [...element.classList];
+      return classes[0] === semanticClass
+        && classes.at(-1) === callerClass
+        && hasGeneratedClass(element);
+    };
+    const slotClassContract = (
+      element: HTMLElement,
+      semanticClass: string,
+    ): boolean => element.classList[0] === semanticClass
+      && hasGeneratedClass(element);
+    const resolveStyle = (property: string, value: string): string => {
+      const probe = document.createElement("div");
+      probe.style.setProperty(property, value);
+      document.body.append(probe);
+      const resolved = getComputedStyle(probe).getPropertyValue(property).trim();
+      probe.remove();
+      return resolved;
+    };
+    const equivalentColor = (actual: string, expected: string): boolean => {
+      const normalize = (value: string): readonly number[] => (
+        resolveStyle(
+          "color",
+          `color-mix(in srgb, ${value} 100%, transparent)`,
+        ).match(/-?\d+(?:\.\d+)?/gu) ?? []
+      ).map(Number);
+      const actualChannels = normalize(actual);
+      const expectedChannels = normalize(expected);
+      return actualChannels.length > 0
+        && actualChannels.length === expectedChannels.length
+        && actualChannels.every(
+          (channel, index) =>
+            Math.abs(channel - (expectedChannels[index] ?? Number.NaN)) < 0.000_01,
+        );
+    };
+    const nearly = (actual: number, expected: number): boolean =>
+      Number.isFinite(actual) && Math.abs(actual - expected) <= 0.01;
+    const tokens = {
+      bodySize: Number.parseFloat(
+        resolveStyle("font-size", "var(--text-body)"),
+      ),
+      boldWeight: resolveStyle("font-weight", "var(--font-weight-bold)"),
+      border: resolveStyle("border-color", "var(--ui-border)"),
+      card: resolveStyle("background-color", "var(--ui-card)"),
+      cardForeground: resolveStyle("color", "var(--ui-card-foreground)"),
+      captionSize: Number.parseFloat(
+        resolveStyle("font-size", "var(--text-caption)"),
+      ),
+      destructiveBorder: resolveStyle(
+        "border-color",
+        "color-mix(in oklch, var(--ui-destructive) 55%, var(--ui-border))",
+      ),
+      dangerSoft: resolveStyle(
+        "background-color",
+        "color-mix(in oklch, var(--ui-destructive) 9%, var(--ui-card))",
+      ),
+      displaySize: Number.parseFloat(
+        resolveStyle("font-size", "var(--text-display)"),
+      ),
+      foreground: resolveStyle("color", "var(--ui-foreground)"),
+      headingSize: Number.parseFloat(
+        resolveStyle("font-size", "var(--text-heading)"),
+      ),
+      infoSoft: resolveStyle("background-color", "var(--ui-info-soft)"),
+      labelSize: Number.parseFloat(
+        resolveStyle("font-size", "var(--text-label)"),
+      ),
+      largeRadius: Number.parseFloat(
+        resolveStyle("border-radius", "var(--radius-lg)"),
+      ),
+      mutedForeground: resolveStyle("color", "var(--ui-muted-foreground)"),
+      primary: resolveStyle("color", "var(--ui-primary)"),
+      sharpRadius: Number.parseFloat(
+        resolveStyle("border-radius", "var(--radius-sharp)"),
+      ),
+      space1: Number.parseFloat(resolveStyle("padding-left", "var(--space-1)")),
+      space2: Number.parseFloat(resolveStyle("padding-left", "var(--space-2)")),
+      space3: Number.parseFloat(resolveStyle("padding-left", "var(--space-3)")),
+      space4: Number.parseFloat(resolveStyle("padding-left", "var(--space-4)")),
+      space6: Number.parseFloat(resolveStyle("padding-left", "var(--space-6)")),
+      space8: Number.parseFloat(resolveStyle("padding-left", "var(--space-8)")),
+      successBorder: resolveStyle(
+        "border-color",
+        "color-mix(in oklch, var(--ui-success) 55%, var(--ui-border))",
+      ),
+      successSoft: resolveStyle("background-color", "var(--ui-success-soft)"),
+      titleSize: Number.parseFloat(
+        resolveStyle("font-size", "var(--text-title)"),
+      ),
+      warningBorder: resolveStyle(
+        "border-color",
+        "color-mix(in oklch, var(--ui-warning) 55%, var(--ui-border))",
+      ),
+      warningSoft: resolveStyle("background-color", "var(--ui-warning-soft)"),
+    };
+
+    const defaultIntroStyle = getComputedStyle(defaultIntro);
+    const defaultIntroCopy = requiredSlot(defaultIntro, "page-intro-copy");
+    const defaultIntroEyebrow = requiredSlot(defaultIntro, "page-intro-eyebrow");
+    const defaultIntroTitle = requiredSlot(defaultIntro, "page-intro-title");
+    const defaultIntroDescription = requiredSlot(
+      defaultIntro,
+      "page-intro-description",
+    );
+    const defaultIntroActions = requiredSlot(defaultIntro, "page-intro-actions");
+    const copyStyle = getComputedStyle(defaultIntroCopy);
+    const eyebrowStyle = getComputedStyle(defaultIntroEyebrow);
+    const introTitleStyle = getComputedStyle(defaultIntroTitle);
+    const introDescriptionStyle = getComputedStyle(defaultIntroDescription);
+    const introActionsStyle = getComputedStyle(defaultIntroActions);
+    const compactViewport = matchMedia("(max-width: 40rem)").matches;
+    const introColumnWidths = defaultIntroStyle.gridTemplateColumns
+      .trim()
+      .split(/\s+/u)
+      .filter(Boolean)
+      .map(Number.parseFloat);
+    const introColumnCount = introColumnWidths.length;
+    const defaultIntroBox = defaultIntro.getBoundingClientRect();
+    const defaultIntroCopyBox = defaultIntroCopy.getBoundingClientRect();
+    const defaultIntroActionsBox = defaultIntroActions.getBoundingClientRect();
+
+    const emptyEvidence = emptyStates.map((emptyState) => {
+      const fixture = emptyState.dataset.galleryEmptyState ?? "";
+      const style = getComputedStyle(emptyState);
+      const icon = requiredSlot(emptyState, "empty-state-icon");
+      const title = requiredSlot(emptyState, "empty-state-title");
+      const description = requiredSlot(emptyState, "empty-state-description");
+      const action = requiredSlot(emptyState, "empty-state-action");
+      const iconStyle = getComputedStyle(icon);
+      const titleStyle = getComputedStyle(title);
+      const descriptionStyle = getComputedStyle(description);
+      const actionStyle = getComputedStyle(action);
+      return {
+        actionContract:
+          slotClassContract(action, "hraness-empty-state__action")
+          && actionStyle.display === "flex"
+          && actionStyle.flexWrap === "wrap"
+          && actionStyle.alignItems === "center"
+          && nearly(Number.parseFloat(actionStyle.gap), tokens.space2)
+          && nearly(Number.parseFloat(actionStyle.minWidth), 0),
+        classContract: rootClassContract(
+          emptyState,
+          "hraness-empty-state",
+          `gallery-empty-state--${fixture}`,
+        ) && slotClassContract(icon, "hraness-empty-state__icon")
+          && slotClassContract(title, "hraness-empty-state__title")
+          && slotClassContract(description, "hraness-empty-state__description"),
+        descriptionContract:
+          equivalentColor(descriptionStyle.color, tokens.mutedForeground)
+          && nearly(Number.parseFloat(descriptionStyle.maxWidth), 36 * 16)
+          && Math.abs(
+            Number.parseFloat(descriptionStyle.lineHeight)
+              / Number.parseFloat(descriptionStyle.fontSize) - 1.6,
+          ) <= 0.01,
+        fixture,
+        iconAriaHidden: icon.getAttribute("aria-hidden") ?? "",
+        iconContract:
+          iconStyle.display === "grid"
+          && iconStyle.placeItems === "center"
+          && equivalentColor(iconStyle.color, tokens.mutedForeground)
+          && nearly(Number.parseFloat(iconStyle.fontSize), tokens.titleSize),
+        rootContract:
+          emptyState.tagName === "SECTION"
+          && emptyState.dataset.slot === "empty-state"
+          && style.display === "grid"
+          && style.placeItems === "center"
+          && style.textAlign === "center"
+          && nearly(Number.parseFloat(style.borderRadius), tokens.largeRadius)
+          && equivalentColor(
+            style.color,
+            fixture === "override" ? tokens.primary : tokens.mutedForeground,
+          )
+          && nearly(Number.parseFloat(style.minHeight), 12 * 16)
+          && nearly(Number.parseFloat(style.gap), fixture === "override"
+            ? tokens.space2
+            : tokens.space3)
+          && nearly(Number.parseFloat(style.paddingLeft), fixture === "override"
+            ? tokens.space2
+            : tokens.space8)
+          && style.borderStyle === (fixture === "override" ? "solid" : "dashed")
+          && nearly(Number.parseFloat(style.borderLeftWidth), fixture === "override" ? 4 : 1)
+          && equivalentColor(style.borderColor, tokens.border),
+        sentinel: style.getPropertyValue("--gallery-content-layer-conflict").trim(),
+        titleContract:
+          title.tagName === (fixture === "default" ? "H3" : "H4")
+          && equivalentColor(titleStyle.color, tokens.foreground)
+          && nearly(Number.parseFloat(titleStyle.fontSize), tokens.headingSize)
+          && titleStyle.fontWeight === tokens.boldWeight
+          && Math.abs(
+            Number.parseFloat(titleStyle.lineHeight)
+              / Number.parseFloat(titleStyle.fontSize) - 1.2,
+          ) <= 0.01,
+      };
+    });
+
+    const expectedAlerts = {
+      danger: {
+        ariaLive: "assertive",
+        background: tokens.dangerSoft,
+        border: tokens.destructiveBorder,
+        role: "alert",
+      },
+      info: {
+        ariaLive: "polite",
+        background: tokens.infoSoft,
+        border: tokens.border,
+        role: "status",
+      },
+      success: {
+        ariaLive: "polite",
+        background: tokens.successSoft,
+        border: tokens.successBorder,
+        role: "status",
+      },
+      warning: {
+        ariaLive: "",
+        background: tokens.warningSoft,
+        border: tokens.warningBorder,
+        role: "",
+      },
+    } as const;
+    const alertEvidence = alerts.map((alert) => {
+      const tone = alert.dataset.galleryInlineAlertTone;
+      if (tone === undefined || !(tone in expectedAlerts)) {
+        throw new Error(`Unexpected InlineAlert tone fixture: ${String(tone)}`);
+      }
+      const finiteTone = tone as keyof typeof expectedAlerts;
+      const expected = expectedAlerts[finiteTone];
+      const style = getComputedStyle(alert);
+      const icon = requiredSlot(alert, "inline-alert-icon");
+      const content = requiredSlot(alert, "inline-alert-content");
+      const title = requiredSlot(alert, "inline-alert-title");
+      const body = requiredSlot(alert, "inline-alert-body");
+      const iconStyle = getComputedStyle(icon);
+      const contentStyle = getComputedStyle(content);
+      const titleStyle = getComputedStyle(title);
+      const bodyStyle = getComputedStyle(body);
+      const override = alert.dataset.galleryContentOverride === "inline-alert";
+      const columns = style.gridTemplateColumns
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean)
+        .map(Number.parseFloat);
+      const iconBox = icon.getBoundingClientRect();
+      const contentBox = content.getBoundingClientRect();
+      const innerWidth = alert.clientWidth
+        - Number.parseFloat(style.paddingLeft)
+        - Number.parseFloat(style.paddingRight);
+      return {
+        background: style.backgroundColor,
+        classContract: rootClassContract(
+          alert,
+          "hraness-inline-alert",
+          `gallery-inline-alert--${tone}`,
+        ) && slotClassContract(icon, "hraness-inline-alert__icon")
+          && slotClassContract(content, "hraness-inline-alert__content")
+          && slotClassContract(title, "hraness-inline-alert__title")
+          && slotClassContract(body, "hraness-inline-alert__body"),
+        partContract:
+          icon.getAttribute("aria-hidden") === "true"
+          && iconStyle.display === "grid"
+          && iconStyle.placeItems === "start center"
+          && contentStyle.display === "grid"
+          && nearly(Number.parseFloat(contentStyle.gap), tokens.space1)
+          && nearly(Number.parseFloat(contentStyle.minWidth), 0)
+          && nearly(Number.parseFloat(bodyStyle.minWidth), 0)
+          && titleStyle.fontWeight === resolveStyle(
+            "font-weight",
+            "var(--font-weight-bold)",
+          ),
+        rootContract:
+          alert.tagName === "DIV"
+          && alert.dataset.slot === "inline-alert"
+          && alert.dataset.tone === tone
+          && (alert.getAttribute("role") ?? "") === expected.role
+          && (alert.getAttribute("aria-live") ?? "") === expected.ariaLive
+          && style.display === "grid"
+          && columns.length === 2
+          && columns.every(Number.isFinite)
+          && Math.abs(
+            columns.reduce((sum, width) => sum + width, 0)
+              + Number.parseFloat(style.columnGap) - innerWidth,
+          ) <= 1
+          && Math.abs((columns[0] ?? Number.NaN) - iconBox.width) <= 1
+          && Math.abs((columns[1] ?? Number.NaN) - contentBox.width) <= 1
+          && style.backgroundImage === "none"
+          && equivalentColor(style.backgroundColor, expected.background)
+          && equivalentColor(style.borderColor, expected.border)
+          && equivalentColor(
+            style.color,
+            override ? tokens.primary : tokens.cardForeground,
+          )
+          && style.borderStyle === "solid"
+          && nearly(Number.parseFloat(style.borderRadius), tokens.largeRadius)
+          && nearly(Number.parseFloat(style.borderLeftWidth), override ? 4 : 1)
+          && nearly(Number.parseFloat(style.gap), override ? tokens.space2 : tokens.space3)
+          && nearly(Number.parseFloat(style.paddingLeft), override ? tokens.space2 : tokens.space4),
+        sentinel: style.getPropertyValue("--gallery-content-layer-conflict").trim(),
+        tone: finiteTone,
+      };
+    });
+
+    const settingsEvidence = settingsCards.map((settingsCard) => {
+      const shape = settingsCard.dataset.gallerySettingsCardShape;
+      if (shape !== "rounded" && shape !== "rectangular") {
+        throw new Error(`Unexpected SettingsCard shape fixture: ${String(shape)}`);
+      }
+      const style = getComputedStyle(settingsCard);
+      const header = requiredSlot(settingsCard, "settings-card-header");
+      const title = requiredSlot(settingsCard, "settings-card-title");
+      const description = requiredSlot(settingsCard, "settings-card-description");
+      const actions = requiredSlot(settingsCard, "settings-card-actions");
+      const body = requiredSlot(settingsCard, "settings-card-body");
+      const headerStyle = getComputedStyle(header);
+      const titleStyle = getComputedStyle(title);
+      const descriptionStyle = getComputedStyle(description);
+      const actionsStyle = getComputedStyle(actions);
+      const bodyStyle = getComputedStyle(body);
+      const override = settingsCard.dataset.galleryContentOverride === "settings-card";
+      return {
+        classContract: rootClassContract(
+          settingsCard,
+          "hraness-settings-card",
+          `gallery-settings-card--${shape}`,
+        ) && slotClassContract(header, "hraness-settings-card__header")
+          && slotClassContract(title, "hraness-settings-card__title")
+          && slotClassContract(description, "hraness-settings-card__description")
+          && slotClassContract(actions, "hraness-settings-card__actions")
+          && slotClassContract(body, "hraness-settings-card__body"),
+        partContract:
+          header.tagName === "HEADER"
+          && headerStyle.display === "flex"
+          && headerStyle.flexWrap === "wrap"
+          && headerStyle.alignItems === "start"
+          && headerStyle.justifyContent === "space-between"
+          && nearly(Number.parseFloat(headerStyle.gap), tokens.space4)
+          && nearly(Number.parseFloat(headerStyle.minWidth), 0)
+          && nearly(Number.parseFloat(headerStyle.paddingLeft), tokens.space6)
+          && headerStyle.borderBottomStyle === "solid"
+          && nearly(Number.parseFloat(headerStyle.borderBottomWidth), 1)
+          && equivalentColor(headerStyle.borderBottomColor, tokens.border)
+          && actionsStyle.display === "flex"
+          && actionsStyle.flexWrap === "wrap"
+          && actionsStyle.alignItems === "center"
+          && nearly(Number.parseFloat(actionsStyle.gap), tokens.space2)
+          && nearly(Number.parseFloat(actionsStyle.minWidth), 0)
+          && nearly(Number.parseFloat(bodyStyle.minWidth), 0)
+          && nearly(Number.parseFloat(bodyStyle.paddingLeft), tokens.space6)
+          && nearly(Number.parseFloat(descriptionStyle.marginBlockStart), tokens.space2)
+          && equivalentColor(descriptionStyle.color, tokens.mutedForeground)
+          && nearly(Number.parseFloat(descriptionStyle.fontSize), tokens.labelSize)
+          && Math.abs(
+            Number.parseFloat(descriptionStyle.lineHeight)
+              / Number.parseFloat(descriptionStyle.fontSize) - 1.5,
+          ) <= 0.01
+          && nearly(Number.parseFloat(titleStyle.fontSize), tokens.headingSize)
+          && titleStyle.fontWeight === tokens.boldWeight
+          && Math.abs(
+            Number.parseFloat(titleStyle.lineHeight)
+              / Number.parseFloat(titleStyle.fontSize) - 1.2,
+          ) <= 0.01,
+        rootContract:
+          settingsCard.tagName === "SECTION"
+          && settingsCard.dataset.slot === "settings-card"
+          && settingsCard.dataset.shape === shape
+          && style.display === "block"
+          && style.overflow === "hidden"
+          && style.backgroundImage === "none"
+          && equivalentColor(style.backgroundColor, tokens.card)
+          && equivalentColor(style.borderColor, tokens.border)
+          && equivalentColor(
+            style.color,
+            override ? tokens.primary : tokens.cardForeground,
+          )
+          && style.borderStyle === "solid"
+          && nearly(Number.parseFloat(style.borderLeftWidth), override ? 4 : 1),
+        sentinel: style.getPropertyValue("--gallery-content-layer-conflict").trim(),
+        shape,
+        shapeContract: nearly(
+          Number.parseFloat(style.borderRadius),
+          shape === "rounded" ? tokens.largeRadius : tokens.sharpRadius,
+        ),
+      };
+    });
+
+    const overrideRoots = [
+      overrideIntro,
+      overrideEmptyState,
+      overrideAlert,
+      rectangularSettingsCard,
+    ];
+    const overrideContracts = overrideRoots.every((root) => {
+      const style = getComputedStyle(root);
+      const box = root.getBoundingClientRect();
+      return root.dataset.galleryContentOverride !== undefined
+        && nearly(box.width, 15 * 16)
+        && root.style.width === "15rem"
+        && root.style.borderWidth === "4px"
+        && nearly(Number.parseFloat(style.borderLeftWidth), 4)
+        && nearly(Number.parseFloat(style.gap), tokens.space2)
+        && nearly(Number.parseFloat(style.paddingLeft), tokens.space2)
+        && equivalentColor(style.color, tokens.primary);
+    });
+    const pageClassContracts = pageIntros.every((intro) => {
+      const fixture = intro.dataset.galleryPageIntro ?? "";
+      const copy = requiredSlot(intro, "page-intro-copy");
+      const eyebrow = requiredSlot(intro, "page-intro-eyebrow");
+      const title = requiredSlot(intro, "page-intro-title");
+      const description = requiredSlot(intro, "page-intro-description");
+      const actions = requiredSlot(intro, "page-intro-actions");
+      return rootClassContract(
+        intro,
+        "hraness-page-intro",
+        `gallery-page-intro--${fixture}`,
+      ) && slotClassContract(copy, "hraness-page-intro__copy")
+        && slotClassContract(eyebrow, "hraness-page-intro__eyebrow")
+        && slotClassContract(title, "hraness-page-intro__title")
+        && slotClassContract(description, "hraness-page-intro__description")
+        && slotClassContract(actions, "hraness-page-intro__actions");
+    });
+    const pageBoundaryContracts = pageIntros.every((intro) => {
+      const fixture = intro.dataset.galleryPageIntro;
+      const title = requiredSlot(intro, "page-intro-title");
+      return intro.tagName === "SECTION"
+        && intro.dataset.slot === "page-intro"
+        && title.tagName === (fixture === "default" ? "H3" : "H4");
+    }) && defaultIntro.querySelector(':scope > [data-gallery-page-intro-child="true"]')
+      instanceof HTMLParagraphElement;
+    const pageLayoutContract = defaultIntroStyle.display === "grid"
+      && defaultIntroStyle.maxWidth === "none"
+      && nearly(Number.parseFloat(defaultIntroStyle.gap), tokens.space6)
+      && defaultIntroBox.width > 0
+      && copyStyle.display === "grid"
+      && nearly(Number.parseFloat(copyStyle.gap), tokens.space3)
+      && nearly(Number.parseFloat(copyStyle.maxWidth), 48 * 16)
+      && eyebrowStyle.textTransform === "uppercase"
+      && equivalentColor(eyebrowStyle.color, tokens.primary)
+      && nearly(Number.parseFloat(eyebrowStyle.fontSize), tokens.captionSize)
+      && eyebrowStyle.fontWeight === tokens.boldWeight
+      && nearly(
+        Number.parseFloat(eyebrowStyle.letterSpacing),
+        Number.parseFloat(eyebrowStyle.fontSize) * 0.08,
+      )
+      && equivalentColor(introTitleStyle.color, tokens.foreground)
+      && Number.parseFloat(introTitleStyle.fontSize) <= tokens.displaySize + 0.01
+      && introTitleStyle.fontWeight === tokens.boldWeight
+      && nearly(
+        Number.parseFloat(introTitleStyle.letterSpacing),
+        Number.parseFloat(introTitleStyle.fontSize) * -0.04,
+      )
+      && introTitleStyle.getPropertyValue("text-wrap").trim() === "balance"
+      && Math.abs(
+        Number.parseFloat(introTitleStyle.lineHeight)
+          / Number.parseFloat(introTitleStyle.fontSize) - 1,
+      ) <= 0.01
+      && equivalentColor(introDescriptionStyle.color, tokens.mutedForeground)
+      && nearly(Number.parseFloat(introDescriptionStyle.fontSize), tokens.bodySize)
+      && introDescriptionStyle.getPropertyValue("text-wrap").trim() === "pretty"
+      && Math.abs(
+        Number.parseFloat(introDescriptionStyle.lineHeight)
+          / Number.parseFloat(introDescriptionStyle.fontSize) - 1.6,
+      ) <= 0.01
+      && introActionsStyle.display === "flex"
+      && introActionsStyle.flexWrap === "wrap"
+      && introActionsStyle.alignItems === "center"
+      && nearly(Number.parseFloat(introActionsStyle.gap), tokens.space2)
+      && nearly(Number.parseFloat(introActionsStyle.minWidth), 0)
+      && introColumnWidths.every(Number.isFinite)
+      && (
+        compactViewport
+          ? defaultIntroStyle.alignItems === "start"
+            && introColumnCount === 1
+            && Math.abs(
+              (introColumnWidths[0] ?? Number.NaN) - defaultIntroBox.width,
+            ) <= 1
+            && defaultIntroActionsBox.top >= defaultIntroCopyBox.bottom - 1
+          : defaultIntroStyle.alignItems === "end"
+            && introColumnCount === 2
+            && Math.abs(
+              introColumnWidths.reduce((sum, width) => sum + width, 0)
+                + tokens.space6 - defaultIntroBox.width,
+            ) <= 1
+            && Math.abs(
+              (introColumnWidths[0] ?? Number.NaN) - defaultIntroCopyBox.width,
+            ) <= 1
+            && Math.abs(
+              (introColumnWidths[1] ?? Number.NaN) - defaultIntroActionsBox.width,
+            ) <= 1
+            && defaultIntroActionsBox.left >= defaultIntroCopyBox.right - 1
+      );
+
+    const diagnostics = JSON.stringify({
+      alerts: alertEvidence,
+      compactViewport,
+      emptyStates: emptyEvidence,
+      intro: {
+        alignItems: defaultIntroStyle.alignItems,
+        columnCount: introColumnCount,
+        columnWidths: introColumnWidths,
+        copyMaxWidth: copyStyle.maxWidth,
+        gap: defaultIntroStyle.gap,
+      },
+      overrides: overrideRoots.map((root) => ({
+        borderWidth: getComputedStyle(root).borderLeftWidth,
+        color: getComputedStyle(root).color,
+        gap: getComputedStyle(root).gap,
+        kind: root.dataset.galleryContentOverride,
+        paddingLeft: getComputedStyle(root).paddingLeft,
+        width: root.getBoundingClientRect().width,
+      })),
+      settingsCards: settingsEvidence,
+    });
+
+    return {
+      alertInfoBackground:
+        alertEvidence.find((alert) => alert.tone === "info")?.background ?? "",
+      boundaryContracts: pageBoundaryContracts
+        && emptyEvidence.every((emptyState) =>
+          emptyState.iconAriaHidden === "true" && emptyState.rootContract
+        )
+        && alertEvidence.every((alert) => alert.rootContract)
+        && settingsEvidence.every((settingsCard) => settingsCard.rootContract),
+      classContracts: pageClassContracts
+        && emptyEvidence.every((emptyState) => emptyState.classContract)
+        && alertEvidence.every((alert) => alert.classContract)
+        && settingsEvidence.every((settingsCard) => settingsCard.classContract),
+      diagnostics,
+      layerSentinels: [...pageIntros, ...emptyStates, ...alerts, ...settingsCards]
+        .every((root) =>
+          getComputedStyle(root)
+            .getPropertyValue("--gallery-content-layer-conflict")
+            .trim() === "legacy"
+        ),
+      layoutContracts: pageLayoutContract
+        && emptyEvidence.every((emptyState) =>
+          emptyState.actionContract
+          && emptyState.descriptionContract
+          && emptyState.iconContract
+          && emptyState.titleContract
+        )
+        && alertEvidence.every((alert) => alert.partContract)
+        && settingsEvidence.every((settingsCard) => settingsCard.partContract),
+      overrideContracts,
+      settingsCardBackground: getComputedStyle(roundedSettingsCard).backgroundColor,
+      shapeContracts: settingsEvidence.every((settingsCard) =>
+        settingsCard.shapeContract
+      ),
+      theme: document.documentElement.dataset.theme ?? "",
+      toneContracts: alertEvidence.every((alert) => alert.rootContract),
+    };
+  });
+}
+
+function verifyContentFamilyEvidence(
+  evidence: ContentFamilyEvidence,
+  id: string,
+): void {
+  invariant(
+    evidence.boundaryContracts
+    && evidence.classContracts
+    && evidence.layerSentinels
+    && evidence.layoutContracts
+    && evidence.overrideContracts
+    && evidence.shapeContracts
+    && evidence.toneContracts,
+    `${id}: Content-family parity failed: ${evidence.diagnostics}`,
+  );
+}
+
+async function verifyContentFamilyForcedColors(page: Page): Promise<void> {
+  const evidence = await page.evaluate(() => {
+    const alerts = [...document.querySelectorAll<HTMLElement>(
+      "[data-gallery-inline-alert-tone]",
+    )];
+    const probe = document.createElement("span");
+    probe.style.color = "CanvasText";
+    document.body.append(probe);
+    const canvasText = getComputedStyle(probe).color;
+    probe.remove();
+    return {
+      alerts: alerts.map((alert) => {
+        const style = getComputedStyle(alert);
+        return {
+          borderColor: style.borderColor,
+          forcedColorAdjust: style.forcedColorAdjust,
+          sentinel: style
+            .getPropertyValue("--gallery-content-layer-conflict")
+            .trim(),
+          tone: alert.dataset.galleryInlineAlertTone ?? "",
+        };
+      }),
+      canvasText,
+      forcedColorsActive: matchMedia("(forced-colors: active)").matches,
+    };
+  });
+  invariant(
+    evidence.forcedColorsActive
+    && evidence.alerts.length === 4
+    && evidence.alerts.every((alert) =>
+      alert.borderColor === evidence.canvasText
+      && alert.forcedColorAdjust === "auto"
+      && alert.sentinel === "legacy"
+    ),
+    `forced colors: Content-family alert parity failed: ${JSON.stringify(evidence)}`,
   );
 }
 
@@ -9867,7 +10626,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|fields|form|indicators|key-hint|knob|link|select-option|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|content|fields|form|indicators|key-hint|knob|link|select-option|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -9909,6 +10668,11 @@ try {
     installedPackageCss,
     /\.hraness-(?:progress-bar(?:__(?:fill|header|label|label-row|track|value))?|meter(?:__(?:fill|header|label|label-row|track|value))?|slider(?:__(?:fill|header|label|label-row|thumb|thumb-indicator|track|value))?|knob(?:__(?:arc|arc--track|arc--value|control|dial|face|gesture|indicator|label|thumb|value))?)(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate Indicators or Knob declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-(?:page-intro(?:__(?:actions|copy|description|eyebrow|title))?|empty-state(?:__(?:action|description|icon|title))?|inline-alert(?:__(?:body|content|icon|title))?|settings-card(?:__(?:actions|body|description|header|title))?)(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate Content-family declarations in legacy CSS",
   );
   assert.doesNotMatch(
     installedPackageCss,
@@ -10032,6 +10796,91 @@ try {
   assert.match(html, /name="mode"/u);
   assert.match(html, /name="alerts"/u);
   assert.match(html, /name="metric"/u);
+  assert.match(html, /data-gallery-section="content-family"/u);
+  assert.equal(
+    html.match(/data-gallery-page-intro="(?:default|override)"/gu)?.length,
+    2,
+    "SSR must include both PageIntro specimens",
+  );
+  assert.equal(
+    html.match(/data-gallery-empty-state="(?:default|override)"/gu)?.length,
+    2,
+    "SSR must include both EmptyState specimens",
+  );
+  assert.equal(
+    html.match(/data-gallery-inline-alert-tone="(?:info|success|warning|danger)"/gu)?.length,
+    4,
+    "SSR must include all four InlineAlert tones",
+  );
+  assert.equal(
+    html.match(/data-gallery-settings-card-shape="(?:rounded|rectangular)"/gu)?.length,
+    2,
+    "SSR must include both SettingsCard shapes",
+  );
+  assert.equal(
+    html.match(/data-gallery-content-override="(?:page-intro|empty-state|inline-alert|settings-card)"/gu)?.length,
+    4,
+    "SSR must include every Content-family caller override",
+  );
+  assert.equal(
+    html.match(/data-gallery-content-layer-conflict="true"/gu)?.length,
+    10,
+    "SSR must include a matched Content-family conflict on every root fixture",
+  );
+  for (const slot of [
+    "page-intro",
+    "page-intro-copy",
+    "page-intro-eyebrow",
+    "page-intro-title",
+    "page-intro-description",
+    "page-intro-actions",
+    "empty-state",
+    "empty-state-icon",
+    "empty-state-title",
+    "empty-state-description",
+    "empty-state-action",
+    "inline-alert",
+    "inline-alert-icon",
+    "inline-alert-content",
+    "inline-alert-title",
+    "inline-alert-body",
+    "settings-card",
+    "settings-card-header",
+    "settings-card-title",
+    "settings-card-description",
+    "settings-card-actions",
+    "settings-card-body",
+  ] as const) {
+    assert.match(
+      html,
+      new RegExp(`data-slot="${slot}"`, "u"),
+      `SSR must include the ${slot} Content-family slot`,
+    );
+  }
+  assert.match(
+    html,
+    /class="hraness-page-intro [^"]+gallery-page-intro gallery-page-intro--override"/u,
+  );
+  assert.match(
+    html,
+    /class="hraness-empty-state [^"]+gallery-empty-state gallery-empty-state--override"/u,
+  );
+  assert.match(
+    html,
+    /class="hraness-inline-alert [^"]+gallery-inline-alert gallery-inline-alert--danger"/u,
+  );
+  assert.match(
+    html,
+    /class="hraness-settings-card [^"]+gallery-settings-card gallery-settings-card--rectangular"/u,
+  );
+  assert.match(html, /<h3[^>]*>Portable content contracts<\/h3>/u);
+  assert.match(html, /<h4[^>]*>Narrow caller intro<\/h4>/u);
+  assert.match(html, /<h3[^>]*>No projects yet<\/h3>/u);
+  assert.match(html, /<h4[^>]*>No matching releases<\/h4>/u);
+  assert.match(html, /aria-live="polite"[^>]*role="status"/u);
+  assert.match(html, /aria-live="assertive"[^>]*role="alert"/u);
+  assert.match(html, /data-shape="rounded"/u);
+  assert.match(html, /data-shape="rectangular"/u);
   assert.match(html, /data-gallery-section="indicators-knob"/u);
   assert.equal(
     html.match(/data-gallery-progress-bar="(?:determinate|indeterminate|override)"/gu)?.length,
@@ -10263,6 +11112,8 @@ try {
           await waitForHydration(page, failures, requestedPaths, layout.id);
 
           const light = await browserEvidence(page);
+          const lightContent = await contentFamilyEvidence(page);
+          verifyContentFamilyEvidence(lightContent, layout.id);
           const lightIndicators = await indicatorKnobEvidence(page);
           verifyIndicatorKnobEvidence(lightIndicators, layout.id);
           await verifyFormPresentation(page, layout.id);
@@ -10613,6 +11464,8 @@ try {
           await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
+          const darkContent = await contentFamilyEvidence(page);
+          verifyContentFamilyEvidence(darkContent, `${layout.id} dark`);
           const darkIndicators = await indicatorKnobEvidence(page);
           verifyIndicatorKnobEvidence(darkIndicators, `${layout.id} dark`);
           const darkSegmented = await segmentedControlEvidence(page);
@@ -10626,6 +11479,13 @@ try {
           invariant(dark.theme === "dark" && dark.colorScheme === "dark", `${layout.id}: explicit dark theme did not apply`);
           invariant(dark.bodyBackground !== light.bodyBackground, `${layout.id}: theme did not change the page background`);
           invariant(dark.buttonBackground !== light.buttonBackground, `${layout.id}: theme did not change the action recipe`);
+          invariant(
+            lightContent.theme === "light"
+            && darkContent.theme === "dark"
+            && darkContent.alertInfoBackground !== lightContent.alertInfoBackground
+            && darkContent.settingsCardBackground !== lightContent.settingsCardBackground,
+            `${layout.id}: Content-family theme tokens did not change: light ${lightContent.diagnostics}; dark ${darkContent.diagnostics}`,
+          );
           invariant(
             dark.themedSurfaceBoundaryContracts
             && dark.themedSurfaceClassContracts
@@ -10872,6 +11732,7 @@ try {
           `forced colors: CheckboxField parity failed: ${forced.checkboxDiagnostics}`,
         );
         await verifyFieldFamilyForcedColors(page);
+        await verifyContentFamilyForcedColors(page);
         await verifyIndicatorKnobForcedColors(page);
 
         await resetKeyboardFocusToDocumentStart(page, "forced colors");
@@ -10968,6 +11829,7 @@ try {
           await page.locator('[data-gallery-hydration-root="true"]').evaluate((element) =>
             element.childElementCount === 0
             && !element.hasAttribute("data-hydrated")
+            && document.querySelector('[data-gallery-section="content-family"]') === null
             && window.__HRANESS_UI_GALLERY_HYDRATION_STARTED__ === undefined
             && window.__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__ === undefined
             && window.__HRANESS_UI_GALLERY_UNMOUNT__ === undefined),
@@ -10998,7 +11860,7 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, 3 ProgressBar, 4 Meter, 4 Slider, and 4 Knob packed specimens with semantic/generated/caller ordering, determinate and indeterminate motion, tone, LTR/RTL/vertical keyboard and form behavior, 20px Slider visuals inside 48px real and synthetic coarse hit targets, Knob density, pointer gesture, disabled, caller xstyle/controlXstyle/native-style precedence, forced-color SVG, collision, SSR, and hydration contracts, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, PageIntro wide/compact layout and heading hierarchy, EmptyState composition, all four InlineAlert tone/live-region contracts, both SettingsCard shapes, Content-family semantic/generated/caller ordering, native-style precedence, light/dark tokens, forced colors, collision, SSR, and cleanup, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, 3 ProgressBar, 4 Meter, 4 Slider, and 4 Knob packed specimens with semantic/generated/caller ordering, determinate and indeterminate motion, tone, LTR/RTL/vertical keyboard and form behavior, 20px Slider visuals inside 48px real and synthetic coarse hit targets, Knob density, pointer gesture, disabled, caller xstyle/controlXstyle/native-style precedence, forced-color SVG, collision, SSR, and hydration contracts, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await removeTemporaryTree(work);

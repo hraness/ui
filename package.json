@@ -61,6 +61,7 @@
     "src/collections.stylex.ts",
     "src/collections.tsx",
     "src/components.css",
+    "src/content.stylex.ts",
     "src/content.tsx",
     "src/data-display.tsx",
     "src/feedback.stylex.ts",

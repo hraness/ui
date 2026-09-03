@@ -10,12 +10,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   EmptyState,
+  type EmptyStateProps,
   InlineAlert,
+  type InlineAlertProps,
   KeyHint,
   type KeyHintProps,
   PageIntro,
+  type PageIntroProps,
   SettingsCard,
+  type SettingsCardProps,
 } from "./content.js";
+import { contentStyles } from "./content.stylex.js";
 import {
   Avatar,
   avatarInitials,
@@ -53,6 +58,19 @@ type SkipLinkTestElement = ReactElement<{
   onClick: (event: ReactMouseEvent<HTMLAnchorElement>) => void;
   ref: Ref<HTMLAnchorElement>;
 }>;
+
+function renderForwardRefForTest<Props, Element>(
+  component: unknown,
+  props: Props,
+  ref: Ref<Element>,
+): ReactElement<{ ref: Ref<Element> }> {
+  return (component as Readonly<{
+    render: (
+      props: Props,
+      ref: Ref<Element>,
+    ) => ReactElement<{ ref: Ref<Element> }>;
+  }>).render(props, ref);
+}
 
 function renderSkipLinkForTest(
   props: SkipLinkProps,
@@ -93,6 +111,68 @@ const keyHintTestStyles = stylex.create({
     paddingInline: "var(--space-2)",
   },
 });
+
+const contentTestStyles = stylex.create({
+  dynamicWidth: (width: string) => ({ width }),
+  override: {
+    alignItems: "stretch",
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-primary)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--ui-secondary-foreground)",
+    display: "flex",
+    gap: "var(--space-2)",
+    maxWidth: "44rem",
+    minHeight: "13rem",
+    overflow: "visible",
+    padding: "var(--space-3)",
+  },
+});
+
+const typedPageIntro: PageIntroProps = {
+  title: "Projects",
+  xstyle: contentTestStyles.override,
+};
+const typedEmptyState: EmptyStateProps = {
+  title: "No projects",
+  xstyle: contentTestStyles.override,
+};
+const typedInlineAlert: InlineAlertProps = {
+  children: "Saved",
+  xstyle: contentTestStyles.override,
+};
+const typedSettingsCard: SettingsCardProps = {
+  title: "Permissions",
+  xstyle: contentTestStyles.override,
+};
+const rawPageIntroXstyle: PageIntroProps = {
+  title: "Projects",
+  // @ts-expect-error Content roots accept compiled StyleX recipes rather than raw CSS objects.
+  xstyle: { display: "flex" },
+};
+const rawEmptyStateXstyle: EmptyStateProps = {
+  title: "Empty",
+  // @ts-expect-error Content roots accept compiled StyleX recipes rather than raw CSS objects.
+  xstyle: { display: "grid" },
+};
+const rawInlineAlertXstyle: InlineAlertProps = {
+  children: "Saved",
+  // @ts-expect-error Content roots accept compiled StyleX recipes rather than raw CSS objects.
+  xstyle: { color: "red" },
+};
+const rawSettingsCardXstyle: SettingsCardProps = {
+  title: "Settings",
+  // @ts-expect-error Content roots accept compiled StyleX recipes rather than raw CSS objects.
+  xstyle: { padding: 0 },
+};
+void typedPageIntro;
+void typedEmptyState;
+void typedInlineAlert;
+void typedSettingsCard;
+void rawPageIntroXstyle;
+void rawEmptyStateXstyle;
+void rawInlineAlertXstyle;
+void rawSettingsCardXstyle;
 
 const feedbackTestStyles = stylex.create({
   skeletonMinimum: (minimum: string) => ({ minHeight: minimum }),
@@ -260,13 +340,258 @@ test("content primitives preserve heading levels, slots, and live-region intent"
     </>,
   );
 
-  expect(html).toContain('<h3 class="hraness-page-intro__title"');
+  expect(html).toContain('<h3 class="hraness-page-intro__title ');
   expect(html).toContain('data-slot="empty-state"');
   expect(html).toContain('aria-hidden="true"');
   expect(html).toContain('role="alert"');
   expect(html).toContain('aria-live="assertive"');
   expect(html).toContain('data-shape="rectangular"');
   expect(html).toContain('data-slot="key-hint"');
+});
+
+test("content roots compose base, finite, and caller StyleX recipes before native styles", () => {
+  const callerXstyle = [
+    contentTestStyles.override,
+    contentTestStyles.dynamicWidth("2rem"),
+  ];
+  const html = renderToStaticMarkup(
+    <>
+      <PageIntro
+        actions={<button type="button">Create</button>}
+        className="consumer-page-intro"
+        data-product="page"
+        description="Local applications"
+        eyebrow="Workspace"
+        style={{ color: "rgb(1, 2, 3)", width: "3rem" }}
+        title="Projects"
+        xstyle={callerXstyle}
+      />
+      <EmptyState
+        action={<a href="/new">New project</a>}
+        className="consumer-empty-state"
+        data-product="empty"
+        description="Create the first project."
+        icon="∅"
+        style={{ color: "rgb(1, 2, 3)", width: "3rem" }}
+        title="No projects"
+        xstyle={callerXstyle}
+      />
+      <InlineAlert
+        className="consumer-inline-alert"
+        data-product="alert"
+        icon="!"
+        style={{ color: "rgb(1, 2, 3)", width: "3rem" }}
+        title="Saved"
+        tone="success"
+        xstyle={callerXstyle}
+      >
+        Your changes are ready.
+      </InlineAlert>
+      <SettingsCard
+        actions={<button type="button">Edit</button>}
+        className="consumer-settings-card"
+        data-product="settings"
+        description="Controls application access."
+        shape="rectangular"
+        style={{ color: "rgb(1, 2, 3)", width: "3rem" }}
+        title="Permissions"
+        xstyle={callerXstyle}
+      >
+        Members
+      </SettingsCard>
+    </>,
+  );
+  const callerClasses = stylex.props(
+    contentTestStyles.override,
+    contentTestStyles.dynamicWidth("2rem"),
+  ).className?.split(" ") ?? [];
+  const rootContracts = [
+    {
+      hook: "hraness-page-intro",
+      slot: "page-intro",
+    },
+    {
+      hook: "hraness-empty-state",
+      slot: "empty-state",
+    },
+    {
+      hook: "hraness-inline-alert",
+      slot: "inline-alert",
+    },
+    {
+      hook: "hraness-settings-card",
+      slot: "settings-card",
+    },
+  ] as const;
+
+  for (const { hook, slot } of rootContracts) {
+    const tag = html.match(
+      new RegExp(`<[^>]*data-slot="${slot}"[^>]*>`, "u"),
+    )?.[0];
+    expect(tag).toBeDefined();
+    const classes = tag?.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+
+    expect(classes[0]).toBe(hook);
+    expect(callerClasses.every((name) => classes.includes(name))).toBe(true);
+    expect(
+      callerClasses.every((name) => classes.indexOf(name) < classes.length - 1),
+    ).toBe(true);
+    expect(classes.at(-1)).toBe(`consumer-${slot}`);
+    expect(tag).toMatch(/style="--[^:]+:2rem;color:rgb\(1, 2, 3\);width:3rem"/u);
+  }
+
+  for (const [slot, hook] of [
+    ["page-intro-copy", "hraness-page-intro__copy"],
+    ["page-intro-eyebrow", "hraness-page-intro__eyebrow"],
+    ["page-intro-title", "hraness-page-intro__title"],
+    ["page-intro-description", "hraness-page-intro__description"],
+    ["page-intro-actions", "hraness-page-intro__actions"],
+    ["empty-state-icon", "hraness-empty-state__icon"],
+    ["empty-state-title", "hraness-empty-state__title"],
+    ["empty-state-description", "hraness-empty-state__description"],
+    ["empty-state-action", "hraness-empty-state__action"],
+    ["inline-alert-icon", "hraness-inline-alert__icon"],
+    ["inline-alert-content", "hraness-inline-alert__content"],
+    ["inline-alert-title", "hraness-inline-alert__title"],
+    ["inline-alert-body", "hraness-inline-alert__body"],
+    ["settings-card-header", "hraness-settings-card__header"],
+    ["settings-card-title", "hraness-settings-card__title"],
+    ["settings-card-description", "hraness-settings-card__description"],
+    ["settings-card-actions", "hraness-settings-card__actions"],
+    ["settings-card-body", "hraness-settings-card__body"],
+  ] as const) {
+    const tag = html.match(
+      new RegExp(`<[^>]*data-slot="${slot}"[^>]*>`, "u"),
+    )?.[0];
+    const classes = tag?.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+
+    expect(tag).toBeDefined();
+    expect(classes[0]).toBe(hook);
+    expect(classes.slice(1).some((name) => name.startsWith("x"))).toBe(true);
+  }
+});
+
+test("content defaults, optional slots, and explicit live-region attributes remain semantic", () => {
+  const defaults = renderToStaticMarkup(
+    <>
+      <PageIntro title="Projects" />
+      <EmptyState title="No projects" />
+      <InlineAlert>Saved.</InlineAlert>
+      <SettingsCard title="Permissions">Members</SettingsCard>
+    </>,
+  );
+  const explicitLiveRegion = renderToStaticMarkup(
+    <InlineAlert aria-live="off" isLive role="note" tone="danger">
+      A caller controls this announcement.
+    </InlineAlert>,
+  );
+
+  expect(defaults).toContain('<h1 class="hraness-page-intro__title');
+  expect(defaults).toContain('<h2 class="hraness-empty-state__title');
+  expect(defaults).toContain('<h2 class="hraness-settings-card__title');
+  expect(defaults).toContain('data-tone="info"');
+  expect(defaults).toContain('data-shape="rounded"');
+  expect(defaults).not.toContain('data-slot="page-intro-eyebrow"');
+  expect(defaults).not.toContain('data-slot="page-intro-description"');
+  expect(defaults).not.toContain('data-slot="page-intro-actions"');
+  expect(defaults).not.toContain('data-slot="empty-state-icon"');
+  expect(defaults).not.toContain('data-slot="empty-state-description"');
+  expect(defaults).not.toContain('data-slot="empty-state-action"');
+  expect(defaults).not.toContain('data-slot="inline-alert-title"');
+  expect(defaults).not.toContain('data-slot="settings-card-description"');
+  expect(defaults).not.toContain('data-slot="settings-card-actions"');
+  expect(defaults).not.toContain("aria-live=");
+  expect(defaults).not.toContain(" role=");
+  expect(explicitLiveRegion).toContain('aria-live="off"');
+  expect(explicitLiveRegion).toContain('role="note"');
+  expect(explicitLiveRegion).not.toContain('role="alert"');
+  expect(explicitLiveRegion).not.toContain('aria-live="assertive"');
+});
+
+test("InlineAlert maps every finite tone to its compiled recipe", () => {
+  const toneContracts = [
+    [
+      "danger",
+      stylex.props(
+        contentStyles.inlineAlertRoot,
+        contentStyles.inlineAlertDanger,
+      ).className,
+    ],
+    [
+      "info",
+      stylex.props(
+        contentStyles.inlineAlertRoot,
+        contentStyles.inlineAlertInfo,
+      ).className,
+    ],
+    [
+      "success",
+      stylex.props(
+        contentStyles.inlineAlertRoot,
+        contentStyles.inlineAlertSuccess,
+      ).className,
+    ],
+    [
+      "warning",
+      stylex.props(
+        contentStyles.inlineAlertRoot,
+        contentStyles.inlineAlertWarning,
+      ).className,
+    ],
+  ] as const;
+
+  for (const [tone, expectedClassName] of toneContracts) {
+    const html = renderToStaticMarkup(
+      <InlineAlert tone={tone}>Message</InlineAlert>,
+    );
+    const tag = html.slice(0, html.indexOf(">") + 1);
+    const classes = tag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+    const expected = expectedClassName?.split(" ") ?? [];
+
+    expect(tag).toContain(`data-tone="${tone}"`);
+    expect(classes[0]).toBe("hraness-inline-alert");
+    expect(classes.slice(1)).toEqual(expected);
+  }
+});
+
+test("content roots preserve their native elements and forwarded refs", () => {
+  const pageIntroRef = createRef<HTMLElement>();
+  const emptyStateRef = createRef<HTMLElement>();
+  const inlineAlertRef = createRef<HTMLDivElement>();
+  const settingsCardRef = createRef<HTMLElement>();
+  const pageIntro = renderForwardRefForTest(
+    PageIntro,
+    { title: "Projects" },
+    pageIntroRef,
+  );
+  const emptyState = renderForwardRefForTest(
+    EmptyState,
+    { title: "No projects" },
+    emptyStateRef,
+  );
+  const inlineAlert = renderForwardRefForTest(
+    InlineAlert,
+    { children: "Saved" },
+    inlineAlertRef,
+  );
+  const settingsCard = renderForwardRefForTest(
+    SettingsCard,
+    { children: "Members", title: "Permissions" },
+    settingsCardRef,
+  );
+
+  expect(pageIntro.type).toBe("section");
+  expect(pageIntro.props.ref).toBe(pageIntroRef);
+  expect(emptyState.type).toBe("section");
+  expect(emptyState.props.ref).toBe(emptyStateRef);
+  expect(inlineAlert.type).toBe("div");
+  expect(inlineAlert.props.ref).toBe(inlineAlertRef);
+  expect(settingsCard.type).toBe("section");
+  expect(settingsCard.props.ref).toBe(settingsCardRef);
+  expect(PageIntro.displayName).toBe("PageIntro");
+  expect(EmptyState.displayName).toBe("EmptyState");
+  expect(InlineAlert.displayName).toBe("InlineAlert");
+  expect(SettingsCard.displayName).toBe("SettingsCard");
 });
 
 test("KeyHint preserves its native element, ref, attributes, class order, and caller style precedence", () => {

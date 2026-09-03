@@ -17,6 +17,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-card-family-layer-conflict",
   "data-gallery-toolbar-layer-conflict",
   "data-gallery-key-hint-layer-conflict",
+  "data-gallery-content-layer-conflict",
   "data-gallery-link-layer-conflict",
   "data-gallery-checkbox-field-layer-conflict",
   "data-gallery-action-family-layer-conflict",
@@ -251,6 +252,33 @@ const KNOB_STYLE_KEYS = [
   "root",
   "thumb",
   "value",
+] as const;
+const CONTENT_STYLE_KEYS = [
+  "actions",
+  "emptyStateDescription",
+  "emptyStateIcon",
+  "emptyStateRoot",
+  "emptyStateTitle",
+  "inlineAlertBody",
+  "inlineAlertContent",
+  "inlineAlertDanger",
+  "inlineAlertIcon",
+  "inlineAlertInfo",
+  "inlineAlertRoot",
+  "inlineAlertSuccess",
+  "inlineAlertTitle",
+  "inlineAlertWarning",
+  "pageIntroCopy",
+  "pageIntroDescription",
+  "pageIntroEyebrow",
+  "pageIntroRoot",
+  "pageIntroTitle",
+  "settingsCardBody",
+  "settingsCardDescription",
+  "settingsCardHeader",
+  "settingsCardRectangular",
+  "settingsCardRoot",
+  "settingsCardTitle",
 ] as const;
 type CheckboxStyleKey = (typeof CHECKBOX_STYLE_KEYS)[number];
 type LinkStyleKey = (typeof LINK_STYLE_KEYS)[number];
@@ -2211,6 +2239,11 @@ function requireKeyHintSourceContract(contentSource: string): void {
   );
   requireMatch(
     contentSource,
+    /export type KeyHintProps = HTMLAttributes<HTMLElement>\s*&\s*Readonly<\{[\s\S]*?xstyle\?:\s*StyleXStyles;[\s\S]*?\}>;/u,
+    "the typed readonly KeyHint xstyle seam",
+  );
+  requireMatch(
+    contentSource,
     /stylex\.props\(keyHintStyles\.root,\s*xstyle\)/u,
     "the caller-last KeyHint xstyle merge",
   );
@@ -2219,6 +2252,149 @@ function requireKeyHintSourceContract(contentSource: string): void {
     /mergeStylexInlineStyles\(presentation\.style,\s*style\)/u,
     "the KeyHint StyleX-before-native inline merge",
   );
+}
+
+function requireContentFamilyContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+  contentSource: string,
+  contentStyleSource: string,
+): void {
+  const contentKeys = sourceStyleKeys(contentStyleSource, "contentStyles");
+  if (contentKeys.join("\n") !== CONTENT_STYLE_KEYS.join("\n")) {
+    throw new Error("contentStyles must retain its exact finite recipe keys and order");
+  }
+  const contentMap = namedCompiledStyleMap(
+    compiledJavaScript,
+    contentKeys,
+    "contentStyles class map",
+  );
+  compiledStyleRules(compiledCss, contentMap);
+
+  forbid(
+    legacyComponents,
+    /\.hraness-(?:page-intro|empty-state|inline-alert|settings-card)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+    "a legacy PageIntro, EmptyState, InlineAlert, or SettingsCard recipe",
+  );
+  requireMatch(
+    contentSource,
+    /from ["']\.\/content\.stylex\.js["']/u,
+    "the contentStyles source import",
+  );
+  requireExactSourceMatches(
+    contentSource,
+    /readonly xstyle\?: StyleXStyles;/gu,
+    4,
+    "typed Content-family xstyle seams",
+  );
+  for (const [pattern, description] of [
+    [
+      /stylex\.props\(contentStyles\.pageIntroRoot,\s*xstyle\)/u,
+      "the caller-last PageIntro root recipe",
+    ],
+    [
+      /stylex\.props\(contentStyles\.emptyStateRoot,\s*xstyle\)/u,
+      "the caller-last EmptyState root recipe",
+    ],
+    [
+      /stylex\.props\(\s*contentStyles\.inlineAlertRoot,\s*inlineAlertToneStyles\[tone\],\s*xstyle,?\s*\)/u,
+      "the InlineAlert base, finite tone, and caller recipe order",
+    ],
+    [
+      /stylex\.props\(\s*contentStyles\.settingsCardRoot,\s*shape === ["']rectangular["']\s*&&\s*contentStyles\.settingsCardRectangular,\s*xstyle,?\s*\)/u,
+      "the SettingsCard base, finite shape, and caller recipe order",
+    ],
+  ] as const) {
+    requireMatch(contentSource, pattern, description);
+  }
+  requireExactSourceMatches(
+    contentSource,
+    /className=\{cn\(\s*["']hraness-(?:page-intro|empty-state|inline-alert|settings-card)["'],\s*rootPresentation\.className,\s*className,?\s*\)\}/gu,
+    4,
+    "content-family stable, generated, and caller root class order",
+  );
+  requireExactSourceMatches(
+    contentSource,
+    /style=\{mergeStylexInlineStyles\(rootPresentation\.style,\s*style\)\}/gu,
+    4,
+    "content-family StyleX-before-native root style order",
+  );
+
+  const rules = (key: (typeof CONTENT_STYLE_KEYS)[number]) =>
+    compiledStyleRules(compiledCss, contentMap, key);
+  for (const [key, declaration, description] of [
+    ["actions", /display:\s*flex;/u, "shared content actions layout"],
+    ["actions", /flex-wrap:\s*wrap;/u, "shared content actions wrapping"],
+    ["actions", /min-width:\s*0;/u, "shared content actions shrink boundary"],
+    ["emptyStateRoot", /border-style:\s*dashed;/u, "EmptyState dashed boundary"],
+    ["emptyStateRoot", /min-height:\s*12rem;/u, "EmptyState minimum height"],
+    ["emptyStateRoot", /padding-block:\s*var\(--space-8\);/u, "EmptyState block padding"],
+    ["emptyStateRoot", /padding-inline:\s*var\(--space-8\);/u, "EmptyState inline padding"],
+    ["emptyStateDescription", /max-width:\s*36rem;/u, "EmptyState description measure"],
+    ["pageIntroRoot", /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/u, "PageIntro wide grid"],
+    ["pageIntroCopy", /max-width:\s*48rem;/u, "PageIntro copy measure"],
+    ["pageIntroEyebrow", /text-transform:\s*uppercase;/u, "PageIntro eyebrow casing"],
+    ["pageIntroTitle", /text-wrap:\s*balance;/u, "PageIntro balanced title"],
+    ["inlineAlertRoot", /grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\);/u, "InlineAlert grid"],
+    ["inlineAlertRoot", /padding-block:\s*var\(--space-4\);/u, "InlineAlert block padding"],
+    ["inlineAlertRoot", /padding-inline:\s*var\(--space-4\);/u, "InlineAlert inline padding"],
+    ["inlineAlertInfo", /background-color:\s*var\(--ui-info-soft\);/u, "info InlineAlert tone"],
+    ["inlineAlertInfo", /border-color:\s*var\(--ui-border\);/u, "info InlineAlert border"],
+    ["inlineAlertSuccess", /background-color:\s*var\(--ui-success-soft\);/u, "success InlineAlert tone"],
+    ["inlineAlertSuccess", /border-color:\s*color-mix\(in oklch,\s*var\(--ui-success\)\s*55%,\s*var\(--ui-border\)\);/u, "success InlineAlert border"],
+    ["inlineAlertWarning", /background-color:\s*var\(--ui-warning-soft\);/u, "warning InlineAlert tone"],
+    ["inlineAlertWarning", /border-color:\s*color-mix\(in oklch,\s*var\(--ui-warning\)\s*55%,\s*var\(--ui-border\)\);/u, "warning InlineAlert border"],
+    ["inlineAlertDanger", /background-color:\s*color-mix\(in oklch,\s*var\(--ui-destructive\)\s*9%,\s*var\(--ui-card\)\);/u, "danger InlineAlert tone"],
+    ["inlineAlertDanger", /border-color:\s*color-mix\(in oklch,\s*var\(--ui-destructive\)\s*55%,\s*var\(--ui-border\)\);/u, "danger InlineAlert border"],
+    ["settingsCardRoot", /overflow:\s*hidden;/u, "SettingsCard clipping"],
+    ["settingsCardHeader", /border-bottom-width:\s*1px;/u, "SettingsCard header divider"],
+    ["settingsCardHeader", /padding-block:\s*var\(--space-6\);/u, "SettingsCard header block padding"],
+    ["settingsCardHeader", /padding-inline:\s*var\(--space-6\);/u, "SettingsCard header inline padding"],
+    ["settingsCardBody", /padding-block:\s*var\(--space-6\);/u, "SettingsCard body block padding"],
+    ["settingsCardBody", /padding-inline:\s*var\(--space-6\);/u, "SettingsCard body inline padding"],
+    ["settingsCardRectangular", /border-radius:\s*var\(--radius-sharp\);/u, "rectangular SettingsCard shape"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(rules(key), declaration, description);
+  }
+  for (const [declaration, description] of [
+    [/align-items:\s*start;/u, "compact PageIntro alignment"],
+    [/grid-template-columns:\s*minmax\(0,\s*1fr\);/u, "compact PageIntro grid"],
+  ] as const) {
+    requireCompiledConditionalDeclaration(
+      rules("pageIntroRoot"),
+      "@media(width<=40rem)",
+      declaration,
+      description,
+    );
+  }
+  for (const key of [
+    "inlineAlertRoot",
+    "inlineAlertInfo",
+    "inlineAlertSuccess",
+    "inlineAlertWarning",
+    "inlineAlertDanger",
+  ] as const) {
+    requireCompiledConditionalDeclaration(
+      rules(key),
+      "@media(forced-colors:active)",
+      /border-color:\s*canvastext;/u,
+      `the forced-colors ${key} system border`,
+    );
+  }
+  requireCompiledConditionalDeclaration(
+    rules("inlineAlertRoot"),
+    "@media(forced-colors:active)",
+    /forced-color-adjust:\s*auto;/u,
+    "the forced-colors InlineAlert adjustment",
+  );
+  for (const key of CONTENT_STYLE_KEYS) {
+    requireMatch(
+      compiledJavaScript,
+      new RegExp(`${contentMap.identifier}\\.${key}(?![A-Za-z0-9_$])`, "u"),
+      `the compiled contentStyles.${key} composition binding`,
+    );
+  }
 }
 
 function requireLinkContract(
@@ -4558,6 +4734,7 @@ const [
   cardSource,
   toolbarSource,
   contentSource,
+  contentStyleSource,
   actionsSource,
   fieldsSource,
   checkboxGroupSource,
@@ -4583,6 +4760,7 @@ const [
     readFile(resolve(repository, "src/card.tsx"), "utf8"),
     readFile(resolve(repository, "src/toolbar.tsx"), "utf8"),
     readFile(resolve(repository, "src/content.tsx"), "utf8"),
+    readFile(resolve(repository, "src/content.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/actions.tsx"), "utf8"),
     readFile(resolve(repository, "src/fields.tsx"), "utf8"),
     readFile(resolve(repository, "src/checkbox-group.tsx"), "utf8"),
@@ -4719,6 +4897,13 @@ requireToolbarContract(legacyComponents, compiledCss, compiledJavaScript);
 requireToolbarCallerFallbackSeam(toolbarSource);
 requireKeyHintContract(legacyComponents, compiledCss);
 requireKeyHintSourceContract(contentSource);
+requireContentFamilyContract(
+  legacyComponents,
+  compiledCss,
+  compiledJavaScript,
+  contentSource,
+  contentStyleSource,
+);
 requireLinkContract(legacyComponents, compiledCss, compiledJavaScript);
 requireLinkSourceContract(actionsSource);
 requireActionFamilyContract(
@@ -5880,6 +6065,41 @@ assert.throws(
     ),
   /gallery-only data-gallery-key-hint-layer-conflict sentinel/u,
   "the KeyHint guard must reject gallery sentinel leakage",
+);
+assert.throws(
+  () =>
+    requireContentFamilyContract(
+      `${legacyComponents}\n@layer ${LEGACY_LAYER} { .hraness-inline-alert { display: block; } }`,
+      compiledCss,
+      compiledJavaScript,
+      contentSource,
+      contentStyleSource,
+    ),
+  /legacy PageIntro, EmptyState, InlineAlert, or SettingsCard recipe/u,
+  "the content-family guard must reject a restored legacy selector",
+);
+assert.throws(
+  () =>
+    requireContentFamilyContract(
+      legacyComponents,
+      compiledCss,
+      compiledJavaScript,
+      contentSource.replace(
+        "contentStyles.inlineAlertRoot,\n      inlineAlertToneStyles[tone],\n      xstyle",
+        "xstyle,\n      inlineAlertToneStyles[tone],\n      contentStyles.inlineAlertRoot",
+      ),
+      contentStyleSource,
+    ),
+  /InlineAlert base, finite tone, and caller recipe order/u,
+  "the content-family guard must reject reversed InlineAlert recipe precedence",
+);
+assert.throws(
+  () =>
+    requireNoGallerySentinels(
+      `${compiledJavaScript}\n${compiledCss}\n${legacyComponents}\n${orderedStylesheet}\n[data-gallery-content-layer-conflict] { display: block; }`,
+    ),
+  /gallery-only data-gallery-content-layer-conflict sentinel/u,
+  "the content-family guard must reject gallery sentinel leakage",
 );
 const changedLinkUnderlineOffset = replaceLinkDeclaration(
   compiledJavaScript,
