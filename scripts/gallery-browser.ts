@@ -358,6 +358,27 @@ function invariant(value: unknown, message: string): asserts value {
   if (!value) throw new Error(message);
 }
 
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && typeof error.code === "string"
+    ? error.code
+    : undefined;
+}
+
+async function removeTemporaryTree(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await rm(path, { force: true, recursive: true });
+      return;
+    } catch (error) {
+      if (errorCode(error) !== "EFAULT" || attempt === 2) throw error;
+      await new Promise<void>((resolveWait) => setTimeout(resolveWait, 25));
+    }
+  }
+}
+
 async function firstExecutable(paths: readonly string[]): Promise<string> {
   for (const path of paths) {
     try {
@@ -1521,6 +1542,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     /\.hraness-link(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain a legacy Link selector",
   );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-(?:progress-bar(?:__(?:fill|header|label|label-row|track|value))?|meter(?:__(?:fill|header|label|label-row|track|value))?|slider(?:__(?:fill|header|label|label-row|thumb|thumb-indicator|track|value))?|knob(?:__(?:arc|arc--track|arc--value|control|dial|face|gesture|indicator|label|thumb|value))?)(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain legacy Indicators or Knob selectors",
+  );
   assert.equal(
     css.match(CARD_DESCRIPTION_BRIDGE_PATTERN)?.length,
     1,
@@ -1555,6 +1581,16 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     css,
     /data-gallery-fields-layer-conflict/u,
     "the harness bundle must include its Fields and Select legacy conflicts",
+  );
+  assert.match(
+    css,
+    /data-gallery-indicators-layer-conflict/u,
+    "the harness bundle must include its Indicators legacy conflicts",
+  );
+  assert.match(
+    css,
+    /data-gallery-knob-layer-conflict/u,
+    "the harness bundle must include its Knob legacy conflicts",
   );
   const fieldRootConflict = css.match(
     /\[data-gallery-fields-layer-conflict=(?:"true"|true)\]\s+:where\([^}]+\)\{[^}]*\}/u,
@@ -5095,6 +5131,37 @@ async function resetKeyboardFocusToDocumentStart(
   invariant(reset, `${id}: the keyboard path did not reset to document start`);
 }
 
+async function focusThroughPreviousTabStop(
+  page: Page,
+  input: Locator,
+  id: string,
+): Promise<void> {
+  const prepared = await input.evaluate((element) => {
+    if (!(element instanceof HTMLInputElement) || element.parentElement === null) {
+      return false;
+    }
+    document.querySelectorAll('[data-gallery-keyboard-focus-probe="true"]')
+      .forEach((probe) => probe.remove());
+    const probe = document.createElement("button");
+    probe.dataset.galleryKeyboardFocusProbe = "true";
+    probe.type = "button";
+    element.parentElement.insertBefore(probe, element);
+    probe.focus({ preventScroll: true });
+    return document.activeElement === probe;
+  });
+  invariant(prepared, `${id}: could not prepare the preceding keyboard tab stop`);
+
+  let active = false;
+  try {
+    await page.keyboard.press("Tab");
+    active = await input.evaluate((element) => document.activeElement === element);
+  } finally {
+    await page.locator('[data-gallery-keyboard-focus-probe="true"]')
+      .evaluateAll((probes) => probes.forEach((probe) => probe.remove()));
+  }
+  invariant(active, `${id}: Tab did not move focus from the probe to the range input`);
+}
+
 async function verifyNativeFieldFocusFallback(
   page: Page,
   id: string,
@@ -6069,7 +6136,10 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       root.dir = "rtl";
       nativeSelect.lang = "ar";
       nativeSelect.dir = "rtl";
-      for (const animation of thumb.getAnimations()) animation.finish();
+      for (const animation of [
+        ...thumb.getAnimations(),
+        ...nativeSelect.getAnimations(),
+      ]) animation.finish();
       await new Promise<void>((resolveFrame) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
       });
@@ -6084,7 +6154,10 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
       else nativeSelect.setAttribute("lang", previousSelectLanguage);
       if (previousSelectDirection === null) nativeSelect.removeAttribute("dir");
       else nativeSelect.setAttribute("dir", previousSelectDirection);
-      for (const animation of thumb.getAnimations()) animation.finish();
+      for (const animation of [
+        ...thumb.getAnimations(),
+        ...nativeSelect.getAnimations(),
+      ]) animation.finish();
       await new Promise<void>((resolveFrame) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
       });
@@ -8328,6 +8401,1348 @@ function verifyActionCoarsePointerEvidence(
   );
 }
 
+async function indicatorKnobEvidence(page: Page) {
+  return page.evaluate(() => {
+    const progressBars = [
+      ...document.querySelectorAll<HTMLElement>("[data-gallery-progress-bar]"),
+    ];
+    const meters = [
+      ...document.querySelectorAll<HTMLElement>("[data-gallery-meter-tone]"),
+    ];
+    const sliders = [
+      ...document.querySelectorAll<HTMLElement>("[data-gallery-slider]"),
+    ];
+    const knobs = [
+      ...document.querySelectorAll<HTMLElement>("[data-gallery-knob]"),
+    ];
+    const form = document.querySelector('[data-gallery-indicator-form="true"]');
+    const submission = document.querySelector(
+      '[data-gallery-indicator-submission="true"]',
+    );
+    if (
+      progressBars.length !== 3
+      || meters.length !== 4
+      || sliders.length !== 4
+      || knobs.length !== 4
+      || !(form instanceof HTMLFormElement)
+      || !(submission instanceof HTMLOutputElement)
+    ) {
+      throw new Error(
+        `The Indicators and Knob gallery structure is incomplete: ${JSON.stringify({
+          knobs: knobs.length,
+          meters: meters.length,
+          progressBars: progressBars.length,
+          sliders: sliders.length,
+        })}`,
+      );
+    }
+
+    const resolveStyle = (property: string, value: string): string => {
+      const probe = document.createElement("div");
+      probe.style.setProperty(property, value);
+      document.body.append(probe);
+      const resolved = getComputedStyle(probe).getPropertyValue(property).trim();
+      probe.remove();
+      return resolved;
+    };
+    const hasGeneratedClass = (element: Element): boolean =>
+      [...element.classList].some((name) => name.startsWith("x"));
+    const progressValues = {
+      determinate: 64,
+      indeterminate: null,
+      override: 82,
+    } as const;
+    const meterValues = {
+      danger: 80,
+      default: 35,
+      success: 50,
+      warning: 65,
+    } as const;
+    const meterColors = {
+      danger: resolveStyle("background-color", "var(--ui-destructive)"),
+      default: resolveStyle("background-color", "var(--ui-primary)"),
+      success: resolveStyle("background-color", "var(--ui-success)"),
+      warning: resolveStyle("background-color", "var(--ui-warning)"),
+    } as const;
+    const tokens = {
+      background: resolveStyle("background-color", "var(--ui-background)"),
+      border: resolveStyle("stroke", "var(--ui-border)"),
+      card: resolveStyle("fill", "var(--ui-card)"),
+      foreground: resolveStyle("stroke", "var(--ui-foreground)"),
+      muted: resolveStyle("background-color", "var(--ui-muted)"),
+      primary: resolveStyle("background-color", "var(--ui-primary)"),
+      secondary: resolveStyle("background-color", "var(--ui-secondary)"),
+      warning: resolveStyle("border-color", "var(--ui-warning)"),
+    };
+
+    const progress = progressBars.map((root) => {
+      const kind = root.dataset.galleryProgressBar;
+      if (kind === undefined || !(kind in progressValues)) {
+        throw new Error(`Unexpected ProgressBar fixture: ${String(kind)}`);
+      }
+      const header = root.querySelector('[data-slot="progress-bar-header"]');
+      const label = root.querySelector('[data-slot="progress-bar-label"]');
+      const track = root.querySelector('[data-slot="progress-bar-track"]');
+      const fill = root.querySelector('[data-slot="progress-bar-fill"]');
+      if (
+        !(header instanceof HTMLElement)
+        || !(label instanceof HTMLElement)
+        || !(track instanceof HTMLElement)
+        || !(fill instanceof HTMLElement)
+      ) {
+        throw new Error(`The ${kind} ProgressBar fixture is incomplete.`);
+      }
+      const rootStyle = getComputedStyle(root);
+      const headerStyle = getComputedStyle(header);
+      const trackStyle = getComputedStyle(track);
+      const fillStyle = getComputedStyle(fill);
+      const trackBox = track.getBoundingClientRect();
+      const fillBox = fill.getBoundingClientRect();
+      const classes = [...root.classList];
+      const expectedValue = progressValues[kind as keyof typeof progressValues];
+      return {
+        animationDuration: fillStyle.animationDuration,
+        animationIterationCount: fillStyle.animationIterationCount,
+        animationName: fillStyle.animationName,
+        ariaValueNow: root.getAttribute("aria-valuenow"),
+        classContract:
+          classes[0] === "hraness-progress-bar"
+          && hasGeneratedClass(root)
+          && (
+            kind !== "override"
+            || classes.at(-1) === "gallery-progress-bar--override"
+          ),
+        expectedValue,
+        fillBackground: fillStyle.backgroundColor,
+        fillBackgroundImage: fillStyle.backgroundImage,
+        fillForcedColorAdjust: fillStyle.forcedColorAdjust,
+        fillRatio: fillBox.width / trackBox.width,
+        fillSentinel: fillStyle
+          .getPropertyValue("--gallery-indicator-fill-conflict")
+          .trim(),
+        gap: Number.parseFloat(rootStyle.gap),
+        headerAlignItems: headerStyle.alignItems,
+        headerDisplay: headerStyle.display,
+        headerGap: Number.parseFloat(headerStyle.gap),
+        headerJustifyContent: headerStyle.justifyContent,
+        headerSentinel: headerStyle
+          .getPropertyValue("--gallery-indicator-header-conflict")
+          .trim(),
+        indeterminate: fill.hasAttribute("data-indeterminate"),
+        kind,
+        label: label.textContent?.trim() ?? "",
+        minWidth: Number.parseFloat(rootStyle.minWidth),
+        partClassContract:
+          header.classList.contains("hraness-progress-bar__header")
+          && header.classList.contains("hraness-progress-bar__label-row")
+          && hasGeneratedClass(header)
+          && label.classList.contains("hraness-progress-bar__label")
+          && hasGeneratedClass(label)
+          && track.classList.contains("hraness-progress-bar__track")
+          && hasGeneratedClass(track)
+          && fill.classList.contains("hraness-progress-bar__fill")
+          && hasGeneratedClass(fill),
+        role: root.getAttribute("role") ?? "",
+        rootDisplay: rootStyle.display,
+        rootSentinel: rootStyle
+          .getPropertyValue("--gallery-indicator-root-conflict")
+          .trim(),
+        slot: root.dataset.slot ?? "",
+        trackBackground: trackStyle.backgroundColor,
+        trackBackgroundImage: trackStyle.backgroundImage,
+        trackBorderRadius: Number.parseFloat(trackStyle.borderRadius),
+        trackHeight: trackBox.height,
+        trackOverflow: trackStyle.overflow,
+        trackPosition: trackStyle.position,
+        trackSentinel: trackStyle
+          .getPropertyValue("--gallery-indicator-track-conflict")
+          .trim(),
+        width: root.getBoundingClientRect().width,
+      };
+    });
+
+    const meterEvidence = meters.map((root) => {
+      const tone = root.dataset.galleryMeterTone;
+      if (tone === undefined || !(tone in meterValues)) {
+        throw new Error(`Unexpected Meter fixture: ${String(tone)}`);
+      }
+      const header = root.querySelector('[data-slot="meter-header"]');
+      const track = root.querySelector('[data-slot="meter-track"]');
+      const fill = root.querySelector('[data-slot="meter-fill"]');
+      if (
+        !(header instanceof HTMLElement)
+        || !(track instanceof HTMLElement)
+        || !(fill instanceof HTMLElement)
+      ) {
+        throw new Error(`The ${tone} Meter fixture is incomplete.`);
+      }
+      const rootStyle = getComputedStyle(root);
+      const trackStyle = getComputedStyle(track);
+      const fillStyle = getComputedStyle(fill);
+      const trackBox = track.getBoundingClientRect();
+      const fillBox = fill.getBoundingClientRect();
+      const classes = [...root.classList];
+      return {
+        ariaValueNow: Number(root.getAttribute("aria-valuenow")),
+        classContract:
+          classes[0] === "hraness-meter" && hasGeneratedClass(root),
+        expectedColor: meterColors[tone as keyof typeof meterColors],
+        expectedValue: meterValues[tone as keyof typeof meterValues],
+        fillBackground: fillStyle.backgroundColor,
+        fillBackgroundImage: fillStyle.backgroundImage,
+        fillForcedColorAdjust: fillStyle.forcedColorAdjust,
+        fillRatio: fillBox.width / trackBox.width,
+        fillSentinel: fillStyle
+          .getPropertyValue("--gallery-indicator-fill-conflict")
+          .trim(),
+        headerSentinel: getComputedStyle(header)
+          .getPropertyValue("--gallery-indicator-header-conflict")
+          .trim(),
+        partClassContract:
+          header.classList.contains("hraness-meter__header")
+          && header.classList.contains("hraness-meter__label-row")
+          && hasGeneratedClass(header)
+          && track.classList.contains("hraness-meter__track")
+          && hasGeneratedClass(track)
+          && fill.classList.contains("hraness-meter__fill")
+          && hasGeneratedClass(fill),
+        rootDisplay: rootStyle.display,
+        rootSentinel: rootStyle
+          .getPropertyValue("--gallery-indicator-root-conflict")
+          .trim(),
+        slot: root.dataset.slot ?? "",
+        tone,
+        trackBackground: trackStyle.backgroundColor,
+        trackBackgroundImage: trackStyle.backgroundImage,
+        trackHeight: trackBox.height,
+        trackOverflow: trackStyle.overflow,
+        trackPosition: trackStyle.position,
+        trackSentinel: trackStyle
+          .getPropertyValue("--gallery-indicator-track-conflict")
+          .trim(),
+      };
+    });
+
+    const sliderEvidence = sliders.map((root) => {
+      const fixture = root.dataset.gallerySlider;
+      const track = root.querySelector('[data-slot="slider-track"]');
+      const fill = root.querySelector('[data-slot="slider-fill"]');
+      const thumb = root.querySelector('[data-slot="slider-thumb"]');
+      const thumbIndicator = root.querySelector(
+        '[data-slot="slider-thumb-indicator"]',
+      );
+      const input = root.querySelector('input[type="range"]');
+      const header = root.querySelector('[data-slot="slider-header"]');
+      if (
+        fixture === undefined
+        || !(track instanceof HTMLElement)
+        || !(fill instanceof HTMLElement)
+        || !(thumb instanceof HTMLElement)
+        || !(thumbIndicator instanceof HTMLElement)
+        || !(input instanceof HTMLInputElement)
+        || !(header instanceof HTMLElement)
+      ) {
+        throw new Error(`The ${String(fixture)} Slider fixture is incomplete.`);
+      }
+      const rootStyle = getComputedStyle(root);
+      const trackStyle = getComputedStyle(track);
+      const fillStyle = getComputedStyle(fill);
+      const thumbStyle = getComputedStyle(thumb);
+      const thumbIndicatorStyle = getComputedStyle(thumbIndicator);
+      const trackBox = track.getBoundingClientRect();
+      const fillBox = fill.getBoundingClientRect();
+      const thumbBox = thumb.getBoundingClientRect();
+      const thumbIndicatorBox = thumbIndicator.getBoundingClientRect();
+      const orientation = root.dataset.orientation ?? "";
+      const rtlBoundary = root.closest('[data-gallery-rtl-boundary="true"]');
+      const normalizedThumbPosition = orientation === "vertical"
+        ? (trackBox.bottom - (thumbBox.top + thumbBox.height / 2)) / trackBox.height
+        : rootStyle.direction === "rtl"
+          ? (trackBox.right - (thumbBox.left + thumbBox.width / 2)) / trackBox.width
+          : (thumbBox.left + thumbBox.width / 2 - trackBox.left) / trackBox.width;
+      const classes = [...root.classList];
+      return {
+        classContract:
+          classes[0] === "hraness-slider" && hasGeneratedClass(root),
+        direction: rootStyle.direction,
+        fillBackground: fillStyle.backgroundColor,
+        fillBackgroundImage: fillStyle.backgroundImage,
+        fillForcedColorAdjust: fillStyle.forcedColorAdjust,
+        fillPosition: fillStyle.position,
+        fillRatio: orientation === "vertical"
+          ? fillBox.height / trackBox.height
+          : fillBox.width / trackBox.width,
+        fillSentinel: fillStyle
+          .getPropertyValue("--gallery-indicator-fill-conflict")
+          .trim(),
+        fixture,
+        headerSentinel: getComputedStyle(header)
+          .getPropertyValue("--gallery-indicator-header-conflict")
+          .trim(),
+        inputName: input.name,
+        inputValue: Number(input.value),
+        normalizedThumbPosition,
+        orientation,
+        rootDisplay: rootStyle.display,
+        rootMinHeight: Number.parseFloat(rootStyle.minHeight),
+        rootSentinel: rootStyle
+          .getPropertyValue("--gallery-indicator-root-conflict")
+          .trim(),
+        rtlBoundaryDirection: rtlBoundary instanceof HTMLElement
+          ? getComputedStyle(rtlBoundary).direction
+          : "",
+        rtlBoundaryDir: rtlBoundary instanceof HTMLElement
+          ? rtlBoundary.getAttribute("dir") ?? ""
+          : "",
+        rtlBoundaryOwnsSlider:
+          rtlBoundary instanceof HTMLElement && rtlBoundary.contains(root),
+        slot: root.dataset.slot ?? "",
+        thumbClassContract:
+          thumb.classList.contains("hraness-slider__thumb")
+          && hasGeneratedClass(thumb),
+        trackClassContract:
+          track.classList.contains("hraness-slider__track")
+          && hasGeneratedClass(track)
+          && fill.classList.contains("hraness-slider__fill")
+          && hasGeneratedClass(fill),
+        thumbHeight: thumbBox.height,
+        thumbBackgroundImage: thumbStyle.backgroundImage,
+        thumbIndicatorBackground: thumbIndicatorStyle.backgroundColor,
+        thumbIndicatorBackgroundImage: thumbIndicatorStyle.backgroundImage,
+        thumbIndicatorBorderColor: thumbIndicatorStyle.borderColor,
+        thumbIndicatorBorderRadius: Number.parseFloat(
+          thumbIndicatorStyle.borderRadius,
+        ),
+        thumbIndicatorBorderStyle: thumbIndicatorStyle.borderStyle,
+        thumbIndicatorBorderWidth: Number.parseFloat(
+          thumbIndicatorStyle.borderWidth,
+        ),
+        thumbIndicatorClassContract:
+          thumbIndicator.classList.contains("hraness-slider__thumb-indicator")
+          && hasGeneratedClass(thumbIndicator),
+        thumbIndicatorHeight: thumbIndicatorBox.height,
+        thumbIndicatorSentinel: thumbIndicatorStyle
+          .getPropertyValue("--gallery-indicator-thumb-visual-conflict")
+          .trim(),
+        thumbIndicatorWidth: thumbIndicatorBox.width,
+        thumbSentinel: thumbStyle
+          .getPropertyValue("--gallery-indicator-thumb-conflict")
+          .trim(),
+        thumbWidth: thumbBox.width,
+        trackBackground: trackStyle.backgroundColor,
+        trackBackgroundImage: trackStyle.backgroundImage,
+        trackHeight: trackBox.height,
+        trackOverflow: trackStyle.overflow,
+        trackPosition: trackStyle.position,
+        trackSentinel: trackStyle
+          .getPropertyValue("--gallery-indicator-track-conflict")
+          .trim(),
+        trackWidth: trackBox.width,
+      };
+    });
+
+    const knobEvidence = knobs.map((root) => {
+      const fixture = root.dataset.galleryKnob;
+      const control = root.querySelector('[data-slot="knob-control"]');
+      const thumb = root.querySelector('[data-slot="knob-thumb"]');
+      const gesture = root.querySelector('[data-slot="knob-gesture"]');
+      const dial = root.querySelector('[data-slot="knob-dial"]');
+      const face = root.querySelector('[data-slot="knob-face"]');
+      const arcTrack = root.querySelector('[data-slot="knob-arc-track"]');
+      const arcValue = root.querySelector('[data-slot="knob-arc-value"]');
+      const indicator = root.querySelector('[data-slot="knob-indicator"]');
+      const label = root.querySelector('[data-slot="knob-label"]');
+      const value = root.querySelector('[data-slot="knob-value"]');
+      const input = root.querySelector('input[type="range"]');
+      if (
+        fixture === undefined
+        || !(control instanceof HTMLElement)
+        || !(thumb instanceof HTMLElement)
+        || !(gesture instanceof HTMLElement)
+        || !(dial instanceof SVGElement)
+        || !(face instanceof SVGElement)
+        || !(arcTrack instanceof SVGElement)
+        || !(arcValue instanceof SVGElement)
+        || !(indicator instanceof SVGElement)
+        || !(label instanceof HTMLElement)
+        || !(value instanceof HTMLElement)
+        || !(input instanceof HTMLInputElement)
+      ) {
+        throw new Error(`The ${String(fixture)} Knob fixture is incomplete.`);
+      }
+      const rootStyle = getComputedStyle(root);
+      const controlStyle = getComputedStyle(control);
+      const dialStyle = getComputedStyle(dial);
+      const faceStyle = getComputedStyle(face);
+      const arcTrackStyle = getComputedStyle(arcTrack);
+      const arcValueStyle = getComputedStyle(arcValue);
+      const indicatorStyle = getComputedStyle(indicator);
+      const gestureStyle = getComputedStyle(gesture);
+      const controlBox = control.getBoundingClientRect();
+      const dialBox = dial.getBoundingClientRect();
+      const rootClasses = [...root.classList];
+      const controlClasses = [...control.classList];
+      return {
+        arcTrackStroke: arcTrackStyle.stroke,
+        arcValueDasharray: arcValue.getAttribute("stroke-dasharray") ?? "",
+        arcValueStroke: arcValueStyle.stroke,
+        classContract:
+          rootClasses[0] === "hraness-knob"
+          && hasGeneratedClass(root)
+          && (
+            fixture !== "override"
+            || rootClasses.at(-1) === "gallery-knob--override"
+          ),
+        cellContract: root.parentElement?.dataset.galleryKnobCell === fixture,
+        color: rootStyle.color,
+        controlBackground: controlStyle.backgroundColor,
+        controlBorderColor: controlStyle.borderColor,
+        controlBorderRadius: Number.parseFloat(controlStyle.borderRadius),
+        controlClassContract:
+          controlClasses[0] === "hraness-knob__control"
+          && hasGeneratedClass(control)
+          && (
+            fixture !== "override"
+            || controlClasses.at(-1) === "gallery-knob-control--override"
+          ),
+        controlCursor: controlStyle.cursor,
+        controlHeight: controlBox.height,
+        controlPosition: controlStyle.position,
+        controlSentinel: controlStyle
+          .getPropertyValue("--gallery-knob-control-conflict")
+          .trim(),
+        controlTouchAction: controlStyle.touchAction,
+        controlWidth: controlBox.width,
+        density: root.dataset.density ?? "",
+        dialClassContract:
+          dial.classList.contains("hraness-knob__dial") && hasGeneratedClass(dial),
+        dialHeight: dialBox.height,
+        dialSentinel: dialStyle
+          .getPropertyValue("--gallery-knob-dial-conflict")
+          .trim(),
+        dialTransitionDuration: dialStyle.transitionDuration,
+        dialTransitionProperty: dialStyle.transitionProperty,
+        dialWidth: dialBox.width,
+        disabled: input.disabled,
+        faceFill: faceStyle.fill,
+        faceStroke: faceStyle.stroke,
+        fixture,
+        gesturePosition: gestureStyle.position,
+        gestureTouchAction: gestureStyle.touchAction,
+        indicatorStroke: indicatorStyle.stroke,
+        indicatorTransform: indicator.getAttribute("transform") ?? "",
+        inputName: input.name,
+        inputValue: Number(input.value),
+        label: label.textContent?.trim() ?? "",
+        nativeStyleLast: fixture !== "override" || (
+          root.getBoundingClientRect().width === 240
+          && rootStyle.color === resolveStyle("color", "rgb(11 12 13)")
+        ),
+        rootDisplay: rootStyle.display,
+        rootGap: Number.parseFloat(rootStyle.gap),
+        rootSentinel: rootStyle
+          .getPropertyValue("--gallery-knob-root-conflict")
+          .trim(),
+        rootWidth: root.getBoundingClientRect().width,
+        slot: root.dataset.slot ?? "",
+        thumbClassContract:
+          thumb.classList.contains("hraness-knob__thumb")
+          && hasGeneratedClass(thumb),
+        valueText: value.textContent?.trim() ?? "",
+      };
+    });
+
+    return {
+      formEntryCount: [...new FormData(form).entries()].length,
+      knobEvidence,
+      meterEvidence,
+      progress,
+      reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      sliderEvidence,
+      submission: submission.textContent?.trim() ?? "",
+      theme: document.documentElement.dataset.theme ?? "",
+      tokens,
+    };
+  });
+}
+
+function verifyIndicatorKnobEvidence(
+  evidence: Awaited<ReturnType<typeof indicatorKnobEvidence>>,
+  id: string,
+): void {
+  invariant(
+    evidence.progress.length === 3
+    && evidence.meterEvidence.length === 4
+    && evidence.sliderEvidence.length === 4
+    && evidence.knobEvidence.length === 4,
+    `${id}: Indicators and Knob receipt counts changed: ${JSON.stringify(evidence)}`,
+  );
+
+  for (const progress of evidence.progress) {
+    const expectedRatio = progress.expectedValue === null
+      ? 0.4
+      : progress.expectedValue / 100;
+    invariant(
+      progress.classContract
+      && progress.partClassContract
+      && progress.role === "progressbar"
+      && progress.slot === "progress-bar"
+      && progress.rootDisplay === "grid"
+      && progress.rootSentinel === "legacy"
+      && progress.headerDisplay === "flex"
+      && progress.headerAlignItems === "baseline"
+      && progress.headerJustifyContent === "space-between"
+      && nearlyEqual(progress.headerGap, 12)
+      && progress.headerSentinel === "legacy"
+      && progress.trackPosition === "relative"
+      && progress.trackOverflow === "hidden"
+      && nearlyEqual(progress.trackHeight, 8)
+      && progress.trackBorderRadius > 0
+      && progress.trackBackground === evidence.tokens.muted
+      && progress.trackBackgroundImage === "none"
+      && progress.trackSentinel === "legacy"
+      && progress.fillBackground === evidence.tokens.primary
+      && progress.fillBackgroundImage === "none"
+      && progress.fillForcedColorAdjust === "none"
+      && progress.fillSentinel === "legacy"
+      && Math.abs(progress.fillRatio - expectedRatio) <= 0.01,
+      `${id}: ${progress.kind} ProgressBar parity failed: ${JSON.stringify(progress)}`,
+    );
+    if (progress.kind === "override") {
+      invariant(
+        nearlyEqual(progress.gap, 16) && nearlyEqual(progress.width, 240),
+        `${id}: ProgressBar caller-last presentation changed: ${JSON.stringify(progress)}`,
+      );
+    } else {
+      invariant(
+        nearlyEqual(progress.gap, 8) && nearlyEqual(progress.minWidth, 0),
+        `${id}: ProgressBar base root changed: ${JSON.stringify(progress)}`,
+      );
+    }
+    invariant(
+      progress.expectedValue === null
+        ? progress.ariaValueNow === null && progress.indeterminate
+        : Number(progress.ariaValueNow) === progress.expectedValue
+          && !progress.indeterminate,
+      `${id}: ${progress.kind} ProgressBar semantics changed: ${JSON.stringify(progress)}`,
+    );
+    if (progress.kind === "indeterminate") {
+      invariant(
+        evidence.reducedMotion
+          ? progress.animationName === "none"
+            && seconds(progress.animationDuration).every(
+              (duration) => duration <= 0.000_01,
+            )
+          : progress.animationName !== "none"
+            && seconds(progress.animationDuration).some((duration) =>
+              Math.abs(duration - 1.25) <= 0.01
+            )
+            && progress.animationIterationCount === "infinite",
+        `${id}: indeterminate ProgressBar motion changed: ${JSON.stringify(progress)}`,
+      );
+    }
+  }
+
+  for (const meter of evidence.meterEvidence) {
+    invariant(
+      meter.classContract
+      && meter.partClassContract
+      && meter.slot === "meter"
+      && meter.rootDisplay === "grid"
+      && meter.rootSentinel === "legacy"
+      && meter.headerSentinel === "legacy"
+      && meter.trackPosition === "relative"
+      && meter.trackOverflow === "hidden"
+      && nearlyEqual(meter.trackHeight, 8)
+      && meter.trackBackground === evidence.tokens.muted
+      && meter.trackBackgroundImage === "none"
+      && meter.trackSentinel === "legacy"
+      && meter.fillBackground === meter.expectedColor
+      && meter.fillBackgroundImage === "none"
+      && meter.fillForcedColorAdjust === "none"
+      && meter.fillSentinel === "legacy"
+      && meter.ariaValueNow === meter.expectedValue
+      && Math.abs(meter.fillRatio - meter.expectedValue / 100) <= 0.01,
+      `${id}: ${meter.tone} Meter parity failed: ${JSON.stringify(meter)}`,
+    );
+  }
+
+  const expectedSliderValues = new Map([
+    ["ltr", 32],
+    ["rtl", 68],
+    ["synthetic-coarse", 56],
+    ["vertical", 44],
+  ] as const);
+  for (const slider of evidence.sliderEvidence) {
+    const expectedValue = expectedSliderValues.get(
+      slider.fixture as "ltr" | "rtl" | "synthetic-coarse" | "vertical",
+    );
+    invariant(expectedValue !== undefined, `${id}: unexpected Slider fixture`);
+    const vertical = slider.fixture === "vertical";
+    const syntheticCoarse = slider.fixture === "synthetic-coarse";
+    invariant(
+      slider.classContract
+      && slider.trackClassContract
+      && slider.thumbClassContract
+      && slider.thumbIndicatorClassContract
+      && slider.slot === "slider"
+      && slider.rootDisplay === "grid"
+      && slider.rootSentinel === "legacy"
+      && slider.headerSentinel === "legacy"
+      && slider.trackPosition === "relative"
+      && slider.trackOverflow === "visible"
+      && slider.trackBackground === evidence.tokens.muted
+      && slider.trackBackgroundImage === "none"
+      && slider.trackSentinel === "legacy"
+      && slider.fillPosition === "absolute"
+      && slider.fillBackground === evidence.tokens.primary
+      && slider.fillBackgroundImage === "none"
+      && slider.fillForcedColorAdjust === "none"
+      && slider.fillSentinel === "legacy"
+      && slider.thumbSentinel === "legacy"
+      && slider.thumbBackgroundImage === "none"
+      && slider.thumbIndicatorSentinel === "legacy"
+      && slider.thumbIndicatorBackground === evidence.tokens.background
+      && slider.thumbIndicatorBackgroundImage === "none"
+      && slider.thumbIndicatorBorderStyle === "solid"
+      && nearlyEqual(slider.thumbIndicatorBorderWidth, 2)
+      && nearlyEqual(slider.thumbIndicatorHeight, 20)
+      && nearlyEqual(slider.thumbIndicatorWidth, 20)
+      && slider.thumbIndicatorBorderRadius > 0
+      && slider.inputValue === expectedValue
+      && slider.inputName === `gallery-slider-${
+        slider.fixture === "synthetic-coarse" ? "coarse" : slider.fixture
+      }`
+      && Math.abs(slider.fillRatio - expectedValue / 100) <= 0.01
+      && Math.abs(slider.normalizedThumbPosition - expectedValue / 100) <= 0.01,
+      `${id}: ${slider.fixture} Slider parity failed: ${JSON.stringify(slider)}`,
+    );
+    invariant(
+      vertical
+        ? slider.orientation === "vertical"
+          && slider.rootMinHeight >= 192
+          && nearlyEqual(slider.trackHeight, 160)
+          && nearlyEqual(slider.trackWidth, 8)
+        : slider.orientation === "horizontal"
+          && nearlyEqual(slider.trackHeight, 8),
+      `${id}: ${slider.fixture} Slider orientation changed: ${JSON.stringify(slider)}`,
+    );
+    invariant(
+      syntheticCoarse
+        ? nearlyEqual(slider.thumbHeight, 48) && nearlyEqual(slider.thumbWidth, 48)
+        : nearlyEqual(slider.thumbHeight, 20) && nearlyEqual(slider.thumbWidth, 20),
+      `${id}: ${slider.fixture} Slider hit geometry changed: ${JSON.stringify(slider)}`,
+    );
+    if (slider.fixture === "rtl") {
+      invariant(
+        slider.direction === "rtl"
+        && slider.rtlBoundaryDirection === "rtl"
+        && slider.rtlBoundaryDir === "rtl"
+        && slider.rtlBoundaryOwnsSlider,
+        `${id}: RTL Slider direction changed: ${JSON.stringify(slider)}`,
+      );
+    } else {
+      invariant(
+        slider.rtlBoundaryDirection === ""
+        && slider.rtlBoundaryDir === ""
+        && !slider.rtlBoundaryOwnsSlider,
+        `${id}: non-RTL Slider entered the RTL provider boundary: ${JSON.stringify(slider)}`,
+      );
+    }
+  }
+
+  for (const knob of evidence.knobEvidence) {
+    const compact = knob.fixture === "compact";
+    const disabled = knob.fixture === "disabled";
+    invariant(
+      knob.classContract
+      && knob.cellContract
+      && knob.controlClassContract
+      && knob.dialClassContract
+      && knob.thumbClassContract
+      && knob.slot === "knob"
+      && knob.rootDisplay === "inline-grid"
+      && knob.rootSentinel === "legacy"
+      && knob.controlPosition === "relative"
+      && knob.controlSentinel === "legacy"
+      && nearlyEqual(knob.controlHeight, 48)
+      && nearlyEqual(knob.controlWidth, 48)
+      && knob.dialSentinel === "legacy"
+      && nearlyEqual(knob.dialHeight, compact ? 32 : 40)
+      && nearlyEqual(knob.dialWidth, compact ? 32 : 40)
+      && knob.density === (compact ? "compact" : "default")
+      && knob.disabled === disabled
+      && knob.gesturePosition === "absolute"
+      && knob.controlTouchAction === (
+        disabled ? "none" : knob.fixture === "default"
+          || compact
+          || knob.fixture === "override"
+          ? "pan-x"
+          : "none"
+      )
+      && knob.gestureTouchAction === knob.controlTouchAction
+      && knob.nativeStyleLast
+      && knob.faceFill === evidence.tokens.card
+      && knob.faceStroke === evidence.tokens.border
+      && knob.arcTrackStroke === evidence.tokens.muted
+      && knob.arcValueStroke === evidence.tokens.primary
+      && knob.indicatorStroke === evidence.tokens.foreground
+      && Math.abs(
+        Number.parseFloat(knob.arcValueDasharray) - knob.inputValue * 0.75
+      ) <= 0.01
+      && knob.indicatorTransform.startsWith("rotate(")
+      && knob.valueText.length > 0
+      && (
+        !evidence.reducedMotion
+        || knob.dialTransitionProperty === "none"
+          && seconds(knob.dialTransitionDuration).every(
+            (duration) => duration <= 0.000_01,
+          )
+      ),
+      `${id}: ${knob.fixture} Knob parity failed: ${JSON.stringify(knob)}`,
+    );
+    if (disabled) {
+      invariant(
+        knob.controlCursor === "not-allowed",
+        `${id}: disabled Knob cursor changed: ${JSON.stringify(knob)}`,
+      );
+    } else {
+      invariant(
+        knob.controlCursor === "grab",
+        `${id}: ${knob.fixture} Knob cursor changed: ${JSON.stringify(knob)}`,
+      );
+    }
+    if (knob.fixture === "override") {
+      invariant(
+        nearlyEqual(knob.rootGap, 16)
+        && nearlyEqual(knob.rootWidth, 240)
+        && knob.controlBackground === evidence.tokens.secondary
+        && knob.controlBorderColor === evidence.tokens.warning
+        && knob.controlBorderRadius > 0,
+        `${id}: Knob caller overrides changed: ${JSON.stringify(knob)}`,
+      );
+    }
+  }
+  invariant(
+    evidence.formEntryCount === 7 && evidence.submission === "",
+    `${id}: initial Indicators form contract changed: ${JSON.stringify(evidence)}`,
+  );
+}
+
+async function verifyIndicatorKnobInteraction(page: Page, id: string): Promise<void> {
+  const pointerInput = page.locator(
+    '[data-gallery-slider="ltr"] input[type="range"]',
+  );
+  const pointerThumb = page.locator(
+    '[data-gallery-slider="ltr"] [data-slot="slider-thumb"]',
+  );
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+  await pointerThumb.scrollIntoViewIfNeeded();
+  await pointerThumb.click({ position: { x: 10, y: 10 } });
+  const pointerFocus = await pointerInput.evaluate((element) => {
+    const thumb = element.closest('[data-slot="slider-thumb"]');
+    if (!(thumb instanceof HTMLElement)) {
+      throw new Error("The pointer-focused Slider thumb is missing.");
+    }
+    const style = getComputedStyle(thumb);
+    return {
+      active: document.activeElement === element,
+      dataFocused: thumb.hasAttribute("data-focused"),
+      dataFocusVisible: thumb.hasAttribute("data-focus-visible"),
+      focusVisible: element.matches(":focus-visible"),
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  });
+  invariant(
+    pointerFocus.active
+    && pointerFocus.dataFocused
+    && !pointerFocus.dataFocusVisible
+    && pointerFocus.outlineStyle === "none",
+    `${id}: pointer Slider focus incorrectly received a keyboard ring: ${JSON.stringify(pointerFocus)}`,
+  );
+
+  await pointerInput.evaluate((element) => element.blur());
+  await page.evaluate(() => new Promise<void>((resolveFrame) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+  }));
+  await pointerInput.evaluate((element) => element.focus());
+  await page.evaluate(() => new Promise<void>((resolveFrame) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+  }));
+  const programmaticFocus = await pointerInput.evaluate((element) => {
+    const thumb = element.closest('[data-slot="slider-thumb"]');
+    if (!(thumb instanceof HTMLElement)) {
+      throw new Error("The programmatically focused Slider thumb is missing.");
+    }
+    const style = getComputedStyle(thumb);
+    return {
+      active: document.activeElement === element,
+      dataFocused: thumb.hasAttribute("data-focused"),
+      dataFocusVisible: thumb.hasAttribute("data-focus-visible"),
+      focusVisible: element.matches(":focus-visible"),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  });
+  invariant(
+    programmaticFocus.active
+    && programmaticFocus.dataFocused
+    && !programmaticFocus.dataFocusVisible
+    && programmaticFocus.outlineStyle === "none",
+    `${id}: programmatic Slider focus incorrectly received a keyboard ring: ${JSON.stringify(programmaticFocus)}`,
+  );
+
+  const sliderContracts = [
+    { expectedDelta: 1, key: "ArrowRight", name: "gallery-slider-ltr" },
+    { expectedDelta: -1, key: "ArrowRight", name: "gallery-slider-rtl" },
+    { expectedDelta: 1, key: "ArrowUp", name: "gallery-slider-vertical" },
+  ] as const;
+  for (const contract of sliderContracts) {
+    const input = page.locator(
+      `[data-gallery-slider] input[type="range"][name="${contract.name}"]`,
+    );
+    const before = Number(await input.inputValue());
+    await input.focus();
+    await page.keyboard.press(contract.key);
+    await page.waitForFunction((name) => {
+      const element = document.querySelector(
+        `[data-gallery-slider] input[type="range"][name="${name}"]`,
+      );
+      const thumb = element?.closest('[data-slot="slider-thumb"]');
+      if (!(element instanceof HTMLInputElement) || !(thumb instanceof HTMLElement)) {
+        return false;
+      }
+      const style = getComputedStyle(thumb);
+      return document.activeElement === element
+        && thumb.hasAttribute("data-focus-visible")
+        && style.outlineStyle === "solid"
+        && Math.abs(Number.parseFloat(style.outlineOffset) - 2) <= 0.01
+        && Math.abs(Number.parseFloat(style.outlineWidth) - 2) <= 0.01;
+    }, contract.name, { polling: "raf", timeout: 2_000 });
+    const after = Number(await input.inputValue());
+    const focus = await input.evaluate((element) => {
+      const thumb = element.closest('[data-slot="slider-thumb"]');
+      if (!(thumb instanceof HTMLElement)) {
+        throw new Error("The focused Slider thumb is missing.");
+      }
+      const style = getComputedStyle(thumb);
+      return {
+        active: document.activeElement === element,
+        dataFocusVisible: thumb.hasAttribute("data-focus-visible"),
+        focusVisible: element.matches(":focus-visible"),
+        outlineOffset: Number.parseFloat(style.outlineOffset),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+      };
+    });
+    invariant(
+      after === before + contract.expectedDelta
+      && focus.active
+      && focus.focusVisible
+      && focus.dataFocusVisible
+      && focus.outlineStyle === "solid"
+      && nearlyEqual(focus.outlineOffset, 2)
+      && nearlyEqual(focus.outlineWidth, 2),
+      `${id}: ${contract.name} keyboard/focus contract changed: ${JSON.stringify({
+        after,
+        before,
+        focus,
+      })}`,
+    );
+  }
+
+  const rtlTrack = page.locator(
+    '[data-gallery-slider="rtl"] [data-slot="slider-track"]',
+  );
+  const rtlThumb = page.locator(
+    '[data-gallery-slider="rtl"] [data-slot="slider-thumb"]',
+  );
+  const rtlInput = page.locator(
+    '[data-gallery-slider="rtl"] input[type="range"][name="gallery-slider-rtl"]',
+  );
+  await rtlTrack.scrollIntoViewIfNeeded();
+  const rtlTrackBox = await rtlTrack.boundingBox();
+  invariant(
+    rtlTrackBox !== null && rtlTrackBox.width > 0,
+    `${id}: RTL Slider track has no stable pointer geometry`,
+  );
+  const rtlBeforePointer = Number(await rtlInput.inputValue());
+  await page.mouse.click(
+    rtlTrackBox.x + rtlTrackBox.width * 0.2,
+    rtlTrackBox.y + rtlTrackBox.height / 2,
+  );
+  await page.waitForFunction((before) => {
+    const input = document.querySelector(
+      '[data-gallery-slider="rtl"] input[type="range"]',
+    );
+    const thumb = document.querySelector(
+      '[data-gallery-slider="rtl"] [data-slot="slider-thumb"]',
+    );
+    const track = document.querySelector(
+      '[data-gallery-slider="rtl"] [data-slot="slider-track"]',
+    );
+    if (
+      !(input instanceof HTMLInputElement)
+      || !(thumb instanceof HTMLElement)
+      || !(track instanceof HTMLElement)
+    ) return false;
+    const value = Number(input.value);
+    const min = Number(input.min);
+    const max = Number(input.max);
+    const thumbBox = thumb.getBoundingClientRect();
+    const trackBox = track.getBoundingClientRect();
+    const expectedCenter = trackBox.right
+      - (value - min) / (max - min) * trackBox.width;
+    const actualCenter = thumbBox.left + thumbBox.width / 2;
+    return max > min
+      && value > before
+      && !thumb.hasAttribute("data-dragging")
+      && Math.abs(actualCenter - expectedCenter) <= 1;
+  }, rtlBeforePointer, { polling: "raf", timeout: 2_000 });
+  const rtlAfterLeftPointer = Number(await rtlInput.inputValue());
+  const rtlLeftThumbBox = await rtlThumb.boundingBox();
+  invariant(rtlLeftThumbBox !== null, `${id}: RTL Slider thumb has no left box`);
+  await page.mouse.click(
+    rtlTrackBox.x + rtlTrackBox.width * 0.8,
+    rtlTrackBox.y + rtlTrackBox.height / 2,
+  );
+  await page.waitForFunction(({ before, leftX }) => {
+    const input = document.querySelector(
+      '[data-gallery-slider="rtl"] input[type="range"]',
+    );
+    const thumb = document.querySelector(
+      '[data-gallery-slider="rtl"] [data-slot="slider-thumb"]',
+    );
+    const track = document.querySelector(
+      '[data-gallery-slider="rtl"] [data-slot="slider-track"]',
+    );
+    if (
+      !(input instanceof HTMLInputElement)
+      || !(thumb instanceof HTMLElement)
+      || !(track instanceof HTMLElement)
+    ) return false;
+    const value = Number(input.value);
+    const min = Number(input.min);
+    const max = Number(input.max);
+    const thumbBox = thumb.getBoundingClientRect();
+    const trackBox = track.getBoundingClientRect();
+    const expectedCenter = trackBox.right
+      - (value - min) / (max - min) * trackBox.width;
+    const actualCenter = thumbBox.left + thumbBox.width / 2;
+    return max > min
+      && value < before
+      && !thumb.hasAttribute("data-dragging")
+      && actualCenter > leftX + 1
+      && Math.abs(actualCenter - expectedCenter) <= 1;
+  }, {
+    before: rtlAfterLeftPointer,
+    leftX: rtlLeftThumbBox.x,
+  }, { polling: "raf", timeout: 2_000 });
+  const rtlAfterRightPointer = Number(await rtlInput.inputValue());
+  const rtlRightThumbBox = await rtlThumb.boundingBox();
+  invariant(rtlRightThumbBox !== null, `${id}: RTL Slider thumb has no right box`);
+  invariant(
+    rtlAfterLeftPointer > rtlBeforePointer
+    && rtlAfterRightPointer < rtlAfterLeftPointer
+    && rtlLeftThumbBox.x < rtlRightThumbBox.x,
+    `${id}: RTL Slider pointer direction changed: ${JSON.stringify({
+      rtlAfterLeftPointer,
+      rtlAfterRightPointer,
+      rtlBeforePointer,
+      rtlLeftThumbX: rtlLeftThumbBox.x,
+      rtlRightThumbX: rtlRightThumbBox.x,
+    })}`,
+  );
+
+  const knobInput = page.locator(
+    '[data-gallery-knob="default"] input[type="range"]',
+  );
+  const knobBeforeKey = Number(await knobInput.inputValue());
+  await knobInput.focus();
+  await page.keyboard.press("ArrowUp");
+  await page.waitForFunction((before) => {
+    const input = document.querySelector(
+      '[data-gallery-knob="default"] input[type="range"]',
+    );
+    const control = input?.closest('[data-slot="knob-control"]');
+    if (!(input instanceof HTMLInputElement) || !(control instanceof HTMLElement)) {
+      return false;
+    }
+    const style = getComputedStyle(control);
+    return Number(input.value) === before + 1
+      && document.activeElement === input
+      && input.matches(":focus-visible")
+      && style.outlineStyle === "solid"
+      && Math.abs(Number.parseFloat(style.outlineOffset) - 2) <= 0.01
+      && Math.abs(Number.parseFloat(style.outlineWidth) - 2) <= 0.01;
+  }, knobBeforeKey, { polling: "raf", timeout: 2_000 });
+  const knobAfterKey = Number(await knobInput.inputValue());
+  const knobFocus = await knobInput.evaluate((element) => {
+    const control = element.closest('[data-slot="knob-control"]');
+    if (!(control instanceof HTMLElement)) {
+      throw new Error("The focused Knob control is missing.");
+    }
+    const style = getComputedStyle(control);
+    return {
+      active: document.activeElement === element,
+      focusVisible: element.matches(":focus-visible"),
+      outlineOffset: Number.parseFloat(style.outlineOffset),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  });
+  invariant(
+    knobAfterKey === knobBeforeKey + 1
+    && knobFocus.active
+    && knobFocus.focusVisible
+    && knobFocus.outlineStyle === "solid"
+    && nearlyEqual(knobFocus.outlineOffset, 2)
+    && nearlyEqual(knobFocus.outlineWidth, 2),
+    `${id}: Knob keyboard/focus contract changed: ${JSON.stringify({
+      knobAfterKey,
+      knobBeforeKey,
+      knobFocus,
+    })}`,
+  );
+
+  const overrideKnobInput = page.locator(
+    '[data-gallery-knob="override"] input[type="range"]',
+  );
+  const overrideKnobBefore = Number(await overrideKnobInput.inputValue());
+  await overrideKnobInput.focus();
+  await page.keyboard.press("ArrowUp");
+  await page.waitForFunction((before) => {
+    const input = document.querySelector(
+      '[data-gallery-knob="override"] input[type="range"]',
+    );
+    const control = input?.closest('[data-slot="knob-control"]');
+    if (!(input instanceof HTMLInputElement) || !(control instanceof HTMLElement)) {
+      return false;
+    }
+    const style = getComputedStyle(control);
+    return Number(input.value) === before + 1
+      && document.activeElement === input
+      && input.matches(":focus-visible")
+      && style.outlineStyle === "solid"
+      && Math.abs(Number.parseFloat(style.outlineOffset) - 3) <= 0.01
+      && Math.abs(Number.parseFloat(style.outlineWidth) - 3) <= 0.01;
+  }, overrideKnobBefore, { polling: "raf", timeout: 2_000 });
+  const overrideKnobAfter = Number(await overrideKnobInput.inputValue());
+  const overrideKnobFocus = await overrideKnobInput.evaluate((element) => {
+    const control = element.closest('[data-slot="knob-control"]');
+    if (!(control instanceof HTMLElement)) {
+      throw new Error("The override Knob focus control is missing.");
+    }
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-success)";
+    document.body.append(probe);
+    const success = getComputedStyle(probe).color;
+    probe.remove();
+    const style = getComputedStyle(control);
+    return {
+      active: document.activeElement === element,
+      callerClassLast:
+        [...control.classList].at(-1) === "gallery-knob-control--override",
+      color: style.outlineColor,
+      focusVisible: element.matches(":focus-visible"),
+      offset: Number.parseFloat(style.outlineOffset),
+      sentinel: style.getPropertyValue("--gallery-knob-control-conflict").trim(),
+      style: style.outlineStyle,
+      success,
+      width: Number.parseFloat(style.outlineWidth),
+    };
+  });
+  invariant(
+    overrideKnobAfter === overrideKnobBefore + 1
+    && overrideKnobFocus.active
+    && overrideKnobFocus.focusVisible
+    && overrideKnobFocus.callerClassLast
+    && overrideKnobFocus.sentinel === "legacy"
+    && overrideKnobFocus.color === overrideKnobFocus.success
+    && overrideKnobFocus.style === "solid"
+    && nearlyEqual(overrideKnobFocus.offset, 3)
+    && nearlyEqual(overrideKnobFocus.width, 3)
+    && !nearlyEqual(overrideKnobFocus.offset, 11)
+    && !nearlyEqual(overrideKnobFocus.width, 7),
+    `${id}: override Knob keyboard focus lost caller precedence: ${JSON.stringify({
+      overrideKnobAfter,
+      overrideKnobBefore,
+      overrideKnobFocus,
+    })}`,
+  );
+
+  const gesture = page.locator(
+    '[data-gallery-knob="default"] [data-slot="knob-gesture"]',
+  );
+  await gesture.scrollIntoViewIfNeeded();
+  const gestureBox = await gesture.boundingBox();
+  invariant(gestureBox !== null, `${id}: the default Knob gesture has no box`);
+  await page.mouse.move(
+    gestureBox.x + gestureBox.width / 2,
+    gestureBox.y + gestureBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    gestureBox.x + gestureBox.width / 2 + 32,
+    gestureBox.y + gestureBox.height / 2,
+    { steps: 4 },
+  );
+  await page.mouse.up();
+  await page.waitForFunction((before) => {
+    const input = document.querySelector(
+      '[data-gallery-knob="default"] input[type="range"]',
+    );
+    return input instanceof HTMLInputElement && Number(input.value) > before;
+  }, knobAfterKey);
+  const knobAfterGesture = Number(await knobInput.inputValue());
+  invariant(
+    knobAfterGesture > knobAfterKey,
+    `${id}: Knob pointer gesture did not increase its value`,
+  );
+
+  const disabledInput = page.locator(
+    '[data-gallery-knob="disabled"] input[type="range"]',
+  );
+  invariant(
+    await disabledInput.isDisabled() && Number(await disabledInput.inputValue()) === 30,
+    `${id}: disabled Knob semantics changed`,
+  );
+
+  const expectedSubmission = await page.locator(
+    '[data-gallery-indicator-form="true"]',
+  ).evaluate((form) => {
+    if (!(form instanceof HTMLFormElement)) {
+      throw new Error("The Indicators form is missing.");
+    }
+    return [...new FormData(form).entries()]
+      .map(([name, value]) => `${name}=${String(value)}`)
+      .join("&");
+  });
+  invariant(
+    !expectedSubmission.includes("gallery-knob-disabled")
+    && expectedSubmission.split("&").length === 7,
+    `${id}: Indicators form entries changed: ${expectedSubmission}`,
+  );
+  await page.locator('[data-gallery-indicator-submit="true"]').click();
+  const submission = page.locator('[data-gallery-indicator-submission="true"]');
+  await submission.getByText(expectedSubmission, { exact: true }).waitFor();
+}
+
+async function verifyIndicatorKnobCoarsePointer(page: Page): Promise<void> {
+  const evidence = await page.evaluate(() => ({
+    coarsePointer: matchMedia("(pointer: coarse)").matches,
+    knobControls: [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-gallery-knob] [data-slot="knob-control"]',
+      ),
+    ].map((control) => {
+      const box = control.getBoundingClientRect();
+      return { height: box.height, width: box.width };
+    }),
+    sliderThumbs: [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-gallery-slider] [data-slot="slider-thumb"]',
+      ),
+    ].map((thumb) => {
+      const indicator = thumb.querySelector('[data-slot="slider-thumb-indicator"]');
+      if (!(indicator instanceof HTMLElement)) {
+        throw new Error("A coarse Slider thumb visual is missing.");
+      }
+      const box = thumb.getBoundingClientRect();
+      const indicatorBox = indicator.getBoundingClientRect();
+      return {
+        height: box.height,
+        indicatorHeight: indicatorBox.height,
+        indicatorWidth: indicatorBox.width,
+        width: box.width,
+      };
+    }),
+    verificationOverride:
+      document.documentElement.dataset.verificationPointer ?? "",
+  }));
+  invariant(
+    evidence.coarsePointer
+    && evidence.verificationOverride === ""
+    && evidence.sliderThumbs.length === 4
+    && evidence.sliderThumbs.every((thumb) =>
+      nearlyEqual(thumb.height, 48)
+      && nearlyEqual(thumb.width, 48)
+      && nearlyEqual(thumb.indicatorHeight, 20)
+      && nearlyEqual(thumb.indicatorWidth, 20)
+    )
+    && evidence.knobControls.length === 4
+    && evidence.knobControls.every((control) =>
+      nearlyEqual(control.height, 48) && nearlyEqual(control.width, 48)
+    ),
+    `real coarse-pointer Indicators and Knob geometry changed: ${JSON.stringify(evidence)}`,
+  );
+}
+
+async function verifyIndicatorKnobForcedColors(page: Page): Promise<void> {
+  const evidence = await page.evaluate(() => {
+    const systemColor = (value: string): string => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const fills = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-gallery-progress-bar] [data-slot="progress-bar-fill"], '
+        + '[data-gallery-meter-tone] [data-slot="meter-fill"], '
+        + '[data-gallery-slider] [data-slot="slider-fill"]',
+      ),
+    ].map((fill) => ({
+      background: getComputedStyle(fill).backgroundColor,
+      forcedColorAdjust: getComputedStyle(fill).forcedColorAdjust,
+    }));
+    const thumbIndicators = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-gallery-slider] [data-slot="slider-thumb-indicator"]',
+      ),
+    ].map((indicator) => {
+      const style = getComputedStyle(indicator);
+      return {
+        background: style.backgroundColor,
+        border: style.borderColor,
+        shadow: style.boxShadow,
+      };
+    });
+    const knobs = [
+      ...document.querySelectorAll<HTMLElement>("[data-gallery-knob]"),
+    ].map((root) => {
+      const face = root.querySelector('[data-slot="knob-face"]');
+      const arcTrack = root.querySelector('[data-slot="knob-arc-track"]');
+      const arcValue = root.querySelector('[data-slot="knob-arc-value"]');
+      const indicator = root.querySelector('[data-slot="knob-indicator"]');
+      if (
+        !(face instanceof SVGElement)
+        || !(arcTrack instanceof SVGElement)
+        || !(arcValue instanceof SVGElement)
+        || !(indicator instanceof SVGElement)
+      ) {
+        throw new Error("A forced-colors Knob SVG fixture is incomplete.");
+      }
+      return {
+        arcTrack: getComputedStyle(arcTrack).stroke,
+        arcValue: getComputedStyle(arcValue).stroke,
+        faceFill: getComputedStyle(face).fill,
+        faceStroke: getComputedStyle(face).stroke,
+        indicator: getComputedStyle(indicator).stroke,
+      };
+    });
+    return {
+      canvas: systemColor("Canvas"),
+      canvasText: systemColor("CanvasText"),
+      fills,
+      forcedColors: matchMedia("(forced-colors: active)").matches,
+      grayText: systemColor("GrayText"),
+      highlight: systemColor("Highlight"),
+      knobs,
+      thumbIndicators,
+    };
+  });
+  invariant(
+    evidence.forcedColors
+    && evidence.fills.length === 11
+    && evidence.fills.every((fill) =>
+      fill.background === evidence.highlight && fill.forcedColorAdjust === "none"
+    )
+    && evidence.thumbIndicators.length === 4
+    && evidence.thumbIndicators.every((thumb) =>
+      thumb.background === evidence.canvas
+      && thumb.border === evidence.highlight
+      && thumb.shadow === "none"
+    )
+    && evidence.knobs.length === 4
+    && evidence.knobs.every((knob) =>
+      knob.faceFill === evidence.canvas
+      && knob.faceStroke === evidence.canvasText
+      && knob.arcTrack === evidence.grayText
+      && knob.arcValue === evidence.highlight
+      && knob.indicator === evidence.highlight
+    ),
+    `forced colors: Indicators and Knob colors changed: ${JSON.stringify(evidence)}`,
+  );
+
+  const focusEvidence = [];
+  for (const contract of [
+    {
+      presentation: '[data-slot="slider-thumb"]',
+      selector: '[data-gallery-slider="ltr"] input[type="range"]',
+    },
+    {
+      presentation: '[data-slot="knob-control"]',
+      selector: '[data-gallery-knob="default"] input[type="range"]',
+    },
+  ] as const) {
+    const input = page.locator(contract.selector);
+    await focusThroughPreviousTabStop(
+      page,
+      input,
+      `forced colors: ${contract.selector}`,
+    );
+    await page.keyboard.press("ArrowUp");
+    await page.waitForFunction(({ presentation, selector }) => {
+      const input = document.querySelector(selector);
+      const boundary = input?.closest(presentation);
+      if (!(input instanceof HTMLInputElement) || !(boundary instanceof HTMLElement)) {
+        return false;
+      }
+      const probe = document.createElement("span");
+      probe.style.color = "Highlight";
+      document.body.append(probe);
+      const highlight = getComputedStyle(probe).color;
+      probe.remove();
+      const style = getComputedStyle(boundary);
+      return document.activeElement === input
+        && input.matches(":focus-visible")
+        && style.outlineColor === highlight
+        && style.outlineStyle === "solid"
+        && Math.abs(Number.parseFloat(style.outlineOffset) - 2) <= 0.01
+        && Math.abs(Number.parseFloat(style.outlineWidth) - 2) <= 0.01;
+    }, contract, { polling: "raf", timeout: 2_000 });
+    focusEvidence.push(await input.evaluate((element, presentation) => {
+      const boundary = element.closest(presentation);
+      if (!(boundary instanceof HTMLElement)) {
+        throw new Error("A forced-colors range focus boundary is missing.");
+      }
+      const probe = document.createElement("span");
+      probe.style.color = "Highlight";
+      document.body.append(probe);
+      const highlight = getComputedStyle(probe).color;
+      probe.remove();
+      const style = getComputedStyle(boundary);
+      return {
+        active: document.activeElement === element,
+        color: style.outlineColor,
+        highlight,
+        offset: Number.parseFloat(style.outlineOffset),
+        style: style.outlineStyle,
+        width: Number.parseFloat(style.outlineWidth),
+      };
+    }, contract.presentation));
+  }
+  invariant(
+    focusEvidence.every((focus) =>
+      focus.active
+      && focus.color === focus.highlight
+      && nearlyEqual(focus.offset, 2)
+      && focus.style === "solid"
+      && nearlyEqual(focus.width, 2)
+    ),
+    `forced colors: Indicators or Knob focus changed: ${JSON.stringify(focusEvidence)}`,
+  );
+}
+
 function startGalleryServer(directory: string, requestedPaths: Set<string>) {
   return Bun.serve({
     hostname: "127.0.0.1",
@@ -8432,6 +9847,8 @@ try {
     access(resolve(installedRoot, "dist/stylex.css")),
     access(resolve(installedRoot, "src/actions.stylex.ts")),
     access(resolve(installedRoot, "src/checkbox-field.stylex.ts")),
+    access(resolve(installedRoot, "src/indicators.stylex.ts")),
+    access(resolve(installedRoot, "src/knob.stylex.ts")),
     access(resolve(installedRoot, "src/skip-link.stylex.ts")),
     access(resolve(installedRoot, "src/visually-hidden.stylex.ts")),
     access(resolve(installedRoot, "src/form.stylex.ts")),
@@ -8450,7 +9867,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|fields|form|key-hint|link|select-option|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|fields|form|indicators|key-hint|knob|link|select-option|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -8487,6 +9904,11 @@ try {
     installedPackageCss,
     /\.hraness-link(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate Link declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-(?:progress-bar(?:__(?:fill|header|label|label-row|track|value))?|meter(?:__(?:fill|header|label|label-row|track|value))?|slider(?:__(?:fill|header|label|label-row|thumb|thumb-indicator|track|value))?|knob(?:__(?:arc|arc--track|arc--value|control|dial|face|gesture|indicator|label|thumb|value))?)(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate Indicators or Knob declarations in legacy CSS",
   );
   assert.doesNotMatch(
     installedPackageCss,
@@ -8610,6 +10032,76 @@ try {
   assert.match(html, /name="mode"/u);
   assert.match(html, /name="alerts"/u);
   assert.match(html, /name="metric"/u);
+  assert.match(html, /data-gallery-section="indicators-knob"/u);
+  assert.equal(
+    html.match(/data-gallery-progress-bar="(?:determinate|indeterminate|override)"/gu)?.length,
+    3,
+    "SSR must include all three ProgressBar specimens",
+  );
+  assert.equal(
+    html.match(/data-gallery-meter-tone="(?:default|success|warning|danger)"/gu)?.length,
+    4,
+    "SSR must include all four Meter tones",
+  );
+  assert.equal(
+    html.match(/data-gallery-slider="(?:ltr|rtl|vertical|synthetic-coarse)"/gu)?.length,
+    4,
+    "SSR must include all four Slider specimens",
+  );
+  assert.match(
+    html,
+    /<div(?=[^>]*data-gallery-rtl-boundary="true")(?=[^>]*dir="rtl")[^>]*>/u,
+    "SSR must include the RTL Slider provider boundary",
+  );
+  assert.equal(
+    html.match(/data-gallery-knob="(?:default|compact|disabled|override)"/gu)?.length,
+    4,
+    "SSR must include all four Knob specimens",
+  );
+  assert.equal(
+    html.match(/data-gallery-knob-cell="(?:default|compact|disabled|override)"/gu)?.length,
+    4,
+    "SSR must isolate all four Knob specimens from grid-item blockification",
+  );
+  assert.match(html, /data-gallery-indicator-form="true"/u);
+  assert.match(html, /data-gallery-indicator-submit="true"/u);
+  assert.match(html, /data-gallery-indicator-submission="true"/u);
+  assert.match(html, /data-gallery-indicators-layer-conflict="true"/u);
+  assert.match(html, /data-gallery-knob-layer-conflict="true"/u);
+  assert.match(html, /data-slot="progress-bar-track"/u);
+  assert.match(html, /data-slot="progress-bar-fill"/u);
+  assert.match(html, /data-slot="meter-track"/u);
+  assert.match(html, /data-slot="meter-fill"/u);
+  assert.match(html, /data-slot="slider-track"/u);
+  assert.match(html, /data-slot="slider-fill"/u);
+  assert.match(html, /data-slot="slider-thumb"/u);
+  assert.match(html, /data-slot="slider-thumb-indicator"/u);
+  assert.match(html, /data-slot="knob-control"/u);
+  assert.match(html, /data-slot="knob-dial"/u);
+  assert.match(html, /data-slot="knob-face"/u);
+  assert.match(html, /data-slot="knob-arc-track"/u);
+  assert.match(html, /data-slot="knob-arc-value"/u);
+  assert.match(html, /data-slot="knob-indicator"/u);
+  assert.match(
+    html,
+    /class="hraness-progress-bar [^"]+ gallery-progress-bar gallery-progress-bar--override"/u,
+  );
+  assert.match(
+    html,
+    /class="hraness-knob [^"]+ gallery-knob gallery-knob--override"/u,
+  );
+  for (const name of [
+    "gallery-slider-ltr",
+    "gallery-slider-rtl",
+    "gallery-slider-vertical",
+    "gallery-slider-coarse",
+    "gallery-knob-default",
+    "gallery-knob-compact",
+    "gallery-knob-disabled",
+    "gallery-knob-override",
+  ]) {
+    assert.match(html, new RegExp(`name="${name}"`, "u"));
+  }
   assert.equal(
     html.match(/data-gallery-form-layer-conflict="true"/gu)?.length,
     2,
@@ -8771,6 +10263,8 @@ try {
           await waitForHydration(page, failures, requestedPaths, layout.id);
 
           const light = await browserEvidence(page);
+          const lightIndicators = await indicatorKnobEvidence(page);
+          verifyIndicatorKnobEvidence(lightIndicators, layout.id);
           await verifyFormPresentation(page, layout.id);
           await verifyFieldFamilyPresentation(page, layout.id);
           const lightSelect = await selectFieldIndicatorEvidence(page);
@@ -9119,6 +10613,8 @@ try {
           await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
+          const darkIndicators = await indicatorKnobEvidence(page);
+          verifyIndicatorKnobEvidence(darkIndicators, `${layout.id} dark`);
           const darkSegmented = await segmentedControlEvidence(page);
           verifySegmentedControlRecipe(darkSegmented, `${layout.id} dark`);
           invariant(
@@ -9221,6 +10717,14 @@ try {
               !== light.toolbarDefaultBackground,
             `${layout.id}: dark Toolbar parity failed: ${dark.toolbarDiagnostics}`,
           );
+          invariant(
+            darkIndicators.theme === "dark"
+            && lightIndicators.theme === "light"
+            && darkIndicators.tokens.background !== lightIndicators.tokens.background
+            && darkIndicators.tokens.primary !== lightIndicators.tokens.primary,
+            `${layout.id}: Indicators and Knob theme tokens did not change`,
+          );
+          await verifyIndicatorKnobInteraction(page, layout.id);
           await verifyActionCallerStatePrecedence(page, layout.id);
           await verifyLinkCallerStatePrecedence(page, layout.id);
           await verifyPressableCardCallerStatePrecedence(page, layout.id);
@@ -9249,7 +10753,7 @@ try {
           page,
           failures,
           requestedPaths,
-          "coarse-pointer action, CheckboxField, and Fields matrix",
+          "coarse-pointer action, CheckboxField, Fields, Indicators, and Knob matrix",
         );
         const coarseActions = await actionCoarsePointerEvidence(page);
         verifyActionCoarsePointerEvidence(coarseActions);
@@ -9263,9 +10767,10 @@ try {
           `coarse-pointer CheckboxField geometry changed: ${JSON.stringify(coarse)}`,
         );
         await verifyFieldFamilyCoarsePointer(page);
+        await verifyIndicatorKnobCoarsePointer(page);
         invariant(
           failures.length === 0,
-          `coarse-pointer action, CheckboxField, and Fields matrix: ${failures.join("; ")}`,
+          `coarse-pointer action, CheckboxField, Fields, Indicators, and Knob matrix: ${failures.join("; ")}`,
         );
       } finally {
         await coarsePointerContext.close();
@@ -9367,6 +10872,7 @@ try {
           `forced colors: CheckboxField parity failed: ${forced.checkboxDiagnostics}`,
         );
         await verifyFieldFamilyForcedColors(page);
+        await verifyIndicatorKnobForcedColors(page);
 
         await resetKeyboardFocusToDocumentStart(page, "forced colors");
         await page.keyboard.press("Tab");
@@ -9492,9 +10998,9 @@ try {
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, 3 ProgressBar, 4 Meter, 4 Slider, and 4 Knob packed specimens with semantic/generated/caller ordering, determinate and indeterminate motion, tone, LTR/RTL/vertical keyboard and form behavior, 20px Slider visuals inside 48px real and synthetic coarse hit targets, Knob density, pointer gesture, disabled, caller xstyle/controlXstyle/native-style precedence, forced-color SVG, collision, SSR, and hydration contracts, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
-  await rm(work, { force: true, recursive: true });
+  await removeTemporaryTree(work);
   assert.equal(await Bun.file(work).exists(), false, "the primitive gallery temporary directory must be removed");
 }

@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { Knob } from "./index.js";
+import { Knob, type KnobProps } from "./index.js";
 import {
   beginKnobGesture,
   cancelKnobGesture,
@@ -15,7 +17,44 @@ import {
   quantizeKnobValue,
   resolveKnobTouchIntent,
 } from "./knob-model.js";
+import { knobStyles } from "./knob.stylex.js";
 import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
+
+const consumerStyles = stylex.create({
+  controlOverride: {
+    backgroundColor: "var(--ui-card)",
+    outlineColor: "var(--ui-warning)",
+  },
+  dynamicWidth: (width: string) => ({ width }),
+  rootOverride: {
+    display: "flex",
+    gap: "var(--space-6)",
+  },
+});
+
+const typedKnob: KnobProps = {
+  controlXstyle: consumerStyles.controlOverride,
+  defaultValue: 50,
+  label: "Typed knob",
+  xstyle: consumerStyles.rootOverride,
+};
+const rawKnobXstyle: KnobProps = {
+  defaultValue: 50,
+  label: "Invalid",
+  // @ts-expect-error Knob xstyle accepts compiled recipes, not raw CSS objects.
+  xstyle: { display: "flex" },
+};
+void [rawKnobXstyle, typedKnob];
+
+function openingTag(markup: string, slot: string): string {
+  const match = markup.match(new RegExp(`<[^>]+data-slot="${slot}"[^>]*>`, "u"));
+  if (match === null) throw new Error(`Missing ${slot} opening tag`);
+  return match[0];
+}
+
+function classNames(tag: string): string[] {
+  return tag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+}
 
 test("knob renders one labelled native range with formatted value and form ownership", () => {
   const html = renderToStaticMarkup(
@@ -34,8 +73,15 @@ test("knob renders one labelled native range with formatted value and form owner
     />,
   );
 
-  expect(html).toContain('class="hraness-knob product-knob"');
-  expect(html).toContain('class="hraness-knob__control product-control"');
+  expect(classNames(openingTag(html, "knob"))[0]).toBe("hraness-knob");
+  expect(classNames(openingTag(html, "knob")).at(-1)).toBe("product-knob");
+  expect(classNames(openingTag(html, "knob-control"))[0]).toBe(
+    "hraness-knob__control",
+  );
+  expect(classNames(openingTag(html, "knob-control")).at(-1)).toBe(
+    "product-control",
+  );
+  expect(openingTag(html, "knob-control")).toContain("touch-action:pan-x");
   expect(html).toContain('data-slot="knob-label"');
   expect(html).toContain(">Pan</label>");
   expect(html).toContain('type="range"');
@@ -58,12 +104,157 @@ test("knob renders its 270 degree dial at the normalized value", () => {
   );
 
   expect(html).toContain('data-density="compact"');
-  expect(html).toContain('data-focus-indicator="true"');
+  expect(openingTag(html, "knob-control")).toContain(
+    'data-focus-indicator="true"',
+  );
+  expect(openingTag(html, "knob-dial")).not.toContain(
+    'data-focus-indicator="true"',
+  );
   expect(html).toContain('data-slot="knob-dial"');
   expect(html).toContain('stroke-dasharray="75 25"');
   expect(html).toContain('stroke-dasharray="18.75 100"');
   expect(html).toContain('transform="rotate(202.5 24 24)"');
   expect(html).toContain('data-slot="knob-gesture"');
+});
+
+test("knob recipes keep caller StyleX local and native thumb geometry last", () => {
+  const defaultHtml = renderToStaticMarkup(
+    <Knob defaultValue={25} label="Default knob" />,
+  );
+  const overrideHtml = renderToStaticMarkup(
+    <Knob
+      className="consumer-root"
+      controlClassName="consumer-control"
+      controlXstyle={consumerStyles.controlOverride}
+      defaultValue={25}
+      label="Override knob"
+      style={{ width: "15rem" }}
+      xstyle={[
+        consumerStyles.rootOverride,
+        consumerStyles.dynamicWidth("14rem"),
+      ]}
+    />,
+  );
+  const defaultControlClasses = classNames(
+    openingTag(defaultHtml, "knob-control"),
+  );
+  const root = openingTag(overrideHtml, "knob");
+  const rootClasses = classNames(root);
+  const control = openingTag(overrideHtml, "knob-control");
+  const controlClasses = classNames(control);
+  const thumb = openingTag(overrideHtml, "knob-thumb");
+  const dialClasses = classNames(openingTag(overrideHtml, "knob-dial"));
+  const gestureClasses = classNames(openingTag(overrideHtml, "knob-gesture"));
+  const fallbackClasses = stylex.props(
+    knobStyles.controlNativeFocus,
+  ).className?.split(" ") ?? [];
+  const rootCallerClasses = stylex.props(
+    consumerStyles.rootOverride,
+    consumerStyles.dynamicWidth("14rem"),
+  ).className?.split(" ") ?? [];
+  const controlCallerClasses = stylex.props(
+    consumerStyles.controlOverride,
+  ).className?.split(" ") ?? [];
+
+  expect(rootClasses[0]).toBe("hraness-knob");
+  expect(rootClasses.at(-1)).toBe("consumer-root");
+  expect(controlClasses[0]).toBe("hraness-knob__control");
+  expect(controlClasses.at(-1)).toBe("consumer-control");
+  expect(root).toMatch(/style="--[^:]+:14rem;width:15rem"/u);
+  expect(fallbackClasses).not.toHaveLength(0);
+  for (const fallbackClass of fallbackClasses) {
+    expect(defaultControlClasses).toContain(fallbackClass);
+    expect(controlClasses).not.toContain(fallbackClass);
+  }
+  for (const callerClass of rootCallerClasses) {
+    expect(rootClasses).toContain(callerClass);
+    expect(controlClasses).not.toContain(callerClass);
+  }
+  for (const callerClass of controlCallerClasses) {
+    expect(controlClasses).toContain(callerClass);
+    expect(rootClasses).not.toContain(callerClass);
+    expect(dialClasses).not.toContain(callerClass);
+    expect(gestureClasses).not.toContain(callerClass);
+  }
+  expect(thumb).toContain(
+    'style="position:absolute;left:0;transform:none;touch-action:none;height:100%;top:0;width:100%"',
+  );
+  expect(overrideHtml).toContain('type="range"');
+  expect(overrideHtml).toContain('aria-orientation="horizontal"');
+});
+
+test("empty control overrides retain the native focus fallback", () => {
+  const fallbackClasses = stylex.props(
+    knobStyles.controlNativeFocus,
+  ).className?.split(" ") ?? [];
+  const emptyOverrides: readonly StyleXStyles[] = [
+    false,
+    null,
+    undefined,
+    [],
+    [false, null, undefined],
+  ];
+
+  expect(fallbackClasses).not.toHaveLength(0);
+  for (const controlXstyle of emptyOverrides) {
+    const controlClasses = classNames(openingTag(
+      renderToStaticMarkup(
+        <Knob
+          controlXstyle={controlXstyle}
+          defaultValue={25}
+          label="Conditional knob"
+        />,
+      ),
+      "knob-control",
+    ));
+    for (const fallbackClass of fallbackClasses) {
+      expect(controlClasses).toContain(fallbackClass);
+    }
+  }
+});
+
+test("knob finite recipes preserve compact, touch-pan, and disabled boundaries", () => {
+  const html = renderToStaticMarkup(
+    <Knob
+      defaultValue={25}
+      density="compact"
+      disabled
+      label="Compact knob"
+      touchPan="horizontal"
+    />,
+  );
+  const controlClasses = classNames(openingTag(html, "knob-control"));
+  const gestureClasses = classNames(openingTag(html, "knob-gesture"));
+  const dialClasses = classNames(openingTag(html, "knob-dial"));
+  const expectedControlClasses = stylex.props(
+    knobStyles.control,
+    knobStyles.controlHorizontalTouchPan,
+    knobStyles.controlDisabled,
+    knobStyles.controlNativeFocus,
+  ).className?.split(" ") ?? [];
+  const expectedGestureClasses = stylex.props(
+    knobStyles.gesture,
+    knobStyles.gestureHorizontalTouchPan,
+    knobStyles.gestureDisabled,
+  ).className?.split(" ") ?? [];
+  const expectedDialClasses = stylex.props(
+    knobStyles.dial,
+    knobStyles.dialCompact,
+  ).className?.split(" ") ?? [];
+
+  for (const className of expectedControlClasses) {
+    expect(controlClasses).toContain(className);
+  }
+  for (const className of expectedGestureClasses) {
+    expect(gestureClasses).toContain(className);
+  }
+  for (const className of expectedDialClasses) {
+    expect(dialClasses).toContain(className);
+  }
+  expect(stylex.props(knobStyles.controlDragging).className).toBeDefined();
+  expect(openingTag(html, "knob-control")).toContain("touch-action:pan-x");
+  expect(html).toContain('data-disabled="true"');
+  expect(html).toContain('data-touch-pan="horizontal"');
 });
 
 test("knob can simplify visible copy without weakening accessible value text", () => {
@@ -113,7 +304,9 @@ test("knob output stays visible by default", () => {
   );
 
   expect(html).toContain('data-output-visibility="visible"');
-  expect(html).toContain('class="hraness-knob__value"');
+  expect(classNames(openingTag(html, "knob-value"))).toContain(
+    "hraness-knob__value",
+  );
   expect(html).not.toContain("hraness-visually-hidden");
 });
 

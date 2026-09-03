@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { I18nProvider } from "react-aria";
 
 import {
   AppearanceIcon,
@@ -32,9 +33,12 @@ import {
   KeyHint,
   Link,
   LinkButton,
+  Knob,
+  Meter,
   NativeSelectField,
   NumberField,
   Progress,
+  ProgressBar,
   PressableCard,
   QuietSiteFooter,
   QuietSitePage,
@@ -45,6 +49,7 @@ import {
   SelectField,
   Skeleton,
   SkipLink,
+  Slider,
   SocialIcon,
   Spinner,
   StatusDot,
@@ -98,6 +103,7 @@ const galleryNativeSelectOptions = [
 ] as const;
 
 const galleryActionSizes = ["compact", "default", "large", "transport"] as const;
+const galleryMeterTones = ["default", "success", "warning", "danger"] as const;
 
 type GalleryTheme = "dark" | "light";
 type GallerySegment = typeof gallerySegments[number]["id"];
@@ -207,6 +213,28 @@ const galleryStyles = stylex.create({
     minWidth: "2rem",
     paddingInline: "var(--space-2)",
   },
+  indicatorRootOverride: {
+    color: "var(--ui-primary)",
+    gap: "var(--space-4)",
+    width: "14rem",
+  },
+  knobControlOverride: {
+    backgroundColor: "var(--ui-secondary)",
+    borderColor: "var(--ui-warning)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--ui-primary)",
+    ":has(input:focus-visible)": {
+      outlineColor: "var(--ui-success)",
+      outlineOffset: "3px",
+      outlineStyle: "solid",
+      outlineWidth: "3px",
+    },
+  },
+  knobRootOverride: {
+    color: "var(--ui-primary)",
+    gap: "var(--space-4)",
+    width: "14rem",
+  },
   linkDynamicLetterSpacing: (letterSpacing: string) => ({ letterSpacing }),
   linkOverride: {
     color: "var(--ui-foreground)",
@@ -308,6 +336,7 @@ const galleryStyles = stylex.create({
 
 export function PrimitiveGallery() {
   const [cardPressCount, setCardPressCount] = useState(0);
+  const [indicatorSubmission, setIndicatorSubmission] = useState("");
   const [pressCount, setPressCount] = useState(0);
   const [segment, setSegment] = useState<GallerySegment>("all");
   const [theme, setTheme] = useState<GalleryTheme>("light");
@@ -886,6 +915,170 @@ export function PrimitiveGallery() {
           </InlineAlert>
           <Progress label="Harness coverage" showValue value={78} />
           <Skeleton height="1rem" isText width="68%" />
+        </section>
+
+        <section
+          aria-labelledby="gallery-indicators-knob-heading"
+          data-gallery-section="indicators-knob"
+        >
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-indicators-knob-heading">Indicators and Knob</h2>
+              <p>
+                Range semantics, direction, motion preferences, coarse targets, and
+                caller overrides share one package-compiled boundary.
+              </p>
+            </div>
+          </div>
+          <form
+            data-gallery-indicator-form="true"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              setIndicatorSubmission(
+                [...data.entries()]
+                  .map(([name, value]) => `${name}=${String(value)}`)
+                  .join("&"),
+              );
+            }}
+          >
+            <div data-gallery-indicator-grid="progress-bars">
+              <ProgressBar
+                data-gallery-indicators-layer-conflict="true"
+                data-gallery-progress-bar="determinate"
+                label="Migration progress"
+                showValue
+                value={64}
+              />
+              <ProgressBar
+                data-gallery-indicators-layer-conflict="true"
+                data-gallery-progress-bar="indeterminate"
+                isIndeterminate
+                label="Preparing release"
+              />
+              <ProgressBar
+                className="gallery-progress-bar gallery-progress-bar--override"
+                data-gallery-indicators-layer-conflict="true"
+                data-gallery-progress-bar="override"
+                label="Caller progress"
+                showValue
+                style={{ width: "15rem" }}
+                value={82}
+                xstyle={galleryStyles.indicatorRootOverride}
+              />
+            </div>
+            <div data-gallery-indicator-grid="meters">
+              {galleryMeterTones.map((tone, index) => (
+                <Meter
+                  data-gallery-indicators-layer-conflict="true"
+                  data-gallery-meter-tone={tone}
+                  key={tone}
+                  label={`${tone[0]?.toUpperCase()}${tone.slice(1)} meter`}
+                  maxValue={100}
+                  tone={tone}
+                  value={35 + index * 15}
+                />
+              ))}
+            </div>
+            <div data-gallery-indicator-grid="sliders">
+              <Slider
+                data-gallery-indicators-layer-conflict="true"
+                data-gallery-slider="ltr"
+                defaultValue={32}
+                dir="ltr"
+                label="Horizontal level"
+                name="gallery-slider-ltr"
+                thumbLabel="Horizontal level"
+              />
+              <I18nProvider locale="he-IL">
+                <div data-gallery-rtl-boundary="true" dir="rtl">
+                  <Slider
+                    data-gallery-indicators-layer-conflict="true"
+                    data-gallery-slider="rtl"
+                    defaultValue={68}
+                    dir="rtl"
+                    label="RTL horizontal level"
+                    name="gallery-slider-rtl"
+                    thumbLabel="RTL horizontal level"
+                  />
+                </div>
+              </I18nProvider>
+              <Slider
+                data-gallery-indicators-layer-conflict="true"
+                data-gallery-slider="vertical"
+                defaultValue={44}
+                label="Vertical level"
+                name="gallery-slider-vertical"
+                orientation="vertical"
+                thumbLabel="Vertical level"
+              />
+              <Slider
+                data-gallery-indicators-layer-conflict="true"
+                data-gallery-slider="synthetic-coarse"
+                data-gallery-synthetic-coarse="true"
+                defaultValue={56}
+                label="Synthetic coarse level"
+                name="gallery-slider-coarse"
+                style={{ "--hraness-slider-coarse-min": "3rem" } as CSSProperties}
+                thumbLabel="Synthetic coarse level"
+              />
+            </div>
+            <div data-gallery-indicator-grid="knobs">
+              <div data-gallery-knob-cell="default">
+                <Knob
+                  data-gallery-knob="default"
+                  data-gallery-knob-layer-conflict="true"
+                  defaultValue={42}
+                  label="Default gain"
+                  name="gallery-knob-default"
+                  touchPan="horizontal"
+                />
+              </div>
+              <div data-gallery-knob-cell="compact">
+                <Knob
+                  data-gallery-knob="compact"
+                  data-gallery-knob-layer-conflict="true"
+                  defaultValue={68}
+                  density="compact"
+                  label="Compact gain"
+                  name="gallery-knob-compact"
+                  touchPan="horizontal"
+                />
+              </div>
+              <div data-gallery-knob-cell="disabled">
+                <Knob
+                  data-gallery-knob="disabled"
+                  data-gallery-knob-layer-conflict="true"
+                  defaultValue={30}
+                  disabled
+                  label="Disabled gain"
+                  name="gallery-knob-disabled"
+                />
+              </div>
+              <div data-gallery-knob-cell="override">
+                <Knob
+                  className="gallery-knob gallery-knob--override"
+                  controlClassName="gallery-knob-control gallery-knob-control--override"
+                  controlXstyle={galleryStyles.knobControlOverride}
+                  data-gallery-knob="override"
+                  data-gallery-knob-layer-conflict="true"
+                  data-gallery-knob-native-style-last="true"
+                  defaultValue={76}
+                  label="Caller gain"
+                  name="gallery-knob-override"
+                  style={{ color: "rgb(11 12 13)", width: "15rem" }}
+                  touchPan="horizontal"
+                  xstyle={galleryStyles.knobRootOverride}
+                />
+              </div>
+            </div>
+            <button data-gallery-indicator-submit="true" type="submit">
+              Submit range canary
+            </button>
+            <output aria-live="polite" data-gallery-indicator-submission="true">
+              {indicatorSubmission}
+            </output>
+          </form>
         </section>
 
         <section aria-labelledby="gallery-avatar-heading" data-gallery-section="avatars">

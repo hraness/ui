@@ -136,6 +136,38 @@
   display: block;
 }
 
+[data-gallery-indicator-form="true"] {
+  display: grid;
+  gap: var(--space-5);
+}
+
+[data-gallery-indicator-grid] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  align-items: start;
+  gap: var(--space-4);
+}
+
+[data-gallery-indicator-grid="sliders"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+[data-gallery-indicator-grid="knobs"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+}
+
+[data-gallery-indicator-submit="true"] {
+  justify-self: start;
+}
+
+[data-gallery-indicator-submission="true"] {
+  min-block-size: 1.5rem;
+  overflow-wrap: anywhere;
+  color: var(--ui-muted-foreground);
+  font-family: var(--ui-font-mono);
+  font-size: var(--text-caption);
+}
+
 [data-gallery-card-family-grid] {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -155,6 +187,245 @@
 }
 
 @layer components.hraness-ui.legacy {
+  html body [data-gallery-indicators-layer-conflict="true"]:where(
+    [data-slot="progress-bar"],
+    [data-slot="meter"],
+    [data-slot="slider"]
+  ) {
+    --gallery-indicator-root-conflict: legacy;
+    display: block;
+    gap: 7rem;
+    min-width: 13rem;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] :where(
+    [data-slot="progress-bar-header"],
+    [data-slot="meter-header"],
+    [data-slot="slider-header"]
+  ) {
+    --gallery-indicator-header-conflict: legacy;
+    align-items: stretch;
+    display: grid;
+    gap: 6rem;
+    justify-content: start;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] :where(
+    [data-slot="progress-bar-label"],
+    [data-slot="meter-label"],
+    [data-slot="slider-label"]
+  ) {
+    font-weight: 100;
+    min-width: 9rem;
+    overflow-wrap: normal;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] :where(
+    [data-slot="progress-bar-value"],
+    [data-slot="meter-value"],
+    [data-slot="slider-value"]
+  ) {
+    color: rgb(255 0 255);
+    flex: 1 1 auto;
+    font-variant-numeric: normal;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] :where(
+    [data-slot="progress-bar-track"],
+    [data-slot="meter-track"],
+    [data-slot="slider-track"]
+  ) {
+    --gallery-indicator-track-conflict: legacy;
+    background-color: rgb(1 2 3);
+    background-image: linear-gradient(rgb(255 0 255), rgb(1 2 3));
+    border-radius: 0;
+    height: 7rem;
+    overflow: hidden;
+    position: static;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] :where(
+    [data-slot="progress-bar-fill"],
+    [data-slot="meter-fill"],
+    [data-slot="slider-fill"]
+  ) {
+    --gallery-indicator-fill-conflict: legacy;
+    background-color: rgb(255 0 255);
+    background-image: linear-gradient(rgb(1 2 3), rgb(255 0 255));
+    border-radius: 0;
+    forced-color-adjust: auto;
+    height: 7rem;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] [data-slot="progress-bar-fill"][data-indeterminate] {
+    animation-delay: 9s;
+    animation-direction: reverse;
+    animation-duration: 9s;
+    animation-fill-mode: both;
+    animation-iteration-count: 7;
+    animation-name: none;
+    animation-play-state: paused;
+    animation-timing-function: linear;
+    width: 99%;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"][data-slot="slider"][data-orientation="vertical"] {
+    min-height: 4rem;
+    width: 17rem;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] [data-slot="slider-track"] {
+    overflow: hidden;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] [data-slot="slider-track"][data-orientation="vertical"] {
+    height: 4rem;
+    justify-self: start;
+    width: 7rem;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] [data-slot="slider-fill"] {
+    position: static;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] [data-slot="slider-thumb"] {
+    --gallery-indicator-thumb-conflict: legacy;
+    align-items: stretch;
+    background-color: rgb(1 2 3);
+    background-image: linear-gradient(rgb(255 0 255), rgb(1 2 3));
+    display: block;
+    height: 7rem;
+    justify-content: start;
+    outline-style: dashed;
+    top: 0;
+    width: 8rem;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] [data-slot="slider-thumb-indicator"] {
+    --gallery-indicator-thumb-visual-conflict: legacy;
+    background-color: rgb(1 2 3);
+    background-image: linear-gradient(rgb(1 2 3), rgb(255 0 255));
+    border-color: rgb(255 0 255);
+    border-radius: 0;
+    border-style: dashed;
+    border-width: 7px;
+    box-shadow: none;
+    height: 6rem;
+    width: 7rem;
+  }
+
+  html body [data-gallery-indicators-layer-conflict="true"] [data-slot="slider-thumb"]:where([data-focus-visible], :has(input:focus-visible)) {
+    outline-color: rgb(255 0 255);
+    outline-offset: 11px;
+    outline-style: dashed;
+    outline-width: 7px;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"][data-slot="knob"] {
+    --gallery-knob-root-conflict: legacy;
+    color: rgb(255 0 255);
+    display: block;
+    gap: 7rem;
+    justify-items: start;
+    min-width: 13rem;
+    vertical-align: top;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-control"] {
+    --gallery-knob-control-conflict: legacy;
+    cursor: wait;
+    height: 7rem;
+    min-height: 7rem;
+    min-width: 8rem;
+    position: static;
+    touch-action: auto;
+    user-select: text;
+    width: 8rem;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-control"]:has(input:focus-visible) {
+    outline-color: rgb(255 0 255);
+    outline-offset: 11px;
+    outline-style: dashed;
+    outline-width: 7px;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-thumb"] {
+    display: block;
+    outline-style: dashed;
+    place-items: start;
+    pointer-events: auto;
+    z-index: 9;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-dial"] {
+    --gallery-knob-dial-conflict: legacy;
+    border-radius: 0;
+    display: inline;
+    height: 7rem;
+    overflow: hidden;
+    width: 8rem;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-face"] {
+    fill: rgb(1 2 3);
+    stroke: rgb(255 0 255);
+    stroke-width: 7;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] :where(
+    [data-slot="knob-arc-track"],
+    [data-slot="knob-arc-value"]
+  ) {
+    fill: rgb(1 2 3);
+    stroke-linecap: butt;
+    stroke-width: 7;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-arc-track"] {
+    stroke: rgb(255 0 255);
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-arc-value"] {
+    stroke: rgb(1 2 3);
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-indicator"] {
+    stroke: rgb(255 0 255);
+    stroke-linecap: butt;
+    stroke-width: 7;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-gesture"] {
+    inset: 7rem;
+    border-radius: 0;
+    cursor: wait;
+    position: static;
+    touch-action: auto;
+    user-select: text;
+    z-index: 9;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] :where(
+    [data-slot="knob-label"],
+    [data-slot="knob-value"]
+  ) {
+    font-size: 3rem;
+    line-height: 4;
+    max-width: 9rem;
+    overflow-wrap: normal;
+    text-align: start;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-label"] {
+    font-weight: 100;
+  }
+
+  html body [data-gallery-knob-layer-conflict="true"] [data-slot="knob-value"] {
+    color: rgb(255 0 255);
+    font-variant-numeric: normal;
+  }
+
   html body [data-gallery-action-family-layer-conflict="true"] [data-slot="button"] {
     --gallery-action-family-root-conflict: legacy;
     display: block;
@@ -639,6 +910,30 @@
   }
 
   @media (forced-colors: active) {
+    html body [data-gallery-indicators-layer-conflict="true"] :where(
+      [data-slot="progress-bar-fill"],
+      [data-slot="meter-fill"],
+      [data-slot="slider-fill"]
+    ) {
+      background-color: LinkText;
+      forced-color-adjust: auto;
+    }
+
+    html body [data-gallery-indicators-layer-conflict="true"] [data-slot="slider-thumb-indicator"] {
+      background-color: LinkText;
+      border-color: LinkText;
+    }
+
+    html body [data-gallery-knob-layer-conflict="true"] :where(
+      [data-slot="knob-face"],
+      [data-slot="knob-arc-track"],
+      [data-slot="knob-arc-value"],
+      [data-slot="knob-indicator"]
+    ) {
+      fill: LinkText;
+      stroke: LinkText;
+    }
+
     html body [data-gallery-status-family-layer-conflict="true"][data-slot="badge"],
     html body [data-gallery-status-family-layer-conflict="true"][data-slot="tag"] {
       border-color: LinkText;
