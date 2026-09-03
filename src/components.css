@@ -210,34 +210,6 @@
     inset-inline-end: var(--space-3);
   }
 
-  .hraness-empty-state {
-    display: grid;
-    min-height: 12rem;
-    place-items: center;
-    gap: var(--space-3);
-    padding: var(--space-8);
-    border: 1px dashed var(--ui-border);
-    border-radius: var(--radius-lg);
-    color: var(--ui-muted-foreground);
-    text-align: center;
-  }
-
-  .hraness-page-intro__title {
-    color: var(--ui-foreground);
-    font-size: clamp(var(--text-title), 5vw, var(--text-display));
-    font-weight: var(--font-weight-bold);
-    letter-spacing: -0.04em;
-    line-height: 1;
-    text-wrap: balance;
-  }
-
-  .hraness-page-intro__description {
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-body);
-    line-height: 1.6;
-    text-wrap: pretty;
-  }
-
   .hraness-breadcrumbs {
     min-width: 0;
   }
@@ -524,144 +496,6 @@
     text-align: center !important;
   }
 
-  .hraness-page-intro {
-    display: grid;
-    max-width: none;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
-    gap: var(--space-6);
-  }
-
-  .hraness-page-intro__copy {
-    display: grid;
-    max-width: 48rem;
-    gap: var(--space-3);
-  }
-
-  .hraness-page-intro__eyebrow {
-    color: var(--ui-primary);
-    font-size: var(--text-caption);
-    font-weight: var(--font-weight-bold);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .hraness-page-intro__actions,
-  .hraness-empty-state__action,
-  .hraness-settings-card__actions {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .hraness-empty-state__icon {
-    display: grid;
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-title);
-    place-items: center;
-  }
-
-  .hraness-empty-state__title {
-    color: var(--ui-foreground);
-    font-size: var(--text-heading);
-    font-weight: var(--font-weight-bold);
-    line-height: 1.2;
-  }
-
-  .hraness-empty-state__description {
-    max-width: 36rem;
-    color: var(--ui-muted-foreground);
-    line-height: 1.6;
-  }
-
-  .hraness-inline-alert {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: var(--space-3);
-    padding: var(--space-4);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    background: var(--ui-info-soft);
-    color: var(--ui-card-foreground);
-  }
-
-  .hraness-inline-alert[data-tone="danger"] {
-    border-color: color-mix(in oklch, var(--ui-destructive) 55%, var(--ui-border));
-    background: color-mix(in oklch, var(--ui-destructive) 9%, var(--ui-card));
-  }
-
-  .hraness-inline-alert[data-tone="success"] {
-    border-color: color-mix(in oklch, var(--ui-success) 55%, var(--ui-border));
-    background: var(--ui-success-soft);
-  }
-
-  .hraness-inline-alert[data-tone="warning"] {
-    border-color: color-mix(in oklch, var(--ui-warning) 55%, var(--ui-border));
-    background: var(--ui-warning-soft);
-  }
-
-  .hraness-inline-alert__icon {
-    display: grid;
-    place-items: start center;
-  }
-
-  .hraness-inline-alert__content,
-  .hraness-inline-alert__body {
-    min-width: 0;
-  }
-
-  .hraness-inline-alert__content {
-    display: grid;
-    gap: var(--space-1);
-  }
-
-  .hraness-inline-alert__title {
-    font-weight: var(--font-weight-bold);
-  }
-
-  .hraness-settings-card {
-    overflow: hidden;
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    background: var(--ui-card);
-    color: var(--ui-card-foreground);
-  }
-
-  .hraness-settings-card[data-shape="rectangular"] {
-    border-radius: var(--radius-sharp);
-  }
-
-  .hraness-settings-card__header {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: start;
-    justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-6);
-    border-block-end: 1px solid var(--ui-border);
-  }
-
-  .hraness-settings-card__title {
-    font-size: var(--text-heading);
-    font-weight: var(--font-weight-bold);
-    line-height: 1.2;
-  }
-
-  .hraness-settings-card__description {
-    margin-block-start: var(--space-2);
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-label);
-    line-height: 1.5;
-  }
-
-  .hraness-settings-card__body {
-    min-width: 0;
-    padding: var(--space-6);
-  }
-
   .hraness-toast-region {
     position: fixed;
     z-index: var(--z-modal);
@@ -911,11 +745,6 @@
 }
 
 @media (max-width: 40rem) {
-  .hraness-page-intro {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
-  }
-
   .hraness-toast-region {
     inset-inline: max(var(--space-3), env(safe-area-inset-left));
     width: auto;
@@ -940,7 +769,6 @@
     .hraness-popover,
     .hraness-tooltip,
     .hraness-dialog,
-    .hraness-inline-alert,
     .hraness-toast
   ) {
     border-color: CanvasText;

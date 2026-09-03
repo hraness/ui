@@ -161,6 +161,99 @@ test("forced-colors field placeholders use unfaded system text", async () => {
   expect(placeholder).toContain("opacity: 1;");
 });
 
+test("content families compile presentation while legacy CSS retains no owned selectors", async () => {
+  const [components, content, component] = await Promise.all([
+    stylesheet("./components.css"),
+    stylesheet("./content.stylex.ts"),
+    stylesheet("./content.tsx"),
+  ]);
+
+  expect(components).not.toMatch(
+    /\.hraness-(?:page-intro|empty-state|inline-alert|settings-card)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+  );
+  for (const recipe of [
+    "actions",
+    "emptyStateDescription",
+    "emptyStateIcon",
+    "emptyStateRoot",
+    "emptyStateTitle",
+    "inlineAlertBody",
+    "inlineAlertContent",
+    "inlineAlertDanger",
+    "inlineAlertIcon",
+    "inlineAlertInfo",
+    "inlineAlertRoot",
+    "inlineAlertSuccess",
+    "inlineAlertTitle",
+    "inlineAlertWarning",
+    "pageIntroCopy",
+    "pageIntroDescription",
+    "pageIntroEyebrow",
+    "pageIntroRoot",
+    "pageIntroTitle",
+    "settingsCardBody",
+    "settingsCardDescription",
+    "settingsCardHeader",
+    "settingsCardRectangular",
+    "settingsCardRoot",
+    "settingsCardTitle",
+  ]) expect(content).toContain(`${recipe}: {`);
+
+  expect(content).toContain('const compactViewport = "@media(max-width: 40rem)"');
+  const pageIntroRoot = content.slice(
+    content.indexOf("pageIntroRoot: {"),
+    content.indexOf("pageIntroTitle: {"),
+  );
+  expect(pageIntroRoot).toContain('[compactViewport]: "start"');
+  expect(pageIntroRoot).toContain(
+    '[compactViewport]: "minmax(0, 1fr)"',
+  );
+  expect(content).toContain(
+    'const forcedColors = "@media(forced-colors: active)"',
+  );
+  expect(content.match(/\[forcedColors\]: "CanvasText"/gu)).toHaveLength(5);
+  expect(content).toContain('[forcedColors]: "auto"');
+  for (const backgroundReset of [
+    'backgroundAttachment: "scroll"',
+    'backgroundClip: "border-box"',
+    'backgroundImage: "none"',
+    'backgroundOrigin: "padding-box"',
+    'backgroundPosition: "0% 0%"',
+    'backgroundRepeat: "repeat"',
+    'backgroundSize: "auto auto"',
+  ]) expect(content.match(new RegExp(backgroundReset, "gu"))).toHaveLength(5);
+  for (const borderImageReset of [
+    "borderImageOutset: 0",
+    'borderImageRepeat: "stretch"',
+    'borderImageSlice: "100%"',
+    'borderImageSource: "none"',
+    "borderImageWidth: 1",
+  ]) expect(content.match(new RegExp(borderImageReset, "gu"))).toHaveLength(3);
+  expect(content).not.toContain("@media(pointer: coarse)");
+  expect(content).not.toContain("@media(prefers-reduced-motion: reduce)");
+  expect(content).not.toContain("placeItems:");
+  expect(content).not.toMatch(/^\s*(?:background|border|padding):/mu);
+
+  expect(component).not.toContain('"use client"');
+  expect(component).toMatch(
+    /stylex\.props\(contentStyles\.pageIntroRoot, xstyle\)/u,
+  );
+  expect(component).toMatch(
+    /stylex\.props\(contentStyles\.emptyStateRoot, xstyle\)/u,
+  );
+  expect(component).toMatch(
+    /contentStyles\.inlineAlertRoot,[\s\S]*?inlineAlertToneStyles\[tone\],[\s\S]*?xstyle/u,
+  );
+  expect(component).toMatch(
+    /contentStyles\.settingsCardRoot,[\s\S]*?shape === "rectangular" && contentStyles\.settingsCardRectangular,[\s\S]*?xstyle/u,
+  );
+  expect(
+    component.match(
+      /style=\{mergeStylexInlineStyles\(rootPresentation\.style, style\)\}/gu,
+    ),
+  ).toHaveLength(4);
+});
+
 test("field families compile presentation while legacy CSS keeps only native pseudo seams", async () => {
   const [components, fields, fieldComponents, select, selectComponent] =
     await Promise.all([

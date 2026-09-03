@@ -24,6 +24,7 @@ import {
   CardTitle,
   CheckboxField,
   CheckboxGroup,
+  EmptyState,
   FileField,
   Form,
   Icon,
@@ -37,6 +38,7 @@ import {
   Meter,
   NativeSelectField,
   NumberField,
+  PageIntro,
   Progress,
   ProgressBar,
   PressableCard,
@@ -52,6 +54,7 @@ import {
   Slider,
   SocialIcon,
   Spinner,
+  SettingsCard,
   StatusDot,
   SwitchField,
   Tabs,
@@ -198,6 +201,15 @@ const galleryStyles = stylex.create({
   cardPartOverride: {
     color: "var(--ui-primary)",
     paddingInline: "var(--space-2)",
+  },
+  contentRootOverride: {
+    borderStyle: "solid",
+    borderWidth: "3px",
+    color: "var(--ui-primary)",
+    gap: "var(--space-2)",
+    paddingBlock: "var(--space-2)",
+    paddingInline: "var(--space-2)",
+    width: "14rem",
   },
   keyHintDynamicWidth: (width: string) => ({ width }),
   keyHintOverride: {
@@ -915,6 +927,153 @@ export function PrimitiveGallery() {
           </InlineAlert>
           <Progress label="Harness coverage" showValue value={78} />
           <Skeleton height="1rem" isText width="68%" />
+        </section>
+
+        <section
+          aria-labelledby="gallery-content-family-heading"
+          data-gallery-section="content-family"
+        >
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-content-family-heading">Content composition</h2>
+              <p>
+                Heading hierarchy, live feedback, finite card shapes, responsive
+                layout, and caller-last roots share one packed StyleX boundary.
+              </p>
+            </div>
+          </div>
+
+          <div data-gallery-content-page-intro-grid="true">
+            <PageIntro
+              actions={<Button size="compact">Review release</Button>}
+              className="gallery-page-intro gallery-page-intro--default"
+              data-gallery-content-layer-conflict="true"
+              data-gallery-page-intro="default"
+              description="The wide layout keeps actions beside balanced release copy."
+              eyebrow="Current main"
+              title="Portable content contracts"
+              titleAs="h3"
+            >
+              <p data-gallery-page-intro-child="true">Current-main child content.</p>
+            </PageIntro>
+            <PageIntro
+              actions={<Button size="compact" variant="secondary">Inspect diff</Button>}
+              className="gallery-page-intro gallery-page-intro--override"
+              data-gallery-content-layer-conflict="true"
+              data-gallery-content-override="page-intro"
+              data-gallery-page-intro="override"
+              description="Native width and border declarations settle after caller xstyle."
+              eyebrow="Caller seam"
+              style={{ borderWidth: "4px", width: "15rem" }}
+              title="Narrow caller intro"
+              titleAs="h4"
+              xstyle={galleryStyles.contentRootOverride}
+            />
+          </div>
+
+          <div data-gallery-content-grid="states">
+            <EmptyState
+              action={<Button size="compact">Create project</Button>}
+              className="gallery-empty-state gallery-empty-state--default"
+              data-gallery-content-layer-conflict="true"
+              data-gallery-empty-state="default"
+              description="Create the first project to populate this workspace."
+              icon={<span>◇</span>}
+              title="No projects yet"
+              titleAs="h3"
+            />
+            <EmptyState
+              action={<Button size="compact" variant="secondary">Reset filters</Button>}
+              className="gallery-empty-state gallery-empty-state--override"
+              data-gallery-content-layer-conflict="true"
+              data-gallery-content-override="empty-state"
+              data-gallery-empty-state="override"
+              description="Caller presentation cannot replace the semantic section."
+              icon={<span>○</span>}
+              style={{ borderWidth: "4px", width: "15rem" }}
+              title="No matching releases"
+              titleAs="h4"
+              xstyle={galleryStyles.contentRootOverride}
+            />
+          </div>
+
+          <div data-gallery-content-grid="alerts">
+            <InlineAlert
+              className="gallery-inline-alert gallery-inline-alert--info"
+              data-gallery-content-layer-conflict="true"
+              data-gallery-inline-alert-tone="info"
+              icon={<span>i</span>}
+              isLive
+              title="Release prepared"
+              tone="info"
+            >
+              The immutable package boundary is ready for review.
+            </InlineAlert>
+            <InlineAlert
+              className="gallery-inline-alert gallery-inline-alert--success"
+              data-gallery-content-layer-conflict="true"
+              data-gallery-inline-alert-tone="success"
+              icon={<span>✓</span>}
+              isLive
+              title="Checks passed"
+              tone="success"
+            >
+              Focused and packed evidence agree.
+            </InlineAlert>
+            <InlineAlert
+              className="gallery-inline-alert gallery-inline-alert--warning"
+              data-gallery-content-layer-conflict="true"
+              data-gallery-inline-alert-tone="warning"
+              icon={<span>!</span>}
+              title="Approval pending"
+              tone="warning"
+            >
+              This non-live notice keeps ordinary document semantics.
+            </InlineAlert>
+            <InlineAlert
+              className="gallery-inline-alert gallery-inline-alert--danger"
+              data-gallery-content-layer-conflict="true"
+              data-gallery-content-override="inline-alert"
+              data-gallery-inline-alert-tone="danger"
+              icon={<span>×</span>}
+              isLive
+              style={{ borderWidth: "4px", width: "15rem" }}
+              title="Release blocked"
+              tone="danger"
+              xstyle={galleryStyles.contentRootOverride}
+            >
+              The caller surface preserves assertive alert semantics.
+            </InlineAlert>
+          </div>
+
+          <div data-gallery-content-grid="settings-cards">
+            <SettingsCard
+              actions={<Button size="compact" variant="quiet">Edit</Button>}
+              className="gallery-settings-card gallery-settings-card--rounded"
+              data-gallery-content-layer-conflict="true"
+              data-gallery-settings-card-shape="rounded"
+              description="Rounded is the default finite surface."
+              title="Release notifications"
+              titleAs="h3"
+            >
+              <SwitchField defaultSelected label="Notify maintainers" />
+            </SettingsCard>
+            <SettingsCard
+              actions={<Button size="compact" variant="quiet">Configure</Button>}
+              className="gallery-settings-card gallery-settings-card--rectangular"
+              data-gallery-content-layer-conflict="true"
+              data-gallery-content-override="settings-card"
+              data-gallery-settings-card-shape="rectangular"
+              description="The rectangular shape remains finite under caller presentation."
+              shape="rectangular"
+              style={{ borderWidth: "4px", width: "15rem" }}
+              title="Artifact retention"
+              titleAs="h4"
+              xstyle={galleryStyles.contentRootOverride}
+            >
+              <CheckboxField label="Retain build evidence" />
+            </SettingsCard>
+          </div>
         </section>
 
         <section
