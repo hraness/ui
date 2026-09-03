@@ -1255,7 +1255,7 @@ function packedDataTableStyleMap(javaScript: string): string {
     const object = balancedBlock(javaScript, open, "packed DataTable JavaScript");
     const body = object.slice(1, -1);
     if (DATA_TABLE_STYLE_KEYS.every((key) =>
-      new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "u").test(body)
+      new RegExp(`(?:^|[,{])\\s*${key}\\s*:\\s*\\{`, "u").test(body)
     )) {
       candidates.push(object);
     }
@@ -1274,7 +1274,7 @@ function packedDataTableStyleClassNames(
 ): ReadonlySet<string> {
   const styleMap = packedDataTableStyleMap(javaScript);
   const matches = [...styleMap.matchAll(
-    new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*\\{`, "gu"),
+    new RegExp(`(?:^|[,{])\\s*${key}\\s*:\\s*\\{`, "gu"),
   )];
   assert.equal(
     matches.length,
@@ -1843,14 +1843,14 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     "the packed stylesheet must include the gallery DataTable header conflict",
   );
   for (const declaration of [
-    /background-attachment:\s*fixed/u,
-    /background-clip:\s*content-box/u,
-    /background-color:/u,
-    /background-image:\s*linear-gradient/u,
-    /background-origin:\s*content-box/u,
-    /background-position:\s*50% 50%/u,
-    /background-repeat:\s*no-repeat/u,
-    /background-size:\s*7rem 7rem/u,
+    /(?:background-attachment:\s*fixed|background:[^}]*\bfixed\b)/u,
+    /(?:background-clip:\s*content-box|background:[^}]*\bcontent-box\b)/u,
+    /(?:background-color:|background:[^}]*(?:#010203|rgb\(1(?:,\s*|\s+)2(?:,\s*|\s+)3\)))/u,
+    /(?:background-image:\s*linear-gradient|background:[^}]*linear-gradient)/u,
+    /(?:background-origin:\s*content-box|background:[^}]*\bcontent-box\b)/u,
+    /(?:background-position:\s*50% 50%|background:[^}]*50%(?:\s+50%)?\s*\/)/u,
+    /(?:background-repeat:\s*no-repeat|background:[^}]*\bno-repeat\b)/u,
+    /(?:background-size:\s*7rem 7rem|background:[^}]*\/\s*7rem(?:\s+7rem)?\b)/u,
     /color:/u,
     /font-weight:\s*100/u,
   ] as const) {
@@ -1858,6 +1858,16 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
       dataTableHeaderConflict,
       declaration,
       "the gallery DataTable header conflict must carry every background and text counterexample",
+    );
+  }
+  const dataTableHeaderShorthand = dataTableHeaderConflict.match(
+    /(?:^|[;{])\s*background:\s*([^;}]+)/u,
+  )?.[1];
+  if (dataTableHeaderShorthand !== undefined) {
+    assert.equal(
+      [...dataTableHeaderShorthand.matchAll(/\bcontent-box\b/gu)].length,
+      2,
+      "the gallery DataTable header background shorthand must preserve distinct origin and clip counterexamples",
     );
   }
   for (const [align, value] of [
