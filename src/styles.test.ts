@@ -254,6 +254,67 @@ test("content families compile presentation while legacy CSS retains no owned se
   ).toHaveLength(4);
 });
 
+test("DataTable compiles presentation while legacy CSS retains no owned selector", async () => {
+  const [components, dataTable, component] = await Promise.all([
+    stylesheet("./components.css"),
+    stylesheet("./data-table.stylex.ts"),
+    stylesheet("./data-display.tsx"),
+  ]);
+
+  expect(components).not.toMatch(
+    /\.hraness-data-table(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+  );
+  for (const recipe of [
+    "alignCenter",
+    "alignEnd",
+    "alignStart",
+    "caption",
+    "cell",
+    "empty",
+    "header",
+    "table",
+    "wrapper",
+  ]) expect(dataTable).toContain(`${recipe}: {`);
+
+  for (const logicalDivider of [
+    '\"border-block-end-color\": "var(--ui-border)"',
+    '\"border-block-end-style\": "solid"',
+    '\"border-block-end-width\": "1px"',
+  ]) expect(dataTable).toContain(logicalDivider);
+  expect(dataTable).not.toMatch(/borderBlockEnd|borderBottom/u);
+  for (const backgroundReset of [
+    'backgroundAttachment: "scroll"',
+    'backgroundClip: "border-box"',
+    'backgroundColor: "var(--ui-muted)"',
+    'backgroundImage: "none"',
+    'backgroundOrigin: "padding-box"',
+    'backgroundPosition: "0% 0%"',
+    'backgroundRepeat: "repeat"',
+    'backgroundSize: "auto auto"',
+  ]) expect(dataTable).toContain(backgroundReset);
+  for (const borderImageReset of [
+    "borderImageOutset: 0",
+    'borderImageRepeat: "stretch"',
+    'borderImageSlice: "100%"',
+    'borderImageSource: "none"',
+    "borderImageWidth: 1",
+  ]) expect(dataTable).toContain(borderImageReset);
+  expect(dataTable).toContain('textAlign: "center !important"');
+  expect(dataTable).not.toMatch(/^\s*(?:background|border|padding):/mu);
+
+  expect(component.trimStart()).not.toStartWith('"use client"');
+  expect(component).toMatch(
+    /stylex\.props\(\s*dataTableStyles\.wrapper,\s*wrapperXstyle,?\s*\)/u,
+  );
+  expect(component).toMatch(
+    /stylex\.props\(dataTableStyles\.table, xstyle\)/u,
+  );
+  expect(component).toContain("dataTableAlignmentStyles[alignment]");
+  expect(component).toContain(
+    "style={mergeStylexInlineStyles(tablePresentation.style, style)}",
+  );
+});
+
 test("field families compile presentation while legacy CSS keeps only native pseudo seams", async () => {
   const [components, fields, fieldComponents, select, selectComponent] =
     await Promise.all([

@@ -24,6 +24,8 @@ import {
   CardTitle,
   CheckboxField,
   CheckboxGroup,
+  DataTable,
+  type DataTableColumn,
   EmptyState,
   FileField,
   Form,
@@ -104,6 +106,54 @@ const galleryNativeSelectOptions = [
   { id: "pacific", label: "Pacific" },
   { disabled: true, id: "archived", label: "Archived" },
 ] as const;
+
+type GalleryDataTableRow = Readonly<{
+  id: string;
+  project: string;
+  runs: number;
+  status: string;
+}>;
+
+const galleryDataTableRows = [
+  { id: "ocean", project: "Ocean", runs: 12, status: "Ready" },
+  { id: "forest", project: "Forest", runs: 7, status: "Review" },
+] as const satisfies readonly GalleryDataTableRow[];
+
+const galleryDataTableColumns = [
+  {
+    align: "start",
+    cell: (row) => (
+      <span data-gallery-data-table-value={`${row.id}-project`}>
+        {row.project}
+      </span>
+    ),
+    header: <span data-gallery-data-table-heading="project">Project</span>,
+    id: "project",
+  },
+  {
+    align: "center",
+    cell: (row) => (
+      <span data-gallery-data-table-value={`${row.id}-status`}>
+        {row.status}
+      </span>
+    ),
+    header: <span data-gallery-data-table-heading="status">Status</span>,
+    id: "status",
+  },
+  {
+    align: "end",
+    cell: (row) => (
+      <span data-gallery-data-table-value={`${row.id}-runs`}>
+        {row.runs}
+      </span>
+    ),
+    header: <span data-gallery-data-table-heading="runs">Runs</span>,
+    id: "runs",
+  },
+] as const satisfies readonly [
+  DataTableColumn<GalleryDataTableRow>,
+  ...DataTableColumn<GalleryDataTableRow>[],
+];
 
 const galleryActionSizes = ["compact", "default", "large", "transport"] as const;
 const galleryMeterTones = ["default", "success", "warning", "danger"] as const;
@@ -210,6 +260,18 @@ const galleryStyles = stylex.create({
     paddingBlock: "var(--space-2)",
     paddingInline: "var(--space-2)",
     width: "14rem",
+  },
+  dataTableTableOverride: {
+    borderCollapse: "separate",
+    color: "var(--ui-primary)",
+    fontSize: "var(--text-body)",
+    width: "32rem",
+  },
+  dataTableWrapperOverride: {
+    borderColor: "var(--ui-primary)",
+    borderRadius: "var(--radius-sm)",
+    maxWidth: "18rem",
+    overflowX: "scroll",
   },
   keyHintDynamicWidth: (width: string) => ({ width }),
   keyHintOverride: {
@@ -1073,6 +1135,96 @@ export function PrimitiveGallery() {
             >
               <CheckboxField label="Retain build evidence" />
             </SettingsCard>
+          </div>
+        </section>
+
+        <section
+          aria-labelledby="gallery-data-tables-heading"
+          data-gallery-section="data-tables"
+        >
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-data-tables-heading">Data tables</h2>
+              <p>
+                Native table semantics, logical alignment, overflow, and caller
+                presentation share one package-compiled boundary.
+              </p>
+            </div>
+          </div>
+
+          <div data-gallery-data-table-grid="true">
+            <div
+              data-gallery-data-table-fixture="ltr"
+              data-gallery-data-table-layer-conflict="true"
+            >
+              <DataTable
+                caption="Current releases"
+                columns={galleryDataTableColumns}
+                data-gallery-data-table="ltr"
+                getRowId={(row) => row.id}
+                rows={galleryDataTableRows}
+              />
+            </div>
+            <div
+              data-gallery-data-table-fixture="rtl"
+              data-gallery-data-table-layer-conflict="true"
+              dir="rtl"
+            >
+              <DataTable
+                caption="الإصدارات الحالية"
+                columns={galleryDataTableColumns}
+                data-gallery-data-table="rtl"
+                getRowId={(row) => row.id}
+                rows={galleryDataTableRows}
+              />
+            </div>
+            <div
+              data-gallery-data-table-fixture="overflow"
+              data-gallery-data-table-layer-conflict="true"
+            >
+              <DataTable
+                caption="Constrained release history"
+                className="gallery-data-table__table--override"
+                columns={galleryDataTableColumns}
+                data-gallery-data-table="overflow"
+                getRowId={(row) => row.id}
+                rows={galleryDataTableRows}
+                style={{
+                  color: "rgb(1, 2, 3)",
+                  minWidth: "36rem",
+                  width: "36rem",
+                }}
+                wrapperClassName="gallery-data-table--override"
+                wrapperXstyle={galleryStyles.dataTableWrapperOverride}
+                xstyle={galleryStyles.dataTableTableOverride}
+              />
+            </div>
+            <div
+              data-gallery-data-table-fixture="empty"
+              data-gallery-data-table-layer-conflict="true"
+            >
+              <DataTable
+                caption="Filtered releases"
+                columns={galleryDataTableColumns}
+                data-gallery-data-table="empty"
+                empty={<span data-gallery-data-table-empty-copy="true">No matching releases.</span>}
+                getRowId={(row) => row.id}
+                rows={[]}
+              />
+            </div>
+            <div
+              data-gallery-data-table-fixture="vertical"
+              data-gallery-data-table-layer-conflict="true"
+            >
+              <DataTable
+                caption="Vertical writing proof"
+                columns={galleryDataTableColumns}
+                data-gallery-data-table="vertical"
+                getRowId={(row) => row.id}
+                rows={galleryDataTableRows.slice(0, 1)}
+                style={{ writingMode: "vertical-rl" }}
+              />
+            </div>
           </div>
         </section>
 

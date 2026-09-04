@@ -272,7 +272,7 @@ const styles = stylex.create({
 
 `AskAiAboutThis`, `Button`, `CopyButton`, `IconButton`, `IconLink`, `ToggleButton`,
 `LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
-`KeyHint`, `PageIntro`, `EmptyState`, `InlineAlert`, `SettingsCard`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
+`KeyHint`, `PageIntro`, `EmptyState`, `InlineAlert`, `SettingsCard`, `DataTable`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `SkipLink`, `Separator`, `Form`, `FieldDescription`, `FieldError`, `TextField`,
 `TextAreaField`, `SearchField`, `NumberField`, `CheckboxField`, `CheckboxGroup`,
@@ -402,6 +402,15 @@ danger feedback becomes an assertive alert and the other tones become polite
 status regions, while an explicit caller `role` or `aria-live` remains
 authoritative. Every alert tone uses the system `CanvasText` border in
 forced-colors mode.
+
+`DataTable` remains a native table inside a horizontally scrollable boundary.
+It preserves captions, column headers, finite start, center, and end alignment,
+row identities, empty-table semantics, and its table ref. Apply
+`wrapperXstyle` to the overflow and border boundary and `xstyle` to the native
+table. Both caller recipes resolve after their package recipes, while the
+table's native `style` declarations remain final. Cell dividers retain logical
+block-end behavior in every writing mode, and the empty cell remains centered
+across the complete column span.
 
 `Link` remains an ordinary React Aria destination with a required `href`, stable
 semantic class and slot, optional link ref, native attributes, render-prop

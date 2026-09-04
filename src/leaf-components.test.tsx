@@ -683,7 +683,9 @@ test("DataTable renders typed rows and a semantic empty row", () => {
     />,
   );
 
-  expect(filled).toContain('<caption data-slot="data-table-caption">');
+  expect(filled).toMatch(
+    /<caption[^>]*data-slot="data-table-caption"[^>]*>/u,
+  );
   expect(filled).toContain('<th data-align="start"');
   expect(filled).toContain('scope="col"');
   expect(filled).toContain('<td data-align="end"');
