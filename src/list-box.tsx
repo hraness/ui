@@ -142,7 +142,7 @@ function ListBoxItemElement({
     style: mergeStylexInlineStyles(presentation.style, domProps.style),
   };
   if (render !== undefined) return render(composedProps, state);
-  return createElement(isLink ? "a" : "div", composedProps);
+  return createElement<typeof composedProps>(isLink ? "a" : "div", composedProps);
 }
 
 function ListBoxItemInner<T extends object>(
