@@ -42,55 +42,13 @@
     display: none;
   }
 
-  :where(.hraness-list-box, .hraness-menu) {
+  :where(.hraness-menu) {
     display: grid;
     min-width: 12rem;
     max-height: min(24rem, var(--visual-viewport-height, 70vh));
     padding: var(--space-1);
     overflow: auto;
     outline: none;
-  }
-
-  .hraness-list-box[data-orientation="horizontal"] {
-    display: flex;
-    min-width: 0;
-    max-width: 100%;
-    max-height: none;
-    align-items: stretch;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-
-  .hraness-list-box[data-orientation="horizontal"]
-    > :where(.hraness-list-box__item, .hraness-list-box__section) {
-    flex: 0 0 auto;
-  }
-
-  .hraness-list-box__item {
-    position: relative;
-    display: grid;
-    min-height: var(--interactive-target-compact);
-    align-content: center;
-    gap: 0.125rem;
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    outline: none;
-    color: var(--ui-popover-foreground);
-    cursor: default;
-    user-select: none;
-  }
-
-  .hraness-list-box__item:where([data-focused], [data-hovered]) {
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  .hraness-list-box__item[data-selected] {
-    font-weight: var(--font-weight-medium);
-  }
-
-  .hraness-list-box__item[data-disabled] {
-    opacity: 0.5;
   }
 
   :where(.hraness-menu-popover, .hraness-popover, .hraness-tooltip) {
@@ -276,11 +234,11 @@
     color: var(--ui-primary-foreground);
   }
 
-  :where(.hraness-list-box__section, .hraness-menu__section) {
+  :where(.hraness-menu__section) {
     display: grid;
   }
 
-  :where(.hraness-list-box__header, .hraness-menu__header) {
+  :where(.hraness-menu__header) {
     padding: var(--space-2) var(--space-3);
     color: var(--ui-muted-foreground);
     font-size: var(--text-caption);
@@ -649,7 +607,6 @@
     .hraness-disclosure__trigger,
     .hraness-toggle-group__item,
     .hraness-segmented-control__item,
-    .hraness-list-box__item,
     .hraness-menu__item,
     .hraness-dialog__close,
     .hraness-toast__close,
@@ -669,6 +626,7 @@
   --hraness-action-coarse-min: var(--interactive-target-min);
   --hraness-field-coarse-min: var(--interactive-target-min);
   --hraness-slider-coarse-min: var(--interactive-target-min);
+  --hraness-list-box-coarse-min: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
@@ -676,7 +634,6 @@
   .hraness-disclosure__trigger,
   .hraness-toggle-group__item,
   .hraness-segmented-control__item,
-  .hraness-list-box__item,
   .hraness-menu__item,
   .hraness-dialog__close,
   .hraness-toast__close,

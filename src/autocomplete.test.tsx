@@ -30,7 +30,10 @@ test("autocomplete composes one search input and list without adding a wrapper",
   expect(html).toContain('aria-autocomplete="list"');
   expect(html).toContain('autoComplete="off"');
   expect(html).toContain('value="pad"');
-  expect(html).toContain('class="hraness-list-box"');
+  const listBoxOpeningTag = html.match(/<div\b[^>]*data-slot="list-box"[^>]*>/u)?.[0] ?? "";
+  const listBoxClasses = /\bclass="([^"]*)"/u.exec(listBoxOpeningTag)?.[1]?.split(" ") ?? [];
+  expect(listBoxClasses[0]).toBe("hraness-list-box");
+  expect(listBoxClasses.length).toBeGreaterThan(1);
   expect(html).not.toContain("react-aria-Autocomplete");
 });
 

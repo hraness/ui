@@ -83,6 +83,7 @@
     "src/lib/stylex.ts",
     "src/lib/utils.ts",
     "src/list-box.tsx",
+    "src/list-box.stylex.ts",
     "src/navigation.tsx",
     "src/overlays.tsx",
     "src/quiet-site.stylex.ts",
