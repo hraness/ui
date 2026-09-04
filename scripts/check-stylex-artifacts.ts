@@ -3315,7 +3315,7 @@ function requireActionFamilyContract(
   );
   requireMatch(
     legacyComponents,
-    /:root\[data-verification-pointer=["']coarse["']\]\s*\{\s*--hraness-action-coarse-min:\s*var\(--interactive-target-min\);\s*(?:--hraness-field-coarse-min:\s*var\(--interactive-target-min\);\s*)?(?:--hraness-slider-coarse-min:\s*var\(--interactive-target-min\);\s*)?\}/u,
+    /:root\[data-verification-pointer=["']coarse["']\]\s*\{\s*--hraness-action-coarse-min:\s*var\(--interactive-target-min\);\s*(?:--hraness-field-coarse-min:\s*var\(--interactive-target-min\);\s*)?(?:--hraness-slider-coarse-min:\s*var\(--interactive-target-min\);\s*)?(?:--hraness-list-box-coarse-min:\s*var\(--interactive-target-min\);\s*)?\}/u,
     "the synthetic coarse-pointer action variable",
   );
   requireMatch(
@@ -7122,6 +7122,44 @@ const actionRootStyleAfterCallerSource = replaceExactlyOnceInBoundedSource(
   /stylex\.props\(\s*actionStyles\.root,\s*xstyle,?\s*\)/u,
   () => "stylex.props(xstyle, actionStyles.root)",
   "action wrapper caller precedence",
+);
+for (const [replacement, description] of [
+  ["", "a missing action variable"],
+  ["--hraness-action-coarse-max: var(--interactive-target-min);", "a renamed action variable"],
+  ["--hraness-action-coarse-min: var(--interactive-target-compact);", "a changed action minimum"],
+] as const) {
+  const changedActionCoarseVariable = replaceExactlyOnce(
+    legacyComponents,
+    /--hraness-action-coarse-min:\s*var\(--interactive-target-min\);/u,
+    () => replacement,
+    description,
+  );
+  assert.throws(
+    () => requireActionFamilyContract(
+      changedActionCoarseVariable, compiledCss, compiledJavaScript, actionsSource,
+    ),
+    /synthetic coarse-pointer action variable/u,
+    `the action-family guard must reject ${description}`,
+  );
+}
+const missingListBoxCoarseVariable = replaceExactlyOnce(
+  legacyComponents,
+  /--hraness-list-box-coarse-min:\s*var\(--interactive-target-min\);/u,
+  () => "",
+  "missing ListBox coarse variable",
+);
+assert.doesNotThrow(
+  () => requireActionFamilyContract(
+    missingListBoxCoarseVariable, compiledCss, compiledJavaScript, actionsSource,
+  ),
+  "the action-family guard must remain independent of the ListBox variable",
+);
+assert.throws(
+  () => requireListBoxContract(
+    missingListBoxCoarseVariable, compiledCss, compiledJavaScript, listBoxSource, listBoxStyleSource,
+  ),
+  /ListBox synthetic coarse-pointer variable/u,
+  "the ListBox guard must reject its missing synthetic coarse variable",
 );
 assert.throws(
   () =>
