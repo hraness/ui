@@ -308,7 +308,7 @@ const LIST_BOX_DECLARATIONS: Readonly<Record<ListBoxStyleKey, readonly RegExp[]>
     /padding-right:\s*var\(--space-3\);/u,
     /padding-top:\s*var\(--space-2\);/u,
   ],
-  horizontalChild: [/flex:\s*0 0 auto;/u],
+  horizontalChild: [/flex:\s*(?:none|0 0 auto);/u],
   horizontalRoot: [
     /align-items:\s*stretch;/u, /display:\s*flex;/u, /max-height:\s*none;/u,
     /max-width:\s*100%;/u, /min-width:\s*0;/u,
@@ -319,7 +319,7 @@ const LIST_BOX_DECLARATIONS: Readonly<Record<ListBoxStyleKey, readonly RegExp[]>
     /color:\s*var\(--ui-popover-foreground\);/u, /cursor:\s*default;/u,
     /display:\s*grid;/u, /gap:\s*\.125rem;/u,
     /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-list-box-coarse-min,\s*0px\)\);/u,
-    /outline-color:\s*currentcolor;/u, /outline-style:\s*none;/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u,
     /outline-width:\s*medium;/u,
     /padding-bottom:\s*var\(--space-2\);/u,
     /padding-left:\s*var\(--space-3\);/u,
@@ -340,7 +340,7 @@ const LIST_BOX_DECLARATIONS: Readonly<Record<ListBoxStyleKey, readonly RegExp[]>
     /display:\s*grid;/u,
     /max-height:\s*min\(24rem,\s*var\(--visual-viewport-height,\s*70vh\)\);/u,
     /min-width:\s*12rem;/u,
-    /outline-color:\s*currentcolor;/u, /outline-style:\s*none;/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u,
     /outline-width:\s*medium;/u,
     /overflow-x:\s*auto;/u, /overflow-y:\s*auto;/u,
     /padding-bottom:\s*var\(--space-1\);/u,
@@ -2919,6 +2919,30 @@ function requireListBoxContract(
   }
 }
 
+function replaceListBoxDeclaration(
+  compiledCss: string,
+  map: NamedCompiledStyleMap,
+  key: "horizontalChild" | "item",
+  declaration: RegExp,
+  replacement: string,
+): string {
+  const matches = compiledStyleRules(compiledCss, map, key).filter((rule) =>
+    declaration.test(rule.body)
+  );
+  assert.equal(matches.length, 1, `ListBox ${key} mutation must own exactly one rule`);
+  const rule = matches[0];
+  assert.ok(rule);
+  assert.equal(compiledCss.split(rule.source).length - 1, 1, "ListBox mutation source must be unique");
+  assert.equal(
+    [...rule.body.matchAll(new RegExp(declaration.source, "gu"))].length,
+    1,
+    "ListBox mutation must replace exactly one declaration",
+  );
+  const mutated = rule.source.replace(declaration, replacement);
+  assert.notEqual(mutated, rule.source, "ListBox mutation must not be vacuous");
+  return compiledCss.replace(rule.source, mutated);
+}
+
 function replaceDataTableDeclaration(
   compiledCss: string,
   map: NamedCompiledStyleMap,
@@ -5491,6 +5515,28 @@ requireDataTableContract(
 requireLinkContract(legacyComponents, compiledCss, compiledJavaScript);
 requireListBoxContract(legacyComponents, compiledCss, compiledJavaScript, listBoxSource, listBoxStyleSource);
 const listBoxGuardMap = namedCompiledStyleMap(compiledJavaScript, LIST_BOX_STYLE_KEYS, "listBoxStyles class map");
+const listBoxEquivalentFlex = replaceListBoxDeclaration(
+  compiledCss, listBoxGuardMap, "horizontalChild", /flex:\s*none;/u, "flex: 0 0 auto;",
+);
+const listBoxEquivalentKeywords = replaceListBoxDeclaration(
+  listBoxEquivalentFlex, listBoxGuardMap, "item", /outline-color:\s*currentColor;/u,
+  "outline-color: currentcolor;",
+);
+requireListBoxContract(legacyComponents, listBoxEquivalentKeywords, compiledJavaScript, listBoxSource, listBoxStyleSource);
+for (const [key, declaration, replacement] of [
+  ["horizontalChild", /flex:\s*(?:none|0 0 auto);/u, "flex: 1 1 auto;"],
+  ["item", /outline-color:\s*current[Cc]olor;/u, "outline-color: magenta;"],
+] as const) {
+  assert.throws(
+    () => requireListBoxContract(
+      legacyComponents,
+      replaceListBoxDeclaration(compiledCss, listBoxGuardMap, key, declaration, replacement),
+      compiledJavaScript, listBoxSource, listBoxStyleSource,
+    ),
+    new RegExp(`exact ListBox ${key} base selector`, "u"),
+    `ListBox guard must reject a non-equivalent ${key} declaration`,
+  );
+}
 const listBoxDisconnectedHeader = compiledJavaScript.replace(
   new RegExp(`${listBoxGuardMap.identifier}\\.header(?![A-Za-z0-9_$])`, "gu"),
   "disconnectedListBoxStyles.header",
