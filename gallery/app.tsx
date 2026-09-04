@@ -284,18 +284,24 @@ const galleryStyles = stylex.create({
   },
   listBoxRootOverride: {
     minWidth: "15rem",
-    padding: "14px",
+    // Match the component's physical padding conflict keys.
+    paddingBottom: "14px",
+    paddingLeft: "14px",
+    paddingRight: "14px",
+    paddingTop: "14px",
   },
   listBoxItemOverride: {
     backgroundColor: "var(--ui-secondary)",
     color: "var(--ui-secondary-foreground)",
-    paddingInline: "14px",
+    paddingLeft: "14px",
+    paddingRight: "14px",
   },
   listBoxSectionOverride: { gap: "6px" },
   listBoxHeaderOverride: {
     color: "var(--ui-primary)",
     fontSize: "17px",
-    paddingInline: "9px",
+    paddingLeft: "9px",
+    paddingRight: "9px",
   },
   keyHintDynamicWidth: (width: string) => ({ width }),
   keyHintOverride: {
