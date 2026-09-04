@@ -10093,16 +10093,43 @@ async function contentFamilyEvidence(page: Page): Promise<ContentFamilyEvidence>
             && defaultIntroActionsBox.left >= defaultIntroCopyBox.right - 1
       );
 
+    const introMatchedRules: {
+      readonly context: readonly string[];
+      readonly rule: string;
+    }[] = [];
+    const collectIntroRules = (
+      rules: CSSRuleList,
+      context: readonly string[] = [],
+    ): void => {
+      for (const rule of rules) {
+        if (rule instanceof CSSStyleRule) {
+          if (defaultIntro.matches(rule.selectorText)
+            && (rule.style.alignItems !== "" || rule.style.gridTemplateColumns !== "")) {
+            introMatchedRules.push({ context, rule: rule.cssText });
+          }
+        } else if (rule instanceof CSSGroupingRule) {
+          const header = rule.cssText.slice(0, rule.cssText.indexOf("{"));
+          const condition = rule instanceof CSSMediaRule
+            ? `${header} [matches=${String(matchMedia(rule.conditionText).matches)}]`
+            : header;
+          collectIntroRules(rule.cssRules, [...context, condition]);
+        }
+      }
+    };
+    for (const stylesheet of document.styleSheets) collectIntroRules(stylesheet.cssRules);
     const diagnostics = JSON.stringify({
       alerts: alertEvidence,
       compactViewport,
       emptyStates: emptyEvidence,
       intro: {
         alignItems: defaultIntroStyle.alignItems,
+        classes: [...defaultIntro.classList],
+        compactRangeMatches: matchMedia("(width <= 40rem)").matches,
         columnCount: introColumnCount,
         columnWidths: introColumnWidths,
         copyMaxWidth: copyStyle.maxWidth,
         gap: defaultIntroStyle.gap,
+        matchedRules: introMatchedRules,
       },
       overrides: overrideRoots.map((root) => ({
         borderWidth: getComputedStyle(root).borderLeftWidth,
