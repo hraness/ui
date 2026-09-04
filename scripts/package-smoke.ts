@@ -916,7 +916,7 @@ function packageListBoxProbe(javaScript: string, css: string): PackageListBoxPro
     ["horizontalRoot", /display:\s*flex;/u],
     ["horizontalRoot", /max-width:\s*100%;/u],
     ["horizontalRoot", /overflow-y:\s*hidden;/u],
-    ["horizontalChild", /flex:\s*0 0 auto;/u],
+    ["horizontalChild", /flex:\s*(?:none|0 0 auto);/u],
     ["item", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-list-box-coarse-min,\s*0px\)\);/u],
     ["itemHighlighted", /background-color:\s*var\(--ui-accent\);/u],
     ["itemHighlighted", /background-image:\s*none;/u],
