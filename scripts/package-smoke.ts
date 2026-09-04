@@ -12,6 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
+import { verifyAndReleaseConsumers } from "./package-consumer-lifecycle.js";
+
 type ReactRelease = Readonly<{
   label: string;
   reactTypes: string;
@@ -5492,14 +5494,16 @@ try {
     "--quiet",
   ], repository);
 
-  for (const release of reactReleases) {
-    await verifyConsumer(
+  await verifyAndReleaseConsumers(
+    reactReleases,
+    (release) => verifyConsumer(
       archive,
       join(work, release.label),
       nodeExecutable,
       release,
-    );
-  }
+    ),
+    (release) => rm(join(work, release.label), { recursive: true, force: true }),
+  );
 } finally {
   await rm(work, { recursive: true, force: true });
 }

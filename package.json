@@ -114,7 +114,7 @@
     "check:stylex-artifacts": "bun run ./scripts/check-stylex-artifacts.ts",
     "check:stylex-determinism": "bun run ./scripts/check-stylex-determinism.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --preload ./scripts/register-stylex-test-transform.ts ./src ./scripts/check-committed-dist.test.ts",
+    "test": "bun test --preload ./scripts/register-stylex-test-transform.ts ./src ./scripts/check-committed-dist.test.ts ./scripts/package-consumer-lifecycle.test.ts",
     "test:browser": "bun run ./scripts/gallery-browser.ts",
     "test:package": "bun run ./scripts/package-smoke.ts",
     "test:packed-bun-browser": "bun run ./scripts/packed-bun-browser-smoke.ts",
