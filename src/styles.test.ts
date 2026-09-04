@@ -126,7 +126,7 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
       .startsWith("@layer components.hraness-ui.legacy.base {"),
   ).toBe(true);
   expect(components).not.toContain('[data-slot="');
-  expect(components).toContain('.hraness-list-box[data-orientation="horizontal"]');
+  expect(components).not.toMatch(/\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
   const cardBridgePattern =
     /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
   expect(components.match(cardBridgePattern)).toHaveLength(1);
@@ -159,6 +159,32 @@ test("forced-colors field placeholders use unfaded system text", async () => {
 
   expect(placeholder).toContain("color: CanvasText;");
   expect(placeholder).toContain("opacity: 1;");
+});
+
+test("ListBox migration preserves shared Menu recipes and the coarse-pointer boundary", async () => {
+  const components = await stylesheet("./components.css");
+  expect(components).not.toMatch(/\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
+  const menu = declarationBlock(components, ":where(.hraness-menu) {");
+  for (const declaration of [
+    "display: grid;",
+    "min-width: 12rem;",
+    "max-height: min(24rem, var(--visual-viewport-height, 70vh));",
+    "padding: var(--space-1);",
+    "overflow: auto;",
+    "outline: none;",
+  ]) expect(menu).toContain(declaration);
+  expect(declarationBlock(components, ":where(.hraness-menu__section) {").trim()).toBe("display: grid;");
+  const header = declarationBlock(components, ":where(.hraness-menu__header) {");
+  for (const declaration of [
+    "padding: var(--space-2) var(--space-3);",
+    "color: var(--ui-muted-foreground);",
+    "font-size: var(--text-caption);",
+    "font-weight: var(--font-weight-medium);",
+  ]) expect(header).toContain(declaration);
+  const verification = declarationBlock(components, ':root[data-verification-pointer="coarse"] {');
+  expect(verification).toContain("--hraness-list-box-coarse-min: var(--interactive-target-min);");
+  const coarse = components.slice(components.indexOf("@media (pointer: coarse) {", components.indexOf("@layer components.hraness-ui.legacy {")));
+  expect(coarse.match(/\.hraness-menu__item,/gu)).toHaveLength(2);
 });
 
 test("content families compile presentation while legacy CSS retains no owned selectors", async () => {

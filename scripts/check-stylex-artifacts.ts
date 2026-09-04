@@ -19,6 +19,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-key-hint-layer-conflict",
   "data-gallery-content-layer-conflict",
   "data-gallery-data-table-layer-conflict",
+  "data-gallery-list-box-layer-conflict",
   "data-gallery-link-layer-conflict",
   "data-gallery-checkbox-field-layer-conflict",
   "data-gallery-action-family-layer-conflict",
@@ -292,6 +293,63 @@ const DATA_TABLE_STYLE_KEYS = [
   "table",
   "wrapper",
 ] as const;
+const LIST_BOX_STYLE_KEYS = [
+  "header", "horizontalChild", "horizontalRoot", "item", "itemDisabled",
+  "itemHighlighted", "itemSelected", "root", "section",
+] as const;
+type ListBoxStyleKey = (typeof LIST_BOX_STYLE_KEYS)[number];
+const LIST_BOX_DECLARATIONS: Readonly<Record<ListBoxStyleKey, readonly RegExp[]>> = {
+  header: [
+    /color:\s*var\(--ui-muted-foreground\);/u,
+    /font-size:\s*var\(--text-caption\);/u,
+    /font-weight:\s*var\(--font-weight-medium\);/u,
+    /padding-bottom:\s*var\(--space-2\);/u,
+    /padding-left:\s*var\(--space-3\);/u,
+    /padding-right:\s*var\(--space-3\);/u,
+    /padding-top:\s*var\(--space-2\);/u,
+  ],
+  horizontalChild: [/flex:\s*0 0 auto;/u],
+  horizontalRoot: [
+    /align-items:\s*stretch;/u, /display:\s*flex;/u, /max-height:\s*none;/u,
+    /max-width:\s*100%;/u, /min-width:\s*0;/u,
+    /overflow-x:\s*auto;/u, /overflow-y:\s*hidden;/u,
+  ],
+  item: [
+    /align-content:\s*center;/u, /border-radius:\s*var\(--radius-md\);/u,
+    /color:\s*var\(--ui-popover-foreground\);/u, /cursor:\s*default;/u,
+    /display:\s*grid;/u, /gap:\s*\.125rem;/u,
+    /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-list-box-coarse-min,\s*0px\)\);/u,
+    /outline-color:\s*currentcolor;/u, /outline-style:\s*none;/u,
+    /outline-width:\s*medium;/u,
+    /padding-bottom:\s*var\(--space-2\);/u,
+    /padding-left:\s*var\(--space-3\);/u,
+    /padding-right:\s*var\(--space-3\);/u,
+    /padding-top:\s*var\(--space-2\);/u,
+    /position:\s*relative;/u, /user-select:\s*none;/u,
+  ],
+  itemDisabled: [/opacity:\s*\.5;/u],
+  itemHighlighted: [
+    /background-attachment:\s*scroll;/u, /background-clip:\s*border-box;/u,
+    /background-color:\s*var\(--ui-accent\);/u, /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u, /background-position:\s*0(?:%|px)? 0(?:%|px)?;/u,
+    /background-repeat:\s*repeat;/u, /background-size:\s*auto(?: auto)?;/u,
+    /color:\s*var\(--ui-accent-foreground\);/u,
+  ],
+  itemSelected: [/font-weight:\s*var\(--font-weight-medium\);/u],
+  root: [
+    /display:\s*grid;/u,
+    /max-height:\s*min\(24rem,\s*var\(--visual-viewport-height,\s*70vh\)\);/u,
+    /min-width:\s*12rem;/u,
+    /outline-color:\s*currentcolor;/u, /outline-style:\s*none;/u,
+    /outline-width:\s*medium;/u,
+    /overflow-x:\s*auto;/u, /overflow-y:\s*auto;/u,
+    /padding-bottom:\s*var\(--space-1\);/u,
+    /padding-left:\s*var\(--space-1\);/u,
+    /padding-right:\s*var\(--space-1\);/u,
+    /padding-top:\s*var\(--space-1\);/u,
+  ],
+  section: [/display:\s*grid;/u],
+};
 type CheckboxStyleKey = (typeof CHECKBOX_STYLE_KEYS)[number];
 type DataTableStyleKey = (typeof DATA_TABLE_STYLE_KEYS)[number];
 type LinkStyleKey = (typeof LINK_STYLE_KEYS)[number];
@@ -2809,6 +2867,58 @@ function requireDataTableContract(
   }
 }
 
+function requireListBoxContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+  listBoxSource: string,
+  listBoxStyleSource: string,
+): void {
+  assert.deepEqual(sourceStyleKeys(listBoxStyleSource, "listBoxStyles"), LIST_BOX_STYLE_KEYS);
+  const map = namedCompiledStyleMap(compiledJavaScript, LIST_BOX_STYLE_KEYS, "listBoxStyles class map");
+  assert.deepEqual([...map.properties.keys()], LIST_BOX_STYLE_KEYS);
+  forbid(legacyComponents, /\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u, "a legacy ListBox recipe");
+  forbid(compiledCss, /\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u, "a semantic ListBox selector in compiled CSS");
+  for (const key of LIST_BOX_STYLE_KEYS) {
+    const entry = map.properties.get(key)?.value ?? "";
+    const classNames = generatedClassNames(entry, `compiled listBoxStyles.${key}`);
+    const properties = compiledObjectProperties(entry, `compiled listBoxStyles.${key}`);
+    const bindings = [...properties].filter(([property, value]) =>
+      property !== "$$css" && /["']x[A-Za-z0-9_-]+/u.test(value.value)
+    );
+    assert.equal(bindings.length, LIST_BOX_DECLARATIONS[key].length, `listBoxStyles.${key} exact property bindings`);
+    const rules = compiledStyleRules(compiledCss, map, key);
+    for (const className of classNames) {
+      requireMatch(rules.map((rule) => rule.header).join("\n"), new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u"), `listBoxStyles.${key} class CSS`);
+    }
+    requireExactBaseDeclarations(rules, classNames, LIST_BOX_DECLARATIONS[key].map((declaration) => ({ declaration })), `ListBox ${key}`);
+    for (const declaration of LIST_BOX_DECLARATIONS[key]) {
+      requireCompiledUnconditionalDeclaration(rules, declaration, `ListBox ${key} declaration`);
+    }
+    requireMatch(compiledJavaScript, new RegExp(`${map.identifier}\\.${key}(?![A-Za-z0-9_$])`, "u"), `compiled listBoxStyles.${key} composition binding`);
+  }
+  requireCompiledConditionalDeclaration(compiledStyleRules(compiledCss, map, "item"), "@media(pointer:coarse)", /min-height:\s*var\(--interactive-target-min\);/u, "ListBox real coarse-pointer minimum");
+  requireMatch(legacyComponents, /--hraness-list-box-coarse-min:\s*var\(--interactive-target-min\);/u, "ListBox synthetic coarse-pointer variable");
+  requireExactSourceMatches(listBoxSource, /readonly (?:headerXstyle|xstyle)\?: StyleXStyles;/gu, 4, "ListBox typed root, item, section, and header seams");
+  for (const [pattern, description] of [
+    [/stylex\.props\(\s*listBoxStyles\.root,\s*isHorizontal && listBoxStyles\.horizontalRoot,\s*xstyle,?\s*\)/u, "root orientation-before-caller order"],
+    [/stylex\.props\(\s*listBoxStyles\.item,\s*isHorizontalChild && listBoxStyles\.horizontalChild,\s*\(state\.isFocused \|\| state\.isHovered\) && listBoxStyles\.itemHighlighted,\s*state\.isSelected && listBoxStyles\.itemSelected,\s*state\.isDisabled && listBoxStyles\.itemDisabled,\s*xstyle,?\s*\)/u, "independent item interaction-before-caller order"],
+    [/stylex\.props\(\s*listBoxStyles\.section,\s*isHorizontalChild && listBoxStyles\.horizontalChild,\s*xstyle,?\s*\)/u, "direct-child section-before-caller order"],
+    [/stylex\.props\(listBoxStyles\.header,\s*headerXstyle\)/u, "separate header caller order"],
+    [/const HorizontalChildrenContext = createContext\(false\);/u, "isolated horizontal child context default"],
+    [/<HorizontalChildrenContext\.Provider value=\{isHorizontal\}>/u, "resolved root orientation context"],
+    [/<HorizontalChildrenContext\.Provider value=\{false\}>/u, "section reset of direct-child orientation"],
+    [/useSlottedContext\(ListBoxContext,\s*props\.slot\)\?\.render/u, "inherited React Aria renderer"],
+    [/props:\s*ListBoxProps<T> & RefAttributes<HTMLDivElement>/u, "generic root ref contract"],
+    [/props:\s*ListBoxItemProps<T> & RefAttributes<HTMLDivElement>/u, "generic item ref contract"],
+    [/props:\s*ListBoxSectionProps<T> & RefAttributes<HTMLElement>/u, "generic section ref contract"],
+  ] as const) requireMatch(listBoxSource, pattern, `ListBox ${description}`);
+  requireExactSourceMatches(listBoxSource, /mergeStylexInlineStyles\(presentation\.style,\s*domProps\.style\)/gu, 3, "ListBox native styles last on root, item, and section");
+  for (const slot of ["list-box", "list-box-item", "list-box-section", "list-box-header"]) {
+    requireMatch(compiledJavaScript, new RegExp(`["']${slot}["']`, "u"), `ListBox ${slot} slot`);
+  }
+}
+
 function replaceDataTableDeclaration(
   compiledCss: string,
   map: NamedCompiledStyleMap,
@@ -5212,6 +5322,8 @@ const [
   selectFieldStyleSource,
   dataDisplaySource,
   dataTableStyleSource,
+  listBoxSource,
+  listBoxStyleSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -5240,6 +5352,8 @@ const [
     readFile(resolve(repository, "src/select-field.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/data-display.tsx"), "utf8"),
     readFile(resolve(repository, "src/data-table.stylex.ts"), "utf8"),
+    readFile(resolve(repository, "src/list-box.tsx"), "utf8"),
+    readFile(resolve(repository, "src/list-box.stylex.ts"), "utf8"),
   ]);
 
 const visuallyHiddenSources: VisuallyHiddenSources = {
@@ -5375,6 +5489,43 @@ requireDataTableContract(
   dataTableStyleSource,
 );
 requireLinkContract(legacyComponents, compiledCss, compiledJavaScript);
+requireListBoxContract(legacyComponents, compiledCss, compiledJavaScript, listBoxSource, listBoxStyleSource);
+const listBoxGuardMap = namedCompiledStyleMap(compiledJavaScript, LIST_BOX_STYLE_KEYS, "listBoxStyles class map");
+const listBoxDisconnectedHeader = compiledJavaScript.replace(
+  new RegExp(`${listBoxGuardMap.identifier}\\.header(?![A-Za-z0-9_$])`, "gu"),
+  "disconnectedListBoxStyles.header",
+);
+assert.notEqual(listBoxDisconnectedHeader, compiledJavaScript);
+assert.throws(
+  () => requireListBoxContract(legacyComponents, compiledCss, listBoxDisconnectedHeader, listBoxSource, listBoxStyleSource),
+  /compiled listBoxStyles\.header composition binding/u,
+  "ListBox guard must reject a disconnected generated header recipe",
+);
+assert.throws(
+  () => requireListBoxContract(`${legacyComponents}\n.hraness-list-box__item { display: grid; }`, compiledCss, compiledJavaScript, listBoxSource, listBoxStyleSource),
+  /legacy ListBox recipe/u,
+  "ListBox guard must reject a restored legacy selector",
+);
+assert.throws(
+  () => requireListBoxContract(legacyComponents, compiledCss, compiledJavaScript, listBoxSource.replace("value={false}", "value={true}"), listBoxStyleSource),
+  /section reset of direct-child orientation/u,
+  "ListBox guard must reject section context leakage",
+);
+assert.throws(
+  () => requireListBoxContract(legacyComponents, compiledCss, compiledJavaScript, listBoxSource.replace("mergeStylexInlineStyles(presentation.style, domProps.style)", "mergeStylexInlineStyles(domProps.style, presentation.style)"), listBoxStyleSource),
+  /ListBox native styles last/u,
+  "ListBox guard must reject reversed native-style precedence",
+);
+assert.throws(
+  () => requireListBoxContract(legacyComponents, mutateCompiledRule(compiledCss, listBoxGuardMap, "item", /min-height:\s*var\(--interactive-target-min\);/u, "remove", "@media(pointer:coarse)"), compiledJavaScript, listBoxSource, listBoxStyleSource),
+  /ListBox real coarse-pointer minimum|listBoxStyles\.item class CSS/u,
+  "ListBox guard must reject a missing real coarse-pointer recipe",
+);
+assert.throws(
+  () => requireNoGallerySentinels(`${compiledJavaScript}\n[data-gallery-list-box-layer-conflict] { display: block; }`),
+  /gallery-only data-gallery-list-box-layer-conflict sentinel/u,
+  "ListBox guard must reject gallery sentinel leakage",
+);
 requireLinkSourceContract(actionsSource);
 requireActionFamilyContract(
   legacyComponents,

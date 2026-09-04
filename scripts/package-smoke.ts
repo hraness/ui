@@ -75,6 +75,18 @@ const PACKAGE_DATA_TABLE_STYLE_KEYS = [
   "wrapper",
 ] as const;
 type PackageDataTableStyleKey = (typeof PACKAGE_DATA_TABLE_STYLE_KEYS)[number];
+const PACKAGE_LIST_BOX_STYLE_KEYS = [
+  "header", "horizontalChild", "horizontalRoot", "item", "itemDisabled",
+  "itemHighlighted", "itemSelected", "root", "section",
+] as const;
+type PackageListBoxStyleKey = (typeof PACKAGE_LIST_BOX_STYLE_KEYS)[number];
+type PackageListBoxProbe = Readonly<{
+  classes: Readonly<Record<PackageListBoxStyleKey, readonly string[]>>;
+  seams: Readonly<Record<"root" | "item" | "section" | "header", Readonly<{
+    baseClasses: readonly string[];
+    property: string;
+  }>>>;
+}>;
 type LinkStyleKey = (typeof LINK_STYLE_KEYS)[number];
 
 function balancedBlock(source: string, open: number, description: string): string {
@@ -882,6 +894,52 @@ function requirePackageDataTableStyles(
     /\.hraness-data-table(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
     "packed StyleX CSS must contain no DataTable semantic selectors",
   );
+}
+
+function packageListBoxProbe(javaScript: string, css: string): PackageListBoxProbe {
+  const map = packageNamedStyleMap(javaScript, PACKAGE_LIST_BOX_STYLE_KEYS, "listBoxStyles class map");
+  assert.deepEqual(packageTopLevelStyleKeys(map.object, "listBoxStyles"), PACKAGE_LIST_BOX_STYLE_KEYS);
+  const seam = (key: "root" | "item" | "section" | "header") =>
+    packageEntryProbe(packageNamedStyleEntry(map, key), `packed listBoxStyles.${key}`);
+  for (const key of PACKAGE_LIST_BOX_STYLE_KEYS) {
+    const classes = packageEntryClassNames(map, key);
+    const rules = packageStyleRules(css, classes);
+    for (const className of classes) {
+      assert.ok(rules.some((rule) =>
+        new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+      ), `packed listBoxStyles.${key} must bind CSS for ${className}`);
+    }
+  }
+  for (const [key, declaration] of [
+    ["root", /min-width:\s*12rem;/u],
+    ["root", /max-height:\s*min\(24rem,\s*var\(--visual-viewport-height,\s*70vh\)\);/u],
+    ["horizontalRoot", /display:\s*flex;/u],
+    ["horizontalRoot", /max-width:\s*100%;/u],
+    ["horizontalRoot", /overflow-y:\s*hidden;/u],
+    ["horizontalChild", /flex:\s*0 0 auto;/u],
+    ["item", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-list-box-coarse-min,\s*0px\)\);/u],
+    ["itemHighlighted", /background-color:\s*var\(--ui-accent\);/u],
+    ["itemHighlighted", /background-image:\s*none;/u],
+    ["itemSelected", /font-weight:\s*var\(--font-weight-medium\);/u],
+    ["itemDisabled", /opacity:\s*\.5;/u],
+    ["section", /display:\s*grid;/u],
+    ["header", /font-size:\s*var\(--text-caption\);/u],
+  ] as const) {
+    requirePackageExactBaseDeclaration(css, packageEntryClassNames(map, key), declaration, `packed listBoxStyles.${key}`);
+  }
+  const coarseRules = packageStyleRules(css, packageEntryClassNames(map, "item"));
+  assert.ok(coarseRules.some((rule) =>
+    rule.conditions.length === 1
+    && rule.conditions[0] === normalizedPackageCondition("@media (pointer: coarse)")
+    && /min-height:\s*var\(--interactive-target-min\);/u.test(rule.body)
+  ), "packed ListBox item must retain the real coarse-pointer target");
+  assert.doesNotMatch(css, /\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
+  return {
+    classes: Object.fromEntries(PACKAGE_LIST_BOX_STYLE_KEYS.map((key) =>
+      [key, [...packageEntryClassNames(map, key)]]
+    )) as Record<PackageListBoxStyleKey, readonly string[]>,
+    seams: { root: seam("root"), item: seam("item"), section: seam("section"), header: seam("header") },
+  };
 }
 
 function packageContentPrecedenceProbe(
@@ -1780,6 +1838,7 @@ function requireNoMigratedGallerySentinels(...sources: string[]): void {
     "data-gallery-knob-layer-conflict",
     "data-gallery-content-layer-conflict",
     "data-gallery-data-table-layer-conflict",
+    "data-gallery-list-box-layer-conflict",
   ]) {
     assert.doesNotMatch(
       output,
@@ -2424,6 +2483,7 @@ function ssrProbe(
   formProbe: FormPrecedenceProbe,
   indicatorKnobProbe: PackageIndicatorKnobProbe,
   linkProbe: LinkPrecedenceProbe,
+  listBoxProbe: PackageListBoxProbe,
   visuallyHiddenClasses: readonly string[],
 ): string {
   return String.raw`import assert from "node:assert/strict";
@@ -2452,6 +2512,9 @@ import {
   KeyHint,
   Knob,
   Link,
+  ListBox,
+  ListBoxItem,
+  ListBoxSection,
   Meter,
   NativeSelectField,
   PageIntro,
@@ -2508,6 +2571,11 @@ const dataTableWrapperXstyle = {
 const dataTableClasses = ${JSON.stringify(dataTableProbe.classNamesByKey)};
 const dataTableBaseClasses = ${JSON.stringify(dataTableProbe.tableBaseClasses)};
 const dataTableWrapperBaseClasses = ${JSON.stringify(dataTableProbe.wrapperBaseClasses)};
+const listBoxProbe = ${JSON.stringify(listBoxProbe)};
+const listBoxXstyle = (key) => ({
+  [listBoxProbe.seams[key].property]: "package-list-box-" + key + "-xstyle",
+  $$css: true,
+});
 const fieldRootXstyle = {
   ${JSON.stringify(fieldSelectProbe.fieldRootProperty)}: "package-field-root-xstyle",
   $$css: true,
@@ -3700,6 +3768,89 @@ assert.ok(
   "packed SelectField must bind every native focus fallback class without a caller triggerXstyle",
 );
 
+const listBoxMarkup = renderToStaticMarkup(React.createElement(ListBox, {
+  "aria-label": "Packed projects",
+  className: "consumer-list-box",
+  defaultSelectedKeys: ["ocean"],
+  disabledKeys: ["forest"],
+  orientation: "horizontal",
+  selectionMode: "single",
+  style: ({ orientation }) => ({ minWidth: orientation === "horizontal" ? "23rem" : "12rem" }),
+  xstyle: listBoxXstyle("root"),
+}, React.createElement(ListBoxSection, {
+  className: "consumer-list-box-section",
+  headerXstyle: listBoxXstyle("header"),
+  style: { display: "block" },
+  title: "Available projects",
+  xstyle: listBoxXstyle("section"),
+},
+React.createElement(ListBoxItem, {
+  className: "consumer-list-box-item",
+  id: "ocean",
+  style: ({ isSelected }) => ({ color: isSelected ? "rgb(1, 2, 3)" : "rgb(4, 5, 6)" }),
+  textValue: "Ocean",
+  xstyle: listBoxXstyle("item"),
+}, ({ isSelected }) => isSelected ? "Selected Ocean" : "Ocean"),
+React.createElement(ListBoxItem, { id: "forest", textValue: "Forest" }, "Forest"))));
+const listBoxTags = Object.fromEntries(["root", "item", "section", "header"].map((key) => {
+  const slot = key === "root" ? "list-box" : "list-box-" + key;
+  const tag = listBoxMarkup.match(new RegExp('<[^>]+data-slot="' + slot + '"[^>]*>', "u"))?.[0] ?? "";
+  assert.ok(tag.length > 0, "packed ListBox must retain " + slot);
+  assert.ok(tag.includes("package-list-box-" + key + "-xstyle"), "packed ListBox must apply " + key + " xstyle");
+  const semantic = key === "root" ? "hraness-list-box" : "hraness-list-box__" + key;
+  const classes = tag.match(/class="([^"]+)"/u)?.[1]?.split(/\s+/u) ?? [];
+  assert.ok(classes.includes(semantic), "ListBox retains its semantic hook");
+  assert.ok(classes.indexOf(semantic) < classes.indexOf("package-list-box-" + key + "-xstyle"), "ListBox semantic hook precedes generated presentation");
+  if (key !== "header") {
+    const caller = key === "root" ? "consumer-list-box" : "consumer-list-box-" + key;
+    assert.equal(classes.at(-1), caller, "ListBox caller class remains last");
+  }
+  for (const className of listBoxProbe.seams[key].baseClasses) {
+    assert.ok(!tag.split(/[\s"]/u).includes(className), "packed ListBox caller replaces " + key + " base property");
+  }
+  return [key, tag];
+}));
+assert.match(listBoxMarkup, /role="listbox"/u);
+assert.match(listBoxMarkup, /aria-label="Packed projects"/u);
+assert.equal(listBoxMarkup.match(/role="option"/gu)?.length, 2);
+assert.match(listBoxMarkup, />Selected Ocean</u);
+assert.match(listBoxMarkup, /aria-disabled="true"/u);
+assert.match(listBoxMarkup, /Available projects/u);
+assert.match(listBoxTags.root, /style="[^"]*min-width:23rem/u);
+assert.match(listBoxTags.section, /style="[^"]*display:block/u);
+assert.match(listBoxTags.item, /style="[^"]*color:rgb\(1, 2, 3\)/u);
+for (const className of listBoxProbe.classes.horizontalChild) {
+  assert.ok(listBoxTags.section.split(/[\s"]/u).includes(className), "horizontal direct section must receive flex recipe");
+  assert.ok(!listBoxTags.item.split(/[\s"]/u).includes(className), "nested item must not inherit horizontal direct-child flex");
+}
+for (const className of listBoxProbe.classes.itemSelected) {
+  assert.ok(listBoxTags.item.split(/[\s"]/u).includes(className), "selected packed item must retain selection recipe");
+}
+assert.doesNotMatch(listBoxMarkup, /\s(?:xstyle|headerXstyle)=/iu);
+const dynamicListBoxMarkup = renderToStaticMarkup(React.createElement(ListBox, {
+  "aria-label": "Dynamic projects",
+  items: [{ id: "sea", name: "Sea" }, { id: "sky", name: "Sky" }],
+}, (item) => React.createElement(ListBoxItem, {
+  id: item.id,
+  textValue: item.name,
+  xstyle: listBoxXstyle("item"),
+}, item.name)));
+assert.equal(dynamicListBoxMarkup.match(/role="option"/gu)?.length, 2);
+assert.match(dynamicListBoxMarkup, />Sea</u);
+assert.match(dynamicListBoxMarkup, />Sky</u);
+const directListBoxMarkup = renderToStaticMarkup(React.createElement(ListBox, {
+  "aria-label": "Direct horizontal projects",
+  orientation: "horizontal",
+}, React.createElement(ListBoxItem, { id: "direct", textValue: "Direct", isDisabled: true }, "Direct")));
+const directListBoxItem = directListBoxMarkup.match(/<[^>]+data-slot="list-box-item"[^>]*>/u)?.[0] ?? "";
+for (const className of [...listBoxProbe.classes.horizontalChild, ...listBoxProbe.classes.itemDisabled]) {
+  assert.ok(directListBoxItem.split(/[\s"]/u).includes(className), "direct disabled item retains horizontal and disabled recipes");
+}
+const defaultListBoxRoot = dynamicListBoxMarkup.match(/<[^>]+data-slot="list-box"[^>]*>/u)?.[0] ?? "";
+for (const className of listBoxProbe.classes.root) {
+  assert.ok(defaultListBoxRoot.split(/[\s"]/u).includes(className), "default ListBox retains every root recipe class");
+}
+
 const pageMarkup = renderToStaticMarkup(React.createElement(QuietSitePage, {
   "aria-label": "Package page",
   className: "consumer-page",
@@ -3795,6 +3946,12 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTableProps,
+  ListBox,
+  ListBoxItem,
+  ListBoxSection,
+  type ListBoxProps,
+  type ListBoxItemProps,
+  type ListBoxSectionProps,
   EmptyState,
   FileField,
   Form,
@@ -3864,6 +4021,11 @@ const styles = stylex.create({
     overflowX: "scroll",
   },
   dataTableWrapperDynamic: (maxWidth: string) => ({ maxWidth }),
+  listBox: { minWidth: "20rem", maxHeight: "30rem" },
+  listBoxDynamic: (minWidth: string) => ({ minWidth }),
+  listBoxItem: { color: "var(--ui-primary)", minHeight: "3rem" },
+  listBoxSection: { display: "flex" },
+  listBoxHeader: { color: "var(--ui-primary)", fontSize: "1rem" },
   checkbox: {
     color: "var(--ui-primary)",
     display: "flex",
@@ -4196,6 +4358,58 @@ const dataTableMarkup: string = renderToStaticMarkup(createElement(
   TypedPackageDataTable,
   { ...packageDataTableProps, ref: packageDataTableRef },
 ));
+type PackageListBoxRow = Readonly<{ id: string; name: string; count: number }>;
+const TypedPackageListBox = ListBox<PackageListBoxRow>;
+const TypedPackageListBoxItem = ListBoxItem<PackageListBoxRow>;
+const TypedPackageListBoxSection = ListBoxSection<PackageListBoxRow>;
+const packageListBoxItemProps: ListBoxItemProps<PackageListBoxRow> = {
+  children: ({ isSelected, isFocused, isHovered, isDisabled }) =>
+    [isSelected, isFocused, isHovered, isDisabled].join(","),
+  id: "ocean",
+  render: (props, state) => createElement("div", { ...props, "data-selected-probe": state.isSelected }),
+  style: ({ isSelected }) => ({ color: isSelected ? "red" : "blue" }),
+  textValue: "Ocean",
+  value: { id: "ocean", name: "Ocean", count: 3 },
+  xstyle: [false, undefined, styles.listBoxItem],
+};
+const packageListBoxSectionProps: ListBoxSectionProps<PackageListBoxRow> = {
+  children: createElement(TypedPackageListBoxItem, {
+    ...packageListBoxItemProps,
+    ref: createRef<HTMLDivElement>(),
+  }),
+  headerXstyle: styles.listBoxHeader,
+  render: (props) => createElement("section", props),
+  style: { display: "grid" },
+  title: createElement("span", null, "Projects"),
+  xstyle: styles.listBoxSection,
+};
+const packageListBoxProps: ListBoxProps<PackageListBoxRow> = {
+  "aria-label": "Typed projects",
+  children: (row) => createElement(TypedPackageListBoxItem, {
+    ...packageListBoxItemProps,
+    id: row.id,
+    textValue: row.name,
+    value: row,
+  }, row.name + String(row.count)),
+  items: [{ id: "ocean", name: "Ocean", count: 3 }],
+  onSelectionChange: (keys) => { if (keys !== "all") keys.has("ocean"); },
+  orientation: "horizontal",
+  render: (props, state) => createElement("div", { ...props, "data-orientation-probe": state.orientation }),
+  selectionMode: "multiple",
+  style: ({ orientation }) => ({ minWidth: orientation === "horizontal" ? "23rem" : "12rem" }),
+  xstyle: [styles.listBox, styles.listBoxDynamic("22rem")],
+};
+const listBoxMarkup: string = renderToStaticMarkup(createElement(TypedPackageListBox, {
+  ...packageListBoxProps,
+  ref: createRef<HTMLDivElement>(),
+}));
+const listBoxSectionMarkup: string = renderToStaticMarkup(createElement(TypedPackageListBox, {
+  "aria-label": "Typed sections",
+  children: createElement(TypedPackageListBoxSection, {
+    ...packageListBoxSectionProps,
+    ref: createRef<HTMLElement>(),
+  }),
+}));
 const linkRef = createRef<HTMLAnchorElement>();
 const linkMarkup: string = renderToStaticMarkup(createElement(Link, {
   children: ({ isHovered }) => isHovered ? "Hovered reference" : "Reference",
@@ -4487,6 +4701,36 @@ const invalidDataTableWrapperXstyle: DataTableProps<PackageDataTableRow> = {
   // @ts-expect-error DataTable accepts compiled StyleX recipes, not raw wrapper CSS.
   wrapperXstyle: { overflowX: "scroll" },
 };
+const invalidListBoxXstyle: ListBoxProps<PackageListBoxRow> = {
+  // @ts-expect-error ListBox accepts compiled recipes rather than raw CSS.
+  xstyle: { minWidth: "12rem" },
+};
+const invalidListBoxItemXstyle: ListBoxItemProps<PackageListBoxRow> = {
+  // @ts-expect-error ListBoxItem accepts compiled recipes rather than raw CSS.
+  xstyle: { color: "red" },
+};
+const invalidListBoxSectionXstyle: ListBoxSectionProps<PackageListBoxRow> = {
+  children: null,
+  // @ts-expect-error ListBoxSection accepts compiled recipes rather than raw CSS.
+  xstyle: { display: "grid" },
+};
+const invalidListBoxHeaderXstyle: ListBoxSectionProps<PackageListBoxRow> = {
+  children: null,
+  // @ts-expect-error Section headers expose a separate compiled-only seam.
+  headerXstyle: { color: "red" },
+};
+const invalidListBoxRow: ListBoxProps<PackageListBoxRow> = {
+  // @ts-expect-error Dynamic ListBox items retain the declared row shape.
+  items: [{ id: "broken", name: "Broken", count: "3" }],
+};
+const invalidListBoxRef = createElement(TypedPackageListBox, {
+  // @ts-expect-error ListBox keeps the existing HTMLDivElement ref contract.
+  ref: createRef<HTMLButtonElement>(),
+});
+const invalidListBoxClass: ListBoxProps<PackageListBoxRow> = {
+  // @ts-expect-error Static caller classes remain separate from render props.
+  className: () => "dynamic",
+};
 // @ts-expect-error AskAiAboutThis requires one explicit canonical HTTPS URL.
 const missingAskAiUrlMarkup = renderToStaticMarkup(createElement(AskAiAboutThis, {}));
 // @ts-expect-error CheckboxField requires a label even when visible copy is hidden.
@@ -4524,6 +4768,15 @@ void emptyStateMarkup;
 void inlineAlertMarkup;
 void settingsCardMarkup;
 void dataTableMarkup;
+void listBoxMarkup;
+void listBoxSectionMarkup;
+void invalidListBoxXstyle;
+void invalidListBoxItemXstyle;
+void invalidListBoxSectionXstyle;
+void invalidListBoxHeaderXstyle;
+void invalidListBoxRow;
+void invalidListBoxRef;
+void invalidListBoxClass;
 void linkMarkup;
 void progressMarkup;
 void meterMarkup;
@@ -5141,6 +5394,7 @@ async function verifyConsumer(
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "data-table.stylex.ts"),
   );
+  await access(join(consumer, "node_modules", "@hraness", "ui", "src", "list-box.stylex.ts"));
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "data-display.tsx"),
   );
@@ -5177,6 +5431,8 @@ async function verifyConsumer(
   const formProbe = packageFormStyleMap(installedJavaScript, installedStylexCss);
   const indicatorKnobProbe = packageIndicatorKnobProbe(installedJavaScript);
   const linkProbe = packageLinkStyleMap(installedJavaScript);
+  const listBoxProbe = packageListBoxProbe(installedJavaScript, installedStylexCss);
+  assert.doesNotMatch(installedComponentsCss, /\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
   requirePackageCheckboxStyles(installedJavaScript, installedStylexCss);
   requirePackageFieldSelectStyles(installedJavaScript, installedStylexCss);
   requirePackageLinkStyles(installedJavaScript, installedStylexCss);
@@ -5221,6 +5477,7 @@ async function verifyConsumer(
       formProbe,
       indicatorKnobProbe,
       linkProbe,
+      listBoxProbe,
       visuallyHiddenClasses,
     ),
   );

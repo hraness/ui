@@ -8766,6 +8766,284 @@ function verifyActionCoarsePointerEvidence(
   );
 }
 
+async function verifyListBoxPresentation(page: Page, id: string, forced = false): Promise<void> {
+  const evidence = await page.evaluate(() => {
+    const section = document.querySelector<HTMLElement>('[data-gallery-section="list-boxes"]');
+    if (section === null) throw new Error("The ListBox gallery section is missing.");
+    const required = (selector: string): HTMLElement => {
+      const element = section.querySelector<HTMLElement>(selector);
+      if (element === null) throw new Error(`Missing ListBox fixture: ${selector}`);
+      return element;
+    };
+    const root = (name: string) => required(`[data-gallery-list-box="${name}"]`);
+    const resolve = (property: string, value: string): string => {
+      const probe = document.createElement("span");
+      probe.style.setProperty(property, value);
+      section.append(probe);
+      const result = getComputedStyle(probe).getPropertyValue(property).trim();
+      probe.remove();
+      return result;
+    };
+    const number = (value: string) => Number.parseFloat(value);
+    const semantic = (element: HTMLElement, hook: string, caller?: string): boolean => {
+      const names = [...element.classList];
+      const end = caller === undefined ? names.length : names.length - 1;
+      return names[0] === hook && end > 1
+        && (caller === undefined || names.at(-1) === caller)
+        && names.slice(1, end).every((name) => name.startsWith("x"));
+    };
+    const roots = [...section.querySelectorAll<HTMLElement>("[data-gallery-list-box]")];
+    const staticRoot = root("static");
+    const staticItems = [...staticRoot.querySelectorAll<HTMLElement>('[role="option"]')];
+    const disabled = staticRoot.querySelector<HTMLElement>('[aria-disabled="true"]');
+    const selected = staticRoot.querySelector<HTMLElement>('[aria-selected="true"]');
+    const inherited = root("inherited-horizontal");
+    const horizontal = root("horizontal-sections");
+    const grouped = required('[data-gallery-list-box="horizontal-sections"] .hraness-list-box__section');
+    const nestedItems = [...grouped.querySelectorAll<HTMLElement>('[role="option"]')];
+    const horizontalChildren = [...horizontal.querySelectorAll<HTMLElement>(
+      ":scope > .hraness-list-box__item, :scope > .hraness-list-box__section",
+    )];
+    const overriddenRoot = root("overrides");
+    const overriddenItem = required(".gallery-list-box-item-override");
+    const overriddenSection = required(".gallery-list-box-section-override");
+    const overriddenHeader = overriddenSection.querySelector<HTMLElement>(".hraness-list-box__header");
+    if (disabled === null || selected === null || overriddenHeader === null) {
+      throw new Error("ListBox selected, disabled, or header fixture is missing.");
+    }
+    const itemStyle = getComputedStyle(staticItems[0]!);
+    const rootStyle = getComputedStyle(staticRoot);
+    const headerStyle = getComputedStyle(grouped.querySelector<HTMLElement>(".hraness-list-box__header")!);
+    const overrideStyle = getComputedStyle(overriddenItem);
+    const overrideHeaderStyle = getComputedStyle(overriddenHeader);
+    const coarseItem = root("coarse").querySelector<HTMLElement>('[role="option"]');
+    if (coarseItem === null) throw new Error("The compact-token ListBox item is missing.");
+    return {
+      forced: matchMedia("(forced-colors: active)").matches,
+      coarse: matchMedia("(pointer: coarse)").matches,
+      theme: document.documentElement.dataset.theme,
+      rootCount: roots.length,
+      tree: roots.every((element) => element.getAttribute("role") === "listbox")
+        && staticItems.length === 4
+        && inherited.querySelectorAll('[role="option"]').length === 3
+        && nestedItems.length === 2
+        && horizontalChildren.length === 2,
+      classes: roots.every((element) => semantic(
+        element,
+        "hraness-list-box",
+        element === overriddenRoot ? "gallery-list-box-root-override" : undefined,
+      )) && staticItems.every((element) => semantic(element, "hraness-list-box__item"))
+        && semantic(overriddenItem, "hraness-list-box__item", "gallery-list-box-item-override")
+        && semantic(overriddenSection, "hraness-list-box__section", "gallery-list-box-section-override")
+        && semantic(overriddenHeader, "hraness-list-box__header"),
+      refs: staticRoot.dataset.galleryListBoxRef === "true"
+        && staticItems[0]!.dataset.galleryListBoxRef === "true"
+        && overriddenSection.dataset.galleryListBoxRef === "true",
+      render: staticRoot.dataset.galleryListBoxRender === "root"
+        && staticRoot.dataset.galleryListBoxOrientation === "vertical"
+        && staticItems[0]!.dataset.galleryListBoxRender === "item"
+        && overriddenSection.dataset.galleryListBoxRender === "section"
+        && inherited.dataset.galleryListBoxRender === "context"
+        && inherited.dataset.galleryListBoxOrientation === "horizontal"
+        && root("slot-null").dataset.galleryListBoxRender === undefined,
+      collision: roots.every((element) => getComputedStyle(element)
+        .getPropertyValue("--gallery-list-box-layer-conflict").trim() === "legacy"),
+      root: rootStyle.display === "grid" && rootStyle.minWidth === "192px"
+        && rootStyle.padding === "4px" && rootStyle.overflowX === "auto"
+        && rootStyle.outlineStyle === "none",
+      item: itemStyle.display === "grid" && itemStyle.paddingTop === "8px"
+        && itemStyle.paddingLeft === "12px" && itemStyle.gap === "2px"
+        && itemStyle.outlineStyle === "none"
+        && itemStyle.borderRadius === resolve("border-radius", "var(--radius-md)"),
+      states: getComputedStyle(disabled).opacity === "0.5"
+        && getComputedStyle(selected).fontWeight === resolve("font-weight", "var(--font-weight-medium)"),
+      orientation: getComputedStyle(inherited).display === "flex"
+        && inherited.dataset.orientation === "horizontal"
+        && getComputedStyle(root("slot-null")).display === "grid"
+        && root("slot-null").dataset.orientation !== "horizontal"
+        && getComputedStyle(horizontal).display === "flex"
+        && getComputedStyle(horizontal).minWidth === "0px"
+        && getComputedStyle(horizontal).overflowX === "auto"
+        && getComputedStyle(horizontal).overflowY === "hidden"
+        && horizontalChildren.every((element) => getComputedStyle(element).flex === "0 0 auto")
+        && [...inherited.querySelectorAll<HTMLElement>('[role="option"]')]
+          .every((element) => getComputedStyle(element).flex === "0 0 auto")
+        && getComputedStyle(grouped).display === "grid"
+        && nestedItems.every((element) => getComputedStyle(element).flex === "0 1 auto")
+        && nestedItems[1]!.getBoundingClientRect().top >= nestedItems[0]!.getBoundingClientRect().bottom - 1,
+      header: headerStyle.paddingTop === "8px" && headerStyle.paddingLeft === "12px"
+        && headerStyle.fontSize === resolve("font-size", "var(--text-caption)")
+        && headerStyle.fontWeight === resolve("font-weight", "var(--font-weight-medium)"),
+      override: getComputedStyle(overriddenRoot).padding === "10px"
+        && getComputedStyle(overriddenRoot).minWidth === "240px"
+        && overrideStyle.paddingLeft === "11px" && overrideStyle.paddingRight === "11px"
+        && getComputedStyle(overriddenSection).gap === "8px"
+        && overrideHeaderStyle.fontSize === "17px" && overrideHeaderStyle.paddingLeft === "9px",
+      overrideColors: overrideStyle.backgroundColor === resolve("background-color", "var(--ui-secondary)")
+        && overrideStyle.color === resolve("color", "var(--ui-secondary-foreground)")
+        && overrideHeaderStyle.color === resolve("color", "var(--ui-primary)"),
+      compactMin: number(getComputedStyle(coarseItem).minHeight),
+      compactHeight: coarseItem.getBoundingClientRect().height,
+      foreground: headerStyle.color,
+      mutedForeground: resolve("color", "var(--ui-muted-foreground)"),
+    };
+  });
+  invariant(
+    evidence.forced === forced && evidence.rootCount === 7 && evidence.tree
+    && evidence.classes && evidence.refs && evidence.render && evidence.collision && evidence.root
+    && evidence.item && evidence.states && evidence.orientation && evidence.header
+    && evidence.override && (forced || evidence.overrideColors)
+    && (forced || evidence.foreground === evidence.mutedForeground)
+    && (evidence.coarse || (evidence.compactMin === 16 && evidence.compactHeight < 48)),
+    `${id}: ListBox packed presentation changed: ${JSON.stringify(evidence)}`,
+  );
+}
+
+async function verifyListBoxCoarsePointer(page: Page, real: boolean): Promise<void> {
+  const previous = await page.evaluate(() => document.documentElement.dataset.verificationPointer);
+  try {
+    if (!real) {
+      await page.evaluate(() => { document.documentElement.dataset.verificationPointer = "coarse"; });
+    }
+    await page.waitForFunction(() => {
+      const item = document.querySelector<HTMLElement>('[data-gallery-list-box="coarse"] [role="option"]');
+      return item !== null && Number.parseFloat(getComputedStyle(item).minHeight) >= 48;
+    });
+    const evidence = await page.locator('[data-gallery-list-box="coarse"] [role="option"]').evaluate((element) => ({
+      real: matchMedia("(pointer: coarse)").matches,
+      synthetic: document.documentElement.dataset.verificationPointer ?? "",
+      compact: getComputedStyle(element).getPropertyValue("--interactive-target-compact").trim(),
+      minHeight: Number.parseFloat(getComputedStyle(element).minHeight),
+      height: element.getBoundingClientRect().height,
+    }));
+    invariant(evidence.real === real && evidence.compact === "16px"
+      && evidence.minHeight === 48 && evidence.height >= 48
+      && (real ? evidence.synthetic === "" : evidence.synthetic === "coarse"),
+    `ListBox ${real ? "real" : "synthetic"} coarse target changed: ${JSON.stringify(evidence)}`);
+  } finally {
+    await page.evaluate((value) => {
+      if (value === undefined) delete document.documentElement.dataset.verificationPointer;
+      else document.documentElement.dataset.verificationPointer = value;
+    }, previous);
+  }
+}
+
+async function verifyListBoxInteractions(page: Page, id: string): Promise<void> {
+  const list = page.getByRole("listbox", { name: "Static sound list" });
+  const alpha = list.getByRole("option", { name: "Alpha", exact: true });
+  const beta = list.getByRole("option", { name: "Beta", exact: true });
+  const gamma = list.getByRole("option", { name: "Gamma", exact: true });
+  await alpha.hover();
+  await page.waitForFunction(() => document.querySelector('[data-gallery-list-box="static"] [data-key="alpha"]')?.hasAttribute("data-hovered"));
+  const highlighted = await alpha.evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--ui-accent)";
+    probe.style.color = "var(--ui-accent-foreground)";
+    element.append(probe);
+    const expected = getComputedStyle(probe);
+    const actual = getComputedStyle(element);
+    const result = { actual: actual.backgroundColor, expected: expected.backgroundColor,
+      color: actual.color, expectedColor: expected.color };
+    probe.remove();
+    return result;
+  });
+  invariant(highlighted.actual === highlighted.expected && highlighted.color === highlighted.expectedColor,
+    `${id}: ListBox hover recipes changed: ${JSON.stringify(highlighted)}`);
+  await alpha.click();
+  await page.waitForFunction(() => document.querySelector('[data-gallery-list-box-render="item"]')?.getAttribute("data-gallery-list-box-focused") === "true");
+  await page.keyboard.press("g");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-key") === "gamma");
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => document.querySelector('[data-gallery-list-box-selection="true"]')?.textContent === "gamma");
+  invariant(await gamma.getAttribute("data-focused") !== null, `${id}: ListBox typeahead did not expose focused state`);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("End");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-key") === "gamma");
+  invariant(await list.getByRole("option", { name: "Muted" }).getAttribute("aria-selected") !== "true",
+    `${id}: disabled ListBox item became selected or interrupted last-enabled keyboard focus`);
+  await beta.click();
+  await page.waitForFunction(() => document.querySelector('[data-gallery-list-box-selected="true"]') !== null);
+
+  const input = page.getByRole("searchbox", { name: "Filter instruments" });
+  await input.fill("pad");
+  const filtered = page.getByRole("listbox", { name: "Filtered instruments" });
+  await page.waitForFunction(() => {
+    const root = document.querySelector('[data-gallery-list-box="autocomplete"]');
+    return root?.querySelectorAll('[role="option"]').length === 1
+      && root.querySelector('[role="option"]')?.textContent === "Warm pad";
+  });
+  await input.press("ArrowDown");
+  await page.waitForFunction(() => {
+    const input = document.querySelector<HTMLInputElement>('[data-gallery-list-box-fixture="autocomplete"] input');
+    const active = input?.getAttribute("aria-activedescendant");
+    return input === document.activeElement && active != null
+      && document.getElementById(active)?.textContent === "Warm pad"
+      && document.getElementById(active)?.hasAttribute("data-focused");
+  });
+  const virtualHighlight = await filtered.getByRole("option", { name: "Warm pad" }).evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--ui-accent)";
+    element.append(probe);
+    const result = getComputedStyle(element).backgroundColor === getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return result;
+  });
+  invariant(virtualHighlight, `${id}: Autocomplete virtual focus did not activate the ListBox highlight recipe`);
+  await input.press("Enter");
+  await page.waitForFunction(() => document.querySelector('[data-gallery-list-box-instrument="true"]')?.textContent === "pad");
+  invariant(await filtered.getByRole("option", { name: "Warm pad" }).getAttribute("aria-selected") === "true",
+    `${id}: Autocomplete virtual focus did not select its filtered option`);
+  await input.fill("");
+  await page.waitForFunction(() => document.querySelector('[data-gallery-list-box="autocomplete"]')?.querySelectorAll('[role="option"]').length === 3);
+
+  const override = page.getByRole("option", { name: "Caller item", exact: true });
+  await override.hover();
+  await page.waitForFunction(() => document.querySelector('.gallery-list-box-item-override')?.hasAttribute("data-hovered"));
+  const callerWins = await override.evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--ui-secondary)";
+    element.append(probe);
+    const matches = getComputedStyle(element).backgroundColor === getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return matches;
+  });
+  invariant(callerWins, `${id}: highlighted ListBox item lost caller StyleX precedence`);
+
+  await page.getByRole("button", { name: "Open Menu compatibility canary" }).click();
+  const menu = page.getByRole("menu", { name: "Menu compatibility canary" });
+  await menu.waitFor({ state: "visible" });
+  const legacyMenu = await menu.evaluate((element) => {
+    const section = element.querySelector<HTMLElement>(".hraness-menu__section");
+    const header = element.querySelector<HTMLElement>(".hraness-menu__header");
+    const item = element.querySelector<HTMLElement>(".hraness-menu__item");
+    return element.className === "hraness-menu" && getComputedStyle(element).display === "grid"
+      && getComputedStyle(element).minWidth === "192px" && getComputedStyle(element).padding === "4px"
+      && section !== null && getComputedStyle(section).display === "grid"
+      && header !== null && getComputedStyle(header).paddingLeft === "12px"
+      && item !== null && getComputedStyle(item).display === "grid";
+  });
+  invariant(legacyMenu, `${id}: shared-selector removal changed Menu presentation`);
+  await page.keyboard.press("Escape");
+  await menu.waitFor({ state: "hidden" });
+  await page.mouse.move(0, 0);
+}
+
+async function verifyListBoxForcedColors(page: Page): Promise<void> {
+  await verifyListBoxPresentation(page, "forced colors", true);
+  const alpha = page.getByRole("listbox", { name: "Static sound list" }).getByRole("option", { name: "Alpha", exact: true });
+  await alpha.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.waitForFunction(() => document.querySelector('[data-gallery-list-box="static"] [data-focused]') !== null);
+  const evidence = await page.locator('[data-gallery-list-box="static"] [data-focused]').evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { forced: matchMedia("(forced-colors: active)").matches,
+      focused: element === document.activeElement, color: style.color,
+      background: style.backgroundColor, adjustment: style.forcedColorAdjust };
+  });
+  invariant(evidence.forced && evidence.focused && evidence.adjustment === "auto"
+    && evidence.color !== evidence.background, `ListBox forced-color focus became unreadable: ${JSON.stringify(evidence)}`);
+}
+
 async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
   return page.evaluate(() => {
     const fixtureNames = ["ltr", "rtl", "overflow", "empty", "vertical"] as const;
@@ -11339,6 +11617,7 @@ try {
       "@hraness/ui": `file:${archive}`,
       react: REACT_VERSION,
       "react-dom": REACT_VERSION,
+      "react-aria-components": "1.19.0",
     },
   }, null, 2)}\n`);
   await run([process.execPath, "install", "--ignore-scripts"], consumer, environment);
@@ -11397,7 +11676,7 @@ try {
   ).join("\n");
   assert.doesNotMatch(
     installedPackageCss,
-    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|content|fields|form|indicators|key-hint|knob|link|select-option|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
+    /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|content|fields|form|indicators|key-hint|knob|link|list-box|select-option|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
     "gallery conflict sentinels must not enter package CSS",
   );
   assert.doesNotMatch(
@@ -11465,6 +11744,16 @@ try {
     /\.hraness-form(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate Form declarations in legacy CSS",
   );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-list-box(?:__(?:header|item|section))?(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate ListBox declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /--gallery-list-box-layer-conflict/u,
+    "the ListBox collision marker must stay outside the packed package",
+  );
 
   const productionDirectory = resolve(consumer, "dist/browser");
   const negativeDirectory = resolve(consumer, "dist/unstyled-negative-control");
@@ -11475,6 +11764,11 @@ try {
     buildServerRenderer(consumer, serverRendererDirectory),
   ]);
   requirePackedDefaultStylesheet(production.css, production.javaScript);
+  assert.match(
+    production.css,
+    /--gallery-list-box-layer-conflict:\s*legacy/u,
+    "the packed gallery must include its ListBox collision control",
+  );
   const checkboxFocusContract = requirePackedCheckboxFocusContract(
     production.javaScript,
     production.css,
@@ -11568,6 +11862,16 @@ try {
   assert.match(html, /name="alerts"/u);
   assert.match(html, /name="metric"/u);
   assert.match(html, /data-gallery-section="content-family"/u);
+  assert.match(html, /data-gallery-section="list-boxes"/u);
+  for (const fixture of [
+    "static", "inherited-horizontal", "slot-null", "horizontal-sections", "overrides", "autocomplete", "coarse",
+  ]) {
+    assert.match(html, new RegExp(`data-gallery-list-box="${fixture}"`, "u"),
+      `SSR must include the ${fixture} ListBox specimen`);
+  }
+  assert.match(html, /data-gallery-list-box-selection="true">beta</u);
+  assert.doesNotMatch(html, /data-gallery-list-box-ref=/u,
+    "ListBox ref evidence must come from hydration, not server-authored markers");
   assert.equal(
     html.match(/data-gallery-page-intro="(?:default|override)"/gu)?.length,
     2,
@@ -11887,6 +12191,8 @@ try {
           verifyContentFamilyEvidence(lightContent, layout.id);
           const lightDataTable = await dataTableEvidence(page);
           verifyDataTableEvidence(lightDataTable, layout.id);
+          await verifyListBoxPresentation(page, layout.id);
+          await verifyListBoxCoarsePointer(page, false);
           const lightIndicators = await indicatorKnobEvidence(page);
           verifyIndicatorKnobEvidence(lightIndicators, layout.id);
           await verifyFormPresentation(page, layout.id);
@@ -12229,6 +12535,7 @@ try {
             checkboxFocusContract,
           );
           await verifyKeyboardPath(page, layout.id, checkboxFocusContract);
+          await verifyListBoxInteractions(page, layout.id);
           await verifyLinkNativeFallbackCascadeIsolation(
             page,
             layout.id,
@@ -12241,6 +12548,7 @@ try {
           verifyContentFamilyEvidence(darkContent, `${layout.id} dark`);
           const darkDataTable = await dataTableEvidence(page);
           verifyDataTableEvidence(darkDataTable, `${layout.id} dark`);
+          await verifyListBoxPresentation(page, `${layout.id} dark`);
           const darkIndicators = await indicatorKnobEvidence(page);
           verifyIndicatorKnobEvidence(darkIndicators, `${layout.id} dark`);
           const darkSegmented = await segmentedControlEvidence(page);
@@ -12411,6 +12719,7 @@ try {
         );
         await verifyFieldFamilyCoarsePointer(page);
         await verifyIndicatorKnobCoarsePointer(page);
+        await verifyListBoxCoarsePointer(page, true);
         invariant(
           failures.length === 0,
           `coarse-pointer action, CheckboxField, Fields, Indicators, and Knob matrix: ${failures.join("; ")}`,
@@ -12516,6 +12825,7 @@ try {
         );
         await verifyFieldFamilyForcedColors(page);
         await verifyContentFamilyForcedColors(page);
+        await verifyListBoxForcedColors(page);
         await verifyIndicatorKnobForcedColors(page);
 
         await resetKeyboardFocusToDocumentStart(page, "forced colors");
@@ -12613,6 +12923,7 @@ try {
             element.childElementCount === 0
             && !element.hasAttribute("data-hydrated")
             && document.querySelector('[data-gallery-section="content-family"]') === null
+            && document.querySelector('[data-gallery-section="list-boxes"]') === null
             && window.__HRANESS_UI_GALLERY_HYDRATION_STARTED__ === undefined
             && window.__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__ === undefined
             && window.__HRANESS_UI_GALLERY_UNMOUNT__ === undefined),
@@ -12642,6 +12953,9 @@ try {
     await server.stop(true);
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
+  console.log(
+    "ListBox gallery passed: static and dynamic collections, inherited orientation and slot-null isolation, direct horizontal sections, caller DOM renderers and refs, StyleX/native-style precedence, hover/focus/selection/disabled states, typeahead, Autocomplete input-owned virtual focus and selection, retained Menu presentation, light/dark tokens, real and synthetic coarse targets under a local compact-token override, forced colors, gallery-only collision controls, SSR/hydration, and cleanup.",
+  );
   console.log(
     "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, PageIntro wide/compact layout and heading hierarchy, EmptyState composition, all four InlineAlert tone/live-region contracts, both SettingsCard shapes, Content-family semantic/generated/caller ordering, native-style precedence, light/dark tokens, forced colors, collision, SSR, and cleanup, DataTable native semantics, finite alignment, overflow, logical dividers, empty-state, caller precedence, light/dark, legacy-layer collision, vertical writing, SSR, and hydration contracts, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, 3 ProgressBar, 4 Meter, 4 Slider, and 4 Knob packed specimens with semantic/generated/caller ordering, determinate and indeterminate motion, tone, LTR/RTL/vertical keyboard and form behavior, 20px Slider visuals inside 48px real and synthetic coarse hit targets, Knob density, pointer gesture, disabled, caller xstyle/controlXstyle/native-style precedence, forced-color SVG, collision, SSR, and hydration contracts, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );

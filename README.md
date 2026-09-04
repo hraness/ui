@@ -272,7 +272,8 @@ const styles = stylex.create({
 
 `AskAiAboutThis`, `Button`, `CopyButton`, `IconButton`, `IconLink`, `ToggleButton`,
 `LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
-`KeyHint`, `PageIntro`, `EmptyState`, `InlineAlert`, `SettingsCard`, `DataTable`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
+`KeyHint`, `PageIntro`, `EmptyState`, `InlineAlert`, `SettingsCard`, `DataTable`,
+`ListBox`, `ListBoxItem`, `ListBoxSection`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `SkipLink`, `Separator`, `Form`, `FieldDescription`, `FieldError`, `TextField`,
 `TextAreaField`, `SearchField`, `NumberField`, `CheckboxField`, `CheckboxGroup`,
@@ -411,6 +412,17 @@ table. Both caller recipes resolve after their package recipes, while the
 table's native `style` declarations remain final. Cell dividers retain logical
 block-end behavior in every writing mode, and the empty cell remains centered
 across the complete column span.
+
+`ListBox`, `ListBoxItem`, and `ListBoxSection` preserve React Aria collection,
+selection, focus, ref, context, and custom-render behavior. Their typed `xstyle`
+recipes resolve after package orientation and interaction recipes; native
+`style` remains final. Sections also expose `headerXstyle` for the optional
+header. Horizontal layout sizes only direct items and sections, without adding
+DOM wrappers or changing dynamic collection children. Section descendants keep
+their ordinary grid layout. Focused or hovered items use the accent tokens,
+selection adds medium font weight, and disabled opacity remains independent.
+Items keep their minimum target under both real and verification coarse-pointer
+conditions. Autocomplete continues to own input focus and filtering.
 
 `Link` remains an ordinary React Aria destination with a required `href`, stable
 semantic class and slot, optional link ref, native attributes, render-prop

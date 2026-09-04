@@ -10,9 +10,11 @@ import {
   useState,
 } from "react";
 import { I18nProvider } from "react-aria";
+import { ListBoxContext } from "react-aria-components";
 
 import {
   AppearanceIcon,
+  Autocomplete,
   Avatar,
   Badge,
   Button,
@@ -34,9 +36,16 @@ import {
   IconLink,
   InlineAlert,
   KeyHint,
+  Knob,
   Link,
   LinkButton,
-  Knob,
+  ListBox,
+  ListBoxItem,
+  ListBoxSection,
+  Menu,
+  MenuItem,
+  MenuSection,
+  MenuTrigger,
   Meter,
   NativeSelectField,
   NumberField,
@@ -273,6 +282,21 @@ const galleryStyles = stylex.create({
     maxWidth: "18rem",
     overflowX: "scroll",
   },
+  listBoxRootOverride: {
+    minWidth: "15rem",
+    padding: "14px",
+  },
+  listBoxItemOverride: {
+    backgroundColor: "var(--ui-secondary)",
+    color: "var(--ui-secondary-foreground)",
+    paddingInline: "14px",
+  },
+  listBoxSectionOverride: { gap: "6px" },
+  listBoxHeaderOverride: {
+    color: "var(--ui-primary)",
+    fontSize: "17px",
+    paddingInline: "9px",
+  },
   keyHintDynamicWidth: (width: string) => ({ width }),
   keyHintOverride: {
     alignItems: "stretch",
@@ -407,6 +431,165 @@ const galleryStyles = stylex.create({
     "inline-size": "11rem",
   },
 });
+
+const galleryListBoxItems = [
+  { id: "piano", name: "Piano" },
+  { id: "pad", name: "Warm pad" },
+  { id: "drums", name: "Drums" },
+] as const;
+
+function ListBoxGallery() {
+  const [selection, setSelection] = useState("beta");
+  const [instrument, setInstrument] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const itemRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const elements = [rootRef.current, itemRef.current, sectionRef.current];
+    if (elements.some((element) => element === null)) {
+      throw new Error("ListBox gallery refs did not reach their native elements.");
+    }
+    for (const element of elements) element!.dataset.galleryListBoxRef = "true";
+    return () => {
+      for (const element of elements) delete element!.dataset.galleryListBoxRef;
+    };
+  }, []);
+
+  return (
+    <section aria-labelledby="gallery-list-boxes-heading" data-gallery-section="list-boxes">
+      <div data-gallery-section-heading="true">
+        <div>
+          <h2 id="gallery-list-boxes-heading">List boxes</h2>
+          <p>Collection semantics, inherited orientation, caller recipes, and virtual focus.</p>
+        </div>
+      </div>
+      <div data-gallery-list-box-grid="true" data-gallery-list-box-layer-conflict="true">
+        <div data-gallery-list-box-fixture="static">
+          <ListBox
+            aria-label="Static sound list"
+            data-gallery-list-box="static"
+            defaultSelectedKeys={["beta"]}
+            disabledKeys={["muted"]}
+            disallowEmptySelection
+            onSelectionChange={(keys) => setSelection(keys === "all" ? "all" : [...keys].join(","))}
+            ref={rootRef}
+            render={(props, state) => (
+              <div {...props} data-gallery-list-box-render="root" data-gallery-list-box-orientation={state.orientation} />
+            )}
+            selectionMode="single"
+          >
+            <ListBoxItem
+              id="alpha"
+              ref={itemRef}
+              render={(props, state) => (
+                <div {...props} data-gallery-list-box-render="item" data-gallery-list-box-focused={String(state.isFocused)} />
+              )}
+              textValue="Alpha"
+            >Alpha</ListBoxItem>
+            <ListBoxItem id="beta" textValue="Beta">
+              {({ isSelected }) => <span data-gallery-list-box-selected={String(isSelected)}>Beta</span>}
+            </ListBoxItem>
+            <ListBoxItem id="gamma" textValue="Gamma">Gamma</ListBoxItem>
+            <ListBoxItem id="muted" textValue="Muted">Muted</ListBoxItem>
+          </ListBox>
+          <output data-gallery-list-box-selection="true">{selection}</output>
+        </div>
+        <ListBoxContext.Provider value={{
+          orientation: "horizontal",
+          render: (props, state) => (
+            <div {...props} data-gallery-list-box-render="context" data-gallery-list-box-orientation={state.orientation} />
+          ),
+        }}>
+          <div data-gallery-list-box-fixture="inherited-horizontal">
+            <ListBox
+              aria-label="Inherited horizontal instruments"
+              data-gallery-list-box="inherited-horizontal"
+              items={galleryListBoxItems}
+              selectionMode="single"
+            >
+              {(item) => <ListBoxItem id={item.id} textValue={item.name}>{item.name}</ListBoxItem>}
+            </ListBox>
+          </div>
+          <div data-gallery-list-box-fixture="slot-null">
+            <ListBox aria-label="Unslotted vertical instruments" data-gallery-list-box="slot-null" slot={null}>
+              <ListBoxItem id="unbound" textValue="Unbound">Unbound</ListBoxItem>
+            </ListBox>
+          </div>
+        </ListBoxContext.Provider>
+        <div data-gallery-list-box-fixture="horizontal-sections">
+          <ListBox aria-label="Horizontal sections" data-gallery-list-box="horizontal-sections" orientation="horizontal">
+            <ListBoxItem id="direct" textValue="Direct item">Direct item</ListBoxItem>
+            <ListBoxSection id="section" title="Grouped sounds">
+              <ListBoxItem id="section-one" textValue="First grouped sound">First grouped sound</ListBoxItem>
+              <ListBoxItem id="section-two" textValue="Second grouped sound">Second grouped sound</ListBoxItem>
+            </ListBoxSection>
+          </ListBox>
+        </div>
+        <div data-gallery-list-box-fixture="overrides">
+          <ListBox
+            aria-label="Caller list presentation"
+            className="gallery-list-box-root-override"
+            data-gallery-list-box="overrides"
+            style={() => ({ padding: "10px" })}
+            xstyle={galleryStyles.listBoxRootOverride}
+          >
+            <ListBoxSection
+              className="gallery-list-box-section-override"
+              headerXstyle={galleryStyles.listBoxHeaderOverride}
+              id="override-section"
+              ref={sectionRef}
+              render={(props) => <section {...props} data-gallery-list-box-render="section" />}
+              style={{ gap: "8px" }}
+              title="Caller header"
+              xstyle={galleryStyles.listBoxSectionOverride}
+            >
+              <ListBoxItem
+                className="gallery-list-box-item-override"
+                id="override"
+                style={() => ({ paddingInline: "11px" })}
+                textValue="Caller item"
+                xstyle={galleryStyles.listBoxItemOverride}
+              >Caller item</ListBoxItem>
+            </ListBoxSection>
+          </ListBox>
+        </div>
+        <div data-gallery-list-box-fixture="autocomplete">
+          <Autocomplete filter={(text, input) => text.toLowerCase().includes(input.toLowerCase())}>
+            <SearchField label="Filter instruments" />
+            <ListBox
+              aria-label="Filtered instruments"
+              data-gallery-list-box="autocomplete"
+              items={galleryListBoxItems}
+              onSelectionChange={(keys) => setInstrument(keys === "all" ? "all" : [...keys].join(","))}
+              selectionMode="single"
+            >
+              {(item) => <ListBoxItem id={item.id} textValue={item.name}>{item.name}</ListBoxItem>}
+            </ListBox>
+          </Autocomplete>
+          <output data-gallery-list-box-instrument="true">{instrument}</output>
+        </div>
+        <div data-gallery-list-box-fixture="coarse">
+          <ListBox
+            aria-label="Compact token instruments"
+            data-gallery-list-box="coarse"
+            style={{ "--interactive-target-compact": "16px", fontSize: "8px", lineHeight: "1" } as CSSProperties}
+          >
+            <ListBoxItem id="compact" textValue="Compact">Compact</ListBoxItem>
+          </ListBox>
+        </div>
+      </div>
+      <MenuTrigger>
+        <Button>Open Menu compatibility canary</Button>
+        <Menu aria-label="Menu compatibility canary">
+          <MenuSection title="Unmigrated menu section">
+            <MenuItem id="menu-canary" textValue="Menu item canary">Menu item canary</MenuItem>
+          </MenuSection>
+        </Menu>
+      </MenuTrigger>
+    </section>
+  );
+}
 
 export function PrimitiveGallery() {
   const [cardPressCount, setCardPressCount] = useState(0);
@@ -1910,6 +2093,7 @@ export function PrimitiveGallery() {
             </div>
           </div>
         </section>
+        <ListBoxGallery />
       </QuietSitePage>
       <QuietSiteFooter
         className="gallery-quiet-site-footer"
