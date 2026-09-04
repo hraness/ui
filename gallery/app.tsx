@@ -482,9 +482,9 @@ function ListBoxGallery() {
             <ListBoxItem
               id="alpha"
               ref={itemRef}
-              render={(props, state) => (
-                <div {...props} data-gallery-list-box-render="item" data-gallery-list-box-focused={String(state.isFocused)} />
-              )}
+              render={(props, state) => "href" in props
+                ? <a {...props} data-gallery-list-box-render="item" data-gallery-list-box-focused={String(state.isFocused)} />
+                : <div {...props} data-gallery-list-box-render="item" data-gallery-list-box-focused={String(state.isFocused)} />}
               textValue="Alpha"
             >Alpha</ListBoxItem>
             <ListBoxItem id="beta" textValue="Beta">
