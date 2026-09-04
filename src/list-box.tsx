@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  createElement,
   type ForwardedRef,
   forwardRef,
   type ReactElement,
@@ -141,9 +142,7 @@ function ListBoxItemElement({
     style: mergeStylexInlineStyles(presentation.style, domProps.style),
   };
   if (render !== undefined) return render(composedProps, state);
-  return isLink
-    ? <a {...composedProps} />
-    : <div {...composedProps} />;
+  return createElement(isLink ? "a" : "div", composedProps);
 }
 
 function ListBoxItemInner<T extends object>(

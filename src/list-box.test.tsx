@@ -278,7 +278,9 @@ test("item render props and native styles remain final on anchor and div options
           return <span>{state.isSelected ? "Selected guide" : "Guide"}</span>;
         }}
       </ListBoxItem>
-      <ListBoxItem id="plain" render={(props) => <div {...props} data-custom-option="plain" />}>
+      <ListBoxItem id="plain" render={(props) => "href" in props
+        ? <a {...props} data-custom-option="plain" />
+        : <div {...props} data-custom-option="plain" />}>
         Plain
       </ListBoxItem>
       <ListBoxItem href="/reference" id="reference">Reference</ListBoxItem>
@@ -361,7 +363,9 @@ test("section and header overrides preserve custom rendering and nested item lay
   ]);
 });
 
-test.each([undefined, null, ""] as readonly ReactNode[])(
+const sectionTitles: ReactNode[] = [undefined, null, ""];
+
+test.each(sectionTitles)(
   "section header presence preserves the title boundary for %p",
   (title) => {
     const html = renderToStaticMarkup(
