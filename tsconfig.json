@@ -38,6 +38,8 @@
     "build/**/*.ts",
     "src/**/*.ts",
     "src/**/*.tsx",
+    "scripts/build-package.ts",
+    "scripts/check-committed-dist.test.ts",
     "scripts/gallery-browser.ts",
     "gallery/**/*.ts",
     "gallery/**/*.tsx",
