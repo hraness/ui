@@ -366,6 +366,77 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
+  test("settles Bun's exact unused re-export records from a side-effect-free dependency barrel", async () => {
+    const context = await fixture();
+    const dependencyRoot = join(context.root, "node_modules/@fixture/side-effect-free");
+    await write(
+      join(dependencyRoot, "package.json"),
+      `${JSON.stringify({
+        exports: "./index.js",
+        name: "@fixture/side-effect-free",
+        sideEffects: false,
+        type: "module",
+        version: "1.0.0",
+      })}\n`,
+    );
+    await write(
+      join(dependencyRoot, "index.js"),
+      "export { retained } from './retained.js'; export { dropped } from './dropped.js';\n",
+    );
+    await write(join(dependencyRoot, "retained.js"), "export const retained = 'retained';\n");
+    await write(join(dependencyRoot, "dropped.js"), "export const dropped = 'dropped';\n");
+    const entry = join(context.root, "src/entry.ts");
+    await write(
+      entry,
+      "import { retained } from '@fixture/side-effect-free'; export const value = retained;\n",
+    );
+    const handle = await generation(context, "side-effect-free-elided-reexport", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const barrelKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/node_modules/@fixture/side-effect-free/index.js")
+        || path === "node_modules/@fixture/side-effect-free/index.js"
+      );
+      assert.ok(barrelKey !== undefined);
+      expect(result.metafile.inputs[barrelKey]!.format).toBe("esm");
+      expect(result.metafile.inputs[barrelKey]!.imports).toContainEqual({
+        external: true,
+        kind: "import-statement",
+        path: "./dropped.js",
+      });
+      expect(Object.keys(result.metafile.inputs).some((path) =>
+        path.endsWith("/node_modules/@fixture/side-effect-free/dropped.js")
+        || path === "node_modules/@fixture/side-effect-free/dropped.js"
+      )).toBe(false);
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({
+        generation: handle,
+        graphId: "client",
+        rootDirectory: context.root,
+      });
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(receipt.inputs.map(({ path }) => path)).toContain(
+        "node_modules/@fixture/side-effect-free/retained.js",
+      );
+      expect(receipt.inputs.map(({ path }) => path)).not.toContain(
+        "node_modules/@fixture/side-effect-free/dropped.js",
+      );
+      expect(receipt.edges.some(({ from, to }) =>
+        from === "input:node_modules/@fixture/side-effect-free/index.js"
+        && to.endsWith("/dropped.js")
+      )).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
   test("rejects external and mismatched absolute edges to a speculative transform", async () => {
     for (const variant of ["external", "mismatched-original"] as const) {
       const context = await fixture();
@@ -410,6 +481,164 @@ describe("collectBunStylexGraph", () => {
       } finally {
         build.mockRestore();
       }
+    }
+  });
+
+  test("rejects near-miss elided external dependency edges", async () => {
+    const variants: readonly Readonly<{
+      edge?: Readonly<Record<string, unknown>>;
+      id: string;
+      importer?: "cjs" | "esm";
+      name?: string;
+      sideEffects?: unknown;
+      target: "closer-scope" | "cross-package" | "directory" | "file" | "known" | "missing" | "non-js" | "symlink";
+    }>[] = [
+      { id: "missing-side-effects", target: "file" },
+      { id: "true-side-effects", sideEffects: true, target: "file" },
+      { id: "array-side-effects", sideEffects: ["./dropped.js"], target: "file" },
+      { edge: { external: true, kind: "import-statement", original: "./dropped.js", path: "./dropped.js" }, id: "original", sideEffects: false, target: "file" },
+      { edge: { external: true, kind: "dynamic-import", path: "./dropped.js" }, id: "dynamic", sideEffects: false, target: "file" },
+      { edge: { external: true, kind: "require-call", path: "./dropped.js" }, id: "require", sideEffects: false, target: "file" },
+      { edge: { external: true, kind: "import-statement", path: "./dropped.js", with: { type: "javascript" } }, id: "attributes", sideEffects: false, target: "file" },
+      { edge: { external: false, kind: "import-statement", path: "./dropped.js" }, id: "nonexternal", sideEffects: false, target: "file" },
+      { edge: { external: true, kind: "import-statement", path: "./dropped.js?raw" }, id: "query-path", sideEffects: false, target: "file" },
+      { edge: { external: true, kind: "import-statement", path: "./dropped%2ejs" }, id: "encoded-path", sideEffects: false, target: "file" },
+      { edge: { external: true, kind: "import-statement", path: "../other/dropped.js" }, id: "cross-package", sideEffects: false, target: "cross-package" },
+      { id: "missing-target", sideEffects: false, target: "missing" },
+      { edge: { external: true, kind: "import-statement", path: "./dropped.json" }, id: "non-js-target", sideEffects: false, target: "non-js" },
+      { id: "directory-target", sideEffects: false, target: "directory" },
+      { id: "symlink-target", sideEffects: false, target: "symlink" },
+      { edge: { external: true, kind: "import-statement", path: "./nested/dropped.js" }, id: "closer-package-scope", sideEffects: false, target: "closer-scope" },
+      { id: "wrong-package-name", name: "@fixture/other", sideEffects: false, target: "file" },
+      { id: "known-target", sideEffects: false, target: "known" },
+      { id: "commonjs-importer", importer: "cjs", sideEffects: false, target: "file" },
+    ];
+
+    for (const variant of variants) {
+      const context = await fixture();
+      const dependencyRoot = join(context.root, "node_modules/@fixture/runtime");
+      const importerName = variant.importer === "cjs" ? "index.cjs" : "index.js";
+      const manifest: Record<string, unknown> = {
+        exports: `./${importerName}`,
+        name: variant.name ?? "@fixture/runtime",
+        type: variant.importer === "cjs" ? "commonjs" : "module",
+        version: "1.0.0",
+      };
+      if (Object.hasOwn(variant, "sideEffects")) manifest.sideEffects = variant.sideEffects;
+      await write(join(dependencyRoot, "package.json"), `${JSON.stringify(manifest)}\n`);
+      await write(
+        join(dependencyRoot, importerName),
+        variant.target === "known"
+          ? "export { marker } from './dropped.js';\n"
+          : variant.importer === "cjs"
+            ? "exports.marker = 'runtime';\n"
+            : "export const marker = 'runtime';\n",
+      );
+      switch (variant.target) {
+        case "file":
+          await write(join(dependencyRoot, "dropped.js"), "export const dropped = 'dropped';\n");
+          break;
+        case "known":
+          await write(join(dependencyRoot, "dropped.js"), "export const marker = 'runtime';\n");
+          break;
+        case "cross-package":
+          await write(
+            join(context.root, "node_modules/@fixture/other/package.json"),
+            `${JSON.stringify({ name: "@fixture/other", sideEffects: false, type: "module", version: "1.0.0" })}\n`,
+          );
+          await write(join(context.root, "node_modules/@fixture/other/dropped.js"), "export const dropped = true;\n");
+          break;
+        case "directory":
+          await mkdir(join(dependencyRoot, "dropped.js"), { recursive: true });
+          break;
+        case "non-js":
+          await write(join(dependencyRoot, "dropped.json"), "{}\n");
+          break;
+        case "symlink":
+          await write(join(dependencyRoot, "actual.js"), "export const dropped = true;\n");
+          await symlink(join(dependencyRoot, "actual.js"), join(dependencyRoot, "dropped.js"));
+          break;
+        case "closer-scope":
+          await write(
+            join(dependencyRoot, "nested/package.json"),
+            `${JSON.stringify({ name: "@fixture/runtime", sideEffects: false, type: "module", version: "1.0.0" })}\n`,
+          );
+          await write(join(dependencyRoot, "nested/dropped.js"), "export const dropped = true;\n");
+          break;
+        case "missing": break;
+      }
+      const entry = join(context.root, "src/entry.ts");
+      await write(
+        entry,
+        `import { marker } from '../node_modules/@fixture/runtime/${importerName}'; export const value = marker;\n`,
+      );
+      const handle = await generation(context, `elided-external-near-miss-${variant.id}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const importerKey = Object.keys(result.metafile.inputs).find((path) =>
+          path.endsWith(`/node_modules/@fixture/runtime/${importerName}`)
+          || path === `node_modules/@fixture/runtime/${importerName}`
+        );
+        assert.ok(importerKey !== undefined);
+        result.metafile.inputs[importerKey]!.imports = [variant.edge ?? {
+          external: true,
+          kind: "import-statement",
+          path: "./dropped.js",
+        }] as never;
+        return result;
+      });
+
+      try {
+        let rejection: unknown;
+        try {
+          await collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root });
+        } catch (error) {
+          rejection = error;
+        }
+        assert.ok(rejection !== undefined, `near-miss variant unexpectedly resolved: ${variant.id}`);
+        assert.match(String(rejection), /Bun metafile import.*is unresolved/u, `near-miss variant rejected differently: ${variant.id}`);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("rejects an elided relative external from a first-party ESM importer", async () => {
+    const context = await fixture();
+    const entry = join(context.root, "src/entry.ts");
+    await write(entry, "export const value = 'entry';\n");
+    await write(join(context.root, "src/dropped.js"), "export const dropped = true;\n");
+    const handle = await generation(context, "first-party-elided-external", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/src/entry.ts") || path === "src/entry.ts"
+      );
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [{
+        external: true,
+        kind: "import-statement",
+        path: "./dropped.js",
+      }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import.*is unresolved/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
     }
   });
 
