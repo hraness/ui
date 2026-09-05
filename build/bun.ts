@@ -749,6 +749,110 @@ function witnessedBareInputTargets(
   return { exact: witnesses, specifiers };
 }
 
+function jsonRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const prototype = Object.getPrototypeOf(value) as unknown;
+  return prototype === Object.prototype || prototype === null
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function packageRootExportBranch(value: unknown): unknown {
+  const record = jsonRecord(value);
+  if (record === undefined) return value;
+  const keys = Object.keys(record);
+  const subpaths = keys.filter((key) => key.startsWith("."));
+  if (subpaths.length === 0) return value;
+  if (
+    subpaths.length !== keys.length
+    || !Object.hasOwn(record, ".")
+    || keys.some((key) =>
+      key !== "."
+      && (
+        !key.startsWith("./")
+        || key.includes("*")
+        || key.includes("\\")
+        || /[\u0000-\u001f\u007f]/u.test(key)
+      )
+    )
+  ) return undefined;
+  return record["."];
+}
+
+function conditionalPackageExportTarget(
+  value: unknown,
+  activeConditions: ReadonlySet<string>,
+  depth = 0,
+): string | undefined {
+  if (typeof value === "string") return value;
+  if (depth >= 32) return undefined;
+  const record = jsonRecord(value);
+  if (record === undefined) return undefined;
+  const keys = Object.keys(record);
+  if (
+    keys.length === 0
+    || keys.some((key) =>
+      key.startsWith(".")
+      || key.length === 0
+      || /[\u0000-\u001f\u007f]/u.test(key)
+    )
+  ) return undefined;
+  for (const key of keys) {
+    if (key !== "default" && !activeConditions.has(key)) continue;
+    return conditionalPackageExportTarget(record[key], activeConditions, depth + 1);
+  }
+  return undefined;
+}
+
+function capturedPackageRootExportTarget(
+  packageName: string,
+  installationRoot: string,
+  known: ReadonlySet<string>,
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  buildConditions: readonly string[],
+  buildTarget: "browser" | "bun",
+): string | undefined {
+  const manifest = packageScopeSnapshots.get(posix.join(installationRoot, "package.json"));
+  if (manifest === undefined) return undefined;
+  const parsed = strictJsonObjectFromSnapshot(manifest);
+  if (
+    !parsed.valid
+    || parsed.record === undefined
+    || parsed.record.name !== packageName
+    || !Object.hasOwn(parsed.record, "exports")
+  ) return undefined;
+  const activeConditions = new Set([
+    ...buildConditions,
+    "import",
+    ...(buildTarget === "browser" ? ["browser"] : ["bun", "node-addons", "node"]),
+  ]);
+  const target = conditionalPackageExportTarget(
+    packageRootExportBranch(parsed.record.exports),
+    activeConditions,
+  );
+  if (
+    target === undefined
+    || !target.startsWith("./")
+    || target.includes("\\")
+    || target.includes("*")
+    || target.includes("?")
+    || target.includes("#")
+    || target.includes("%")
+    || /[\u0000-\u001f\u007f]/u.test(target)
+  ) return undefined;
+  const segments = target.slice(2).split("/");
+  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
+    return undefined;
+  }
+  const candidate = posix.join(installationRoot, ...segments);
+  if (
+    !candidate.startsWith(`${installationRoot}/`)
+    || packageInstallationRoot(candidate) !== installationRoot
+    || !known.has(candidate)
+  ) return undefined;
+  return candidate;
+}
+
 async function resolvedInputTarget(
   imported: ParsedImport,
   from: string,
@@ -760,6 +864,8 @@ async function resolvedInputTarget(
   fallbackPolicy: BareInputFallbackPolicy,
   resolverCache: Map<string, Promise<string | undefined>>,
   packageScopes: ReadonlyMap<string, PackageScope>,
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  buildConditions: readonly string[],
   buildTarget: "browser" | "bun",
 ): Promise<string | undefined> {
   if (imported.external) return undefined;
@@ -827,11 +933,15 @@ async function resolvedInputTarget(
   const installationInputs = [...known]
     .filter((path) => packageInstallationRoot(path) === installationRoot)
     .sort();
-  assert.ok(
-    installationInputs.length <= 1,
-    `Bun metafile bare import target is ambiguous for ${imported.path}; in-graph package inputs: ${installationInputs.join(", ")}`,
+  if (installationInputs.length <= 1) return installationInputs[0];
+  return capturedPackageRootExportTarget(
+    packageName,
+    installationRoot,
+    known,
+    packageScopeSnapshots,
+    buildConditions,
+    buildTarget,
   );
-  return installationInputs[0];
 }
 
 function outputTarget(raw: string, from: string, known: ReadonlySet<string>): string | undefined {
@@ -1002,6 +1112,8 @@ async function importTargetsStylexRuntime(
   fallbackPolicy: BareInputFallbackPolicy,
   resolverCache: Map<string, Promise<string | undefined>>,
   packageScopes: ReadonlyMap<string, PackageScope>,
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  buildConditions: readonly string[],
   knownOutputs: ReadonlySet<string>,
   outputMetadata: ReadonlyMap<string, ParsedOutput>,
   buildTarget: "browser" | "bun",
@@ -1020,6 +1132,8 @@ async function importTargetsStylexRuntime(
     fallbackPolicy,
     resolverCache,
     packageScopes,
+    packageScopeSnapshots,
+    buildConditions,
     buildTarget,
   );
   if (target === undefined && pathLike) {
@@ -1051,6 +1165,9 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const expected = loaded.expectedGraph(graphId);
   assert.equal(expected.adapter, "bun", `Graph ${graphId} is not registered for the Bun adapter`);
   const target = expected.kind === "client" ? "browser" : "bun";
+  const buildConditions = buildOptions.conditions === undefined
+    ? expected.kind === "client" ? ["browser", "module", "production"] : ["module", "node", "production"]
+    : [...buildOptions.conditions];
   const logicalEntrypoints = [...expected.entrypoints].map((path) => normalizeLogicalPath(path, "Bun entrypoint")).sort();
   assert.equal(new Set(logicalEntrypoints).size, logicalEntrypoints.length, "Bun entrypoints must be unique");
   const entrypoints = await Promise.all(logicalEntrypoints.map((path) => resolveRootRelativeInput(rootDirectory, path)));
@@ -1149,9 +1266,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   };
 
   const bunConfig: Bun.BuildConfig = {
-    conditions: buildOptions.conditions === undefined
-      ? expected.kind === "client" ? ["browser", "module", "production"] : ["module", "node", "production"]
-      : [...buildOptions.conditions],
+    conditions: buildConditions,
     define: {
       "process.env.NODE_ENV": JSON.stringify("production"),
       ...buildOptions.define,
@@ -1268,6 +1383,8 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         inputFallbackPolicy,
         resolverCache,
         settledPackageScopes,
+        packageScopeSnapshots,
+        buildConditions,
         outputSet,
         outputMetadata,
         target,
@@ -1485,6 +1602,8 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
             inputFallbackPolicy,
             resolverCache,
             settledPackageScopes,
+            packageScopeSnapshots,
+            buildConditions,
             target,
           )
           : undefined;
