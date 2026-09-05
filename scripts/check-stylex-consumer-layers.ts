@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, readdir, realpath, rm, rmdir, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -27,6 +27,18 @@ type Variant = (typeof variants)[number];
 type Rule = Readonly<{ selector: string; body: string; layer: string; media: readonly string[]; order: number }>;
 type Sheet = Readonly<{ layers: readonly string[]; rules: readonly Rule[] }>;
 type Snapshot = Readonly<Record<"pageDefault" | "pageCaller" | "duplicate" | "exact" | "exactReverse" | "padding" | "paddingReverse" | "inventory", string>>;
+type DirectoryIdentity = Readonly<{
+  dev: number;
+  ino: number;
+  path: string;
+}>;
+type FixtureWorkspace = Readonly<{
+  createdFixtureRoot: boolean;
+  fixtureRoot: string;
+  fixtureRootIdentity: DirectoryIdentity;
+  work: string;
+  workIdentity: DirectoryIdentity;
+}>;
 
 function parseSnapshot(value: unknown): Snapshot {
   assert.ok(typeof value === "object" && value !== null);
@@ -247,11 +259,105 @@ async function filesBelow(root: string): Promise<string[]> {
   return paths.sort();
 }
 
-async function exists(path: string): Promise<boolean> {
-  return lstat(path).then(() => true, (error: unknown) => {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return false;
+async function lstatIfPresent(path: string) {
+  return lstat(path).catch((error: unknown) => {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return undefined;
     throw error;
   });
+}
+
+async function requireDirectoryIdentity(
+  path: string,
+  expectedRealpath: string,
+  description: string,
+): Promise<DirectoryIdentity> {
+  const stat = await lstat(path);
+  assert.ok(stat.isDirectory() && !stat.isSymbolicLink(), `${description} must be an ordinary directory`);
+  const resolved = await realpath(path);
+  assert.equal(resolved, expectedRealpath, `${description} must not traverse a symlink`);
+  return { dev: stat.dev, ino: stat.ino, path: resolved };
+}
+
+async function requireSameDirectory(
+  path: string,
+  identity: DirectoryIdentity,
+  description: string,
+): Promise<void> {
+  const current = await requireDirectoryIdentity(path, identity.path, description);
+  assert.deepEqual(
+    { dev: current.dev, ino: current.ino },
+    { dev: identity.dev, ino: identity.ino },
+    `${description} identity changed during the gate`,
+  );
+}
+
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined;
+}
+
+async function removeOwnedEmptyFixtureRoot(
+  fixtureRoot: string,
+  identity: DirectoryIdentity,
+): Promise<void> {
+  if (await lstatIfPresent(fixtureRoot) === undefined) return;
+  await requireSameDirectory(fixtureRoot, identity, "The shared StyleX fixture root");
+  try {
+    await rmdir(fixtureRoot);
+  } catch (error) {
+    if (["ENOENT", "ENOTEMPTY", "EEXIST"].includes(errorCode(error) ?? "")) return;
+    throw error;
+  }
+}
+
+async function createFixtureWorkspace(repository: string): Promise<FixtureWorkspace> {
+  const repositoryRealpath = await realpath(repository);
+  assert.equal(repositoryRealpath, repository, "The repository root must not traverse a symlink");
+  const fixtureRoot = join(repository, ".stylex-fixtures");
+  let createdFixtureRoot = false;
+  let fixtureRootIdentity: DirectoryIdentity | undefined;
+  try {
+    if (await lstatIfPresent(fixtureRoot) === undefined) {
+      try {
+        await mkdir(fixtureRoot, { mode: 0o700 });
+        createdFixtureRoot = true;
+      } catch (error) {
+        if (errorCode(error) !== "EEXIST") throw error;
+      }
+    }
+    fixtureRootIdentity = await requireDirectoryIdentity(
+      fixtureRoot,
+      join(repositoryRealpath, ".stylex-fixtures"),
+      "The shared StyleX fixture root",
+    );
+
+    const work = join(fixtureRoot, "consumer-layers");
+    assert.equal(
+      await lstatIfPresent(work),
+      undefined,
+      "The fixed ignored consumer-layer fixture path must be absent before the gate",
+    );
+    await mkdir(work, { mode: 0o700 });
+    const workIdentity = await requireDirectoryIdentity(
+      work,
+      join(repositoryRealpath, ".stylex-fixtures/consumer-layers"),
+      "The consumer-layer fixture workspace",
+    );
+    return { createdFixtureRoot, fixtureRoot, fixtureRootIdentity, work, workIdentity };
+  } catch (error) {
+    if (createdFixtureRoot && fixtureRootIdentity !== undefined) {
+      try {
+        await removeOwnedEmptyFixtureRoot(fixtureRoot, fixtureRootIdentity);
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "Consumer-layer fixture setup failed and its owned empty root could not be removed",
+        );
+      }
+    }
+    throw error;
+  }
 }
 
 function logical(root: string, path: string): string {
@@ -382,9 +488,8 @@ async function main(): Promise<void> {
   modelControls();
   // Keep application sources below the repository root without placing them
   // below node_modules, where adapters correctly classify files as packages.
-  const work = join(repository, ".stylex-fixtures/consumer-layers");
-  assert.equal(await exists(work), false, "The fixed ignored consumer-layer fixture path must be absent before the gate");
-  await mkdir(work, { mode: 0o700 });
+  const workspace = await createFixtureWorkspace(repository);
+  const { work } = workspace;
   const evidence = join(work, "evidence");
   const temporary = join(work, "tmp");
   const environment = { ...process.env, NODE_ENV: "production", BUN_TMPDIR: temporary, TMPDIR: temporary };
@@ -484,13 +589,27 @@ async function main(): Promise<void> {
     await writeFile(join(evidence, "failure.txt"), `${String(error)}\n`).catch(() => undefined);
     throw error;
   } finally {
+    await requireSameDirectory(
+      work,
+      workspace.workIdentity,
+      "The consumer-layer fixture workspace",
+    );
     // Failure evidence contains only generated fixture/output/report files, never dependency links.
     for (const entry of await readdir(work)) {
       if (!passed && entry === "evidence") continue;
       await rm(join(work, entry), { recursive: true, force: true });
     }
-    if (passed) await rm(work, { recursive: true, force: true });
-    else console.error(`Consumer layer failure evidence retained at ${evidence}`);
+    if (passed) {
+      await rm(work, { recursive: true, force: true });
+      if (workspace.createdFixtureRoot) {
+        await removeOwnedEmptyFixtureRoot(
+          workspace.fixtureRoot,
+          workspace.fixtureRootIdentity,
+        );
+      }
+    } else {
+      console.error(`Consumer layer failure evidence retained at ${evidence}`);
+    }
   }
 }
 

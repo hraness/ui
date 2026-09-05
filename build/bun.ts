@@ -10,12 +10,14 @@ import {
   type StylexGraphEdgeV1,
   type StylexGraphReceiptV1,
   type StylexPackageManifestV1,
+  type StylexRuleV1,
 } from "./contracts.js";
 import {
   artifactForFile,
   auditCssWithoutStandaloneRecipes,
   auditCssWithoutStylexRules,
   canonicalJson,
+  canonicalizeStylexRules,
   compilerSha256,
   createStylexTransformCollector,
   normalizeLogicalPath,
@@ -500,6 +502,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const collector = createStylexTransformCollector(rootDirectory);
   const inputSnapshots = new Map<string, Readonly<{ bytes: number; sha256: string }>>();
   const transformedInputs = new Set<string>();
+  const transformedRules = new Map<string, readonly StylexRuleV1[]>();
   let activeTransforms = 0;
   const escapedRoot = rootDirectory.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const plugin: Bun.BunPlugin = {
@@ -522,6 +525,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
           assert.equal(transformedInputs.has(logical), false, `Bun loaded ${logical} for StyleX transformation more than once`);
           transformedInputs.add(logical);
           const transformed = await collector.transform(source, ordinary);
+          transformedRules.set(logical, transformed.rules);
           return { contents: transformed.code, loader: loaderFor(ordinary) };
         } finally {
           activeTransforms -= 1;
@@ -577,7 +581,11 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const result = await Bun.build(bunConfig);
   assert.equal(activeTransforms, 0, "Bun returned before StyleX transforms settled");
   assert.ok(result.success, `Bun graph ${graphId} failed:\n${result.logs.map(String).join("\n")}`);
-  const rules = collector.seal();
+  // Seal the collector exactly once so conflicts among every completed transform
+  // still fail closed. Bun may speculatively invoke onLoad for a tree-shaken
+  // barrel export, so the published graph inventory is settled separately below
+  // against the authoritative metafile reachability set.
+  const allTransformedRules = collector.seal();
   const metafile = parseMetafile(result.metafile as unknown);
 
   const emittedByResult = new Map<string, Bun.BuildArtifact>();
@@ -629,9 +637,56 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     }
   }
   const expectedTransforms = [...inputMetadata.keys()].filter((path) => javascriptFilter.test(path) && packageBelowNodeModules(path) === undefined).sort();
-  assert.deepEqual([...transformedInputs].sort(), expectedTransforms, "Bun transform settlement differs from its JavaScript/TypeScript input inventory");
+  assert.deepEqual(
+    expectedTransforms.filter((path) => !transformedInputs.has(path)),
+    [],
+    "Bun omitted a reachable JavaScript/TypeScript input from StyleX transformation",
+  );
+  const speculativeTransforms = [...transformedInputs]
+    .filter((path) => !inputMetadata.has(path))
+    .sort();
+  assert.deepEqual(
+    speculativeTransforms.filter((path) => !javascriptFilter.test(path) || packageBelowNodeModules(path) !== undefined),
+    [],
+    "Bun speculative transform settlement contains an unsupported input",
+  );
+  assert.deepEqual(
+    [...transformedRules.keys()].sort(),
+    [...transformedInputs].sort(),
+    "Bun transformed rule settlement differs from its completed transform inventory",
+  );
+  assert.deepEqual(
+    allTransformedRules,
+    canonicalizeStylexRules(...[...transformedRules.entries()]
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      .map(([, inventory]) => inventory)),
+    "Bun collector seal differs from its per-input transform inventories",
+  );
   const expectedSnapshots = [...inputMetadata.keys()].sort();
-  assert.deepEqual([...inputSnapshots.keys()].sort(), expectedSnapshots, "Bun input settlement differs from its transform and CSS inventory");
+  assert.deepEqual(
+    expectedSnapshots.filter((path) => !inputSnapshots.has(path)),
+    [],
+    "Bun omitted a reachable input from its settled source snapshots",
+  );
+  assert.deepEqual(
+    [...transformedInputs].filter((path) => !inputSnapshots.has(path)).sort(),
+    [],
+    "Bun completed a StyleX transform without a settled source snapshot",
+  );
+  assert.deepEqual(
+    [...inputSnapshots.keys()]
+      .filter((path) => !inputMetadata.has(path))
+      .filter((path) => javascriptFilter.test(path) && packageBelowNodeModules(path) === undefined)
+      .filter((path) => !transformedInputs.has(path))
+      .sort(),
+    [],
+    "Bun observed an unexplained speculative local JavaScript/TypeScript input",
+  );
+  const rules = canonicalizeStylexRules(...expectedTransforms.map((path) => {
+    const inventory = transformedRules.get(path);
+    assert.ok(inventory !== undefined, `Bun reachable transform has no settled StyleX rules: ${path}`);
+    return inventory;
+  }));
   const emittedEntrypoints: string[] = [];
   for (const [path, metadata] of outputMetadata) {
     for (const rawInput of metadata.inputs) {
