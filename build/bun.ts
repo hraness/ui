@@ -1482,6 +1482,8 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const prepared = await prepareStylexGraph(generation, graphId);
   assert.deepEqual(await readdir(prepared.outputDirectory), [], "Prepared Bun graph output directory must be empty");
   const collector = createStylexTransformCollector(rootDirectory);
+  // onLoad is an observation superset: Bun may load package modules that it
+  // later tree-shakes out of the authoritative metafile graph.
   const inputSnapshots = new Map<string, Readonly<{ bytes: number; sha256: string }>>();
   const transformedInputs = new Set<string>();
   const transformedRules = new Map<string, readonly StylexRuleV1[]>();
@@ -2012,15 +2014,24 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     }
   }
 
-  assert.deepEqual(
-    [...inputSnapshots.keys()]
-      .filter((path) => packageBelowNodeModules(path) !== undefined)
-      .filter((path) => !inputMetadata.has(path))
-      .filter((path) => !observedElidedPackageInputs.has(path))
-      .sort(),
-    [],
-    "Bun observed unexplained speculative dependency inputs",
-  );
+  for (const [path, snapshot] of observedElidedPackageInputs) {
+    assert.equal(
+      inputMetadata.has(path),
+      false,
+      `Bun observed elided package input became authoritative during edge settlement: ${path}`,
+    );
+    assert.deepEqual(
+      inputSnapshots.get(path),
+      { bytes: snapshot.bytes, sha256: snapshot.sha256 },
+      `Bun observed elided package input lost its completed load snapshot: ${path}`,
+    );
+    assert.equal(
+      inputs.some((input) => input.path === path)
+        || edges.some((edge) => edge.to === `input:${path}`),
+      false,
+      `Bun observed elided package input entered the published graph: ${path}`,
+    );
+  }
 
   for (const installationRoot of [...elidedPackageInstallationRoots].sort()) {
     assert.ok(

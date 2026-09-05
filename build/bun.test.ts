@@ -549,9 +549,82 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
+  test("keeps an adversarial unreferenced dependency observation outside the published graph", async () => {
+    const context = await fixture();
+    const dependencyRoot = join(context.root, "node_modules/@fixture/speculative");
+    await write(
+      join(dependencyRoot, "package.json"),
+      `${JSON.stringify({
+        exports: "./index.js",
+        name: "@fixture/speculative",
+        sideEffects: false,
+        type: "module",
+        version: "1.0.0",
+      })}\n`,
+    );
+    await write(join(dependencyRoot, "index.js"), "export const marker = 'marker';\n");
+    const speculative = join(dependencyRoot, "speculative.js");
+    await write(speculative, "export const speculative = 'speculative';\n");
+    const entry = join(context.root, "src/entry.js");
+    await write(
+      entry,
+      "import { marker } from '@fixture/speculative'; globalThis.__speculativeMarker = marker;\n",
+    );
+    const handle = await generation(context, "unreferenced-speculative-package-input", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const handlers: Array<(args: { path: string }) => unknown> = [];
+      const plugin = options.plugins?.[0];
+      assert.ok(plugin !== undefined);
+      plugin.setup({
+        onEnd() {},
+        onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
+          handlers.push(callback);
+        },
+      } as never);
+      // Exercise the adapter-owned callback directly: an ambient observation
+      // without a corresponding metafile edge must remain receipt-inert.
+      const javascriptOnLoad = handlers[0];
+      assert.ok(javascriptOnLoad !== undefined);
+      await javascriptOnLoad({ path: speculative });
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      expect(Object.keys(result.metafile.inputs).some((path) =>
+        path.endsWith("/node_modules/@fixture/speculative/speculative.js")
+        || path === "node_modules/@fixture/speculative/speculative.js"
+      )).toBe(false);
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({
+        generation: handle,
+        graphId: "client",
+        rootDirectory: context.root,
+      });
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(receipt.inputs.map(({ path }) => path)).not.toContain(
+        "node_modules/@fixture/speculative/speculative.js",
+      );
+      expect(receipt.edges.some(({ from, to }) =>
+        from.endsWith("/speculative.js") || to.endsWith("/speculative.js")
+      )).toBe(false);
+      expect(receipt.rules.some(([className, rule]) =>
+        className.includes("speculative")
+        || rule.ltr.includes("speculative")
+        || rule.rtl?.includes("speculative")
+      )).toBe(false);
+      expect(receipt.outputs.some(({ path }) => path.includes("speculative"))).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
   test("rejects near-miss resolved dependency loads that are absent from the authoritative graph", async () => {
     const variants: readonly Readonly<{
-      edge?: Readonly<Record<string, unknown>> | null;
+      edge?: Readonly<Record<string, unknown>>;
       id: string;
       importer?: "cjs" | "esm";
       name?: string;
@@ -581,7 +654,6 @@ describe("collectBunStylexGraph", () => {
       { id: "changed-after-load", sideEffects: false, target: "changed" },
       { id: "symlink-after-load", sideEffects: false, target: "symlink" },
       { id: "directory-after-load", sideEffects: false, target: "directory" },
-      { edge: null, id: "unexplained-observed-dependency", sideEffects: false },
       { id: "known-authoritative-target", sideEffects: false, target: "known" },
     ];
 
@@ -664,17 +736,13 @@ describe("collectBunStylexGraph", () => {
           : variant.id === "outside-root"
             ? resolve(context.root, "../outside.js")
             : target;
-        if (variant.edge === null) {
-          result.metafile.inputs[importerKey]!.imports = [];
-        } else {
-          result.metafile.inputs[importerKey]!.imports = [{
-            kind: "import-statement",
-            original: "./dropped.js",
-            path: defaultPath,
-            ...variant.edge,
-            ...(variant.edge?.original === "absolute" ? { original: target } : {}),
-          }] as never;
-        }
+        result.metafile.inputs[importerKey]!.imports = [{
+          kind: "import-statement",
+          original: "./dropped.js",
+          path: defaultPath,
+          ...variant.edge,
+          ...(variant.edge?.original === "absolute" ? { original: target } : {}),
+        }] as never;
         return result;
       });
 
@@ -706,9 +774,6 @@ describe("collectBunStylexGraph", () => {
             rejection = error;
           }
           assert.ok(rejection !== undefined, `near-miss variant unexpectedly resolved: ${variant.id}`);
-          if (variant.edge === null) {
-            assert.match(String(rejection), /unexplained speculative dependency inputs/u);
-          }
           expect(await receiptExists(handle, "client")).toBe(false);
         }
       } finally {
