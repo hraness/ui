@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { lstat, readFile, readdir, readlink, realpath } from "node:fs/promises";
+import { isBuiltin } from "node:module";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { posix } from "node:path";
 
@@ -80,6 +81,30 @@ type ParsedMetafile = Readonly<{
   inputs: ReadonlyMap<string, ParsedInput>;
   outputs: ReadonlyMap<string, ParsedOutput>;
 }>;
+
+type BareInputWitnesses = Readonly<{
+  exact: ReadonlyMap<string, ReadonlySet<string>>;
+  specifiers: ReadonlySet<string>;
+}>;
+
+type BareInputFallbackPolicy = Readonly<{
+  enabled: boolean;
+  packageName: string | undefined;
+  pathPatterns: readonly string[];
+}>;
+
+type PackageScope = Readonly<{
+  files: readonly ResolutionFileSnapshot[];
+  name: string | undefined;
+  valid: boolean;
+}>;
+
+type ResolutionFileSnapshot = Readonly<
+  | { kind: "file"; bytes: number; mode: number; path: string; sha256: string; source: Uint8Array }
+  | { kind: "missing"; path: string }
+  | { kind: "other"; mode: number; path: string }
+  | { kind: "symlink"; path: string; target: string }
+>;
 
 const javascriptFilter = /\.[cm]?[jt]sx?$/u;
 const outputNaming = {
@@ -323,6 +348,10 @@ function inputTarget(
   return known.has(candidate) ? candidate : undefined;
 }
 
+function pathLikeImport(value: string): boolean {
+  return value.startsWith("./") || value.startsWith("../") || isAbsolute(value);
+}
+
 function barePackageName(value: string): string | undefined {
   if (
     value.startsWith("./")
@@ -338,6 +367,213 @@ function barePackageName(value: string): string | undefined {
   return name;
 }
 
+function strictBarePackageRoot(value: string): string | undefined {
+  return /^(?:@[a-z\d][a-z\d._~-]*\/)?[a-z\d][a-z\d._~-]*$/u.test(value)
+    ? value
+    : undefined;
+}
+
+function missingPath(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  return error.code === "ENOENT" || error.code === "ENOTDIR";
+}
+
+async function resolutionFileSnapshot(
+  rootDirectory: string,
+  path: string,
+): Promise<ResolutionFileSnapshot> {
+  const absolute = resolve(rootDirectory, path);
+  let stat;
+  try {
+    stat = await lstat(absolute);
+  } catch (error) {
+    if (missingPath(error)) return { kind: "missing", path };
+    throw error;
+  }
+  if (stat.isSymbolicLink()) return { kind: "symlink", path, target: await readlink(absolute) };
+  if (!stat.isFile()) return { kind: "other", mode: stat.mode, path };
+  const bytes = await readFile(absolute);
+  return {
+    bytes: bytes.byteLength,
+    kind: "file",
+    mode: stat.mode,
+    path,
+    sha256: sha256(bytes),
+    source: new Uint8Array(bytes),
+  };
+}
+
+function rootResolutionFileSnapshots(rootDirectory: string): Promise<readonly ResolutionFileSnapshot[]> {
+  return Promise.all(
+    ["jsconfig.json", "package.json", "tsconfig.json"].map((path) =>
+      resolutionFileSnapshot(rootDirectory, path)
+    ),
+  );
+}
+
+function strictJsonObjectFromSnapshot(
+  snapshot: ResolutionFileSnapshot,
+): Readonly<{ exists: boolean; record?: Record<string, unknown>; valid: boolean }> {
+  if (snapshot.kind === "missing") return { exists: false, valid: true };
+  if (snapshot.kind !== "file") return { exists: true, valid: false };
+  try {
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(snapshot.source);
+    const parsed: unknown = JSON.parse(source);
+    return { exists: true, record: plainObject(parsed, snapshot.path), valid: true };
+  } catch {
+    return { exists: true, valid: false };
+  }
+}
+
+function rootResolutionSnapshot(
+  snapshots: readonly ResolutionFileSnapshot[],
+  path: string,
+): ResolutionFileSnapshot {
+  const matches = snapshots.filter((snapshot) => snapshot.path === path);
+  assert.equal(matches.length, 1, `Root resolution snapshot is missing ${path}`);
+  return matches[0]!;
+}
+
+function bareInputFallbackPolicy(
+  rootSnapshots: readonly ResolutionFileSnapshot[],
+): BareInputFallbackPolicy {
+  const disabled = { enabled: false, packageName: undefined, pathPatterns: [] } as const;
+  const packageJson = strictJsonObjectFromSnapshot(rootResolutionSnapshot(rootSnapshots, "package.json"));
+  if (!packageJson.valid) return disabled;
+  let packageName: string | undefined;
+  if (packageJson.record !== undefined && Object.hasOwn(packageJson.record, "name")) {
+    const candidate = packageJson.record.name;
+    if (typeof candidate !== "string" || strictBarePackageRoot(candidate) !== candidate) return disabled;
+    packageName = candidate;
+  }
+
+  const tsconfig = strictJsonObjectFromSnapshot(rootResolutionSnapshot(rootSnapshots, "tsconfig.json"));
+  const config = tsconfig.exists
+    ? tsconfig
+    : strictJsonObjectFromSnapshot(rootResolutionSnapshot(rootSnapshots, "jsconfig.json"));
+  if (!config.valid) return disabled;
+  const record = config.record;
+  if (record === undefined) return { enabled: true, packageName, pathPatterns: [] };
+  if (Object.hasOwn(record, "extends")) return disabled;
+  if (record.compilerOptions === undefined) return { enabled: true, packageName, pathPatterns: [] };
+  let compilerOptions: Record<string, unknown>;
+  try {
+    compilerOptions = plainObject(record.compilerOptions, "compilerOptions");
+  } catch {
+    return disabled;
+  }
+  if (Object.hasOwn(compilerOptions, "baseUrl")) return disabled;
+  if (compilerOptions.paths === undefined) return { enabled: true, packageName, pathPatterns: [] };
+  let paths: Record<string, unknown>;
+  try {
+    paths = plainObject(compilerOptions.paths, "compilerOptions.paths");
+  } catch {
+    return disabled;
+  }
+  const pathPatterns: string[] = [];
+  for (const pattern of Object.keys(paths).sort()) {
+    if (
+      pattern.length === 0
+      || /[\u0000-\u001f\u007f]/u.test(pattern)
+      || (pattern.match(/\*/gu)?.length ?? 0) > 1
+    ) return disabled;
+    const targets = paths[pattern];
+    if (
+      !Array.isArray(targets)
+      || targets.length === 0
+      || !targets.every((target) =>
+        typeof target === "string"
+        && target.length > 0
+        && !/[\u0000-\u001f\u007f]/u.test(target)
+      )
+    ) return disabled;
+    pathPatterns.push(pattern);
+  }
+  return { enabled: true, packageName, pathPatterns };
+}
+
+function pathPatternMatches(pattern: string, specifier: string): boolean {
+  const star = pattern.indexOf("*");
+  if (star === -1) return pattern === specifier;
+  return specifier.startsWith(pattern.slice(0, star)) && specifier.endsWith(pattern.slice(star + 1));
+}
+
+async function captureNearestPackageScope(rootDirectory: string, from: string): Promise<PackageScope> {
+  const files: ResolutionFileSnapshot[] = [];
+  let directory = posix.dirname(from);
+  while (true) {
+    const logical = posix.join(directory === "." ? "" : directory, "package.json");
+    const snapshot = await resolutionFileSnapshot(rootDirectory, logical);
+    files.push(snapshot);
+    const candidate = strictJsonObjectFromSnapshot(snapshot);
+    if (candidate.exists) {
+      if (!candidate.valid || candidate.record === undefined) return { files, name: undefined, valid: false };
+      if (!Object.hasOwn(candidate.record, "name")) return { files, name: undefined, valid: true };
+      const name = candidate.record.name;
+      return typeof name === "string" && strictBarePackageRoot(name) === name
+        ? { files, name, valid: true }
+        : { files, name: undefined, valid: false };
+    }
+    if (directory === ".") return { files, name: undefined, valid: true };
+    directory = posix.dirname(directory);
+  }
+}
+
+function captureImporterPackageScope(
+  rootDirectory: string,
+  from: string,
+  cache: Map<string, Promise<PackageScope>>,
+): Promise<PackageScope> {
+  const existing = cache.get(from);
+  if (existing !== undefined) return existing;
+  const pending = captureNearestPackageScope(rootDirectory, from);
+  cache.set(from, pending);
+  return pending;
+}
+
+async function nearestPhysicalPackageInstallation(
+  rootDirectory: string,
+  from: string,
+  packageName: string,
+): Promise<string | undefined> {
+  let directory = posix.dirname(from);
+  while (true) {
+    if (posix.basename(directory) !== "node_modules") {
+      const logical = posix.join(directory === "." ? "" : directory, "node_modules", packageName);
+      const absolute = resolve(rootDirectory, ...logical.split("/"));
+      let stat;
+      try {
+        stat = await lstat(absolute);
+      } catch (error) {
+        if (!missingPath(error)) return undefined;
+        stat = undefined;
+      }
+      if (stat !== undefined) {
+        if (!stat.isDirectory() || stat.isSymbolicLink()) return undefined;
+        const settled = await realpath(absolute).catch(() => undefined);
+        if (settled !== absolute) return undefined;
+        return normalizeLogicalPath(logical, "resolver-visible package installation");
+      }
+    }
+    if (directory === ".") return undefined;
+    directory = posix.dirname(directory);
+  }
+}
+
+function resolverVisibleInstallation(
+  rootDirectory: string,
+  from: string,
+  packageName: string,
+  cache: Map<string, Promise<string | undefined>>,
+): Promise<string | undefined> {
+  const key = JSON.stringify([from, packageName]);
+  const existing = cache.get(key);
+  if (existing !== undefined) return existing;
+  const pending = nearestPhysicalPackageInstallation(rootDirectory, from, packageName);
+  cache.set(key, pending);
+  return pending;
+}
+
 function bareImportWitnessKey(kind: string, specifier: string): string {
   return JSON.stringify([kind, specifier]);
 }
@@ -345,9 +581,10 @@ function bareImportWitnessKey(kind: string, specifier: string): string {
 function witnessedBareInputTargets(
   inputs: ReadonlyMap<string, ParsedInput>,
   aliases: ReadonlyMap<string, string>,
-): ReadonlyMap<string, ReadonlySet<string>> {
+): BareInputWitnesses {
   const known = new Set(inputs.keys());
   const witnesses = new Map<string, Set<string>>();
+  const specifiers = new Set<string>();
   for (const [from, metadata] of inputs) {
     for (const imported of metadata.imports) {
       if (imported.external || imported.original === undefined) continue;
@@ -359,19 +596,24 @@ function witnessedBareInputTargets(
       const targets = witnesses.get(witnessKey) ?? new Set<string>();
       targets.add(target);
       witnesses.set(witnessKey, targets);
+      specifiers.add(imported.original);
     }
   }
-  return witnesses;
+  return { exact: witnesses, specifiers };
 }
 
-function resolvedInputTarget(
+async function resolvedInputTarget(
   imported: ParsedImport,
   from: string,
   known: ReadonlySet<string>,
   aliases: ReadonlyMap<string, string>,
   installations: ReadonlyMap<string, ReadonlySet<string>>,
-  witnesses: ReadonlyMap<string, ReadonlySet<string>>,
-): string | undefined {
+  witnesses: BareInputWitnesses,
+  rootDirectory: string,
+  fallbackPolicy: BareInputFallbackPolicy,
+  resolverCache: Map<string, Promise<string | undefined>>,
+  packageScopes: ReadonlyMap<string, PackageScope>,
+): Promise<string | undefined> {
   if (imported.external) return undefined;
   const direct = inputTarget(imported.path, from, known, aliases);
   if (direct !== undefined) return direct;
@@ -382,19 +624,51 @@ function resolvedInputTarget(
     installationRoots.length <= 1,
     `Bun metafile bare import target is ambiguous for ${imported.path}; in-graph package installations: ${installationRoots.join(", ")}`,
   );
-  const candidates = [...(witnesses.get(bareImportWitnessKey(imported.kind, imported.path)) ?? [])].sort();
+  const candidates = [...(witnesses.exact.get(bareImportWitnessKey(imported.kind, imported.path)) ?? [])].sort();
   assert.ok(
     candidates.length <= 1,
     `Bun metafile bare import target is ambiguous for ${imported.path}: ${candidates.join(", ")}`,
   );
   const target = candidates[0];
-  if (target === undefined) return undefined;
-  assert.equal(
-    packageBelowNodeModules(target),
+  if (target !== undefined) {
+    assert.equal(
+      packageBelowNodeModules(target),
+      packageName,
+      `Bun metafile bare import witness has the wrong package identity for ${imported.path}`,
+    );
+    return target;
+  }
+  if (
+    imported.original !== undefined
+    || witnesses.specifiers.has(imported.path)
+    || strictBarePackageRoot(imported.path) !== packageName
+    || imported.path === "bun"
+    || isBuiltin(imported.path)
+    || imported.kind !== "import-statement"
+    || installationRoots.length !== 1
+    || !fallbackPolicy.enabled
+    || fallbackPolicy.packageName === imported.path
+    || fallbackPolicy.pathPatterns.some((pattern) => pathPatternMatches(pattern, imported.path))
+  ) return undefined;
+  const scope = packageScopes.get(from);
+  assert.ok(scope !== undefined, `Bun input has no settled package scope: ${from}`);
+  if (!scope.valid || scope.name === imported.path) return undefined;
+  const installationRoot = installationRoots[0]!;
+  const resolverVisible = await resolverVisibleInstallation(
+    rootDirectory,
+    from,
     packageName,
-    `Bun metafile bare import witness has the wrong package identity for ${imported.path}`,
+    resolverCache,
   );
-  return target;
+  if (resolverVisible !== installationRoot) return undefined;
+  const installationInputs = [...known]
+    .filter((path) => packageInstallationRoot(path) === installationRoot)
+    .sort();
+  assert.ok(
+    installationInputs.length <= 1,
+    `Bun metafile bare import target is ambiguous for ${imported.path}; in-graph package inputs: ${installationInputs.join(", ")}`,
+  );
+  return installationInputs[0];
 }
 
 function outputTarget(raw: string, from: string, known: ReadonlySet<string>): string | undefined {
@@ -554,19 +828,36 @@ function verifyRegisteredPackageInput(
   }
 }
 
-function importTargetsStylexRuntime(
+async function importTargetsStylexRuntime(
   dependency: ParsedImport,
   from: string,
   knownInputs: ReadonlySet<string>,
   aliases: ReadonlyMap<string, string>,
   installations: ReadonlyMap<string, ReadonlySet<string>>,
-  witnesses: ReadonlyMap<string, ReadonlySet<string>>,
+  witnesses: BareInputWitnesses,
+  rootDirectory: string,
+  fallbackPolicy: BareInputFallbackPolicy,
+  resolverCache: Map<string, Promise<string | undefined>>,
+  packageScopes: ReadonlyMap<string, PackageScope>,
   knownOutputs: ReadonlySet<string>,
   outputMetadata: ReadonlyMap<string, ParsedOutput>,
-): boolean {
+): Promise<boolean> {
+  const pathLike = pathLikeImport(dependency.path);
   if (dependency.path === "@stylexjs/stylex" || dependency.path.startsWith("@stylexjs/stylex/")) return true;
-  let target = resolvedInputTarget(dependency, from, knownInputs, aliases, installations, witnesses);
-  if (target === undefined) {
+  if (dependency.external && !pathLike) return false;
+  let target = await resolvedInputTarget(
+    dependency,
+    from,
+    knownInputs,
+    aliases,
+    installations,
+    witnesses,
+    rootDirectory,
+    fallbackPolicy,
+    resolverCache,
+    packageScopes,
+  );
+  if (target === undefined && pathLike) {
     const output = outputTarget(dependency.path, from, knownOutputs);
     const entrypoint = output === undefined ? undefined : outputMetadata.get(output)?.entryPoint;
     if (entrypoint !== undefined) {
@@ -604,6 +895,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const inputSnapshots = new Map<string, Readonly<{ bytes: number; sha256: string }>>();
   const transformedInputs = new Set<string>();
   const transformedRules = new Map<string, readonly StylexRuleV1[]>();
+  const packageScopeCaptures = new Map<string, Promise<PackageScope>>();
   let activeTransforms = 0;
   const escapedRoot = rootDirectory.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const plugin: Bun.BunPlugin = {
@@ -611,6 +903,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     setup(build) {
       build.onLoad({ filter: new RegExp(`^${escapedRoot}/.*\\.[cm]?[jt]sx?$`, "u") }, async ({ path }) => {
         const logical = relativeBelow(rootDirectory, resolve(path), "StyleX transform path");
+        await captureImporterPackageScope(rootDirectory, logical, packageScopeCaptures);
         activeTransforms += 1;
         try {
           const ordinary = await resolveRootRelativeInput(rootDirectory, logical);
@@ -634,6 +927,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
       });
       build.onLoad({ filter: new RegExp(`^${escapedRoot}/.*\\.css$`, "u") }, async ({ path }) => {
         const logical = relativeBelow(rootDirectory, resolve(path), "CSS input path");
+        await captureImporterPackageScope(rootDirectory, logical, packageScopeCaptures);
         const ordinary = await resolveRootRelativeInput(rootDirectory, logical);
         const source = await readFile(ordinary, "utf8");
         auditCssWithoutStandaloneRecipes(source, loaded.packageManifests);
@@ -645,6 +939,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
       });
       build.onLoad({ filter: /.*/u }, async ({ path }) => {
         const logical = relativeBelow(rootDirectory, resolve(path), "Bun input path");
+        await captureImporterPackageScope(rootDirectory, logical, packageScopeCaptures);
         const ordinary = await resolveRootRelativeInput(rootDirectory, logical);
         const bytes = await readFile(ordinary);
         const snapshot = { bytes: bytes.byteLength, sha256: sha256(bytes) };
@@ -679,7 +974,39 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     throw: false,
   };
   if (buildOptions.jsx !== undefined) bunConfig.jsx = { ...buildOptions.jsx };
+  const rootResolutionBefore = await rootResolutionFileSnapshots(rootDirectory);
   const result = await Bun.build(bunConfig);
+  const rootResolutionAfter = await rootResolutionFileSnapshots(rootDirectory);
+  assert.deepEqual(
+    rootResolutionAfter,
+    rootResolutionBefore,
+    "Bun root resolution configuration changed during build",
+  );
+  const inputFallbackPolicy = bareInputFallbackPolicy(rootResolutionBefore);
+  const settledPackageScopes = new Map<string, PackageScope>();
+  const packageScopeSnapshots = new Map<string, ResolutionFileSnapshot>();
+  for (const [path, pending] of [...packageScopeCaptures.entries()].sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0
+  )) {
+    const scope = await pending;
+    settledPackageScopes.set(path, scope);
+    for (const snapshot of scope.files) {
+      const previous = packageScopeSnapshots.get(snapshot.path);
+      if (previous === undefined) packageScopeSnapshots.set(snapshot.path, snapshot);
+      else assert.deepEqual(snapshot, previous, `Bun package scope ${snapshot.path} changed between input loads`);
+    }
+  }
+  const packageScopeBefore = [...packageScopeSnapshots.values()].sort(({ path: left }, { path: right }) =>
+    left < right ? -1 : left > right ? 1 : 0
+  );
+  const packageScopeAfter = await Promise.all(
+    packageScopeBefore.map(({ path }) => resolutionFileSnapshot(rootDirectory, path)),
+  );
+  assert.deepEqual(
+    packageScopeAfter,
+    packageScopeBefore,
+    "Bun package scope configuration changed during build",
+  );
   assert.equal(activeTransforms, 0, "Bun returned before StyleX transforms settled");
   assert.ok(result.success, `Bun graph ${graphId} failed:\n${result.logs.map(String).join("\n")}`);
   // Seal the collector exactly once so conflicts among every completed transform
@@ -722,19 +1049,36 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const knownInputs = new Set(inputMetadata.keys());
   const inputPackageInstallations = packageInstallations(knownInputs);
   const inputWitnesses = witnessedBareInputTargets(inputMetadata, inputAliases);
+  const resolverCache = new Map<string, Promise<string | undefined>>();
+  assert.deepEqual(
+    [...knownInputs].filter((path) => !settledPackageScopes.has(path)).sort(),
+    [],
+    "Bun omitted package-scope capture for a reachable input",
+  );
   for (const [path, metadata] of inputMetadata) {
     const dependencyPackage = packageBelowNodeModules(path);
     if (dependencyPackage === undefined || dependencyPackage === "@stylexjs/stylex") continue;
-    if (metadata.imports.some((dependency) => importTargetsStylexRuntime(
-      dependency,
-      path,
-      knownInputs,
-      inputAliases,
-      inputPackageInstallations,
-      inputWitnesses,
-      outputSet,
-      outputMetadata,
-    ))) {
+    let importsStylexRuntime = false;
+    for (const dependency of metadata.imports) {
+      if (await importTargetsStylexRuntime(
+        dependency,
+        path,
+        knownInputs,
+        inputAliases,
+        inputPackageInstallations,
+        inputWitnesses,
+        rootDirectory,
+        inputFallbackPolicy,
+        resolverCache,
+        settledPackageScopes,
+        outputSet,
+        outputMetadata,
+      )) {
+        importsStylexRuntime = true;
+        break;
+      }
+    }
+    if (importsStylexRuntime) {
       assert.ok(
         loaded.packageManifests.some((manifest) => manifest.package.name === dependencyPackage),
         `StyleX dependency ${dependencyPackage} has no verified package manifest`,
@@ -856,15 +1200,31 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const edges: StylexGraphEdgeV1[] = [];
   for (const [from, metadata] of inputMetadata) {
     for (const imported of metadata.imports) {
-      let input = resolvedInputTarget(
+      const pathLike = pathLikeImport(imported.path);
+      if (imported.external && !pathLike) {
+        edges.push({
+          external: true,
+          from: `input:${from}`,
+          kind: imported.kind,
+          to: canonicalExternal(imported.path),
+        });
+        continue;
+      }
+      let input = await resolvedInputTarget(
         imported,
         from,
         inputSet,
         inputAliases,
         inputPackageInstallations,
         inputWitnesses,
+        rootDirectory,
+        inputFallbackPolicy,
+        resolverCache,
+        settledPackageScopes,
       );
-      const output = input === undefined ? outputTarget(imported.path, from, outputSet) : undefined;
+      const output = input === undefined && pathLike
+        ? outputTarget(imported.path, from, outputSet)
+        : undefined;
       if (input === undefined && output !== undefined) {
         const outputEntrypoint = outputMetadata.get(output)?.entryPoint;
         if (outputEntrypoint !== undefined) {
@@ -872,18 +1232,16 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
             ?? inputAliases.get(posix.normalize(outputEntrypoint).replace(/^\.\//u, ""));
         }
       }
-      const external = input === undefined && output === undefined;
-      const pathLike = imported.path.startsWith("./") || imported.path.startsWith("../") || isAbsolute(imported.path);
-      assert.ok(!external || (imported.external && !pathLike), `Bun metafile import from ${from} is unresolved: ${imported.path}`);
+      assert.ok(input !== undefined || output !== undefined, `Bun metafile import from ${from} is unresolved: ${imported.path}`);
       edges.push({
-        external,
+        external: false,
         from: `input:${from}`,
         kind: imported.kind,
         to: input !== undefined
           ? `input:${input}`
           : output !== undefined
             ? `output:${output}`
-            : canonicalExternal(imported.path),
+            : assert.fail("Bun input edge settlement lost its resolved target"),
       });
     }
   }
