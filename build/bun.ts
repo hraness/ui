@@ -58,6 +58,7 @@ export type CollectBunStylexGraphOptions = Readonly<{
 type ParsedImport = Readonly<{
   external: boolean;
   kind: string;
+  original?: string;
   path: string;
 }>;
 
@@ -203,11 +204,13 @@ function parseImport(value: unknown, description: string): ParsedImport {
   if (record.original !== undefined) printableString(record.original, `${description}.original`);
   if (record.with !== undefined) parseStringRecord(record.with, `${description}.with`);
   assert.ok(record.external === undefined || typeof record.external === "boolean", `${description}.external must be boolean`);
-  return {
+  const output: { external: boolean; kind: string; original?: string; path: string } = {
     external: record.external === true,
     kind: printableString(record.kind, `${description}.kind`),
     path: printableString(record.path, `${description}.path`),
   };
+  if (record.original !== undefined) output.original = record.original as string;
+  return output;
 }
 
 function parseMetafile(value: unknown): ParsedMetafile {
@@ -320,6 +323,80 @@ function inputTarget(
   return known.has(candidate) ? candidate : undefined;
 }
 
+function barePackageName(value: string): string | undefined {
+  if (
+    value.startsWith("./")
+    || value.startsWith("../")
+    || value.startsWith("/")
+    || value.startsWith("#")
+    || value.includes("\\")
+    || /^[A-Za-z][A-Za-z\d+.-]*:/u.test(value)
+  ) return undefined;
+  const parts = value.split("/");
+  const name = parts[0]?.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
+  if (name === undefined || name.length === 0 || (name.startsWith("@") && !name.includes("/"))) return undefined;
+  return name;
+}
+
+function bareImportWitnessKey(kind: string, specifier: string): string {
+  return JSON.stringify([kind, specifier]);
+}
+
+function witnessedBareInputTargets(
+  inputs: ReadonlyMap<string, ParsedInput>,
+  aliases: ReadonlyMap<string, string>,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const known = new Set(inputs.keys());
+  const witnesses = new Map<string, Set<string>>();
+  for (const [from, metadata] of inputs) {
+    for (const imported of metadata.imports) {
+      if (imported.external || imported.original === undefined) continue;
+      const packageName = barePackageName(imported.original);
+      if (packageName === undefined) continue;
+      const target = inputTarget(imported.path, from, known, aliases);
+      if (target === undefined || packageBelowNodeModules(target) !== packageName) continue;
+      const witnessKey = bareImportWitnessKey(imported.kind, imported.original);
+      const targets = witnesses.get(witnessKey) ?? new Set<string>();
+      targets.add(target);
+      witnesses.set(witnessKey, targets);
+    }
+  }
+  return witnesses;
+}
+
+function resolvedInputTarget(
+  imported: ParsedImport,
+  from: string,
+  known: ReadonlySet<string>,
+  aliases: ReadonlyMap<string, string>,
+  installations: ReadonlyMap<string, ReadonlySet<string>>,
+  witnesses: ReadonlyMap<string, ReadonlySet<string>>,
+): string | undefined {
+  if (imported.external) return undefined;
+  const direct = inputTarget(imported.path, from, known, aliases);
+  if (direct !== undefined) return direct;
+  const packageName = barePackageName(imported.path);
+  if (packageName === undefined) return undefined;
+  const installationRoots = [...(installations.get(packageName) ?? [])].sort();
+  assert.ok(
+    installationRoots.length <= 1,
+    `Bun metafile bare import target is ambiguous for ${imported.path}; in-graph package installations: ${installationRoots.join(", ")}`,
+  );
+  const candidates = [...(witnesses.get(bareImportWitnessKey(imported.kind, imported.path)) ?? [])].sort();
+  assert.ok(
+    candidates.length <= 1,
+    `Bun metafile bare import target is ambiguous for ${imported.path}: ${candidates.join(", ")}`,
+  );
+  const target = candidates[0];
+  if (target === undefined) return undefined;
+  assert.equal(
+    packageBelowNodeModules(target),
+    packageName,
+    `Bun metafile bare import witness has the wrong package identity for ${imported.path}`,
+  );
+  return target;
+}
+
 function outputTarget(raw: string, from: string, known: ReadonlySet<string>): string | undefined {
   const candidate = raw.startsWith("./") || raw.startsWith("../")
     ? posix.normalize(posix.join(posix.dirname(from), raw))
@@ -366,6 +443,28 @@ function packageBelowNodeModules(path: string): string | undefined {
   const first = parts[index + 1]!;
   if (first.startsWith("@") && index + 2 < parts.length) return `${first}/${parts[index + 2]!}`;
   return first;
+}
+
+function packageInstallationRoot(path: string): string | undefined {
+  const parts = path.split("/");
+  const index = parts.lastIndexOf("node_modules");
+  if (index === -1 || index + 1 >= parts.length) return undefined;
+  const packageSegments = parts[index + 1]!.startsWith("@") ? 2 : 1;
+  const end = index + 1 + packageSegments;
+  return end <= parts.length ? parts.slice(0, end).join("/") : undefined;
+}
+
+function packageInstallations(paths: ReadonlySet<string>): ReadonlyMap<string, ReadonlySet<string>> {
+  const installations = new Map<string, Set<string>>();
+  for (const path of paths) {
+    const packageName = packageBelowNodeModules(path);
+    const root = packageInstallationRoot(path);
+    if (packageName === undefined || root === undefined) continue;
+    const roots = installations.get(packageName) ?? new Set<string>();
+    roots.add(root);
+    installations.set(packageName, roots);
+  }
+  return installations;
 }
 
 function packageRelativePath(path: string): string | undefined {
@@ -460,11 +559,13 @@ function importTargetsStylexRuntime(
   from: string,
   knownInputs: ReadonlySet<string>,
   aliases: ReadonlyMap<string, string>,
+  installations: ReadonlyMap<string, ReadonlySet<string>>,
+  witnesses: ReadonlyMap<string, ReadonlySet<string>>,
   knownOutputs: ReadonlySet<string>,
   outputMetadata: ReadonlyMap<string, ParsedOutput>,
 ): boolean {
   if (dependency.path === "@stylexjs/stylex" || dependency.path.startsWith("@stylexjs/stylex/")) return true;
-  let target = inputTarget(dependency.path, from, knownInputs, aliases);
+  let target = resolvedInputTarget(dependency, from, knownInputs, aliases, installations, witnesses);
   if (target === undefined) {
     const output = outputTarget(dependency.path, from, knownOutputs);
     const entrypoint = output === undefined ? undefined : outputMetadata.get(output)?.entryPoint;
@@ -619,6 +720,8 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     assert.ok(inputMetadata.has(entrypoint), `Bun metafile omitted registered entrypoint ${entrypoint}`);
   }
   const knownInputs = new Set(inputMetadata.keys());
+  const inputPackageInstallations = packageInstallations(knownInputs);
+  const inputWitnesses = witnessedBareInputTargets(inputMetadata, inputAliases);
   for (const [path, metadata] of inputMetadata) {
     const dependencyPackage = packageBelowNodeModules(path);
     if (dependencyPackage === undefined || dependencyPackage === "@stylexjs/stylex") continue;
@@ -627,6 +730,8 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
       path,
       knownInputs,
       inputAliases,
+      inputPackageInstallations,
+      inputWitnesses,
       outputSet,
       outputMetadata,
     ))) {
@@ -751,7 +856,14 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const edges: StylexGraphEdgeV1[] = [];
   for (const [from, metadata] of inputMetadata) {
     for (const imported of metadata.imports) {
-      let input = inputTarget(imported.path, from, inputSet, inputAliases);
+      let input = resolvedInputTarget(
+        imported,
+        from,
+        inputSet,
+        inputAliases,
+        inputPackageInstallations,
+        inputWitnesses,
+      );
       const output = input === undefined ? outputTarget(imported.path, from, outputSet) : undefined;
       if (input === undefined && output !== undefined) {
         const outputEntrypoint = outputMetadata.get(output)?.entryPoint;
