@@ -225,17 +225,24 @@ describe("collectBunStylexGraph", () => {
     expect(receipt.edges.some(({ from, to }) => from === "input:src/server.ts" && to === "input:src/server-only.ts")).toBe(true);
   });
 
-  test("excludes speculatively loaded tree-shaken inputs and their StyleX rules", async () => {
+  test("excludes speculatively loaded tree-shaken inputs, absolute edges, and StyleX rules", async () => {
     const context = await fixture();
     const entry = join(context.root, "src/entry.ts");
-    const speculative = join(context.root, "src/tree-shaken.ts");
+    const retained = join(context.root, "src/tree-shaken.ts");
+    const speculative = join(context.root, "src/tree-shaken.tsx");
+    const runtimeSpeculative = join(context.root, "src/runtime.tsx");
     await write(
       entry,
-      "import * as stylex from '@stylexjs/stylex'; const styles = stylex.create({ root: { color: 'rebeccapurple' } }); export const value = stylex.props(styles.root).className;\n",
+      "import * as stylex from '@stylexjs/stylex'; import { retained } from './tree-shaken.ts'; const styles = stylex.create({ root: { color: 'rebeccapurple' } }); export const value = `${retained}:${stylex.props(styles.root).className}`;\n",
     );
+    await write(retained, "export const retained = 'retained';\n");
     await write(
       speculative,
       "import * as stylex from '@stylexjs/stylex'; const styles = stylex.create({ root: { color: 'chartreuse' } }); export const dropped = stylex.props(styles.root).className;\n",
+    );
+    await write(
+      runtimeSpeculative,
+      "import * as stylex from '@stylexjs/stylex'; const styles = stylex.create({ root: { color: 'aquamarine' } }); export const dropped = stylex.props(styles.root).className;\n",
     );
     const handle = await generation(context, "tree-shaken-barrel", [
       expectation(context.root, "client", "client", entry),
@@ -253,7 +260,20 @@ describe("collectBunStylexGraph", () => {
       const javascriptOnLoad = handlers[0];
       assert.ok(javascriptOnLoad !== undefined);
       await javascriptOnLoad({ path: speculative });
-      return buildOriginal(options);
+      await javascriptOnLoad({ path: runtimeSpeculative });
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+        path === "src/entry.ts" || path.endsWith("/src/entry.ts")
+      );
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [
+        ...result.metafile.inputs[entryKey]!.imports,
+        { kind: "import-statement", original: "./tree-shaken.tsx", path: speculative },
+        { kind: "import-statement", path: "./tree-shaken" },
+        { kind: "import-statement", path: "./runtime.js" },
+      ] as never;
+      return result;
     });
 
     try {
@@ -265,9 +285,95 @@ describe("collectBunStylexGraph", () => {
 
       expect(build).toHaveBeenCalledTimes(1);
       expect(receipt.inputs.map(({ path }) => path)).toContain("src/entry.ts");
-      expect(receipt.inputs.map(({ path }) => path)).not.toContain("src/tree-shaken.ts");
+      expect(receipt.inputs.map(({ path }) => path)).toContain("src/tree-shaken.ts");
+      expect(receipt.inputs.map(({ path }) => path)).not.toContain("src/tree-shaken.tsx");
+      expect(receipt.inputs.map(({ path }) => path)).not.toContain("src/runtime.tsx");
+      expect(receipt.edges.filter(({ to }) => to === "input:src/tree-shaken.ts")).toHaveLength(1);
+      expect(receipt.edges.some(({ to }) => to === "input:src/tree-shaken.tsx")).toBe(false);
+      expect(receipt.edges.some(({ to }) => to === "input:src/runtime.tsx")).toBe(false);
       expect(canonicalJson(receipt.rules)).toContain("rebeccapurple");
       expect(canonicalJson(receipt.rules)).not.toContain("chartreuse");
+      expect(canonicalJson(receipt.rules)).not.toContain("aquamarine");
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("rejects external and mismatched absolute edges to a speculative transform", async () => {
+    for (const variant of ["external", "mismatched-original"] as const) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      const speculative = join(context.root, "src/tree-shaken.ts");
+      await write(entry, "export const value = 'entry';\n");
+      await write(speculative, "export const dropped = 'tree-shaken';\n");
+      const handle = await generation(context, `speculative-${variant}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const handlers: Array<(args: { path: string }) => unknown> = [];
+        const plugin = options.plugins?.[0];
+        assert.ok(plugin !== undefined);
+        plugin.setup({
+          onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
+            handlers.push(callback);
+          },
+        } as never);
+        const javascriptOnLoad = handlers[0];
+        assert.ok(javascriptOnLoad !== undefined);
+        await javascriptOnLoad({ path: speculative });
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+          path === "src/entry.ts" || path.endsWith("/src/entry.ts")
+        );
+        assert.ok(entryKey !== undefined);
+        result.metafile.inputs[entryKey]!.imports = [variant === "external"
+          ? { external: true, kind: "import-statement", path: speculative }
+          : { kind: "import-statement", original: "./different.js", path: speculative }] as never;
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(/Bun metafile import from src\/entry\.ts is unresolved/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("rejects an absolute edge to an ordinary in-root file that was not transformed", async () => {
+    const context = await fixture();
+    const entry = join(context.root, "src/entry.ts");
+    const unobserved = join(context.root, "src/unobserved.ts");
+    await write(entry, "export const value = 'entry';\n");
+    await write(unobserved, "export const hidden = 'unobserved';\n");
+    const handle = await generation(context, "unobserved-absolute-input", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+        path === "src/entry.ts" || path.endsWith("/src/entry.ts")
+      );
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [{
+        kind: "import-statement",
+        path: unobserved,
+      }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import from src\/entry\.ts is unresolved/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
     } finally {
       build.mockRestore();
     }
