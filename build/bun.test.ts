@@ -1100,6 +1100,71 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
+  test("continues package-root export conditions after an active nested branch has no match", async () => {
+    const context = await fixture();
+    const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");
+    await write(
+      join(runtimeDirectory, "package.json"),
+      `${JSON.stringify({
+        exports: {
+          browser: { development: "./dev.js" },
+          import: "./index.mjs",
+        },
+        name: "@fixture/runtime",
+        type: "module",
+        version: "1.0.0",
+      })}\n`,
+    );
+    await write(
+      join(runtimeDirectory, "index.mjs"),
+      "export { marker } from './private.js';\n",
+    );
+    await write(join(runtimeDirectory, "private.js"), "export const marker = 'runtime';\n");
+    const entry = join(context.root, "src/entry.ts");
+    await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+    const handle = await generation(context, "bare-input-package-nested-condition-no-match", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const inputs = result.metafile.inputs;
+      const entryKey = Object.keys(inputs).find((path) =>
+        path.endsWith("/src/entry.ts") || path === "src/entry.ts"
+      );
+      assert.ok(entryKey !== undefined);
+      const runtimeInputs = Object.keys(inputs)
+        .filter((path) => path.includes("node_modules/@fixture/runtime/"))
+        .map((path) => path.replaceAll("\\", "/"))
+        .sort();
+      expect(runtimeInputs).toHaveLength(2);
+      expect(runtimeInputs.some((path) => path.endsWith("/node_modules/@fixture/runtime/index.mjs")
+        || path === "node_modules/@fixture/runtime/index.mjs")).toBe(true);
+      expect(runtimeInputs.some((path) => path.endsWith("/node_modules/@fixture/runtime/private.js")
+        || path === "node_modules/@fixture/runtime/private.js")).toBe(true);
+      inputs[entryKey]!.imports = [{ kind: "import-statement", path: "@fixture/runtime" }] as never;
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({
+        build: { conditions: ["browser", "production"] },
+        generation: handle,
+        graphId: "client",
+        rootDirectory: context.root,
+      });
+      expect(receipt.edges).toContainEqual({
+        external: false,
+        from: "input:src/entry.ts",
+        kind: "import-statement",
+        to: "input:node_modules/@fixture/runtime/index.mjs",
+      });
+    } finally {
+      build.mockRestore();
+    }
+  });
+
   test("repairs an SSR zero-witness package root from Bun's implicit node-addons export condition", async () => {
     const context = await fixture();
     const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");
