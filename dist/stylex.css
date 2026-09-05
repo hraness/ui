@@ -1,3 +1,5 @@
+@layer base, components;
+@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;
 @layer components.hraness-ui.priority1 {
   .xln7xf2 {
     font: inherit;
@@ -1813,7 +1815,11 @@
       box-shadow: none;
     }
 
-    .xfjoems.xfjoems:focus-within, .xy1gt46.xy1gt46:focus-visible, .x7nf4t2.x7nf4t2:has(input:focus-visible) {
+    .xfjoems.xfjoems:focus-within, .xy1gt46.xy1gt46:focus-visible {
+      outline-color: highlight;
+    }
+
+    .x7nf4t2.x7nf4t2:has(input:focus-visible) {
       outline-color: highlight;
     }
 
