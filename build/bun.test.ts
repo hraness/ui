@@ -225,6 +225,54 @@ describe("collectBunStylexGraph", () => {
     expect(receipt.edges.some(({ from, to }) => from === "input:src/server.ts" && to === "input:src/server-only.ts")).toBe(true);
   });
 
+  test("excludes speculatively loaded tree-shaken inputs and their StyleX rules", async () => {
+    const context = await fixture();
+    const entry = join(context.root, "src/entry.ts");
+    const speculative = join(context.root, "src/tree-shaken.ts");
+    await write(
+      entry,
+      "import * as stylex from '@stylexjs/stylex'; const styles = stylex.create({ root: { color: 'rebeccapurple' } }); export const value = stylex.props(styles.root).className;\n",
+    );
+    await write(
+      speculative,
+      "import * as stylex from '@stylexjs/stylex'; const styles = stylex.create({ root: { color: 'chartreuse' } }); export const dropped = stylex.props(styles.root).className;\n",
+    );
+    const handle = await generation(context, "tree-shaken-barrel", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const handlers: Array<(args: { path: string }) => unknown> = [];
+      const plugin = options.plugins?.[0];
+      assert.ok(plugin !== undefined);
+      plugin.setup({
+        onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
+          handlers.push(callback);
+        },
+      } as never);
+      const javascriptOnLoad = handlers[0];
+      assert.ok(javascriptOnLoad !== undefined);
+      await javascriptOnLoad({ path: speculative });
+      return buildOriginal(options);
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({
+        generation: handle,
+        graphId: "client",
+        rootDirectory: context.root,
+      });
+
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(receipt.inputs.map(({ path }) => path)).toContain("src/entry.ts");
+      expect(receipt.inputs.map(({ path }) => path)).not.toContain("src/tree-shaken.ts");
+      expect(canonicalJson(receipt.rules)).toContain("rebeccapurple");
+      expect(canonicalJson(receipt.rules)).not.toContain("chartreuse");
+    } finally {
+      build.mockRestore();
+    }
+  });
+
   test("rejects caller-owned build topology without consuming the graph slot", async () => {
     const context = await fixture();
     const entry = join(context.root, "src/entry.ts");
