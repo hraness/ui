@@ -6,7 +6,10 @@ import { createRequire } from "node:module";
 import { dirname, extname, relative, resolve, sep } from "node:path";
 
 import { transformAsync, type ParserOptions } from "@babel/core";
-import stylexPlugin, { type Rule as UpstreamStylexRule } from "@stylexjs/babel-plugin";
+import stylexPluginModule, {
+  type Rule as UpstreamStylexRule,
+  type StyleXTransformObj,
+} from "@stylexjs/babel-plugin";
 import { transform as transformCss } from "lightningcss";
 
 import {
@@ -18,6 +21,25 @@ import {
   type StylexRuleV1,
   type StylexRuleValueV1,
 } from "./contracts.js";
+
+// StyleX 0.19 combines a CommonJS module.exports runtime with ESM-shaped declarations,
+// so NodeNext needs this explicit checked boundary for the default binding.
+function normalizeStylexPlugin(value: unknown): StyleXTransformObj {
+  assert.equal(typeof value, "function", "Pinned StyleX Babel plugin must expose a callable CommonJS default");
+  const plugin = value as {
+    readonly processStylexRules?: unknown;
+    readonly withOptions?: unknown;
+  };
+  assert.equal(typeof plugin.withOptions, "function", "Pinned StyleX Babel plugin must expose withOptions");
+  assert.equal(
+    typeof plugin.processStylexRules,
+    "function",
+    "Pinned StyleX Babel plugin must expose processStylexRules",
+  );
+  return plugin as unknown as StyleXTransformObj;
+}
+
+const stylexPlugin = normalizeStylexPlugin(stylexPluginModule);
 
 export const compilerContract: StylexCompilerContractV1 = {
   compilerContractVersion: STYLEX_COMPILER_CONTRACT_VERSION,
