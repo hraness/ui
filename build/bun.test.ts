@@ -386,6 +386,41 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
+  test("rejects cross-platform local paths disguised as external output imports", async () => {
+    for (const [index, externalPath] of ["FILE:///tmp/outside.js", "C:/outside.js"].entries()) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "export const value = 1;\n");
+      const handle = await generation(context, `unsafe-external-${String(index)}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const outputPath = Object.keys(result.metafile.outputs).sort()[0];
+        assert.ok(outputPath !== undefined);
+        result.metafile.outputs[outputPath]!.imports = [{
+          external: true,
+          kind: "import-statement",
+          path: externalPath,
+        }] as never;
+        return result;
+      });
+      try {
+        await expect(collectBunStylexGraph({
+          generation: handle,
+          graphId: "client",
+          rootDirectory: context.root,
+        })).rejects.toThrow(/relative or absolute files cannot be externalized/u);
+        expect(build).toHaveBeenCalledTimes(1);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
   test("rejects an entrypoint whose ancestor symlink escapes the graph root", async () => {
     const context = await fixture();
     const outside = await mkdtemp(join(await realpath(tmpdir()), "hraness-ui-bun-adapter-outside-"));

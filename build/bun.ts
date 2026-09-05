@@ -293,7 +293,14 @@ function canonicalOutputKey(outputDirectory: string, raw: string, known: Readonl
 
 function canonicalExternal(value: string): string {
   assert.ok(!value.includes("\\") && !/[\u0000-\u001f\u007f]/u.test(value), "external import contains forbidden characters");
-  assert.ok(!isAbsolute(value) && !value.startsWith("./") && !value.startsWith("../") && !value.startsWith("file:"), `relative or absolute files cannot be externalized from a complete graph: ${value}`);
+  assert.ok(
+    !isAbsolute(value)
+      && !/^[A-Za-z]:\//u.test(value)
+      && !value.startsWith("./")
+      && !value.startsWith("../")
+      && !value.toLowerCase().startsWith("file:"),
+    `relative or absolute files cannot be externalized from a complete graph: ${value}`,
+  );
   return `external:${value}`;
 }
 

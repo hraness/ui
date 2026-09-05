@@ -1,40 +1,58 @@
-export {
-  STYLEX_COMPILER_CONTRACT_VERSION,
-  STYLEX_COMPLETE_RECORD_SCHEMA_VERSION,
-  STYLEX_GENERATION_SCHEMA_VERSION,
-  STYLEX_GRAPH_RECEIPT_SCHEMA_VERSION,
-  STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION,
-  STYLEX_TEMPLATE_CSS_PLACEHOLDER,
-  type CreateStylexGenerationOptions,
-  type FinalizeStylexGenerationOptions,
-  type StylexArtifactV1,
-  type StylexCompilerContractV1,
-  type StylexCompleteGraphV1,
-  type StylexCompleteRecordV1,
-  type StylexGenerationHandleV1,
-  type StylexGenerationPlanV1,
-  type StylexGraphAdapterV1,
-  type StylexGraphEdgeV1,
-  type StylexGraphExpectationV1,
-  type StylexGraphKindV1,
-  type StylexGraphReceiptV1,
-  type StylexPackageIdentityV1,
-  type StylexPackageManifestV1,
-  type StylexRuleV1,
-  type StylexRuleValueV1,
-  type StylexTemplateV1,
+import {
+  STYLEX_COMPILER_CONTRACT_VERSION as COMPILER_CONTRACT_VERSION,
+  STYLEX_COMPLETE_RECORD_SCHEMA_VERSION as COMPLETE_RECORD_SCHEMA_VERSION,
+  STYLEX_GENERATION_SCHEMA_VERSION as GENERATION_SCHEMA_VERSION,
+  STYLEX_GRAPH_RECEIPT_SCHEMA_VERSION as GRAPH_RECEIPT_SCHEMA_VERSION,
+  STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION as PACKAGE_MANIFEST_SCHEMA_VERSION,
+  STYLEX_TEMPLATE_CSS_PLACEHOLDER as TEMPLATE_CSS_PLACEHOLDER,
 } from "./contracts.js";
-export {
-  compilerContract,
-  compilerSha256,
-  readStylexPackageManifest,
-  serializeStylexRules,
-  validateStylexPackageManifest,
+import {
+  compilerContract as compilerContractValue,
+  compilerSha256 as compilerSha256Value,
+  readStylexPackageManifest as readStylexPackageManifestImplementation,
+  serializeStylexRules as serializeStylexRulesImplementation,
+  validateStylexPackageManifest as validateStylexPackageManifestImplementation,
 } from "./compiler.js";
-export {
-  createStylexGeneration,
-  finalizeStylexGeneration,
-  prepareStylexProducedTemplate,
-  sealStylexProducedTemplate,
-  type PreparedStylexProducedTemplate,
+import {
+  createStylexGeneration as createStylexGenerationImplementation,
+  finalizeStylexGeneration as finalizeStylexGenerationImplementation,
+  prepareStylexProducedTemplate as prepareStylexProducedTemplateImplementation,
+  sealStylexProducedTemplate as sealStylexProducedTemplateImplementation,
 } from "./generation.js";
+
+export const STYLEX_COMPILER_CONTRACT_VERSION = COMPILER_CONTRACT_VERSION;
+export const STYLEX_COMPLETE_RECORD_SCHEMA_VERSION = COMPLETE_RECORD_SCHEMA_VERSION;
+export const STYLEX_GENERATION_SCHEMA_VERSION = GENERATION_SCHEMA_VERSION;
+export const STYLEX_GRAPH_RECEIPT_SCHEMA_VERSION = GRAPH_RECEIPT_SCHEMA_VERSION;
+export const STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION = PACKAGE_MANIFEST_SCHEMA_VERSION;
+export const STYLEX_TEMPLATE_CSS_PLACEHOLDER = TEMPLATE_CSS_PLACEHOLDER;
+export const compilerContract = compilerContractValue;
+export const compilerSha256 = compilerSha256Value;
+export const createStylexGeneration: typeof createStylexGenerationImplementation = (...arguments_) => createStylexGenerationImplementation(...arguments_);
+export const finalizeStylexGeneration: typeof finalizeStylexGenerationImplementation = (...arguments_) => finalizeStylexGenerationImplementation(...arguments_);
+export const prepareStylexProducedTemplate: typeof prepareStylexProducedTemplateImplementation = (...arguments_) => prepareStylexProducedTemplateImplementation(...arguments_);
+export const readStylexPackageManifest: typeof readStylexPackageManifestImplementation = (...arguments_) => readStylexPackageManifestImplementation(...arguments_);
+export const sealStylexProducedTemplate: typeof sealStylexProducedTemplateImplementation = (...arguments_) => sealStylexProducedTemplateImplementation(...arguments_);
+export const serializeStylexRules: typeof serializeStylexRulesImplementation = (...arguments_) => serializeStylexRulesImplementation(...arguments_);
+export const validateStylexPackageManifest: typeof validateStylexPackageManifestImplementation = (...arguments_) => validateStylexPackageManifestImplementation(...arguments_);
+export type {
+  CreateStylexGenerationOptions,
+  FinalizeStylexGenerationOptions,
+  StylexArtifactV1,
+  StylexCompilerContractV1,
+  StylexCompleteGraphV1,
+  StylexCompleteRecordV1,
+  StylexGenerationHandleV1,
+  StylexGenerationPlanV1,
+  StylexGraphAdapterV1,
+  StylexGraphEdgeV1,
+  StylexGraphExpectationV1,
+  StylexGraphKindV1,
+  StylexGraphReceiptV1,
+  StylexPackageIdentityV1,
+  StylexPackageManifestV1,
+  StylexRuleV1,
+  StylexRuleValueV1,
+  StylexTemplateV1,
+} from "./contracts.js";
+export type { PreparedStylexProducedTemplate } from "./generation.js";
