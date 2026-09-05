@@ -70,7 +70,7 @@ React 18 or 19 and React DOM 18 or 19 are peer dependencies.
 | Contract | Checked package fact | Public authority |
 | --- | --- | --- |
 | Runtime and types | ESM consumers load `dist/index.js`; TypeScript reads `src/index.ts` | `package.json` exports |
-| Style delivery | Six public CSS entry points cover the complete theme and each narrower layer | `package.json` exports |
+| Style delivery | Eight public CSS entry points cover precompiled and compiler-adopter paths | `package.json` exports |
 | Theme surface | 37 namespaced theme roles cover surfaces, text, actions, status, charts, typography, and radius | `src/tokens.css` |
 | Interaction states | Components expose semantic `data-slot` hooks and React Aria state attributes | Source types and server-rendered tests |
 | Compatibility | React and React DOM 18 through 19; StyleX 0.19 for caller-authored `xstyle` | Peer and package dependencies |
@@ -91,7 +91,7 @@ The package also exports portable spacing, typography, target-size, motion, elev
 
 ## Style delivery
 
-`@hraness/ui` publishes one JavaScript entry point and six public CSS entry points:
+`@hraness/ui` publishes one UI JavaScript entry point and eight public CSS entry points:
 
 - `@hraness/ui/styles.css` provides the complete theme, reset, legacy recipes, compiled StyleX recipes, and Tailwind bridge.
 - `@hraness/ui/tokens.css` provides standards-only light and dark tokens.
@@ -99,8 +99,10 @@ The package also exports portable spacing, typography, target-size, motion, elev
 - `@hraness/ui/components.css` provides the remaining legacy component recipes.
 - `@hraness/ui/stylex.css` provides package-compiled StyleX recipes.
 - `@hraness/ui/tailwind.css` provides Tailwind source detection, the dark variant, and semantic utility mappings.
+- `@hraness/ui/compiler-foundation.css` provides tokens, reset, and legacy recipes without precompiled StyleX recipes.
+- `@hraness/ui/compiler-foundation-tailwind.css` adds the Tailwind bridge to that recipe-free foundation.
 
-`styles.css` keeps the reset `base` below `components`, then fixes the component sublayers from lowest to highest as `legacy`, `priority1`, `priority2`, `priority3`, and `priority4`. Migrated StyleX declarations win over remaining package recipes without depending on generated class names or import timing. The complete stylesheet expects Tailwind CSS v4 processing during this transition, but it does not import Tailwind itself. This prevents duplicate Preflight and utility output.
+`styles.css` is the precompiled route. It keeps `base` below `components`, then fixes the reviewed standalone component sublayers from lowest to highest as `legacy`, `priority1`, `priority2`, `priority3`, and `priority4`. Migrated package declarations win over remaining package recipes without depending on generated class names or import timing. The complete stylesheet expects Tailwind CSS v4 processing during this transition, but it does not import Tailwind itself. This prevents duplicate Preflight and utility output.
 
 Set `data-theme="dark"` or the `dark` class on a root element to select the dark recipe. Set `data-theme="light"` for an explicit light island. Override namespaced roles after the imports to apply a product theme.
 
@@ -113,7 +115,83 @@ For a standards-only or narrower integration, import the required layers directl
 @import "@hraness/ui/stylex.css";
 ```
 
-The built-in recipes are already compiled. Consumers do not need a StyleX compiler to render them. Applications that author local StyleX declarations or pass a typed `xstyle` override must compile their own source with the matching StyleX 0.19 contract. The package disables runtime CSS injection and uses property-specificity resolution. Tailwind utilities and unlayered product CSS retain their existing override authority, except for the shared visually-hidden accessibility recipe. Its offscreen reset uses layered important declarations so conflicting unlayered important rules cannot accidentally expose accessible-only copy. Change the component visibility prop instead of overriding this helper.
+The built-in recipes are already compiled, so ordinary consumers do not need a StyleX compiler. Applications that compile local StyleX declarations or pass typed `xstyle` recipes use `@hraness/ui/stylex-build` with its `/bun` or `/vite` adapter and the versioned `@hraness/ui/stylex-manifest.json`. They register every client, lazy, multi-entry, and SSR graph before building, then finalize once. Every HTML or SSR entry links the returned combined recipe stylesheet. Compiler adopters import one compiler foundation and must not also import `styles.css` or `stylex.css`.
+
+Compiler adopters install the package's exact build-tool peers: `@babel/core@7.29.7`, `@stylexjs/babel-plugin@0.19.0`, `lightningcss@1.33.0`, and `@types/babel__core@7.20.5`. TypeScript projects using the Bun adapter also install `@types/bun@1.3.14`; Vite adapter projects install a supported Vite 7 release and compatible Node types (`@types/node@^20.19.0 || >=22.12.0`). These peers are optional for ordinary precompiled-stylesheet consumers.
+
+The registered `src/client.tsx` entry imports `@hraness/ui/compiler-foundation.css` before product CSS. This one-shot Vite build registers that complete client graph, resolves the package manifest through its public export, seals the generated HTML, and publishes only after the graph and template have settled:
+
+```ts
+import { writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { build } from "vite";
+import {
+  STYLEX_TEMPLATE_CSS_PLACEHOLDER,
+  createStylexGeneration,
+  finalizeStylexGeneration,
+  prepareStylexProducedTemplate,
+  sealStylexProducedTemplate,
+} from "@hraness/ui/stylex-build";
+import { stylexVite } from "@hraness/ui/stylex-build/vite";
+
+const rootDirectory = process.cwd();
+const outputDirectory = resolve(rootDirectory, ".stylex-output");
+const generation = await createStylexGeneration({
+  expectedGraphs: [{
+    adapter: "vite",
+    entrypoints: ["src/client.tsx"],
+    id: "client",
+    kind: "client",
+  }],
+  generationId: "production",
+  outputDirectory,
+  packageManifests: [import.meta.resolve("@hraness/ui/stylex-manifest.json")],
+  rootDirectory,
+  templates: [{
+    cssHref: "/stylex.css",
+    graphId: "client",
+    outputPath: "index.html",
+    sourcePath: "index.html",
+    stylesheetGraphId: "client",
+  }],
+});
+
+const result = await build({
+  build: { minify: true },
+  configFile: false,
+  plugins: [stylexVite({ generation, graphId: "client", rootDirectory })],
+});
+const outputs = (Array.isArray(result) ? result : [result]).flatMap(({ output }) => output);
+const foundations = outputs.filter((item) => item.type === "asset" && item.fileName.endsWith(".css"));
+const [foundation] = foundations;
+const client = outputs.find((item) => item.type === "chunk" && item.isEntry);
+if (foundation === undefined || foundations.length !== 1) throw new Error("The client graph did not emit exactly one complete compiler foundation");
+if (client === undefined) throw new Error("The client graph did not emit its entry module");
+
+const template = await prepareStylexProducedTemplate(generation, "index.html");
+await writeFile(template.sourcePath, [
+  "<!doctype html><html><head>",
+  `<link rel="stylesheet" href="/graphs/client/${foundation.fileName}">`,
+  `<link rel="stylesheet" href="${STYLEX_TEMPLATE_CSS_PLACEHOLDER}">`,
+  `</head><body><div id="root"></div><script type="module" src="/graphs/client/${client.fileName}"></script></body></html>`,
+].join(""), { flag: "wx" });
+await sealStylexProducedTemplate(generation, "index.html");
+const publishedDirectory = await finalizeStylexGeneration({
+  generation,
+  outputDirectory,
+  rootDirectory,
+});
+console.log(publishedDirectory);
+```
+
+`graphId` records the graph that produced a generated template;
+`stylesheetGraphId` records the graph whose complete emitted stylesheet set the
+template must link. They can differ when an SSR graph renders HTML for a client
+graph. Finalization rejects a missing, duplicate, or foreign graph stylesheet.
+
+The finalizer validates package and graph identities, rejects missing or stale graph receipts and mixed partial CSS, unions all raw rule metadata, and calls the pinned StyleX serializer once. It preserves the full finite priority inventory rather than mapping it to a fixed range. Build-tool modules remain outside the UI runtime entry, runtime CSS injection stays disabled, and the compiler contract pins property-specificity resolution and its Babel, StyleX, and Lightning CSS versions.
+
+Tailwind utilities and unlayered product CSS retain their existing override authority, except for the shared visually-hidden accessibility recipe. Its offscreen reset uses layered important declarations so conflicting unlayered important rules cannot accidentally expose accessible-only copy. Change the component visibility prop instead of overriding this helper.
 
 ## Composition patterns
 
@@ -565,9 +643,9 @@ These claims were reviewed on September 2, 2026 against the package manifest, pu
 | --- | --- | --- |
 | Package identity, version, peers, and entry points | `package.json` and `portfolio-inventory.json` | `bun run check:portfolio-inventory`, `bun run test:package` |
 | Public component and type surface | `src/index.ts` and exported source modules | `bun run typecheck`, `bun run test` |
-| Token names, accessibility fallbacks, and layer order | `src/tokens.css`, `src/reset.css`, compiled recipes | `bun run check:stylex-artifacts`, `bun run test` |
-| Deterministic package-compiled CSS and JavaScript | Build scripts and committed `dist` | `bun run build`, `bun run check:committed-dist`, `bun run check:stylex-determinism` |
-| Packed consumer behavior | Packed Bun and browser fixtures | `bun run test:package`, `bun run test:packed-bun-browser` |
+| Token names, accessibility fallbacks, and layer order | `src/tokens.css`, foundations, reset, compiled recipes | `bun run check:stylex-artifacts`, `bun run test` |
+| Deterministic package and combined consumer artifacts | Build scripts, versioned metadata, and committed `dist` | `bun run build`, `bun run check:committed-dist`, `bun run check:stylex-compiler-artifacts`, `bun run check:stylex-determinism`, `bun run check:stylex-consumer-layers` |
+| Packed consumer behavior | Packed Bun, Vite, and browser fixtures | `bun run test:package`, `bun run test:vite-adopter`, `bun run test:packed-bun-browser` |
 | Pointer, keyboard, writing-mode, and browser cascade behavior | Real gallery scenarios | `bun run test:browser` |
 
 `bun run check` runs the complete required sequence. A passing Markdown contract proves that this README matches checked repository facts; it does not replace package, browser, or consumer validation.
@@ -580,7 +658,7 @@ The complete `@hraness/ui/styles.css` entry expects Tailwind CSS v4 processing w
 
 ### Do I need a StyleX compiler?
 
-Built-in recipes are already compiled, so ordinary consumers do not. Compile your application with the matching StyleX 0.19 contract only when you author local StyleX declarations or pass `xstyle` recipes.
+Built-in recipes are already compiled, so ordinary consumers do not. When an application authors local StyleX declarations or passes `xstyle` recipes, use the public StyleX build contract, one supported adapter for each registered graph, one compiler foundation, and the single finalized recipe stylesheet. Do not combine finalized output with `styles.css` or `stylex.css`.
 
 ### Which parts can a product theme?
 

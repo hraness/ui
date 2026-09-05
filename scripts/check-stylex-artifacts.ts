@@ -1759,11 +1759,41 @@ function requirePublicLayerContract(
   }
 }
 
-function requireEarliestLayerPrelude(resetStylesheet: string): void {
-  const expectedPrefix = `${TOP_LEVEL_LAYER_PRELUDE}\n${LAYER_PRELUDE}\n`;
-  if (!resetStylesheet.startsWith(expectedPrefix)) {
+function requireResetLayerContracts(
+  resetStylesheet: string,
+  compilerResetStylesheet: string,
+): void {
+  const publicPrefix = `${TOP_LEVEL_LAYER_PRELUDE}\n${LAYER_PRELUDE}\n\n@layer base {`;
+  if (!resetStylesheet.startsWith(publicPrefix)) {
     throw new Error(
-      "src/reset.css must begin with the exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes",
+      "src/reset.css must retain the exact public base < components and fixed legacy < priority1 < priority2 < priority3 < priority4 prelude contract",
+    );
+  }
+
+  const compilerPrefix = `${TOP_LEVEL_LAYER_PRELUDE}\n\n@layer base {`;
+  if (!compilerResetStylesheet.startsWith(compilerPrefix)) {
+    throw new Error(
+      "src/compiler-reset.css must begin with the exact base < components prelude and base block",
+    );
+  }
+  forbid(
+    compilerResetStylesheet,
+    /@layer\s+components\.hraness-ui\.priority\d+/u,
+    "a fixed StyleX priority prelude in the compiler-only reset",
+  );
+
+  const fixedPriorityPrelude = `${LAYER_PRELUDE}\n`;
+  if (resetStylesheet.split(fixedPriorityPrelude).length !== 2) {
+    throw new Error(
+      "src/reset.css must contain the fixed legacy and StyleX priority prelude exactly once",
+    );
+  }
+  if (
+    compilerResetStylesheet
+    !== resetStylesheet.replace(fixedPriorityPrelude, "")
+  ) {
+    throw new Error(
+      "src/compiler-reset.css must equal src/reset.css with only the fixed legacy and StyleX priority prelude removed",
     );
   }
 }
@@ -5339,6 +5369,7 @@ const [
   knobStyleSource,
   selectFieldSource,
   resetStylesheet,
+  compilerResetStylesheet,
   skipLinkSource,
   formSource,
   formStyleSource,
@@ -5369,6 +5400,7 @@ const [
     readFile(resolve(repository, "src/knob.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/select-field.tsx"), "utf8"),
     readFile(resolve(repository, "src/reset.css"), "utf8"),
+    readFile(resolve(repository, "src/compiler-reset.css"), "utf8"),
     readFile(resolve(repository, "src/skip-link.tsx"), "utf8"),
     readFile(resolve(repository, "src/form.tsx"), "utf8"),
     readFile(resolve(repository, "src/form.stylex.ts"), "utf8"),
@@ -6310,7 +6342,7 @@ for (const sentinel of [
     `the Fields/Select guard must reject ${sentinel} leakage`,
   );
 }
-requireEarliestLayerPrelude(resetStylesheet);
+requireResetLayerContracts(resetStylesheet, compilerResetStylesheet);
 requirePublicLayerContract(legacyComponents, orderedStylesheet, compiledCss);
 forbid(
   compiledCss,

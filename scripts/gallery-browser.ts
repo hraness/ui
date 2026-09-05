@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import stylex from "@stylexjs/unplugin/esbuild";
+import { createHash } from "node:crypto";
 import {
   access,
   cp,
@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   chromium,
@@ -20,16 +21,14 @@ import {
   type Page,
 } from "playwright-core";
 
-import { stylexCompilerOptions } from "./stylex-config.js";
+import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
 
 const BUN_VERSION = "1.3.14";
 const CARD_DESCRIPTION_BRIDGE_PATTERN =
   /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
 const HUGEICONS_VERSION = "4.2.2";
-const PACKAGE_LAYER_PRELUDE =
-  /@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*,\s*components\.hraness-ui\.priority4/u;
-const STYLED_GALLERY_LAYER_PRELUDES =
-  /@layer\s+base\s*,\s*components\s*;\s*@layer\s+components\.hraness-ui\.legacy\s*,\s*components\.hraness-ui\.priority1\s*,\s*components\.hraness-ui\.priority2\s*,\s*components\.hraness-ui\.priority3\s*,\s*components\.hraness-ui\.priority4\s*;/u;
+const PACKAGE_LAYER_NAME =
+  /^components\.hraness-ui\.(?:legacy(?:\.[A-Za-z0-9_-]+)*|priority[1-9]\d*)$/u;
 const REACT_VERSION = "19.2.3";
 
 interface BrowserEvidence {
@@ -80,6 +79,7 @@ interface BrowserEvidence {
   readonly clientWidth: number;
   readonly clientHeight: number;
   readonly colorScheme: string;
+  readonly compilerFoundationMarked: boolean;
   readonly colorEquivalenceContract: boolean;
   readonly colorEquivalenceDiagnostics: string;
   readonly documentScrollWidth: number;
@@ -170,6 +170,7 @@ interface BrowserEvidence {
   readonly statusFamilyVariableContract: boolean;
   readonly stylexRuntimeStyleCount: number;
   readonly stylesheetCount: number;
+  readonly stylesheetHrefs: readonly string[];
   readonly stylesheetMarked: boolean;
   readonly substackAriaHidden: string;
   readonly substackFill: string;
@@ -410,20 +411,6 @@ async function removeTemporaryTree(path: string): Promise<void> {
   }
 }
 
-async function firstExecutable(paths: readonly string[]): Promise<string> {
-  for (const path of paths) {
-    try {
-      await access(path);
-      return path;
-    } catch {
-      // Continue through the supported Chromium and Chrome installations.
-    }
-  }
-  throw new Error(
-    "No Chromium executable found. Set CHROMIUM_EXECUTABLE_PATH to run the primitive gallery browser test.",
-  );
-}
-
 async function run(
   command: string[],
   cwd: string,
@@ -471,7 +458,7 @@ function requireExactlyOne(
   return match;
 }
 
-async function buildBrowserEntry(
+async function buildUnstyledNegativeControl(
   consumer: string,
   entrypoint: string,
   outdir: string,
@@ -485,7 +472,6 @@ async function buildBrowserEntry(
     format: "esm",
     minify: true,
     outdir,
-    plugins: [stylex(stylexCompilerOptions(consumer))],
     root: consumer,
     splitting: false,
     target: "browser",
@@ -503,50 +489,178 @@ async function buildBrowserEntry(
     cssPath !== undefined,
     `${entrypoint} must emit its imported ${entryCssName} artifact; got ${cssPaths.map((file) => relative(process.cwd(), file)).join(", ")}`,
   );
-  const extractedCssPaths = cssPaths
-    .filter((file) => file !== cssPath)
-    .sort((left, right) => left.localeCompare(right));
-  const [javaScript, importedCss, extractedCss] = await Promise.all([
+  assert.equal(
+    cssPaths.length,
+    1,
+    `the unstyled negative control must emit exactly one imported CSS artifact; got ${cssPaths.map((file) => relative(process.cwd(), file)).join(", ")}`,
+  );
+  const [javaScript, css] = await Promise.all([
     readFile(javaScriptPath, "utf8"),
     readFile(cssPath, "utf8"),
-    Promise.all(extractedCssPaths.map((file) => readFile(file, "utf8"))),
   ]);
-  const css = [importedCss, ...extractedCss].join("\n");
-  await writeFile(cssPath, css);
-  await Promise.all(
-    extractedCssPaths.map((file) => rm(file, { force: true })),
-  );
   return { css, cssPath, javaScript, javaScriptPath };
 }
 
-async function buildServerRenderer(
-  consumer: string,
-  outdir: string,
-): Promise<string> {
-  const result = await Bun.build({
-    conditions: ["production", "module"],
-    define: {
-      "process.env.NODE_ENV": JSON.stringify("production"),
-    },
-    entrypoints: [resolve(consumer, "gallery/render.tsx")],
-    format: "esm",
-    minify: true,
-    outdir,
-    packages: "external",
-    plugins: [stylex(stylexCompilerOptions(consumer))],
-    root: consumer,
-    splitting: false,
-    target: "bun",
-  });
-  if (!result.success) {
-    throw new Error(result.logs.map((log) => log.message).join("\n"));
-  }
+type StylexBuildApi = typeof import("../build/index.js");
+type StylexBunApi = typeof import("../build/bun.js");
 
-  return requireExactlyOne(
-    await filesBelow(outdir),
-    ".js",
-    "gallery server renderer",
+interface GalleryGenerationArtifacts {
+  readonly combinedCss: string;
+  readonly compilerFoundationPath: string;
+  readonly finalDirectory: string;
+  readonly finalStylexCssPath: string;
+  readonly javaScript: string;
+  readonly javaScriptPath: string;
+  readonly serverRendererPath: string;
+}
+
+async function loadPackedStylexBuild(
+  consumer: string,
+  installedRoot: string,
+): Promise<Readonly<{ build: StylexBuildApi; bun: StylexBunApi }>> {
+  const buildEntry = Bun.resolveSync("@hraness/ui/stylex-build", consumer);
+  const bunEntry = Bun.resolveSync("@hraness/ui/stylex-build/bun", consumer);
+  assert.equal(
+    buildEntry,
+    resolve(installedRoot, "dist/build/index.js"),
+    "the packed consumer must resolve the public StyleX build entry",
   );
+  assert.equal(
+    bunEntry,
+    resolve(installedRoot, "dist/build/bun.js"),
+    "the packed consumer must resolve the public Bun StyleX adapter",
+  );
+  const [build, bun] = await Promise.all([
+    import(pathToFileURL(buildEntry).href) as Promise<StylexBuildApi>,
+    import(pathToFileURL(bunEntry).href) as Promise<StylexBunApi>,
+  ]);
+  return { build, bun };
+}
+
+function publishedGraphPath(graphId: string, path: string): string {
+  return `graphs/${graphId}/${path.split("\\").join("/")}`;
+}
+
+async function buildGalleryGeneration(
+  consumer: string,
+  installedRoot: string,
+  environment: Record<string, string | undefined>,
+): Promise<GalleryGenerationArtifacts> {
+  const { build, bun } = await loadPackedStylexBuild(consumer, installedRoot);
+  const outputDirectory = resolve(consumer, "dist/stylex-generations");
+  await mkdir(outputDirectory, { recursive: true });
+  const generation = await build.createStylexGeneration({
+    expectedGraphs: [
+      {
+        adapter: "bun",
+        entrypoints: ["gallery/client.tsx"],
+        id: "gallery-client",
+        kind: "client",
+      },
+      {
+        adapter: "bun",
+        entrypoints: ["gallery/render.tsx"],
+        id: "gallery-server",
+        kind: "ssr",
+      },
+    ],
+    finalCssPath: "stylex.css",
+    generationId: "gallery",
+    outputDirectory,
+    packageManifests: ["node_modules/@hraness/ui/dist/stylex-manifest.json"],
+    rootDirectory: consumer,
+    templates: [{
+      cssHref: "/stylex.css",
+      graphId: "gallery-server",
+      outputPath: "index.html",
+      sourcePath: "index.template.html",
+      stylesheetGraphId: "gallery-client",
+    }],
+  });
+  const clientReceipt = await bun.collectBunStylexGraph({
+    build: { minify: true },
+    generation,
+    graphId: "gallery-client",
+    rootDirectory: consumer,
+  });
+  const serverReceipt = await bun.collectBunStylexGraph({
+    build: { minify: true },
+    generation,
+    graphId: "gallery-server",
+    rootDirectory: consumer,
+  });
+  assert.deepEqual(
+    serverReceipt.outputs
+      .map(({ path }) => path)
+      .filter((path) => path.endsWith(".css")),
+    [],
+    "the gallery SSR graph must not emit an unlinked stylesheet",
+  );
+  const clientJavaScript = requireExactlyOne(
+    clientReceipt.outputs.map(({ path }) => path).filter((path) => path.startsWith("entries/")),
+    ".js",
+    "gallery client graph",
+  );
+  const compilerFoundation = requireExactlyOne(
+    clientReceipt.outputs.map(({ path }) => path),
+    ".css",
+    "gallery client graph",
+  );
+  const serverRenderer = requireExactlyOne(
+    serverReceipt.outputs.map(({ path }) => path).filter((path) => path.startsWith("entries/")),
+    ".js",
+    "gallery server graph",
+  );
+  const stagedServerRenderer = resolve(
+    generation.directory,
+    serverReceipt.outputRoot,
+    serverRenderer,
+  );
+  const preparedTemplate = await build.prepareStylexProducedTemplate(
+    generation,
+    "index.html",
+  );
+  await run([
+    process.execPath,
+    stagedServerRenderer,
+    preparedTemplate.sourcePath,
+    `/${publishedGraphPath("gallery-client", compilerFoundation)}`,
+    build.STYLEX_TEMPLATE_CSS_PLACEHOLDER,
+    `/${publishedGraphPath("gallery-client", clientJavaScript)}`,
+  ], consumer, environment);
+  await build.sealStylexProducedTemplate(generation, "index.html");
+  const finalDirectory = await build.finalizeStylexGeneration({
+    generation,
+    outputDirectory,
+    rootDirectory: consumer,
+  });
+  const javaScriptPath = resolve(
+    finalDirectory,
+    publishedGraphPath("gallery-client", clientJavaScript),
+  );
+  const compilerFoundationPath = resolve(
+    finalDirectory,
+    publishedGraphPath("gallery-client", compilerFoundation),
+  );
+  const serverRendererPath = resolve(
+    finalDirectory,
+    publishedGraphPath("gallery-server", serverRenderer),
+  );
+  const cssPath = resolve(finalDirectory, "stylex.css");
+  const [javaScript, foundationCss, finalizedCss] = await Promise.all([
+    readFile(javaScriptPath, "utf8"),
+    readFile(compilerFoundationPath, "utf8"),
+    readFile(cssPath, "utf8"),
+  ]);
+  return {
+    combinedCss: `${foundationCss}\n${finalizedCss}`,
+    compilerFoundationPath,
+    finalDirectory,
+    finalStylexCssPath: cssPath,
+    javaScript,
+    javaScriptPath,
+    serverRendererPath,
+  };
 }
 
 const CHECKBOX_STYLE_KEYS = [
@@ -982,19 +1096,59 @@ function exactLayerCss(css: string, layer: string): string {
 }
 
 function requireFinalBundleLayerOrder(css: string): void {
-  const preludes = css.match(STYLED_GALLERY_LAYER_PRELUDES);
-  assert.ok(
-    preludes !== null,
-    "the final styled gallery bundle must contain the adjacent canonical base and package layer preludes",
-  );
-  const preludeStart = preludes.index ?? -1;
-  assert.ok(
-    preludeStart >= 0,
-    "the final styled gallery bundle must expose the canonical prelude position",
-  );
-  const preludeEnd = preludeStart + preludes[0].length;
+  const firstBlockPositions = new Map<string, number>();
+  const firstLayerPositions = new Map<string, number>();
+  const priorityStatements: Array<{
+    readonly names: readonly string[];
+    readonly position: number;
+  }> = [];
+  for (const header of css.matchAll(/@layer\s+([^;{]+)[;{]/gu)) {
+    const names = header[1]?.split(",").map((name) => name.trim()) ?? [];
+    const isBlock = header[0].endsWith("{");
+    assert.ok(
+      !isBlock
+        || !names.some((name) =>
+          name === "components" || name === "components.hraness-ui"
+        ),
+      "the final styled gallery bundle must not place rules or nested layers directly in a components parent layer",
+    );
+    const packageNames = names.filter((name) =>
+      name === "components.hraness-ui" || name.startsWith("components.hraness-ui.")
+    );
+    for (const name of names) {
+      if (name === "components.hraness-ui" || name.startsWith("components.hraness-ui.")) {
+        assert.match(
+          name,
+          PACKAGE_LAYER_NAME,
+          `the final styled gallery bundle contains an unknown package layer: ${name}`,
+        );
+        const rootLayer = name === "components.hraness-ui.legacy"
+          || name.startsWith("components.hraness-ui.legacy.")
+          ? "legacy"
+          : name.slice("components.hraness-ui.".length);
+        if (!firstLayerPositions.has(rootLayer)) {
+          firstLayerPositions.set(rootLayer, header.index ?? -1);
+        }
+        if (isBlock && !firstBlockPositions.has(rootLayer)) {
+          firstBlockPositions.set(rootLayer, header.index ?? -1);
+        }
+      }
+    }
+    if (
+      header[0].endsWith(";")
+      && packageNames.some((name) => /^components\.hraness-ui\.priority[1-9]\d*$/u.test(name))
+    ) {
+      priorityStatements.push({
+        names,
+        position: header.index ?? -1,
+      });
+    }
+  }
+  const basePrelude = css.match(/@layer\s+base\s*,\s*components\s*;/u);
+  assert.ok(basePrelude !== null, "the final styled gallery bundle must declare base below components");
+  const basePreludeEnd = (basePrelude.index ?? -1) + basePrelude[0].length;
   const firstNamedLayerBlock = css.search(
-    /@layer\s+(?:base|components\.hraness-ui\.(?:legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3|priority4))\s*\{/u,
+    /@layer\s+(?:base|components\.hraness-ui\.[A-Za-z0-9_.-]+)\s*\{/u,
   );
   assert.notEqual(
     firstNamedLayerBlock,
@@ -1002,56 +1156,70 @@ function requireFinalBundleLayerOrder(css: string): void {
     "the final styled gallery bundle must contain a named base or package layer block",
   );
   assert.ok(
-    preludeEnd <= firstNamedLayerBlock,
-    "the canonical base and package layer preludes must precede every named base and package layer block",
+    basePreludeEnd <= firstNamedLayerBlock,
+    "the base/components declaration must precede every named base and package layer block",
   );
-
-  const firstBlockPositions = new Map<
-    "legacy" | "priority1" | "priority2" | "priority3" | "priority4",
-    number
-  >();
-  const packageLayerBlocks = [...css.matchAll(
-    /@layer\s+components\.hraness-ui\.(legacy(?:\.[A-Za-z0-9_-]+)*|priority1|priority2|priority3|priority4)\s*\{/gu,
-  )];
-  assert.notEqual(
-    packageLayerBlocks.length,
-    0,
-    "the final styled gallery bundle must contain package named-layer blocks",
+  assert.equal(
+    priorityStatements.length,
+    1,
+    "the final styled gallery bundle must contain exactly one finite StyleX priority statement",
   );
-  for (const match of packageLayerBlocks) {
-    const position = match.index ?? -1;
-    assert.ok(
-      position >= preludeEnd,
-      "the canonical package layer prelude must precede every package named-layer block",
+  const priorityStatement = priorityStatements[0]!;
+  const highestPriority = Number(
+    priorityStatement.names.at(-1)?.slice("components.hraness-ui.priority".length),
+  );
+  assert.ok(Number.isSafeInteger(highestPriority) && highestPriority > 0);
+  assert.deepEqual(
+    priorityStatement.names,
+    Array.from(
+      { length: highestPriority },
+      (_, index) => `components.hraness-ui.priority${String(index + 1)}`,
+    ),
+    "the finalized StyleX priority statement must enumerate its complete finite union",
+  );
+  for (const priorityName of priorityStatement.names) {
+    const priority = priorityName.slice("components.hraness-ui.".length);
+    assert.equal(
+      firstLayerPositions.get(priority),
+      priorityStatement.position,
+      `the canonical finite priority statement must be the first declaration of ${priorityName}`,
     );
-    const matchedLayer = match[1];
-    assert.ok(matchedLayer !== undefined);
-    const layer = matchedLayer === "legacy" || matchedLayer.startsWith("legacy.")
-      ? "legacy"
-      : matchedLayer;
-    assert.ok(
-      layer === "legacy"
-      || layer === "priority1"
-      || layer === "priority2"
-      || layer === "priority3"
-      || layer === "priority4",
-      `the final styled gallery bundle contains an unknown package layer: ${layer}`,
-    );
-    if (!firstBlockPositions.has(layer)) firstBlockPositions.set(layer, position);
   }
-
-  const orderedLayers = ["legacy", "priority1", "priority2", "priority3", "priority4"] as const;
+  const priorities = [...firstBlockPositions.keys()]
+    .filter((name) => name.startsWith("priority"))
+    .sort((left, right) => Number(left.slice("priority".length)) - Number(right.slice("priority".length)));
+  assert.ok(firstLayerPositions.has("legacy"), "the final styled gallery bundle must retain its legacy layer");
+  assert.notEqual(priorities.length, 0, "the final styled gallery bundle must contain finalized StyleX priority layers");
+  assert.ok(
+    (firstLayerPositions.get("legacy") ?? Number.POSITIVE_INFINITY)
+      < (firstLayerPositions.get("priority1") ?? Number.POSITIVE_INFINITY),
+    "the compiler foundation must declare legacy before the finalized priority union",
+  );
+  for (const priority of priorities) {
+    assert.ok(
+      priorityStatement.names.includes(`components.hraness-ui.${priority}`),
+      `the ${priority} block is missing from the finalized finite priority statement`,
+    );
+    assert.ok(
+      priorityStatement.position < firstBlockPositions.get(priority)!,
+      `the canonical finite priority statement must precede the ${priority} block`,
+    );
+  }
+  const orderedLayers = ["legacy", ...priorities];
+  assert.equal(new Set(orderedLayers).size, orderedLayers.length, "the final layer inventory must be finite and unique");
   const positions = orderedLayers.map((layer) => {
-    const position = firstBlockPositions.get(layer);
+    const position = firstLayerPositions.get(layer);
     assert.ok(
       position !== undefined,
       `the final styled gallery bundle must contain a ${layer} package layer block`,
     );
-    return position;
+    const blockPosition = firstBlockPositions.get(layer);
+    assert.ok(blockPosition !== undefined, `the final styled gallery bundle must contain a ${layer} block`);
+    return blockPosition;
   });
   assert.ok(
     positions.every((position, index) => index === 0 || positions[index - 1]! < position),
-    "the first package named-layer blocks must be ordered legacy, priority1, priority2, priority3, then priority4",
+    `the finite package layer union must be ordered legacy then ascending numeric priorities; got ${orderedLayers.join(", ")}`,
   );
 }
 
@@ -1400,18 +1568,13 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   requirePackedFormStyles(javaScript, css);
   assert.match(
     css,
-    /@layer components\.hraness-ui\.priority[12]/u,
+    /@layer components\.hraness-ui\.priority[1-9]\d*/u,
     "the packed default stylesheet must include the package StyleX layer",
   );
   assert.match(
     css,
     /@layer\s+base\s*,\s*components/u,
     "the packed default stylesheet must keep reset styles below components",
-  );
-  assert.match(
-    css,
-    PACKAGE_LAYER_PRELUDE,
-    "the packed default stylesheet must freeze the package layer order",
   );
   requireFinalBundleLayerOrder(css);
   requirePackedCheckboxConflictLayer(css);
@@ -2472,26 +2635,22 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
 }
 
 function placePriority4BeforeLegacy(css: string): string {
-  const prelude = css.match(PACKAGE_LAYER_PRELUDE)?.[0];
-  assert.ok(prelude !== undefined, "the packed stylesheet layer prelude is missing");
+  const priorities = [...new Set([...css.matchAll(
+    /components\.hraness-ui\.(priority[1-9]\d*)/gu,
+  )].map((match) => match[1]!))]
+    .sort((left, right) => Number(left.slice("priority".length)) - Number(right.slice("priority".length)));
+  assert.ok(priorities.includes("priority4"), "the packed stylesheet priority4 layer is missing");
   const counterfactualPrelude = [
-    "@layer components.hraness-ui.priority4",
-    "components.hraness-ui.legacy",
-    "components.hraness-ui.priority1",
-    "components.hraness-ui.priority2",
-    "components.hraness-ui.priority3",
-  ].join(", ");
+    "priority4",
+    "legacy",
+    ...priorities.filter((priority) => priority !== "priority4"),
+  ].map((layer) => `components.hraness-ui.${layer}`).join(", ");
   const counterfactual = [
     "@layer base, components;",
-    `${counterfactualPrelude};`,
+    `@layer ${counterfactualPrelude};`,
     css,
   ].join("\n");
   assert.notEqual(counterfactual, css);
-  assert.equal(
-    counterfactual.match(PACKAGE_LAYER_PRELUDE)?.[0],
-    prelude,
-    "the browser counterfactual must retain the valid package layer statement",
-  );
   assert.match(
     counterfactual,
     /@layer\s+components\.hraness-ui\.priority4\s*,\s*components\.hraness-ui\.legacy/u,
@@ -4370,6 +4529,9 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         && overrideCheckboxEvidence.dataSelected === "true"
         && overrideCheckboxEvidence.disabled,
       colorScheme: getComputedStyle(document.documentElement).colorScheme,
+      compilerFoundationMarked:
+        document.querySelector('link[data-gallery-compiler-foundation="true"]')
+        instanceof HTMLLinkElement,
       colorEquivalenceContract:
         equivalentColor(
           colorEquivalenceEvidence.oklch,
@@ -4668,6 +4830,10 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
         ),
       stylexRuntimeStyleCount: document.querySelectorAll("style[data-stylex]").length,
       stylesheetCount: document.querySelectorAll('link[rel="stylesheet"]').length,
+      stylesheetHrefs: Array.from(
+        document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'),
+        (link) => new URL(link.href).pathname,
+      ),
       stylesheetMarked:
         document.querySelector('link[data-gallery-default-stylesheet="true"]')
         instanceof HTMLLinkElement,
@@ -8900,6 +9066,34 @@ async function verifyListBoxPresentation(page: Page, id: string, forced = false)
 }
 
 async function verifyListBoxCoarsePointer(page: Page, real: boolean): Promise<void> {
+  const census = () => page.evaluate(() => {
+    const root = document.documentElement;
+    const thumb = document.querySelector<HTMLElement>('[data-gallery-slider="ltr"] [data-slot="slider-thumb"]');
+    const item = document.querySelector<HTMLElement>('[data-gallery-list-box="coarse"] [role="option"]');
+    if (thumb === null || item === null) throw new Error("The coarse isolation fixtures are missing.");
+    const style = getComputedStyle(thumb);
+    const bounds = thumb.getBoundingClientRect();
+    return {
+      attributePresent: root.hasAttribute("data-verification-pointer"),
+      attributeValue: root.getAttribute("data-verification-pointer"),
+      coarseMedia: matchMedia("(pointer: coarse)").matches,
+      rootVariable: getComputedStyle(root).getPropertyValue("--hraness-slider-coarse-min").trim(),
+      thumbVariable: style.getPropertyValue("--hraness-slider-coarse-min").trim(),
+      thumbClasses: [...thumb.classList],
+      thumbInlineStyle: thumb.getAttribute("style"),
+      width: style.width,
+      height: style.height,
+      minWidth: style.minWidth,
+      minHeight: style.minHeight,
+      transitionProperty: style.transitionProperty,
+      transitionDuration: style.transitionDuration,
+      boundsWidth: bounds.width,
+      boundsHeight: bounds.height,
+      listBoxMinHeight: getComputedStyle(item).minHeight,
+    };
+  });
+  const baseline = await census();
+  let toggled: Awaited<ReturnType<typeof census>> | undefined;
   const previous = await page.evaluate(() => document.documentElement.dataset.verificationPointer);
   try {
     if (!real) {
@@ -8909,6 +9103,7 @@ async function verifyListBoxCoarsePointer(page: Page, real: boolean): Promise<vo
       const item = document.querySelector<HTMLElement>('[data-gallery-list-box="coarse"] [role="option"]');
       return item !== null && Number.parseFloat(getComputedStyle(item).minHeight) >= 48;
     });
+    toggled = await census();
     const evidence = await page.locator('[data-gallery-list-box="coarse"] [role="option"]').evaluate((element) => ({
       real: matchMedia("(pointer: coarse)").matches,
       synthetic: document.documentElement.dataset.verificationPointer ?? "",
@@ -8925,6 +9120,36 @@ async function verifyListBoxCoarsePointer(page: Page, real: boolean): Promise<vo
       if (value === undefined) delete document.documentElement.dataset.verificationPointer;
       else document.documentElement.dataset.verificationPointer = value;
     }, previous);
+    const immediatelyRestored = await census();
+    // The reduced-motion reset gives even otherwise unanimated dimensions a
+    // short transition. Restored variables do not prove restored geometry.
+    try {
+      const settlement = await page.waitForFunction((expected) => {
+        const root = document.documentElement;
+        const thumb = document.querySelector<HTMLElement>('[data-gallery-slider="ltr"] [data-slot="slider-thumb"]');
+        const item = document.querySelector<HTMLElement>('[data-gallery-list-box="coarse"] [role="option"]');
+        if (thumb === null || item === null) return false;
+        const style = getComputedStyle(thumb);
+        const bounds = thumb.getBoundingClientRect();
+        const sizeTransitionActive = [thumb, item].some((element) => element.getAnimations().some(
+          (animation) => animation instanceof CSSTransition
+            && ["width", "height", "min-width", "min-height"].includes(animation.transitionProperty)
+            && (animation.pending || animation.playState === "running"),
+        ));
+        return !sizeTransitionActive
+          && root.hasAttribute("data-verification-pointer") === expected.attributePresent
+          && root.getAttribute("data-verification-pointer") === expected.attributeValue
+          && style.width === expected.width && style.height === expected.height
+          && bounds.width === expected.boundsWidth && bounds.height === expected.boundsHeight
+          && getComputedStyle(item).minHeight === expected.listBoxMinHeight;
+      }, baseline, { polling: "raf", timeout: 2_000 });
+      await settlement.dispose();
+    } catch (cause) {
+      throw new Error(`ListBox coarse restoration did not settle: ${JSON.stringify({ baseline, toggled, immediatelyRestored, current: await census() })}`, { cause });
+    }
+    const restored = await census();
+    console.log(`ListBox coarse isolation (${real ? "real" : "synthetic"}): ${JSON.stringify({ baseline, toggled, immediatelyRestored, restored })}`);
+    assert.deepEqual(restored, baseline, "ListBox coarse verification must restore its baseline geometry and pointer state");
   }
 }
 
@@ -11578,7 +11803,16 @@ async function verifyIndicatorKnobForcedColors(page: Page): Promise<void> {
   );
 }
 
-function startGalleryServer(directory: string, requestedPaths: Set<string>) {
+type VirtualGalleryAsset = Readonly<{
+  body: string;
+  type: "text/css" | "text/html" | "text/javascript";
+}>;
+
+function startGalleryServer(
+  directory: string,
+  requestedPaths: Set<string>,
+  virtualAssets: ReadonlyMap<string, VirtualGalleryAsset> = new Map(),
+) {
   return Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -11586,15 +11820,28 @@ function startGalleryServer(directory: string, requestedPaths: Set<string>) {
       const pathname = new URL(request.url).pathname;
       requestedPaths.add(pathname);
       if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
-      const name = pathname === "/" ? "index.html" : basename(pathname);
-      if (pathname !== "/" && pathname !== `/${name}`) {
+      const virtual = virtualAssets.get(pathname);
+      if (virtual !== undefined) {
+        return new Response(virtual.body, {
+          headers: { "content-type": `${virtual.type}; charset=utf-8` },
+        });
+      }
+      const logical = pathname === "/" ? "index.html" : pathname.slice(1);
+      if (
+        logical.length === 0
+        || logical.includes("\\")
+        || logical.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+      ) return new Response("Not found", { status: 404 });
+      const absolute = resolve(directory, logical);
+      const contained = relative(directory, absolute);
+      if (contained === ".." || contained.startsWith("../")) {
         return new Response("Not found", { status: 404 });
       }
-      const file = Bun.file(join(directory, name));
+      const file = Bun.file(absolute);
       if (!(await file.exists())) return new Response("Not found", { status: 404 });
-      const type = name.endsWith(".css")
+      const type = logical.endsWith(".css")
         ? "text/css"
-        : name.endsWith(".js")
+        : logical.endsWith(".js")
           ? "text/javascript"
           : "text/html";
       return new Response(file, { headers: { "content-type": `${type}; charset=utf-8` } });
@@ -11635,11 +11882,35 @@ try {
     "--quiet",
   ], repository, environment);
 
+  const repositoryManifest = JSON.parse(
+    await readFile(resolve(repository, "package.json"), "utf8"),
+  ) as {
+    peerDependencies?: Record<string, unknown>;
+    version?: unknown;
+  };
+  invariant(
+    typeof repositoryManifest.version === "string" && repositoryManifest.version.length > 0,
+    "the repository package version is missing",
+  );
+  const compilerDependencies = Object.fromEntries([
+    "@babel/core",
+    "@stylexjs/babel-plugin",
+    "lightningcss",
+  ].map((name) => {
+    const version = repositoryManifest.peerDependencies?.[name];
+    invariant(
+      typeof version === "string" && version.length > 0,
+      `the repository compiler peer ${name} is missing`,
+    );
+    return [name, version];
+  }));
+
   await writeFile(resolve(consumer, "package.json"), `${JSON.stringify({
     name: "hraness-ui-primitive-gallery-consumer",
     private: true,
     type: "module",
     dependencies: {
+      ...compilerDependencies,
       "@hugeicons/core-free-icons": HUGEICONS_VERSION,
       "@hraness/ui": `file:${archive}`,
       react: REACT_VERSION,
@@ -11653,13 +11924,6 @@ try {
   });
 
   const installedRoot = resolve(consumer, "node_modules/@hraness/ui");
-  const repositoryManifest = JSON.parse(
-    await readFile(resolve(repository, "package.json"), "utf8"),
-  ) as { version?: unknown };
-  invariant(
-    typeof repositoryManifest.version === "string" && repositoryManifest.version.length > 0,
-    "the repository package version is missing",
-  );
   const installedManifest = JSON.parse(
     await readFile(resolve(installedRoot, "package.json"), "utf8"),
   ) as {
@@ -11671,6 +11935,22 @@ try {
   assert.equal(installedManifest.version, repositoryManifest.version);
   assert.equal(installedManifest.exports?.["./styles.css"], "./src/styles.css");
   assert.equal(installedManifest.exports?.["./stylex.css"], "./dist/stylex.css");
+  assert.equal(
+    installedManifest.exports?.["./compiler-foundation.css"],
+    "./src/compiler-foundation.css",
+  );
+  assert.deepEqual(installedManifest.exports?.["./stylex-build"], {
+    types: "./build/index.ts",
+    import: "./dist/build/index.js",
+  });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/bun"], {
+    types: "./build/bun.ts",
+    import: "./dist/build/bun.js",
+  });
+  assert.equal(
+    installedManifest.exports?.["./stylex-manifest.json"],
+    "./dist/stylex-manifest.json",
+  );
   const installedHugeiconsManifest = JSON.parse(
     await readFile(
       resolve(consumer, "node_modules/@hugeicons/core-free-icons/package.json"),
@@ -11680,7 +11960,11 @@ try {
   assert.equal(installedHugeiconsManifest.version, HUGEICONS_VERSION);
   await Promise.all([
     access(resolve(installedRoot, "src/styles.css")),
+    access(resolve(installedRoot, "src/compiler-foundation.css")),
     access(resolve(installedRoot, "dist/stylex.css")),
+    access(resolve(installedRoot, "dist/stylex-manifest.json")),
+    access(resolve(installedRoot, "dist/build/index.js")),
+    access(resolve(installedRoot, "dist/build/bun.js")),
     access(resolve(installedRoot, "src/actions.stylex.ts")),
     access(resolve(installedRoot, "src/checkbox-field.stylex.ts")),
     access(resolve(installedRoot, "src/indicators.stylex.ts")),
@@ -11782,32 +12066,80 @@ try {
     "the ListBox collision marker must stay outside the packed package",
   );
 
-  const productionDirectory = resolve(consumer, "dist/browser");
   const negativeDirectory = resolve(consumer, "dist/unstyled-negative-control");
-  const serverRendererDirectory = resolve(consumer, "dist/server-renderer");
-  const [production, negativeControl, serverRenderer] = await Promise.all([
-    buildBrowserEntry(consumer, "gallery/client.tsx", productionDirectory),
-    buildBrowserEntry(consumer, "gallery/unstyled-client.tsx", negativeDirectory),
-    buildServerRenderer(consumer, serverRendererDirectory),
-  ]);
-  requirePackedDefaultStylesheet(production.css, production.javaScript);
+  const production = await buildGalleryGeneration(consumer, installedRoot, environment);
+  const productionDirectory = production.finalDirectory;
+  const negativeControl = await buildUnstyledNegativeControl(
+    consumer,
+    "gallery/unstyled-client.tsx",
+    negativeDirectory,
+  );
+  requirePackedDefaultStylesheet(production.combinedCss, production.javaScript);
+  for (const unknownLayer of [
+    "@layer components.hraness-ui.priority0;",
+    "@layer components.hraness-ui.unbounded { .layer-negative-control { display: block; } }",
+  ]) {
+    assert.throws(
+      () => requireFinalBundleLayerOrder(`${production.combinedCss}\n${unknownLayer}`),
+      /unknown package layer/u,
+      "the final gallery layer guard must reject invalid namespaced layers in statements and blocks",
+    );
+  }
+  for (const layerNegativeControl of [
+    {
+      css: "@layer components { .parent-layer-negative-control { display: block; } }",
+      description: "direct components parent rules",
+      expected: /must not place rules or nested layers directly in a components parent layer/u,
+    },
+    {
+      css: "@layer components { @layer hraness-ui.priority1 { .nested-parent-layer-negative-control { display: block; } } }",
+      description: "nested components parent layers",
+      expected: /must not place rules or nested layers directly in a components parent layer/u,
+    },
+    {
+      css: "@layer components.hraness-ui { @layer priority1 { .nested-package-parent-negative-control { display: block; } } }",
+      description: "nested package parent layers",
+      expected: /must not place rules or nested layers directly in a components parent layer/u,
+    },
+    {
+      css: "@layer components.hraness-ui.priority1 { .early-priority-block-negative-control { display: block; } }",
+      description: "a priority block before the canonical statement",
+      expected: /must be the first declaration/u,
+    },
+    {
+      css: "@layer components.hraness-ui.priority4, consumer-overrides;",
+      description: "a mixed priority statement before the canonical statement",
+      expected: /exactly one finite StyleX priority statement/u,
+    },
+  ]) {
+    assert.throws(
+      () => requireFinalBundleLayerOrder(`${layerNegativeControl.css}\n${production.combinedCss}`),
+      layerNegativeControl.expected,
+      `the final gallery layer guard must reject ${layerNegativeControl.description}`,
+    );
+  }
   assert.match(
-    production.css,
+    production.combinedCss,
     /--gallery-list-box-layer-conflict:\s*legacy/u,
     "the packed gallery must include its ListBox collision control",
   );
   const checkboxFocusContract = requirePackedCheckboxFocusContract(
     production.javaScript,
-    production.css,
+    production.combinedCss,
   );
   const linkNativeFallbackContract = requirePackedLinkNativeFallbackContract(
     production.javaScript,
-    production.css,
+    production.combinedCss,
   );
   assert.doesNotMatch(
     negativeControl.css,
-    STYLED_GALLERY_LAYER_PRELUDES,
-    "the unstyled negative control must omit the package delivery layer preludes",
+    /@layer\s+base\s*,\s*components/u,
+    "the plugin-free negative control must omit the compiler foundation",
+  );
+  assert.doesNotMatch(
+    negativeControl.css,
+    /@layer\s+components\.hraness-ui\.priority[1-9]\d*/u,
+    "the plugin-free negative control must omit finalized StyleX priority rules",
   );
   assert.match(production.javaScript, /__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__/u);
   assert.match(production.javaScript, /hydrateRoot/u);
@@ -11820,25 +12152,87 @@ try {
   assert.equal(await Bun.file(negativeControl.cssPath).exists(), false);
   assert.equal(await Bun.file(negativeControl.javaScriptPath).exists(), false);
 
-  const clientName = basename(production.javaScriptPath);
-  const stylesheetName = basename(production.cssPath);
-  const servedClientPath = resolve(productionDirectory, clientName);
-  const servedStylesheetPath = resolve(productionDirectory, stylesheetName);
-  await Promise.all([
-    production.javaScriptPath === servedClientPath
-      ? Promise.resolve()
-      : cp(production.javaScriptPath, servedClientPath),
-    production.cssPath === servedStylesheetPath
-      ? Promise.resolve()
-      : cp(production.cssPath, servedStylesheetPath),
-  ]);
-  await run([
-    process.execPath,
-    serverRenderer,
-    stylesheetName,
-    clientName,
-  ], consumer, environment);
-  const htmlPath = resolve(consumer, "dist/index.html");
+  const clientHref = `/${relative(productionDirectory, production.javaScriptPath)}`;
+  const compilerFoundationHref = `/${relative(
+    productionDirectory,
+    production.compilerFoundationPath,
+  )}`;
+  const stylesheetHref = `/${relative(productionDirectory, production.finalStylexCssPath)}`;
+  const serverRendererHref = `/${relative(
+    productionDirectory,
+    production.serverRendererPath,
+  )}`;
+  for (const href of [
+    clientHref,
+    compilerFoundationHref,
+    stylesheetHref,
+    serverRendererHref,
+  ]) {
+    assert.doesNotMatch(href, /\\|\.\./u, `the finalized gallery path is unsafe: ${href}`);
+  }
+  const complete = JSON.parse(
+    await readFile(resolve(productionDirectory, "stylex-complete.json"), "utf8"),
+  ) as {
+    artifacts?: readonly { path?: unknown }[];
+    finalCss?: { path?: unknown };
+    generationId?: unknown;
+    graphs?: readonly { id?: unknown }[];
+    packages?: readonly {
+      manifestSha256?: unknown;
+      name?: unknown;
+      version?: unknown;
+    }[];
+    state?: unknown;
+  };
+  assert.equal(complete.state, "complete");
+  assert.equal(complete.generationId, "gallery");
+  assert.deepEqual(complete.graphs?.map(({ id }) => id), ["gallery-client", "gallery-server"]);
+  assert.equal(complete.finalCss?.path, "stylex.css");
+  const installedStylexManifest = await readFile(
+    resolve(installedRoot, "dist/stylex-manifest.json"),
+  );
+  assert.deepEqual(complete.packages, [{
+    manifestSha256: createHash("sha256").update(installedStylexManifest).digest("hex"),
+    name: "@hraness/ui",
+    version: repositoryManifest.version,
+  }]);
+  const recordedArtifactPaths = complete.artifacts?.map(({ path }, index) => {
+    invariant(
+      typeof path === "string" && path.length > 0,
+      `the complete generation artifact ${String(index)} has no logical path`,
+    );
+    return path;
+  }) ?? [];
+  const completeArtifactPaths = new Set(recordedArtifactPaths);
+  assert.equal(
+    completeArtifactPaths.size,
+    recordedArtifactPaths.length,
+    "the complete generation must not contain duplicate artifact paths",
+  );
+  for (const path of [
+    "index.html",
+    clientHref.slice(1),
+    compilerFoundationHref.slice(1),
+    serverRendererHref.slice(1),
+  ]) {
+    assert.ok(
+      completeArtifactPaths.has(path),
+      `the complete generation must bind gallery artifact ${path}`,
+    );
+  }
+  assert.equal(
+    completeArtifactPaths.has("index.template.html"),
+    false,
+    "the graph-produced SSR template source must not be published",
+  );
+  assert.deepEqual(
+    (await filesBelow(productionDirectory))
+      .map((path) => relative(productionDirectory, path).split("\\").join("/"))
+      .sort(),
+    [...recordedArtifactPaths, "stylex-complete.json", "stylex.css"].sort(),
+    "the finalized generation must publish only its complete recorded inventory",
+  );
+  const htmlPath = resolve(productionDirectory, "index.html");
   const html = await readFile(htmlPath, "utf8");
   assert.match(html, /data-gallery-hydration-root="true"/u);
   assert.match(html, /data-gallery-icon-canary="true"/u);
@@ -12155,48 +12549,55 @@ try {
     html,
     /<span[^>]*class="hraness-visually-hidden x[^"]+"[^>]*data-slot="spinner-label"[^>]*>Checking primitives<\/span>/u,
   );
-  assert.match(html, new RegExp(`href="/${stylesheetName.replace(".", "\\.")}"`, "u"));
-  assert.match(html, new RegExp(`src="/${clientName.replace(".", "\\.")}"`, "u"));
-  await cp(htmlPath, resolve(productionDirectory, "index.html"));
+  const compilerFoundationLink =
+    `<link data-gallery-compiler-foundation="true" rel="stylesheet" href="${compilerFoundationHref}">`;
+  const finalizedStylesheetLink =
+    `<link data-gallery-default-stylesheet="true" rel="stylesheet" href="${stylesheetHref}">`;
+  assert.ok(html.includes(compilerFoundationLink));
+  assert.ok(html.includes(finalizedStylesheetLink));
+  assert.ok(
+    html.indexOf(compilerFoundationLink) < html.indexOf(finalizedStylesheetLink),
+    "the recipe-free compiler foundation must precede the one finalized StyleX stylesheet",
+  );
+  assert.ok(html.includes(`<script type="module" src="${clientHref}"></script>`));
 
   const counterfactualDocumentName = "priority4-before-legacy.html";
   const counterfactualStylesheetName = "priority4-before-legacy.css";
-  const counterfactualDocumentPath = resolve(
-    productionDirectory,
-    counterfactualDocumentName,
-  );
-  const counterfactualStylesheetPath = resolve(
-    productionDirectory,
-    counterfactualStylesheetName,
-  );
+  const counterfactualStylesheetLink =
+    `<link data-gallery-default-stylesheet="true" rel="stylesheet" href="/${counterfactualStylesheetName}">`;
   const counterfactualHtml = html.replace(
-    `href="/${stylesheetName}"`,
-    `href="/${counterfactualStylesheetName}"`,
+    `${compilerFoundationLink}${finalizedStylesheetLink}`,
+    counterfactualStylesheetLink,
   );
   assert.notEqual(counterfactualHtml, html);
-  await Promise.all([
-    writeFile(counterfactualDocumentPath, counterfactualHtml),
-    writeFile(
-      counterfactualStylesheetPath,
-      placePriority4BeforeLegacy(production.css),
-    ),
-  ]);
 
   const requestedPaths = new Set<string>();
-  const server = startGalleryServer(productionDirectory, requestedPaths);
+  const server = startGalleryServer(productionDirectory, requestedPaths, new Map([
+    [`/${counterfactualDocumentName}`, {
+      body: counterfactualHtml,
+      type: "text/html" as const,
+    }],
+    [`/${counterfactualStylesheetName}`, {
+      body: placePriority4BeforeLegacy(production.combinedCss),
+      type: "text/css" as const,
+    }],
+  ]));
   let browserClosed = false;
   try {
-    const executablePath = await firstExecutable([
-      ...(process.env.CHROMIUM_EXECUTABLE_PATH === undefined
-        ? []
-        : [process.env.CHROMIUM_EXECUTABLE_PATH]),
-      chromium.executablePath(),
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
-      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "/usr/bin/google-chrome",
-      "/usr/bin/chromium",
-      "/usr/bin/chromium-browser",
-    ]);
+    const executablePath = await resolveFirstBrowserExecutable(
+      [
+        ...(process.env.CHROMIUM_EXECUTABLE_PATH === undefined
+          ? []
+          : [process.env.CHROMIUM_EXECUTABLE_PATH]),
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        chromium.executablePath(),
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+      ],
+      "No ordinary Chromium executable found. Set CHROMIUM_EXECUTABLE_PATH to run the primitive gallery browser test.",
+    );
     const browser = await chromium.launch({
       args: ["--no-sandbox"],
       executablePath,
@@ -12472,7 +12873,15 @@ try {
           );
           invariant(light.theme === "light" && light.colorScheme === "light", `${layout.id}: initial light theme did not apply`);
           invariant(light.documentScrollWidth <= light.clientWidth + 1, `${layout.id}: gallery overflows horizontally`);
-          invariant(light.stylesheetCount === 1 && light.stylesheetMarked, `${layout.id}: default stylesheet delivery is ambiguous`);
+          invariant(
+            light.stylesheetCount === 2
+            && light.compilerFoundationMarked
+            && light.stylesheetMarked
+            && light.stylesheetHrefs.length === 2
+            && light.stylesheetHrefs[0] === compilerFoundationHref
+            && light.stylesheetHrefs[1] === stylesheetHref,
+            `${layout.id}: compiler-foundation/finalized stylesheet delivery is ambiguous: ${JSON.stringify(light.stylesheetHrefs)}`,
+          );
           invariant(light.stylexRuntimeStyleCount === 0, `${layout.id}: StyleX runtime injection returned`);
           invariant(light.iconAriaHidden === "true" && light.iconClassIsSemantic, `${layout.id}: icon semantics changed`);
           invariant(
@@ -12789,6 +13198,9 @@ try {
         invariant(
           counterfactual.stylesheetCount === 1
           && counterfactual.stylesheetMarked
+          && !counterfactual.compilerFoundationMarked
+          && counterfactual.stylesheetHrefs.length === 1
+          && counterfactual.stylesheetHrefs[0] === `/${counterfactualStylesheetName}`
           && counterfactual.stylexRuntimeStyleCount === 0,
           "priority4-before-legacy counterfactual: stylesheet delivery is ambiguous",
         );
@@ -12797,14 +13209,8 @@ try {
           `priority4-before-legacy counterfactual: ${failures.join("; ")}`,
         );
       } finally {
-        await Promise.all([
-          counterfactualContext.close(),
-          rm(counterfactualDocumentPath, { force: true }),
-          rm(counterfactualStylesheetPath, { force: true }),
-        ]);
+        await counterfactualContext.close();
       }
-      assert.equal(await Bun.file(counterfactualDocumentPath).exists(), false);
-      assert.equal(await Bun.file(counterfactualStylesheetPath).exists(), false);
 
       const forcedContext = await browser.newContext({
         colorScheme: "light",
@@ -12962,8 +13368,15 @@ try {
 
       assert.equal(browser.contexts().length, 0, "all primitive gallery contexts must close");
       invariant(requestedPaths.has("/"), "the browser never requested the gallery document");
-      invariant(requestedPaths.has(`/${clientName}`), "the browser never requested the packed client");
-      invariant(requestedPaths.has(`/${stylesheetName}`), "the browser never requested the packed default stylesheet");
+      invariant(requestedPaths.has(clientHref), "the browser never requested the packed client graph");
+      invariant(
+        requestedPaths.has(compilerFoundationHref),
+        "the browser never requested the packed compiler-foundation graph stylesheet",
+      );
+      invariant(
+        requestedPaths.has(stylesheetHref),
+        "the browser never requested the one finalized StyleX stylesheet",
+      );
       invariant(
         requestedPaths.has(`/${counterfactualDocumentName}`),
         "the browser never requested the priority4 counterfactual document",
@@ -12984,7 +13397,7 @@ try {
     "ListBox gallery passed: static and dynamic collections, inherited orientation and slot-null isolation, direct horizontal sections, caller DOM renderers and refs, StyleX/native-style precedence, hover/focus/selection/disabled states, typeahead, Autocomplete input-owned virtual focus and selection, retained Menu presentation, light/dark tokens, real and synthetic coarse targets under a local compact-token override, forced colors, gallery-only collision controls, SSR/hydration, and cleanup.",
   );
   console.log(
-    "Primitive gallery browser passed: packed default CSS and priority4 layer order, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, PageIntro wide/compact layout and heading hierarchy, EmptyState composition, all four InlineAlert tone/live-region contracts, both SettingsCard shapes, Content-family semantic/generated/caller ordering, native-style precedence, light/dark tokens, forced colors, collision, SSR, and cleanup, DataTable native semantics, finite alignment, overflow, logical dividers, empty-state, caller precedence, light/dark, legacy-layer collision, vertical writing, SSR, and hydration contracts, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, 3 ProgressBar, 4 Meter, 4 Slider, and 4 Knob packed specimens with semantic/generated/caller ordering, determinate and indeterminate motion, tone, LTR/RTL/vertical keyboard and form behavior, 20px Slider visuals inside 48px real and synthetic coarse hit targets, Knob density, pointer gesture, disabled, caller xstyle/controlXstyle/native-style precedence, forced-color SVG, collision, SSR, and hydration contracts, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: compiler foundation plus one finalized finite StyleX priority union, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, PageIntro wide/compact layout and heading hierarchy, EmptyState composition, all four InlineAlert tone/live-region contracts, both SettingsCard shapes, Content-family semantic/generated/caller ordering, native-style precedence, light/dark tokens, forced colors, collision, SSR, and cleanup, DataTable native semantics, finite alignment, overflow, logical dividers, empty-state, caller precedence, light/dark, legacy-layer collision, vertical writing, SSR, and hydration contracts, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, 3 ProgressBar, 4 Meter, 4 Slider, and 4 Knob packed specimens with semantic/generated/caller ordering, determinate and indeterminate motion, tone, LTR/RTL/vertical keyboard and form behavior, 20px Slider visuals inside 48px real and synthetic coarse hit targets, Knob density, pointer gesture, disabled, caller xstyle/controlXstyle/native-style precedence, forced-color SVG, collision, SSR, and hydration contracts, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await removeTemporaryTree(work);

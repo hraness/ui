@@ -1,0 +1,20 @@
+# Contents
+
+- `contracts.ts` defines the versioned public manifest, graph-receipt, generation, and complete-record types.
+- `compiler.ts` owns the pinned Babel and StyleX transform, raw-rule validation, and the single upstream CSS serialization contract.
+- `generation.ts` prepares generation-scoped staging, validates package and graph records, and atomically publishes one complete output.
+- `bun.ts` and `vite.ts` are the supported one-shot caller build adapters.
+- `index.ts` is the explicit build-tool export surface; no build module is reachable from the UI runtime entry.
+- `*.test.ts` exercises manifests, graph completeness, mixed-output rejection, permutation invariance, lifecycle failures, and transactional publication.
+
+# Guidelines
+
+- Parse every manifest, receipt, compiler result, and bundler record from `unknown`; reject unknown keys and malformed paths before writing publishable output.
+- Bind package metadata to final marked runtime JavaScript, standalone recipe CSS, build-tool modules, compiler options, package identity, and exact tool versions.
+- Collect raw StyleX rules from every registered client, lazy, multi-entry, and SSR graph, then call the pinned upstream serializer exactly once during finalization.
+- Keep graph outputs and receipts inside a new generation-scoped staging directory. Publish only after every expected graph, template, artifact hash, and stylesheet boundary is complete and verified.
+- Reject watch, serve, HMR, stale or late receipts, incomplete graphs, conflicting rules, output collisions, and any compiler-adopting graph that contains standalone package recipe CSS.
+- Keep absolute paths, timestamps, process identifiers, and temporary names out of canonical record bytes.
+- Keep compiler dependencies outside `src/index.ts` and every production UI runtime output. Build-tool entry points are explicit opt-in imports.
+- Preserve the plugin-free `@hraness/ui/styles.css` route. Compiler adopters use one foundation stylesheet and one finalized recipe artifact.
+- Add deterministic controls for success after failure, removed inputs, concurrent independent generations, injected publication failures, and terminal child collection.

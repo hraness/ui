@@ -6,6 +6,9 @@
   "type": "module",
   "sideEffects": [
     "./dist/stylex.css",
+    "./src/compiler-foundation-tailwind.css",
+    "./src/compiler-foundation.css",
+    "./src/compiler-reset.css",
     "./src/components.css",
     "./src/index.ts",
     "./src/reset.css",
@@ -35,10 +38,25 @@
       "types": "./src/index.ts",
       "import": "./dist/index.js"
     },
+    "./compiler-foundation-tailwind.css": "./src/compiler-foundation-tailwind.css",
+    "./compiler-foundation.css": "./src/compiler-foundation.css",
     "./components.css": "./src/components.css",
     "./reset.css": "./src/reset.css",
     "./styles.css": "./src/styles.css",
     "./stylex.css": "./dist/stylex.css",
+    "./stylex-build": {
+      "types": "./build/index.ts",
+      "import": "./dist/build/index.js"
+    },
+    "./stylex-build/bun": {
+      "types": "./build/bun.ts",
+      "import": "./dist/build/bun.js"
+    },
+    "./stylex-build/vite": {
+      "types": "./build/vite.ts",
+      "import": "./dist/build/vite.js"
+    },
+    "./stylex-manifest.json": "./dist/stylex-manifest.json",
     "./tailwind.css": "./src/tailwind.css",
     "./tokens.css": "./src/tokens.css"
   },
@@ -46,6 +64,12 @@
   "main": "./dist/index.js",
   "types": "./src/index.ts",
   "files": [
+    "build/bun.ts",
+    "build/compiler.ts",
+    "build/contracts.ts",
+    "build/generation.ts",
+    "build/index.ts",
+    "build/vite.ts",
     "dist",
     "src/ask-ai.stylex.ts",
     "src/ask-ai.tsx",
@@ -61,6 +85,9 @@
     "src/collections.stylex.ts",
     "src/collections.tsx",
     "src/components.css",
+    "src/compiler-foundation-tailwind.css",
+    "src/compiler-foundation.css",
+    "src/compiler-reset.css",
     "src/content.stylex.ts",
     "src/content.tsx",
     "src/data-table.stylex.ts",
@@ -109,21 +136,24 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun run ./scripts/build-package.ts && bun run ./scripts/mark-react-client-package.ts",
+    "build": "bun run ./scripts/build-package.ts",
     "check:committed-dist": "bun run ./scripts/check-committed-dist.ts",
     "check:portfolio-inventory": "bun ./scripts/check-portfolio-inventory.ts",
     "check:stylex-artifacts": "bun run ./scripts/check-stylex-artifacts.ts",
+    "check:stylex-compiler-artifacts": "bun run ./scripts/check-stylex-compiler-artifacts.ts",
+    "check:stylex-consumer-layers": "bun run ./scripts/check-stylex-consumer-layers.ts",
     "check:stylex-determinism": "bun run ./scripts/check-stylex-determinism.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --preload ./scripts/register-stylex-test-transform.ts ./src ./scripts/check-committed-dist.test.ts ./scripts/package-consumer-lifecycle.test.ts",
+    "test": "bun test --isolate --preload ./scripts/register-stylex-test-transform.ts ./src ./build ./scripts/browser-executable.test.ts ./scripts/check-committed-dist.test.ts ./scripts/check-stylex-determinism.test.ts ./scripts/mark-react-client-package.test.ts ./scripts/package-consumer-lifecycle.test.ts",
     "test:browser": "bun run ./scripts/gallery-browser.ts",
     "test:package": "bun run ./scripts/package-smoke.ts",
     "test:packed-bun-browser": "bun run ./scripts/packed-bun-browser-smoke.ts",
+    "test:vite-adopter": "bun run ./scripts/vite-adopter-smoke.ts",
     "kb:refresh": "bunx --bun github:hraness/kb#v0.15.1 refresh --root kb",
     "kb:check:lane": "bunx --bun github:hraness/kb#v0.15.1 check --root kb --no-catalog",
     "kb:check": "bunx --bun github:hraness/kb#v0.15.1 check --root kb && bunx --bun github:hraness/kb#v0.15.1 agents check --root kb --repo .",
     "kb:catalog": "bunx --bun github:hraness/kb#v0.15.1 catalog --root kb",
-    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-determinism && bun run test:package && bun run test:packed-bun-browser && bun run test && bun run test:browser",
+    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser",
     "prepack": "bun run check"
   },
   "dependencies": {
@@ -131,24 +161,61 @@
     "@hugeicons/react": "^1.1.9",
     "@stylexjs/stylex": "0.19.0",
     "clsx": "^2.1.1",
+    "parse5": "8.0.1",
     "react-aria": "3.50.0",
     "react-aria-components": "1.19.0",
     "tailwind-merge": "^3.6.0"
   },
   "peerDependencies": {
+    "@babel/core": "7.29.7",
+    "@stylexjs/babel-plugin": "0.19.0",
+    "@types/babel__core": "7.20.5",
+    "@types/bun": "1.3.14",
+    "@types/node": "^20.19.0 || >=22.12.0",
+    "lightningcss": "1.33.0",
     "react": ">=18 <20",
-    "react-dom": ">=18 <20"
+    "react-dom": ">=18 <20",
+    "vite": ">=7 <8"
+  },
+  "peerDependenciesMeta": {
+    "@babel/core": {
+      "optional": true
+    },
+    "@stylexjs/babel-plugin": {
+      "optional": true
+    },
+    "@types/babel__core": {
+      "optional": true
+    },
+    "@types/bun": {
+      "optional": true
+    },
+    "@types/node": {
+      "optional": true
+    },
+    "lightningcss": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@stylexjs/babel-plugin": "0.19.0",
     "@stylexjs/unplugin": "0.19.0",
-    "@types/bun": "^1.3.14",
+    "@types/babel__core": "7.20.5",
+    "@types/bun": "1.3.14",
+    "@types/node": "24.13.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "lightningcss": "1.33.0",
     "playwright-core": "1.62.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "typescript": "^6.0.3",
-    "unplugin": "2.3.11"
+    "unplugin": "2.3.11",
+    "vite": "7.3.6"
   },
   "publishConfig": {
     "access": "public"
