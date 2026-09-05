@@ -394,6 +394,32 @@ function typescriptRuntimeInputTarget(
   return substitutions.map((replacement) => `${stem}${replacement}`).find((path) => known.has(path));
 }
 
+function observedPathLikeInputTarget(
+  imported: ParsedImport,
+  from: string,
+  known: ReadonlySet<string>,
+  aliases: ReadonlyMap<string, string>,
+  buildTarget: "browser" | "bun",
+): string | undefined {
+  if (imported.external || !pathLikeImport(imported.path)) return undefined;
+  const withoutOriginal: ParsedImport = {
+    external: imported.external,
+    kind: imported.kind,
+    path: imported.path,
+  };
+  const target = inputTarget(imported.path, from, known, aliases)
+    ?? typescriptRuntimeInputTarget(withoutOriginal, from, known, buildTarget);
+  if (
+    target === undefined
+    || imported.original === undefined
+    || !pathLikeImport(imported.original)
+  ) return target;
+  const original = { ...withoutOriginal, path: imported.original };
+  const originalTarget = inputTarget(original.path, from, known, aliases)
+    ?? typescriptRuntimeInputTarget(original, from, known, buildTarget);
+  return originalTarget === target ? target : undefined;
+}
+
 function pathLikeImport(value: string): boolean {
   return value.startsWith("./") || value.startsWith("../") || isAbsolute(value);
 }
@@ -1154,6 +1180,12 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     [],
     "Bun speculative transform settlement contains an unsupported input",
   );
+  const speculativeInputSet = new Set(speculativeTransforms);
+  const speculativeInputAliases = new Map<string, string>();
+  for (const path of speculativeTransforms) {
+    speculativeInputAliases.set(path, path);
+    speculativeInputAliases.set(resolve(rootDirectory, ...path.split("/")), path);
+  }
   assert.deepEqual(
     [...transformedRules.keys()].sort(),
     [...transformedInputs].sort(),
@@ -1252,6 +1284,16 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   }
 
   const inputSet = new Set(inputMetadata.keys());
+  const observedInputSet = new Set([...inputSet, ...speculativeInputSet]);
+  const observedInputAliases = new Map(inputAliases);
+  for (const [alias, path] of speculativeInputAliases) {
+    assert.equal(
+      observedInputAliases.has(alias),
+      false,
+      `Bun speculative input alias collides with an authoritative input: ${alias}`,
+    );
+    observedInputAliases.set(alias, path);
+  }
   const edges: StylexGraphEdgeV1[] = [];
   for (const [from, metadata] of inputMetadata) {
     for (const imported of metadata.imports) {
@@ -1265,19 +1307,35 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         });
         continue;
       }
-      let input = await resolvedInputTarget(
-        imported,
-        from,
-        inputSet,
-        inputAliases,
-        inputPackageInstallations,
-        inputWitnesses,
-        rootDirectory,
-        inputFallbackPolicy,
-        resolverCache,
-        settledPackageScopes,
-        target,
-      );
+      const observedInput = pathLike
+        ? observedPathLikeInputTarget(
+          imported,
+          from,
+          observedInputSet,
+          observedInputAliases,
+          target,
+        )
+        : undefined;
+      const speculativeInput = observedInput !== undefined && speculativeInputSet.has(observedInput)
+        ? observedInput
+        : undefined;
+      let input = observedInput !== undefined && inputSet.has(observedInput)
+        ? observedInput
+        : observedInput === undefined
+          ? await resolvedInputTarget(
+            imported,
+            from,
+            inputSet,
+            inputAliases,
+            inputPackageInstallations,
+            inputWitnesses,
+            rootDirectory,
+            inputFallbackPolicy,
+            resolverCache,
+            settledPackageScopes,
+            target,
+          )
+          : undefined;
       const output = input === undefined && pathLike
         ? outputTarget(imported.path, from, outputSet)
         : undefined;
@@ -1288,7 +1346,16 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
             ?? inputAliases.get(posix.normalize(outputEntrypoint).replace(/^\.\//u, ""));
         }
       }
-      assert.ok(input !== undefined || output !== undefined, `Bun metafile import from ${from} is unresolved: ${imported.path}`);
+      assert.ok(
+        input !== undefined || output !== undefined || speculativeInput !== undefined,
+        `Bun metafile import from ${from} is unresolved: ${imported.path}`,
+      );
+      // Bun can retain an absolute import record for a barrel export whose
+      // module it loaded and then removed from the authoritative metafile.
+      // The completed transform inventory proves that exact local target was
+      // observed; because it is absent from inputMetadata, it contributes no
+      // published graph edge or StyleX rules.
+      if (speculativeInput !== undefined) continue;
       edges.push({
         external: false,
         from: `input:${from}`,
