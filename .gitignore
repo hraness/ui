@@ -1,5 +1,13 @@
 node_modules/
 /.stylex-fixtures/
+/.dist-promotion.lock
+/.dist-promotion-claim-*.lock
+/.dist-promotion-state-*.json
+/.dist-promotion-state-*.tmp
+/.dist-promotion-recovery-*.lock
+/.dist-promotion-recovery-claim-*.lock
+/.dist-promotion-recovery-reclaim-*/
+/.dist-promotion-release-*/
 .next/
 next-env.d.ts
 *.tsbuildinfo
