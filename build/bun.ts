@@ -348,6 +348,52 @@ function inputTarget(
   return known.has(candidate) ? candidate : undefined;
 }
 
+function typescriptRuntimeInputTarget(
+  imported: ParsedImport,
+  from: string,
+  known: ReadonlySet<string>,
+  buildTarget: "browser" | "bun",
+): string | undefined {
+  if (
+    imported.original !== undefined
+    || (!imported.path.startsWith("./") && !imported.path.startsWith("../"))
+  ) return undefined;
+  const candidate = posix.normalize(posix.join(posix.dirname(from), imported.path));
+  if (candidate === ".." || candidate.startsWith("../")) return undefined;
+  const insideNodeModules = packageBelowNodeModules(candidate) !== undefined;
+  const extensionOrder = (() => {
+    switch (imported.kind) {
+      case "import-statement":
+      case "dynamic-import":
+        return insideNodeModules
+          ? [".mjs", ".jsx", ".mts", ".js", ".cjs", ".tsx", ".ts", ".cts", ".json"]
+          : [".tsx", ".jsx", ".mts", ".ts", ".mjs", ".js", ".cts", ".cjs", ".json"];
+      case "require-call":
+      case "require-resolve": {
+        const order = insideNodeModules
+          ? [".jsx", ".cjs", ".js", ".mjs", ".mts", ".tsx", ".ts", ".cts", ".json"]
+          : [".tsx", ".ts", ".jsx", ".cts", ".cjs", ".js", ".mjs", ".mts", ".json"];
+        return buildTarget === "bun" ? [...order, ".node"] : order;
+      }
+      default: return undefined;
+    }
+  })();
+  if (extensionOrder === undefined) return undefined;
+  const appended = extensionOrder.map((extension) => `${candidate}${extension}`).find((path) => known.has(path));
+  if (appended !== undefined) return appended;
+  const extension = posix.extname(candidate);
+  let substitutions: readonly string[];
+  switch (extension) {
+    case ".js":
+    case ".jsx": substitutions = [".ts", ".tsx", ".mts"]; break;
+    case ".mjs": substitutions = insideNodeModules ? [] : [".mts"]; break;
+    default: substitutions = [];
+  }
+  if (substitutions.length === 0) return undefined;
+  const stem = candidate.slice(0, -extension.length);
+  return substitutions.map((replacement) => `${stem}${replacement}`).find((path) => known.has(path));
+}
+
 function pathLikeImport(value: string): boolean {
   return value.startsWith("./") || value.startsWith("../") || isAbsolute(value);
 }
@@ -613,10 +659,15 @@ async function resolvedInputTarget(
   fallbackPolicy: BareInputFallbackPolicy,
   resolverCache: Map<string, Promise<string | undefined>>,
   packageScopes: ReadonlyMap<string, PackageScope>,
+  buildTarget: "browser" | "bun",
 ): Promise<string | undefined> {
   if (imported.external) return undefined;
-  const direct = inputTarget(imported.path, from, known, aliases);
+  const direct = imported.original !== undefined || pathLikeImport(imported.path)
+    ? inputTarget(imported.path, from, known, aliases)
+    : undefined;
   if (direct !== undefined) return direct;
+  const typescriptRuntime = typescriptRuntimeInputTarget(imported, from, known, buildTarget);
+  if (typescriptRuntime !== undefined) return typescriptRuntime;
   const packageName = barePackageName(imported.path);
   if (packageName === undefined) return undefined;
   const installationRoots = [...(installations.get(packageName) ?? [])].sort();
@@ -841,6 +892,7 @@ async function importTargetsStylexRuntime(
   packageScopes: ReadonlyMap<string, PackageScope>,
   knownOutputs: ReadonlySet<string>,
   outputMetadata: ReadonlyMap<string, ParsedOutput>,
+  buildTarget: "browser" | "bun",
 ): Promise<boolean> {
   const pathLike = pathLikeImport(dependency.path);
   if (dependency.path === "@stylexjs/stylex" || dependency.path.startsWith("@stylexjs/stylex/")) return true;
@@ -856,6 +908,7 @@ async function importTargetsStylexRuntime(
     fallbackPolicy,
     resolverCache,
     packageScopes,
+    buildTarget,
   );
   if (target === undefined && pathLike) {
     const output = outputTarget(dependency.path, from, knownOutputs);
@@ -885,6 +938,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const loaded = await loadStylexGeneration(generation);
   const expected = loaded.expectedGraph(graphId);
   assert.equal(expected.adapter, "bun", `Graph ${graphId} is not registered for the Bun adapter`);
+  const target = expected.kind === "client" ? "browser" : "bun";
   const logicalEntrypoints = [...expected.entrypoints].map((path) => normalizeLogicalPath(path, "Bun entrypoint")).sort();
   assert.equal(new Set(logicalEntrypoints).size, logicalEntrypoints.length, "Bun entrypoints must be unique");
   const entrypoints = await Promise.all(logicalEntrypoints.map((path) => resolveRootRelativeInput(rootDirectory, path)));
@@ -970,7 +1024,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     root: rootDirectory,
     sourcemap: buildOptions.sourcemap ?? "none",
     splitting: true,
-    target: expected.kind === "client" ? "browser" : "bun",
+    target,
     throw: false,
   };
   if (buildOptions.jsx !== undefined) bunConfig.jsx = { ...buildOptions.jsx };
@@ -1073,6 +1127,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         settledPackageScopes,
         outputSet,
         outputMetadata,
+        target,
       )) {
         importsStylexRuntime = true;
         break;
@@ -1221,6 +1276,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         inputFallbackPolicy,
         resolverCache,
         settledPackageScopes,
+        target,
       );
       const output = input === undefined && pathLike
         ? outputTarget(imported.path, from, outputSet)
