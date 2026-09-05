@@ -1693,6 +1693,13 @@ function requirePublicLayerContract(
   orderedStylesheet: string,
   compiledCss: string,
 ): void {
+  const generatedPrelude = `${TOP_LEVEL_LAYER_PRELUDE}\n${LAYER_PRELUDE}\n`;
+  if (!compiledCss.startsWith(generatedPrelude)) {
+    throw new Error(
+      "dist/stylex.css must begin with the exact canonical base < components and legacy < priority1 < priority2 < priority3 < priority4 layer preludes",
+    );
+  }
+
   const bareComponentsLayer = /@layer\s+components(?=\s*[,;{])/u;
   forbid(
     legacyComponents,
@@ -1716,7 +1723,7 @@ function requirePublicLayerContract(
     }
   }
   const generatedLayers = requireOnlyLayerBlocks(
-    compiledCss,
+    compiledCss.slice(generatedPrelude.length),
     new Set(STYLEX_LAYERS),
     "dist/stylex.css",
   );
@@ -6541,12 +6548,74 @@ assert.throws(
       legacyComponents,
       orderedStylesheet,
       compiledCss.replace(
-        "components.hraness-ui.priority4",
-        "components.hraness-ui.priority5",
+        "@layer components.hraness-ui.priority4 {",
+        "@layer components.hraness-ui.priority5 {",
       ),
     ),
   /top-level content outside its allowed named layers/u,
   "the layer guard must reject an undeclared generated priority layer",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents,
+      orderedStylesheet,
+      compiledCss.replace(
+        TOP_LEVEL_LAYER_PRELUDE,
+        "@layer components, base;",
+      ),
+    ),
+  /exact canonical base < components/u,
+  "the generated layer guard must reject a top-level reset/component priority inversion",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents,
+      orderedStylesheet,
+      compiledCss.replace(`${LAYER_PRELUDE}\n`, ""),
+    ),
+  /exact canonical base < components/u,
+  "the generated layer guard must reject an omitted complete priority inventory",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents,
+      orderedStylesheet,
+      compiledCss.replace(
+        LAYER_PRELUDE,
+        "@layer components.hraness-ui.legacy, components.hraness-ui.priority4, components.hraness-ui.priority3, components.hraness-ui.priority2, components.hraness-ui.priority1;",
+      ),
+    ),
+  /exact canonical base < components/u,
+  "the generated layer guard must reject a reordered complete priority inventory",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents,
+      orderedStylesheet,
+      compiledCss.replace(
+        `${LAYER_PRELUDE}\n`,
+        `${LAYER_PRELUDE}\n@layer components.hraness-ui.unbounded;\n`,
+      ),
+    ),
+  /top-level content outside its allowed named layers/u,
+  "the generated layer guard must reject an additional top-level layer inventory",
+);
+assert.throws(
+  () =>
+    requirePublicLayerContract(
+      legacyComponents,
+      orderedStylesheet,
+      compiledCss.replace(
+        `${LAYER_PRELUDE}\n`,
+        `${LAYER_PRELUDE}\n@import \"./untrusted.css\";\n`,
+      ),
+    ),
+  /top-level content outside its allowed named layers/u,
+  "the generated layer guard must reject an import after its exact preludes",
 );
 assert.throws(
   () =>
