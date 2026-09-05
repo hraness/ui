@@ -14,6 +14,7 @@ import {
 } from "./contracts.js";
 import {
   artifactForFile,
+  assertStylexCssAuditReceiptsEqual,
   auditCssWithoutStandaloneRecipes,
   auditCssWithoutStylexRules,
   canonicalJson,
@@ -22,7 +23,11 @@ import {
   normalizeLogicalPath,
   resolveRootRelativeInput,
   sha256,
+  stylexCssAuditAtRules,
+  stylexTailwindBridgeAuditSource,
   stylexRulesSha256,
+  mergeStylexCssAuditReceipts,
+  type StylexCssAuditReceipt,
 } from "./compiler.js";
 import {
   loadStylexGeneration,
@@ -186,10 +191,21 @@ function verifyStylexDependencyEdges(
   );
 }
 
-function inspectStylexViteCss(source: string, filename: string): readonly CssDependency[] {
+function inspectStylexViteCss(
+  source: string,
+  filename: string,
+  manifests: readonly StylexPackageManifestV1[],
+  logicalPath: string | undefined,
+): Readonly<{ dependencies: readonly CssDependency[]; receipt: StylexCssAuditReceipt }> {
+  const receipt = auditCssWithoutStandaloneRecipes(
+    source,
+    manifests,
+    logicalPath === undefined ? undefined : stylexTailwindBridgeAuditSource(logicalPath, manifests),
+  );
   const dependencies: CssDependency[] = [];
   const result = inspectCss({
     code: Buffer.from(source),
+    customAtRules: stylexCssAuditAtRules,
     filename,
     minify: false,
     visitor: {
@@ -204,7 +220,10 @@ function inspectStylexViteCss(source: string, filename: string): readonly CssDep
     },
   });
   assert.equal(result.warnings.length, 0, `Vite CSS inspection emitted warnings for ${filename}`);
-  return dependencies.sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
+  return {
+    dependencies: dependencies.sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right))),
+    receipt,
+  };
 }
 
 function externalCssUrl(url: string): boolean {
@@ -286,6 +305,7 @@ export function stylexVite(options: StylexViteOptions): Plugin {
   const transformed = new Set<string>();
   const auditedCss = new Set<string>();
   const cssInputs = new Set<string>();
+  const cssAuditReceipts: StylexCssAuditReceipt[] = [];
   const nativeInputs = new Set<string>();
   const emittedAssetInputs = new Set<string>();
   const cssEdges: StylexGraphEdgeV1[] = [];
@@ -402,7 +422,6 @@ export function stylexVite(options: StylexViteOptions): Plugin {
       if (/\.css$/iu.test(clean)) {
         const auditCss = async (source: string, sourceId: string): Promise<void> => {
           const sourceClean = cleanModuleId(sourceId);
-          auditCssWithoutStandaloneRecipes(source, loadedGeneration.packageManifests);
           const logical = rootInputPath(sourceClean, rootDirectory);
           if (logical !== undefined) {
             cssInputs.add(logical);
@@ -410,7 +429,14 @@ export function stylexVite(options: StylexViteOptions): Plugin {
           }
           if (auditedCss.has(sourceClean)) return;
           auditedCss.add(sourceClean);
-          for (const dependency of inspectStylexViteCss(source, sourceClean)) {
+          const inspected = inspectStylexViteCss(
+            source,
+            sourceClean,
+            loadedGeneration.packageManifests,
+            logical,
+          );
+          cssAuditReceipts.push(inspected.receipt);
+          for (const dependency of inspected.dependencies) {
             const from = graphName(sourceClean, rootDirectory);
             if (externalCssUrl(dependency.url)) {
               cssEdges.push({ external: true, from, kind: dependency.kind, to: `resource:${sha256(dependency.url)}` });
@@ -464,6 +490,11 @@ export function stylexVite(options: StylexViteOptions): Plugin {
         prepared = preparedGraph;
         assert.equal(sealedRules, undefined, "StyleX Vite may generate one bundle only");
         sealedRules = collector.seal();
+        const expectedCssAuditReceipt = mergeStylexCssAuditReceipts(
+          cssAuditReceipts,
+          `Vite graph ${options.graphId} inputs`,
+        );
+        const outputCssAuditReceipts: StylexCssAuditReceipt[] = [];
         for (const output of Object.values(bundle)) {
           if (output.type !== "asset") continue;
           const asset = output as EmittedAsset;
@@ -481,8 +512,14 @@ export function stylexVite(options: StylexViteOptions): Plugin {
           );
           if (generatedCss) {
             const css = typeof asset.source === "string" ? asset.source : Buffer.from(asset.source).toString("utf8");
-            auditCssWithoutStandaloneRecipes(css, loadedGeneration.packageManifests);
-            auditCssWithoutStylexRules(css, sealedRules, "Vite graph output");
+            const receipt = auditCssWithoutStandaloneRecipes(
+              css,
+              loadedGeneration.packageManifests,
+              undefined,
+              expectedCssAuditReceipt,
+            );
+            auditCssWithoutStylexRules(css, sealedRules, "Vite graph output", receipt);
+            outputCssAuditReceipts.push(receipt);
           }
           const emittedBytes = typeof asset.source === "string" ? Buffer.from(asset.source) : Buffer.from(asset.source);
           for (const logical of provenance) {
@@ -497,6 +534,14 @@ export function stylexVite(options: StylexViteOptions): Plugin {
             }
           }
         }
+        assertStylexCssAuditReceiptsEqual(
+          mergeStylexCssAuditReceipts(
+            outputCssAuditReceipts,
+            `Vite graph ${options.graphId} generated outputs`,
+          ),
+          expectedCssAuditReceipt,
+          `Vite graph ${options.graphId} generated outputs`,
+        );
       },
     },
     configureServer() {
@@ -516,6 +561,10 @@ export function stylexVite(options: StylexViteOptions): Plugin {
         const graph = loadedGeneration.expectedGraph(options.graphId);
         const rules = sealedRules;
         assert.ok(rules !== undefined, "Vite bundle rules were not sealed before receipt publication");
+        const expectedCssAuditReceipt = mergeStylexCssAuditReceipts(
+          cssAuditReceipts,
+          `Vite graph ${graph.id} inputs`,
+        );
         for (const output of Object.values(bundle)) {
           if (output.type !== "asset") continue;
           const asset = output as EmittedAsset;
@@ -634,17 +683,29 @@ export function stylexVite(options: StylexViteOptions): Plugin {
             `Vite client graph ${graph.id} with a produced template must emit exactly one complete compiler-foundation stylesheet`,
           );
         }
+        const settledCssAuditReceipts: StylexCssAuditReceipt[] = [];
         for (const path of stylesheetOutputPaths) {
           const css = await readFile(
             join(preparedGraph.outputDirectory, ...path.split("/")),
             "utf8",
           );
-          auditCssWithoutStandaloneRecipes(
+          const receipt = auditCssWithoutStandaloneRecipes(
             css,
             loadedGeneration.packageManifests,
+            undefined,
+            expectedCssAuditReceipt,
           );
-          auditCssWithoutStylexRules(css, rules, "Vite settled graph output");
+          auditCssWithoutStylexRules(css, rules, "Vite settled graph output", receipt);
+          settledCssAuditReceipts.push(receipt);
         }
+        assertStylexCssAuditReceiptsEqual(
+          mergeStylexCssAuditReceipts(
+            settledCssAuditReceipts,
+            `Vite graph ${graph.id} settled outputs`,
+          ),
+          expectedCssAuditReceipt,
+          `Vite graph ${graph.id} settled outputs`,
+        );
         const outputs = await Promise.all(outputPaths.map((path) => artifactForFile(preparedGraph.outputDirectory, path)));
         await writeStylexGraphReceipt({
           generation: options.generation,

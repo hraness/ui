@@ -23,8 +23,8 @@ const CLIENT_SOURCE_PROPERTY = "scrollMarginBottom";
 const CLIENT_VALUE = "314159px";
 const FOCUS_IMPORTANT_VALUE = "rgb(24, 68, 112)";
 const HOVER_IMPORTANT_VALUE = "rgb(120, 40, 60)";
-const LAZY_CSS_PROPERTY = "padding-inline-start";
-const LAZY_SOURCE_PROPERTY = "paddingInlineStart";
+const LAZY_CSS_PROPERTY = "scroll-padding-inline-start";
+const LAZY_SOURCE_PROPERTY = "scrollPaddingInlineStart";
 const LAZY_VALUE = "271828px";
 const LIGHTNINGCSS_VERSION = "1.33.0";
 const MULTI_CSS_PROPERTY = "margin-inline-end";
@@ -345,7 +345,9 @@ function namedJavaScript(receipt, name, description) {
 }
 
 function hasRuleValue(receipt, value) {
-  return receipt.rules.some(([, rule]) => rule.ltr.includes(value) || (rule.rtl ?? "").includes(value));
+  const serializedValue = value.replaceAll(/,\\s+/gu, ",");
+  return receipt.rules.some(([, rule]) =>
+    rule.ltr.includes(serializedValue) || (rule.rtl ?? "").includes(serializedValue));
 }
 
 async function exists(path) {
@@ -872,7 +874,7 @@ async function verifyBrowserOutput(
             focusReverseClassName: focusReverse.className,
             forwardClassName: forward.className,
             hydrated: main.dataset.viteHydrated,
-            lazy: mainStyle.paddingInlineStart,
+            lazy: mainStyle.scrollPaddingInlineStart,
             mainClassName: main.className,
             multiEntry: secondaryStyle.marginInlineEnd,
             nestedColorForward: getComputedStyle(nestedForward).borderLeftColor,
