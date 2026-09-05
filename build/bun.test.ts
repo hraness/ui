@@ -273,6 +273,355 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
+  test("repairs a deduplicated .js runtime specifier from one TypeScript graph input", async () => {
+    const context = await fixture();
+    const runtime = join(context.root, "src/runtime.ts");
+    const entry = join(context.root, "src/entry.ts");
+    await write(runtime, "export const marker = 'runtime';\n");
+    await write(entry, "import { marker } from './runtime.js'; export const value = marker;\n");
+    const handle = await generation(context, "typescript-runtime-input-alias", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+        path === "src/entry.ts" || path.endsWith("/src/entry.ts")
+      );
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [{
+        kind: "import-statement",
+        path: "./runtime.js",
+      }] as never;
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root });
+      expect(receipt.edges).toContainEqual({
+        external: false,
+        from: "input:src/entry.ts",
+        kind: "import-statement",
+        to: "input:src/runtime.ts",
+      });
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("repairs deduplicated runtime extensions in Bun resolver order", async () => {
+    for (const [runtimeExtension, sourceExtension] of [
+      [".jsx", ".ts"],
+      [".jsx", ".tsx"],
+      [".jsx", ".mts"],
+      [".js", ".mts"],
+      [".mjs", ".mts"],
+    ] as const) {
+      const context = await fixture();
+      const runtime = join(context.root, `src/runtime${sourceExtension}`);
+      const entry = join(context.root, "src/entry.ts");
+      await write(runtime, "export const marker = 'runtime';\n");
+      await write(
+        entry,
+        `import { marker } from './runtime${sourceExtension}'; export const value = marker;\n`,
+      );
+      const handle = await generation(context, `typescript-runtime-input-alias-${runtimeExtension.slice(1)}-${sourceExtension.slice(1)}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+          path === "src/entry.ts" || path.endsWith("/src/entry.ts")
+        );
+        assert.ok(entryKey !== undefined);
+        result.metafile.inputs[entryKey]!.imports = [{
+          kind: "import-statement",
+          path: `./runtime${runtimeExtension}`,
+        }] as never;
+        return result;
+      });
+
+      try {
+        const receipt = await collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root });
+        expect(receipt.edges).toContainEqual({
+          external: false,
+          from: "input:src/entry.ts",
+          kind: "import-statement",
+          to: `input:src/runtime${sourceExtension}`,
+        });
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("does not rewrite a .cjs runtime specifier to a .cts input", async () => {
+    const context = await fixture();
+    const runtime = join(context.root, "src/runtime.cts");
+    const entry = join(context.root, "src/entry.ts");
+    await write(runtime, "export const marker = 'runtime';\n");
+    await write(entry, "import { marker } from './runtime.cts'; export const value = marker;\n");
+    const handle = await generation(context, "cjs-runtime-input-alias-mismatch", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+        path === "src/entry.ts" || path.endsWith("/src/entry.ts")
+      );
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [{
+        kind: "import-statement",
+        path: "./runtime.cjs",
+      }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import from src\/entry\.ts is unresolved: \.\/runtime\.cjs/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("uses Bun resolver order for a deduplicated runtime specifier with multiple TypeScript inputs", async () => {
+    const context = await fixture();
+    const runtimeTs = join(context.root, "src/runtime.ts");
+    const runtimeTsx = join(context.root, "src/runtime.tsx");
+    const raw = join(context.root, "src/raw.ts");
+    const entry = join(context.root, "src/entry.ts");
+    await write(runtimeTs, "export const tsMarker = 'ts';\n");
+    await write(runtimeTsx, "export const tsxMarker = 'tsx';\n");
+    await write(raw, "import { tsMarker } from './runtime.ts'; export const rawMarker = tsMarker;\n");
+    await write(
+      entry,
+      "export { tsMarker } from './runtime.ts'; export { tsxMarker } from './runtime.tsx'; export { rawMarker } from './raw.ts';\n",
+    );
+    const handle = await generation(context, "ambiguous-typescript-runtime-input-alias", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const rawKey = Object.keys(result.metafile.inputs).find((path) =>
+        path === "src/raw.ts" || path.endsWith("/src/raw.ts")
+      );
+      assert.ok(rawKey !== undefined);
+      result.metafile.inputs[rawKey]!.imports = [{
+        kind: "import-statement",
+        path: "./runtime.js",
+      }] as never;
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root });
+      expect(receipt.edges).toContainEqual({
+        external: false,
+        from: "input:src/raw.ts",
+        kind: "import-statement",
+        to: "input:src/runtime.ts",
+      });
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("uses Bun appended-extension probes before TypeScript runtime rewriting", async () => {
+    const context = await fixture();
+    const runtimeTs = join(context.root, "src/runtime.ts");
+    const appended = join(context.root, "src/runtime.js.tsx");
+    const raw = join(context.root, "src/raw.ts");
+    const entry = join(context.root, "src/entry.ts");
+    await write(runtimeTs, "export const tsMarker = 'ts';\n");
+    await write(appended, "export const appendedMarker = 'appended';\n");
+    await write(raw, "import { tsMarker } from './runtime.ts'; export const rawMarker = tsMarker;\n");
+    await write(
+      entry,
+      "export { rawMarker } from './raw.ts'; export { appendedMarker } from './runtime.js.tsx';\n",
+    );
+    const handle = await generation(context, "appended-extension-before-typescript-runtime-alias", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const rawKey = Object.keys(result.metafile.inputs).find((path) =>
+        path === "src/raw.ts" || path.endsWith("/src/raw.ts")
+      );
+      assert.ok(rawKey !== undefined);
+      result.metafile.inputs[rawKey]!.imports = [{
+        kind: "import-statement",
+        path: "./runtime.js",
+      }] as never;
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root });
+      expect(receipt.edges).toContainEqual({
+        external: false,
+        from: "input:src/raw.ts",
+        kind: "import-statement",
+        to: "input:src/runtime.js.tsx",
+      });
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("repairs deduplicated runtime specifiers for dynamic and CommonJS resolution kinds", async () => {
+    for (const kind of ["dynamic-import", "require-call", "require-resolve"] as const) {
+      const context = await fixture();
+      const runtime = join(context.root, "src/runtime.ts");
+      const entry = join(context.root, "src/entry.ts");
+      await write(runtime, "export const marker = 'runtime';\n");
+      await write(entry, "import { marker } from './runtime.ts'; export const value = marker;\n");
+      const handle = await generation(context, `typescript-runtime-input-alias-${kind}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+          path === "src/entry.ts" || path.endsWith("/src/entry.ts")
+        );
+        assert.ok(entryKey !== undefined);
+        result.metafile.inputs[entryKey]!.imports = [{ kind, path: "./runtime.js" }] as never;
+        return result;
+      });
+
+      try {
+        const receipt = await collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root });
+        expect(receipt.edges).toContainEqual({
+          external: false,
+          from: "input:src/entry.ts",
+          kind,
+          to: "input:src/runtime.ts",
+        });
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("does not repair a runtime specifier for an unknown import kind", async () => {
+    const context = await fixture();
+    const runtime = join(context.root, "src/runtime.ts");
+    const entry = join(context.root, "src/entry.ts");
+    await write(runtime, "export const marker = 'runtime';\n");
+    await write(entry, "import { marker } from './runtime.ts'; export const value = marker;\n");
+    const handle = await generation(context, "unknown-kind-runtime-input-alias", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+        path === "src/entry.ts" || path.endsWith("/src/entry.ts")
+      );
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [{
+        kind: "future-import-kind",
+        path: "./runtime.js",
+      }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import from src\/entry\.ts is unresolved: \.\/runtime\.js/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("does not rewrite a .mjs runtime specifier inside node_modules", async () => {
+    const context = await fixture();
+    const runtime = join(context.root, "node_modules/@fixture/runtime/runtime.mts");
+    const entry = join(context.root, "src/entry.ts");
+    await write(runtime, "export const marker = 'runtime';\n");
+    await write(
+      join(context.root, "node_modules/@fixture/runtime/package.json"),
+      `${JSON.stringify({ name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(entry, "import { marker } from '../node_modules/@fixture/runtime/runtime.mts'; export const value = marker;\n");
+    const handle = await generation(context, "node-modules-mjs-runtime-input-alias-mismatch", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+        path === "src/entry.ts" || path.endsWith("/src/entry.ts")
+      );
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [{
+        kind: "import-statement",
+        path: "../node_modules/@fixture/runtime/runtime.mjs",
+      }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import from src\/entry\.ts is unresolved: \.\.\/node_modules\/@fixture\/runtime\/runtime\.mjs/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("does not bind an unresolved bare package spelling to a colliding root input", async () => {
+    const context = await fixture();
+    const collision = join(context.root, "foo.js");
+    const entry = join(context.root, "src/entry.ts");
+    await write(collision, "export const marker = 'local';\n");
+    await write(entry, "import { marker } from '../foo.js'; export const value = marker;\n");
+    const handle = await generation(context, "bare-root-input-collision", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+        path === "src/entry.ts" || path.endsWith("/src/entry.ts")
+      );
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [{
+        kind: "import-statement",
+        path: "foo.js",
+      }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import from src\/entry\.ts is unresolved: foo\.js/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
   test("repairs Bun deduplicated bare input aliases from one resolved package witness", async () => {
     const context = await fixture();
     await write(
