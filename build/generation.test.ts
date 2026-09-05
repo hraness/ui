@@ -44,6 +44,7 @@ import {
   validateStylexPackageManifest,
 } from "./compiler.js";
 import {
+  cleanupFailedPublicationLock,
   createStylexGeneration,
   finalizeStylexGeneration,
   loadStylexGeneration,
@@ -224,6 +225,35 @@ async function finalize(context: Fixture, generation: StylexGenerationHandleV1, 
 }
 
 describe("compiler boundary", () => {
+  test("preserves publication failures together with close and unlink cleanup failures", async () => {
+    const operationError = new Error("injected publication failure");
+    const closeError = new Error("injected publication close failure");
+    const unlinkError = new Error("injected publication unlink failure");
+    const publicationLock = "/output/.hraness-stylex-test.publish.lock";
+    let failure: unknown;
+
+    try {
+      await cleanupFailedPublicationLock(
+        publicationLock,
+        { close: async () => { throw closeError; } },
+        true,
+        operationError,
+        async (path) => {
+          expect(path).toBe(publicationLock);
+          throw unlinkError;
+        },
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    if (!(failure instanceof AggregateError)) throw failure;
+    expect(failure.errors).toEqual([operationError, closeError, unlinkError]);
+    expect(failure.cause).toBe(operationError);
+    expect(failure.message).toContain(publicationLock);
+  });
+
   test("canonicalizes rules without dropping zero or fractional priorities and rejects malformed foreign values", () => {
     const zero = ["zero", { constKey: "--zero", constVal: 0, ltr: "", rtl: null }, 0] as const satisfies StylexRuleV1;
     const fractional = ["fractional", { ltr: ".fractional{color:blue}" }, 0.4] as const satisfies StylexRuleV1;
@@ -628,6 +658,24 @@ describe("generation lifecycle", () => {
       receipt: { ...malformedReceipt, unknown: true },
       rootDirectory: context.root,
     })).rejects.toThrow(/unknown keys/u);
+
+    for (const [index, externalPath] of ["FILE:///tmp/outside.js", "C:/outside.js"].entries()) {
+      const unsafeExternal = await create(context, `unsafe-external-${String(index)}`);
+      const unsafeReceipt = await receiptValue(context, unsafeExternal, "client", clientRule);
+      await expect(writeStylexGraphReceipt({
+        generation: unsafeExternal,
+        receipt: {
+          ...unsafeReceipt,
+          edges: [{
+            external: true,
+            from: "$entry",
+            kind: "import-statement",
+            to: `external:${externalPath}`,
+          }],
+        },
+        rootDirectory: context.root,
+      })).rejects.toThrow(/external payload must not identify a local path/u);
+    }
 
     const staleRuleHash = await create(context, "stale-rule-hash");
     const staleRuleReceipt = await receiptValue(context, staleRuleHash, "client", clientRule);

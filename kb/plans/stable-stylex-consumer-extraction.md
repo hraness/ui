@@ -496,13 +496,32 @@ shipping a partial prefix, mode, or fixture workaround.
   Independent Bun/Vite review is clean. The exact focused compiler suites pass
   72 tests with 420 assertions; the current complete isolated unit suite passes
   285 tests with 28,099 assertions; and current-candidate typecheck is green.
+- 2026-09-05: Whole-candidate review found three additional transactional
+  failures. Publication-lock close/unlink errors could be discarded after a
+  primary finalization failure; a failed dist promotion could lose its original
+  error when restoration also failed; and Bun plus receipt validation accepted
+  uppercase `FILE:` URLs and foreign drive-letter paths as package externals.
+  Cleanup now aggregates primary and cleanup failures, double-failed promotion
+  reports both retained trees and both causes, and Bun uses Vite's cross-platform
+  local-path fence. The exact three-file regression run passes 64 tests with 364
+  assertions, and independent whole-candidate review is clean.
+- 2026-09-05: Generated-artifact review rejected Bun 1.3.14's invalid
+  re-export-only `dist/build/index.js` before it could be committed. The build
+  now gives every public build-tool entry its own non-splitting bundle, keeps
+  concrete wrapper declarations in the aggregate entry, and imports all three
+  staged modules while asserting their exact export surfaces before promotion.
+  The same review exposed dist-relative package-manifest paths that contradicted
+  the package-relative verification contract. Runtime, build-tool, and
+  standalone CSS inventory now records `dist/...` paths. The guarded build and
+  compiler-artifact verification are green; regenerated artifacts still require
+  a separate byte/scope review and commit before the canonical full gate.
 
 ## Current validation phase
 
 The combined-metadata direction, bounded implementation join, public API,
 package surface, dependency boundary, generated inventory, and both adapters
-have completed independent static review, subject to the final browser-
-tokenizer review and whole-candidate review above. Focused compiler, generation, Bun, Vite,
+have completed independent static review, including the final browser-tokenizer
+and whole-candidate reviews above. Focused compiler, generation, Bun, Vite,
 README, portfolio-inventory, package-lifecycle, and child-reaping controls are
 green. The isolated complete unit suite and current-candidate typecheck are
 green. Terminal package/Vite/browser fixtures, canonical full

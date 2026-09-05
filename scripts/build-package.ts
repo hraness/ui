@@ -10,6 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   artifactForFile,
@@ -142,36 +143,82 @@ async function buildRuntime(repository: string, stage: string): Promise<{
 async function buildTools(repository: string, stage: string): Promise<readonly string[]> {
   const sourceRoot = resolve(repository, "build");
   const outdir = resolve(stage, "build");
-  const result = await Bun.build({
-    entrypoints: [
-      resolve(sourceRoot, "index.ts"),
-      resolve(sourceRoot, "bun.ts"),
-      resolve(sourceRoot, "vite.ts"),
-    ],
-    env: "disable",
-    format: "esm",
-    minify: true,
-    naming: {
-      asset: "assets/[name]-[hash].[ext]",
-      chunk: "chunks/[name]-[hash].js",
-      entry: "[name].js",
-    },
-    outdir,
-    packages: "external",
-    root: sourceRoot,
-    splitting: true,
-    target: "node",
-    throw: false,
-  });
-  await requireBuildSuccess(result, "StyleX build-tool build");
+  const outputPaths: string[] = [];
+  for (const entrypoint of ["index.ts", "bun.ts", "vite.ts"]) {
+    const result = await Bun.build({
+      entrypoints: [resolve(sourceRoot, entrypoint)],
+      env: "disable",
+      format: "esm",
+      minify: true,
+      naming: {
+        asset: "assets/[name]-[hash].[ext]",
+        chunk: "chunks/[name]-[hash].js",
+        entry: "[name].js",
+      },
+      outdir,
+      packages: "external",
+      splitting: false,
+      target: "node",
+      throw: false,
+    });
+    await requireBuildSuccess(result, `StyleX build-tool build (${entrypoint})`);
+    outputPaths.push(
+      ...result.outputs.map((output) => relativeBelow(stage, resolve(output.path), "build-tool output")),
+    );
+  }
   const paths = (await filesBelow(outdir)).map((path) => `build/${path}`);
   assert.deepEqual(
     paths,
-    result.outputs.map((output) => relativeBelow(stage, resolve(output.path), "build-tool output")).sort(),
+    outputPaths.sort(),
     "Build-tool result differs from settled output files",
   );
-  for (const entrypoint of ["build/bun.js", "build/index.js", "build/vite.js"]) {
-    assert.ok(paths.includes(entrypoint), `Build-tool output omitted ${entrypoint}`);
+  const expectedBuildTools = new Map([
+    ["build/bun.js", {
+      exports: ["STYLEX_BUN_ADAPTER_VERSION", "collectBunStylexGraph"],
+      functions: ["collectBunStylexGraph"],
+    }],
+    ["build/index.js", {
+      exports: [
+        "STYLEX_COMPILER_CONTRACT_VERSION",
+        "STYLEX_COMPLETE_RECORD_SCHEMA_VERSION",
+        "STYLEX_GENERATION_SCHEMA_VERSION",
+        "STYLEX_GRAPH_RECEIPT_SCHEMA_VERSION",
+        "STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION",
+        "STYLEX_TEMPLATE_CSS_PLACEHOLDER",
+        "compilerContract",
+        "compilerSha256",
+        "createStylexGeneration",
+        "finalizeStylexGeneration",
+        "prepareStylexProducedTemplate",
+        "readStylexPackageManifest",
+        "sealStylexProducedTemplate",
+        "serializeStylexRules",
+        "validateStylexPackageManifest",
+      ],
+      functions: [
+        "createStylexGeneration",
+        "finalizeStylexGeneration",
+        "prepareStylexProducedTemplate",
+        "readStylexPackageManifest",
+        "sealStylexProducedTemplate",
+        "serializeStylexRules",
+        "validateStylexPackageManifest",
+      ],
+    }],
+    ["build/vite.js", { exports: ["stylexVite"], functions: ["stylexVite"] }],
+  ] as const);
+  assert.deepEqual(paths, [...expectedBuildTools.keys()].sort(), "Build-tool build must emit exactly its three public entrypoints");
+  for (const [entrypoint, contract] of expectedBuildTools) {
+    const module: unknown = await import(pathToFileURL(resolve(stage, ...entrypoint.split("/"))).href);
+    assert.ok(typeof module === "object" && module !== null, `Build-tool output did not load as a module: ${entrypoint}`);
+    assert.deepEqual(Object.keys(module).sort(), [...contract.exports].sort(), `Build-tool public exports changed: ${entrypoint}`);
+    for (const name of contract.functions) {
+      assert.equal(
+        typeof (module as Record<string, unknown>)[name],
+        "function",
+        `Build-tool output omitted callable export ${name}: ${entrypoint}`,
+      );
+    }
   }
   assert.ok(paths.every((path) => path.endsWith(".js")), "Build-tool build emitted an unexpected non-JavaScript artifact");
   for (const path of paths) {
@@ -194,6 +241,16 @@ async function artifacts(
   );
 }
 
+async function distArtifacts(
+  root: string,
+  paths: readonly string[],
+): Promise<readonly StylexArtifactV1[]> {
+  return (await artifacts(root, paths)).map((artifact) => ({
+    ...artifact,
+    path: `dist/${artifact.path}`,
+  }));
+}
+
 async function writePackageManifest(
   repository: string,
   stage: string,
@@ -206,16 +263,19 @@ async function writePackageManifest(
   const packageRecord = rawPackage as Record<string, unknown>;
   assert.ok(typeof packageRecord.name === "string" && typeof packageRecord.version === "string");
   const manifest = validateStylexPackageManifest({
-    buildTools: await artifacts(stage, buildToolPaths),
+    buildTools: await distArtifacts(stage, buildToolPaths),
     compiler: compilerContract,
     compilerSha256,
     kind: "hraness-stylex-package-manifest",
     package: { name: packageRecord.name, version: packageRecord.version },
     rules,
     rulesSha256: stylexRulesSha256(rules),
-    runtime: await artifacts(stage, runtimePaths),
+    runtime: await distArtifacts(stage, runtimePaths),
     schemaVersion: STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION,
-    standaloneCss: await artifactForFile(stage, "stylex.css"),
+    standaloneCss: {
+      ...await artifactForFile(stage, "stylex.css"),
+      path: "dist/stylex.css",
+    },
     stylesheets: await artifacts(repository, COMPILER_STYLESHEET_PATHS),
   });
   const source = `${canonicalJson(manifest)}\n`;
@@ -254,6 +314,31 @@ export class DistPromotionCleanupError extends Error {
   }
 }
 
+export class DistPromotionRestoreError extends AggregateError {
+  readonly backupPath: string;
+  readonly destinationPath: string;
+  readonly stagePath: string;
+  readonly state = "promotion-failed-with-retained-backup" as const;
+
+  constructor(
+    destinationPath: string,
+    backupPath: string,
+    stagePath: string,
+    promotionError: unknown,
+    restorationError: unknown,
+  ) {
+    super(
+      [promotionError, restorationError],
+      `Dist promotion failed at ${destinationPath}, and restoration also failed; the previous dist is retained at ${backupPath} and the prepared dist is retained at ${stagePath} (state: promotion-failed-with-retained-backup)`,
+      { cause: promotionError },
+    );
+    this.name = "DistPromotionRestoreError";
+    this.backupPath = backupPath;
+    this.destinationPath = destinationPath;
+    this.stagePath = stagePath;
+  }
+}
+
 export async function commitDistPromotion(
   repository: string,
   stage: string,
@@ -272,7 +357,17 @@ export async function commitDistPromotion(
     await renamePath(stage, destinationPath);
   } catch (error) {
     if (movedOld && !(await exists(destinationPath))) {
-      await renamePath(backupPath, destinationPath);
+      try {
+        await renamePath(backupPath, destinationPath);
+      } catch (restorationError) {
+        throw new DistPromotionRestoreError(
+          destinationPath,
+          backupPath,
+          stage,
+          error,
+          restorationError,
+        );
+      }
     }
     throw error;
   }

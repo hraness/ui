@@ -281,7 +281,15 @@ function graphReference(value: unknown, description: string): string {
   else if (namespace === "input" || namespace === "output" || namespace === "package") normalizeLogicalPath(payload, `${description} payload`);
   else {
     string(payload, `${description} payload`);
-    assert.ok(!payload.includes("\\") && !payload.startsWith("/") && !payload.startsWith("./") && !payload.startsWith("../"), `${description} external payload must not identify a local path`);
+    assert.ok(
+      !payload.includes("\\")
+        && !payload.startsWith("/")
+        && !/^[A-Za-z]:\//u.test(payload)
+        && !payload.startsWith("./")
+        && !payload.startsWith("../")
+        && !payload.toLowerCase().startsWith("file:"),
+      `${description} external payload must not identify a local path`,
+    );
   }
   return `${namespace}:${payload}`;
 }
@@ -404,6 +412,41 @@ async function withMutationLock<T>(directory: string, operation: () => Promise<T
   }
   if (operationError !== undefined) throw operationError;
   return result as T;
+}
+
+type PublicationHandle = Readonly<{ close: () => Promise<void> }>;
+type UnlinkPublicationLock = (path: string) => Promise<void>;
+
+export async function cleanupFailedPublicationLock(
+  path: string,
+  handle: PublicationHandle | undefined,
+  owned: boolean,
+  operationError: unknown,
+  unlinkPath: UnlinkPublicationLock = unlink,
+): Promise<never> {
+  const errors: unknown[] = [operationError];
+  if (handle !== undefined) {
+    try {
+      await handle.close();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (owned) {
+    try {
+      await unlinkPath(path);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(
+      errors,
+      `StyleX publication failed and publication lock cleanup also failed: ${path}`,
+      { cause: operationError },
+    );
+  }
+  throw operationError;
 }
 
 async function writeSyncAndClose(
@@ -1473,20 +1516,22 @@ export async function finalizeStylexGeneration(options: FinalizeStylexGeneration
     await rm(parsedOptions.generation.directory, { recursive: true, force: true });
     return finalDirectory;
   } catch (error) {
-    if (publicationHandle !== undefined) {
-      await publicationHandle.close().catch(() => undefined);
-      publicationHandle = undefined;
-    }
-    if (publicationLockOwned) {
-      await unlink(publicationLock)
-        .then(() => { publicationLockOwned = false; })
-        .catch(() => undefined);
+    let retainedError: unknown;
+    try {
+      await cleanupFailedPublicationLock(
+        publicationLock,
+        publicationHandle,
+        publicationLockOwned,
+        error,
+      );
+    } catch (cleanupError) {
+      retainedError = cleanupError;
     }
     const detail = error instanceof Error ? `: ${error.message}` : "";
     if (promoted) {
-      throw new Error(`StyleX generation was promoted to ${finalDirectory}, but post-promotion cleanup failed${detail}`, { cause: error });
+      throw new Error(`StyleX generation was promoted to ${finalDirectory}, but post-promotion cleanup failed${detail}`, { cause: retainedError });
     }
-    throw new Error(`StyleX generation failed; evidence retained at ${parsedOptions.generation.directory}${detail}`, { cause: error });
+    throw new Error(`StyleX generation failed; evidence retained at ${parsedOptions.generation.directory}${detail}`, { cause: retainedError });
   }
 }
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   canonicalJson,
@@ -102,10 +103,13 @@ const paths = await filesBelow(dist);
 const runtime = paths.filter((path) => path.endsWith(".js") && !path.startsWith("build/"));
 const buildTools = paths.filter((path) => path.endsWith(".js") && path.startsWith("build/"));
 assert.ok(runtime.length > 0 && buildTools.length >= exportedBuildTools.length, "dist must contain runtime and build-tool JavaScript");
-for (const path of exportedBuildTools) assert.ok(buildTools.includes(path), `Missing exported build tool ${path}`);
-assert.deepEqual(manifest.runtime.map(({ path }) => path), runtime, "Manifest runtime inventory is incomplete");
-assert.deepEqual(manifest.buildTools.map(({ path }) => path), buildTools, "Manifest build-tool inventory is incomplete");
-assert.equal(manifest.standaloneCss.path, "stylex.css");
+for (const path of exportedBuildTools) {
+  assert.ok(paths.includes(path.replace(/^dist\//u, "")), `Missing exported build tool ${path}`);
+  await import(pathToFileURL(resolve(repository, ...path.split("/"))).href);
+}
+assert.deepEqual(manifest.runtime.map(({ path }) => path), runtime.map((path) => `dist/${path}`), "Manifest runtime inventory is incomplete");
+assert.deepEqual(manifest.buildTools.map(({ path }) => path), buildTools.map((path) => `dist/${path}`), "Manifest build-tool inventory is incomplete");
+assert.equal(manifest.standaloneCss.path, "dist/stylex.css");
 assert.equal(manifest.standaloneCss.sha256, sha256(await readFile(resolve(dist, "stylex.css"))));
 assert.equal(await readFile(resolve(dist, "stylex.css"), "utf8"), serializeStylexRules(manifest.rules));
 assert.deepEqual(

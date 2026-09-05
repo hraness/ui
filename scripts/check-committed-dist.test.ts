@@ -16,6 +16,7 @@ import {
   cleanupDistPromotion,
   commitDistPromotion,
   DistPromotionCleanupError,
+  DistPromotionRestoreError,
 } from "./build-package.js";
 import { checkCommittedDist } from "./check-committed-dist.js";
 
@@ -222,6 +223,54 @@ test("restores the old dist and retains the stage when the destination rename fa
     expect(
       (await readdir(repository)).filter((name) => name.startsWith(".dist-backup-")),
     ).toEqual([]);
+  });
+});
+
+test("preserves promotion and restoration failures with both retained trees", async () => {
+  await withRepository(async (repository) => {
+    const destination = resolve(repository, "dist");
+    const stage = resolve(repository, ".dist-build-double-rename-failure");
+    await mkdir(stage);
+    await writeFile(resolve(stage, "index.js"), "export const value = 2;\n");
+    const promotionError = new Error("injected destination rename failure");
+    const restorationError = new Error("injected restoration rename failure");
+    let backupPath: string | undefined;
+    let failure: unknown;
+
+    try {
+      await commitDistPromotion(repository, stage, async (source, target) => {
+        if (source === destination) {
+          backupPath = target;
+          await rename(source, target);
+          return;
+        }
+        if (source === stage && target === destination) throw promotionError;
+        if (source === backupPath && target === destination) throw restorationError;
+        await rename(source, target);
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(DistPromotionRestoreError);
+    if (!(failure instanceof DistPromotionRestoreError)) throw failure;
+    if (backupPath === undefined) throw new Error("Expected the previous dist to move to a backup");
+    expect(failure.state).toBe("promotion-failed-with-retained-backup");
+    expect(failure.errors).toEqual([promotionError, restorationError]);
+    expect(failure.cause).toBe(promotionError);
+    expect(failure.destinationPath).toBe(destination);
+    expect(failure.backupPath).toBe(backupPath);
+    expect(failure.stagePath).toBe(stage);
+    expect(failure.message).toContain(destination);
+    expect(failure.message).toContain(backupPath);
+    expect(failure.message).toContain(stage);
+    expect(await pathExists(destination)).toBe(false);
+    expect(await readFile(resolve(backupPath, "index.js"), "utf8")).toBe(
+      "export const value = 1;\n",
+    );
+    expect(await readFile(resolve(stage, "index.js"), "utf8")).toBe(
+      "export const value = 2;\n",
+    );
   });
 });
 
