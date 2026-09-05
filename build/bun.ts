@@ -62,6 +62,7 @@ export type CollectBunStylexGraphOptions = Readonly<{
 
 type ParsedImport = Readonly<{
   external: boolean;
+  hasAttributes: boolean;
   kind: string;
   original?: string;
   path: string;
@@ -109,6 +110,13 @@ type ResolutionFileSnapshot = Readonly<
   | { kind: "other"; mode: number; path: string }
   | { kind: "symlink"; path: string; target: string }
 >;
+
+type ElidedExternalPackageInputSnapshot = Readonly<{
+  bytes: number;
+  mode: number;
+  path: string;
+  sha256: string;
+}>;
 
 const javascriptFilter = /\.[cm]?[jt]sx?$/u;
 const outputNaming = {
@@ -240,8 +248,9 @@ function parseImport(value: unknown, description: string): ParsedImport {
   if (record.original !== undefined) printableString(record.original, `${description}.original`);
   if (record.with !== undefined) parseStringRecord(record.with, `${description}.with`);
   assert.ok(record.external === undefined || typeof record.external === "boolean", `${description}.external must be boolean`);
-  const output: { external: boolean; kind: string; original?: string; path: string } = {
+  const output: { external: boolean; hasAttributes: boolean; kind: string; original?: string; path: string } = {
     external: record.external === true,
+    hasAttributes: record.with !== undefined,
     kind: printableString(record.kind, `${description}.kind`),
     path: printableString(record.path, `${description}.path`),
   };
@@ -479,6 +488,7 @@ function observedPathLikeInputTarget(
   if (imported.external || !pathLikeImport(imported.path)) return undefined;
   const withoutOriginal: ParsedImport = {
     external: imported.external,
+    hasAttributes: imported.hasAttributes,
     kind: imported.kind,
     path: imported.path,
   };
@@ -1021,6 +1031,159 @@ function packageInstallations(paths: ReadonlySet<string>): ReadonlyMap<string, R
     installations.set(packageName, roots);
   }
   return installations;
+}
+
+async function exactOrdinaryDirectory(rootDirectory: string, path: string): Promise<boolean> {
+  const absolute = resolve(rootDirectory, ...path.split("/"));
+  const stat = await lstat(absolute).catch(() => undefined);
+  return stat !== undefined
+    && stat.isDirectory()
+    && !stat.isSymbolicLink()
+    && await realpath(absolute).catch(() => undefined) === absolute;
+}
+
+async function exactOrdinaryFileSnapshot(
+  rootDirectory: string,
+  path: string,
+): Promise<ElidedExternalPackageInputSnapshot | undefined> {
+  const absolute = resolve(rootDirectory, ...path.split("/"));
+  const before = await lstat(absolute).catch(() => undefined);
+  if (
+    before === undefined
+    || !before.isFile()
+    || before.isSymbolicLink()
+    || await realpath(absolute).catch(() => undefined) !== absolute
+  ) return undefined;
+  const source = await readFile(absolute);
+  const after = await lstat(absolute).catch(() => undefined);
+  assert.deepEqual(
+    after === undefined
+      ? undefined
+      : { dev: after.dev, ino: after.ino, mode: after.mode, size: after.size },
+    { dev: before.dev, ino: before.ino, mode: before.mode, size: before.size },
+    `Bun elided external package input changed while it was captured: ${path}`,
+  );
+  assert.equal(source.byteLength, before.size, `Bun elided external package input size changed while it was captured: ${path}`);
+  return {
+    bytes: source.byteLength,
+    mode: before.mode,
+    path,
+    sha256: sha256(source),
+  };
+}
+
+function retainResolutionFileSnapshot(
+  snapshots: Map<string, ResolutionFileSnapshot>,
+  snapshot: ResolutionFileSnapshot,
+): void {
+  const previous = snapshots.get(snapshot.path);
+  if (previous === undefined) snapshots.set(snapshot.path, snapshot);
+  else assert.deepEqual(snapshot, previous, `Bun elided package scope ${snapshot.path} changed between edges`);
+}
+
+async function captureElidedExternalPackageInput(
+  imported: ParsedImport,
+  from: string,
+  importerMetadata: ParsedInput,
+  rootDirectory: string,
+  knownInputs: ReadonlySet<string>,
+  knownOutputs: ReadonlySet<string>,
+  observedAliases: ReadonlyMap<string, string>,
+  observedSnapshots: ReadonlyMap<string, Readonly<{ bytes: number; sha256: string }>>,
+  speculativeInputs: ReadonlySet<string>,
+  packageScopes: ReadonlyMap<string, PackageScope>,
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  targetScopeCaptures: Map<string, Promise<PackageScope>>,
+  capturedTargets: Map<string, ElidedExternalPackageInputSnapshot>,
+  capturedScopeSnapshots: Map<string, ResolutionFileSnapshot>,
+  capturedInstallationRoots: Set<string>,
+): Promise<boolean> {
+  if (
+    importerMetadata.format !== "esm"
+    || !imported.external
+    || imported.hasAttributes
+    || imported.original !== undefined
+    || imported.kind !== "import-statement"
+    || (!imported.path.startsWith("./") && !imported.path.startsWith("../"))
+    || imported.path.includes("\\")
+    || imported.path.includes("?")
+    || imported.path.includes("#")
+    || imported.path.includes("%")
+    || /[\u0000-\u001f\u007f]/u.test(imported.path)
+  ) return false;
+
+  const installationRoot = packageInstallationRoot(from);
+  const packageName = packageBelowNodeModules(from);
+  if (installationRoot === undefined || packageName === undefined) return false;
+  const candidate = posix.normalize(posix.join(posix.dirname(from), imported.path));
+  if (
+    candidate === "."
+    || candidate === ".."
+    || candidate.startsWith("../")
+    || !candidate.startsWith(`${installationRoot}/`)
+    || packageInstallationRoot(candidate) !== installationRoot
+    || packageBelowNodeModules(candidate) !== packageName
+    || !/\.(?:c|m)?js$/u.test(candidate)
+    || knownInputs.has(candidate)
+    || speculativeInputs.has(candidate)
+    || observedSnapshots.has(candidate)
+    || knownOutputs.has(candidate)
+    || outputTarget(imported.path, from, knownOutputs) !== undefined
+    || observedAliases.has(imported.path)
+    || observedAliases.has(candidate)
+    || observedAliases.has(resolve(rootDirectory, ...candidate.split("/")))
+  ) return false;
+
+  const manifestPath = posix.join(installationRoot, "package.json");
+  const importerScope = packageScopes.get(from);
+  const importerManifest = importerScope?.files.at(-1);
+  const capturedManifest = packageScopeSnapshots.get(manifestPath);
+  if (
+    importerScope === undefined
+    || !importerScope.valid
+    || importerScope.name !== packageName
+    || importerManifest === undefined
+    || importerManifest.path !== manifestPath
+    || importerManifest.kind !== "file"
+    || capturedManifest === undefined
+  ) return false;
+  assert.deepEqual(importerManifest, capturedManifest, `Bun importer package scope differs for ${from}`);
+  const parsedManifest = strictJsonObjectFromSnapshot(capturedManifest);
+  if (
+    !parsedManifest.valid
+    || parsedManifest.record === undefined
+    || parsedManifest.record.name !== packageName
+    || !Object.hasOwn(parsedManifest.record, "sideEffects")
+    || parsedManifest.record.sideEffects !== false
+    || !await exactOrdinaryDirectory(rootDirectory, installationRoot)
+  ) return false;
+
+  const targetDirectory = posix.dirname(candidate);
+  let pendingTargetScope = targetScopeCaptures.get(targetDirectory);
+  if (pendingTargetScope === undefined) {
+    pendingTargetScope = captureNearestPackageScope(rootDirectory, candidate);
+    targetScopeCaptures.set(targetDirectory, pendingTargetScope);
+  }
+  const targetScope = await pendingTargetScope;
+  const targetManifest = targetScope.files.at(-1);
+  if (
+    !targetScope.valid
+    || targetScope.name !== packageName
+    || targetManifest === undefined
+    || targetManifest.path !== manifestPath
+    || targetManifest.kind !== "file"
+  ) return false;
+  assert.deepEqual(targetManifest, capturedManifest, `Bun elided target package scope differs for ${candidate}`);
+
+  const targetSnapshot = await exactOrdinaryFileSnapshot(rootDirectory, candidate);
+  if (targetSnapshot === undefined) return false;
+  const previousTarget = capturedTargets.get(candidate);
+  if (previousTarget === undefined) capturedTargets.set(candidate, targetSnapshot);
+  else assert.deepEqual(targetSnapshot, previousTarget, `Bun elided external package input changed between edges: ${candidate}`);
+  for (const snapshot of importerScope.files) retainResolutionFileSnapshot(capturedScopeSnapshots, snapshot);
+  for (const snapshot of targetScope.files) retainResolutionFileSnapshot(capturedScopeSnapshots, snapshot);
+  capturedInstallationRoots.add(installationRoot);
+  return true;
 }
 
 function packageRelativePath(path: string): string | undefined {
@@ -1572,6 +1735,10 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     );
     observedInputAliases.set(alias, path);
   }
+  const elidedTargetScopeCaptures = new Map<string, Promise<PackageScope>>();
+  const elidedExternalPackageInputs = new Map<string, ElidedExternalPackageInputSnapshot>();
+  const elidedPackageScopeSnapshots = new Map<string, ResolutionFileSnapshot>();
+  const elidedPackageInstallationRoots = new Set<string>();
   const edges: StylexGraphEdgeV1[] = [];
   for (const [from, metadata] of inputMetadata) {
     for (const imported of metadata.imports) {
@@ -1626,6 +1793,28 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
             ?? inputAliases.get(posix.normalize(outputEntrypoint).replace(/^\.\//u, ""));
         }
       }
+      if (
+        input === undefined
+        && output === undefined
+        && speculativeInput === undefined
+        && await captureElidedExternalPackageInput(
+          imported,
+          from,
+          metadata,
+          rootDirectory,
+          inputSet,
+          outputSet,
+          observedInputAliases,
+          inputSnapshots,
+          speculativeInputSet,
+          settledPackageScopes,
+          packageScopeSnapshots,
+          elidedTargetScopeCaptures,
+          elidedExternalPackageInputs,
+          elidedPackageScopeSnapshots,
+          elidedPackageInstallationRoots,
+        )
+      ) continue;
       assert.ok(
         input !== undefined || output !== undefined || speculativeInput !== undefined,
         `Bun metafile import from ${from} is unresolved: ${imported.path}`,
@@ -1662,6 +1851,31 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         to: external ? canonicalExternal(imported.path) : `output:${target!}`,
       });
     }
+  }
+
+  for (const installationRoot of [...elidedPackageInstallationRoots].sort()) {
+    assert.ok(
+      await exactOrdinaryDirectory(rootDirectory, installationRoot),
+      `Bun elided package installation changed during edge settlement: ${installationRoot}`,
+    );
+  }
+  for (const [path, before] of [...elidedPackageScopeSnapshots].sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0
+  )) {
+    assert.deepEqual(
+      await resolutionFileSnapshot(rootDirectory, path),
+      before,
+      `Bun elided package scope changed during edge settlement: ${path}`,
+    );
+  }
+  for (const [path, before] of [...elidedExternalPackageInputs].sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0
+  )) {
+    assert.deepEqual(
+      await exactOrdinaryFileSnapshot(rootDirectory, path),
+      before,
+      `Bun elided external package input changed during edge settlement: ${path}`,
+    );
   }
 
   return writeStylexGraphReceipt({
