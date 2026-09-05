@@ -562,7 +562,7 @@ async function main(): Promise<void> {
           () => assert.equal(winner(sheet, classes(snapshot.inventory), "border-radius", 900), "13px", "The intermediate inventory bucket must retain its own rendered atom"),
           () => assert.equal(/@property\s+--/u.test(css), variant.dynamic, "Dynamic inventory must add its priority-zero custom-property registration"),
           () => assert.equal(/(?:^|[;{])\s*padding:\s*19px\s*[;}]/u.test(css), variant.padding, "Shorthand inventory must add its own padding atom"),
-          () => assert.equal(sheet.layers.includes(`${PREFIX}.priority5`), variant.dynamic && variant.padding, "The complete union must retain exactly the legitimate priority5 case"),
+          () => assert.equal(sheet.layers.includes(`${PREFIX}.priority5`), variant.dynamic, "The complete union must retain priority5 exactly when a priority-zero dynamic registration shifts the four occupied positive buckets"),
         ]) {
           try { check(); } catch (error) { failures.push(String(error)); }
         }

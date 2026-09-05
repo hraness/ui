@@ -456,7 +456,7 @@ describe("compiler boundary", () => {
     const forward = serializeStylexRules(rules);
     const reverse = serializeStylexRules([...rules].reverse());
     expect(forward).toBe(reverse);
-    expect(forward).toStartWith("@layer base, components;\n@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2;");
+    expect(forward).toStartWith("@layer base, components;\n@layer components.hraness-ui.legacy.base, components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2;");
     for (const selector of ["x-media", "x-supports", "x-nested", "x-important", "x-pseudo"]) expect(forward).toContain(selector);
     expect(forward).toContain("!important");
     expect(forward.indexOf("x-media")).not.toBe(forward.indexOf("x-supports"));
@@ -469,9 +469,12 @@ describe("compiler boundary", () => {
       (index + 1) * 1000,
     ] as const satisfies StylexRuleV1));
     expect(css).toStartWith(
-      "@layer base, components;\n@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4, components.hraness-ui.priority5;",
+      "@layer base, components;\n@layer components.hraness-ui.legacy.base, components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4, components.hraness-ui.priority5;",
     );
     expect(css.indexOf("@layer components.hraness-ui.priority1 {")).toBeGreaterThan(css.indexOf("priority5;"));
+    expect(serializeStylexRules([])).toBe(
+      "@layer base, components;\n@layer components.hraness-ui.legacy.base, components.hraness-ui.legacy;\n",
+    );
   });
 });
 

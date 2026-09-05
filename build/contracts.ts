@@ -41,7 +41,10 @@ export type StylexCompilerContractV1 = Readonly<{
   serializer: Readonly<{
     enableLTRRTLComments: false;
     useLayers: Readonly<{
-      before: readonly ["components.hraness-ui.legacy"];
+      before: readonly [
+        "components.hraness-ui.legacy.base",
+        "components.hraness-ui.legacy",
+      ];
       prefix: "components.hraness-ui";
     }>;
   }>;

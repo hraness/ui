@@ -31,7 +31,10 @@ export const compilerContract: StylexCompilerContractV1 = {
   serializer: {
     enableLTRRTLComments: false,
     useLayers: {
-      before: ["components.hraness-ui.legacy"],
+      before: [
+        "components.hraness-ui.legacy.base",
+        "components.hraness-ui.legacy",
+      ],
       prefix: "components.hraness-ui",
     },
   },
@@ -307,7 +310,7 @@ export function serializeStylexRules(value: unknown): string {
     Array.from({ length: priorities.length }, (_, index) => index + 1),
     "Serialized StyleX priority layers must be a contiguous finite inventory",
   );
-  const names = [`${prefix}.legacy`, ...priorities.map((priority) => `${prefix}.priority${String(priority)}`)];
+  const names = [...legacyLayers, ...priorities.map((priority) => `${prefix}.priority${String(priority)}`)];
   const leading = /^@layer ([^;{}]+);\n*/u.exec(css);
   assert.ok(leading !== null, "Serialized StyleX CSS must begin with a layer inventory");
   const declared = leading[1]!.split(",").map((name) => name.trim());
