@@ -1165,19 +1165,29 @@ function requireFinalBundleLayerOrder(css: string): void {
     "the final styled gallery bundle must contain exactly one finite StyleX priority statement",
   );
   const priorityStatement = priorityStatements[0]!;
+  const finalizedBeforeNames = [
+    "components.hraness-ui.legacy.base",
+    "components.hraness-ui.legacy",
+  ] as const;
+  assert.deepEqual(
+    priorityStatement.names.slice(0, finalizedBeforeNames.length),
+    finalizedBeforeNames,
+    "the finalized StyleX priority statement must begin with the exact ordered legacy layer contract",
+  );
+  const priorityNames = priorityStatement.names.slice(finalizedBeforeNames.length);
   const highestPriority = Number(
-    priorityStatement.names.at(-1)?.slice("components.hraness-ui.priority".length),
+    priorityNames.at(-1)?.slice("components.hraness-ui.priority".length),
   );
   assert.ok(Number.isSafeInteger(highestPriority) && highestPriority > 0);
   assert.deepEqual(
-    priorityStatement.names,
+    priorityNames,
     Array.from(
       { length: highestPriority },
       (_, index) => `components.hraness-ui.priority${String(index + 1)}`,
     ),
     "the finalized StyleX priority statement must enumerate its complete finite union",
   );
-  for (const priorityName of priorityStatement.names) {
+  for (const priorityName of priorityNames) {
     const priority = priorityName.slice("components.hraness-ui.".length);
     assert.equal(
       firstLayerPositions.get(priority),
@@ -1197,7 +1207,7 @@ function requireFinalBundleLayerOrder(css: string): void {
   );
   for (const priority of priorities) {
     assert.ok(
-      priorityStatement.names.includes(`components.hraness-ui.${priority}`),
+      priorityNames.includes(`components.hraness-ui.${priority}`),
       `the ${priority} block is missing from the finalized finite priority statement`,
     );
     assert.ok(

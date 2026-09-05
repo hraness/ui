@@ -38,6 +38,8 @@ const LEGACY_LAYERS = [
 ] as const;
 const LAYER_PRELUDE =
   "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;";
+const GENERATED_LAYER_PRELUDE =
+  "@layer components.hraness-ui.legacy.base, components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;";
 const STYLEX_IMPORT = '@import "../dist/stylex.css";';
 const STYLEX_LAYERS = [
   "components.hraness-ui.priority1",
@@ -1693,10 +1695,10 @@ function requirePublicLayerContract(
   orderedStylesheet: string,
   compiledCss: string,
 ): void {
-  const generatedPrelude = `${TOP_LEVEL_LAYER_PRELUDE}\n${LAYER_PRELUDE}\n`;
+  const generatedPrelude = `${TOP_LEVEL_LAYER_PRELUDE}\n${GENERATED_LAYER_PRELUDE}\n`;
   if (!compiledCss.startsWith(generatedPrelude)) {
     throw new Error(
-      "dist/stylex.css must begin with the exact canonical base < components and legacy < priority1 < priority2 < priority3 < priority4 layer preludes",
+      "dist/stylex.css must begin with the exact canonical base < components and legacy.base < legacy < priority1 < priority2 < priority3 < priority4 layer preludes",
     );
   }
 
@@ -6573,7 +6575,7 @@ assert.throws(
     requirePublicLayerContract(
       legacyComponents,
       orderedStylesheet,
-      compiledCss.replace(`${LAYER_PRELUDE}\n`, ""),
+      compiledCss.replace(`${GENERATED_LAYER_PRELUDE}\n`, ""),
     ),
   /exact canonical base < components/u,
   "the generated layer guard must reject an omitted complete priority inventory",
@@ -6584,8 +6586,8 @@ assert.throws(
       legacyComponents,
       orderedStylesheet,
       compiledCss.replace(
-        LAYER_PRELUDE,
-        "@layer components.hraness-ui.legacy, components.hraness-ui.priority4, components.hraness-ui.priority3, components.hraness-ui.priority2, components.hraness-ui.priority1;",
+        GENERATED_LAYER_PRELUDE,
+        "@layer components.hraness-ui.legacy, components.hraness-ui.legacy.base, components.hraness-ui.priority4, components.hraness-ui.priority3, components.hraness-ui.priority2, components.hraness-ui.priority1;",
       ),
     ),
   /exact canonical base < components/u,
@@ -6597,8 +6599,8 @@ assert.throws(
       legacyComponents,
       orderedStylesheet,
       compiledCss.replace(
-        `${LAYER_PRELUDE}\n`,
-        `${LAYER_PRELUDE}\n@layer components.hraness-ui.unbounded;\n`,
+        `${GENERATED_LAYER_PRELUDE}\n`,
+        `${GENERATED_LAYER_PRELUDE}\n@layer components.hraness-ui.unbounded;\n`,
       ),
     ),
   /top-level content outside its allowed named layers/u,
@@ -6610,8 +6612,8 @@ assert.throws(
       legacyComponents,
       orderedStylesheet,
       compiledCss.replace(
-        `${LAYER_PRELUDE}\n`,
-        `${LAYER_PRELUDE}\n@import \"./untrusted.css\";\n`,
+        `${GENERATED_LAYER_PRELUDE}\n`,
+        `${GENERATED_LAYER_PRELUDE}\n@import \"./untrusted.css\";\n`,
       ),
     ),
   /top-level content outside its allowed named layers/u,
