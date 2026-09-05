@@ -779,29 +779,37 @@ function packageRootExportBranch(value: unknown): unknown {
   return record["."];
 }
 
+type ConditionalPackageExportResolution = Readonly<
+  | { kind: "invalid" }
+  | { kind: "match"; target: string }
+  | { kind: "no-match" }
+>;
+
 function conditionalPackageExportTarget(
   value: unknown,
   activeConditions: ReadonlySet<string>,
   depth = 0,
-): string | undefined {
-  if (typeof value === "string") return value;
-  if (depth >= 32) return undefined;
+): ConditionalPackageExportResolution {
+  if (typeof value === "string") return { kind: "match", target: value };
+  if (depth >= 32) return { kind: "invalid" };
   const record = jsonRecord(value);
-  if (record === undefined) return undefined;
+  if (record === undefined) return { kind: "invalid" };
   const keys = Object.keys(record);
+  if (keys.length === 0) return { kind: "no-match" };
   if (
-    keys.length === 0
-    || keys.some((key) =>
+    keys.some((key) =>
       key.startsWith(".")
       || key.length === 0
       || /[\u0000-\u001f\u007f]/u.test(key)
     )
-  ) return undefined;
+  ) return { kind: "invalid" };
   for (const key of keys) {
     if (key !== "default" && !activeConditions.has(key)) continue;
-    return conditionalPackageExportTarget(record[key], activeConditions, depth + 1);
+    const resolution = conditionalPackageExportTarget(record[key], activeConditions, depth + 1);
+    if (resolution.kind === "no-match") continue;
+    return resolution;
   }
-  return undefined;
+  return { kind: "no-match" };
 }
 
 function capturedPackageRootExportTarget(
@@ -826,10 +834,11 @@ function capturedPackageRootExportTarget(
     "import",
     ...(buildTarget === "browser" ? ["browser"] : ["bun", "node-addons", "node"]),
   ]);
-  const target = conditionalPackageExportTarget(
+  const resolution = conditionalPackageExportTarget(
     packageRootExportBranch(parsed.record.exports),
     activeConditions,
   );
+  const target = resolution.kind === "match" ? resolution.target : undefined;
   if (
     target === undefined
     || !target.startsWith("./")
