@@ -17,6 +17,7 @@ type PackageManifest = Readonly<{
   description: string;
   exports: Readonly<Record<string, unknown>>;
   peerDependencies: Readonly<Record<string, string>>;
+  peerDependenciesMeta: Readonly<Record<string, { optional?: boolean }>>;
   scripts: Readonly<Record<string, string>>;
   version: string;
 }>;
@@ -49,14 +50,25 @@ test("leads readers from a first render through proof, boundaries, and action", 
 
 test("keeps installation and compatibility claims pinned to the package manifest", () => {
   expect(readme).toContain(`github:hraness/ui#v${manifest.version}`);
-  expect(manifest.peerDependencies).toEqual({
+  expect(manifest.peerDependencies).toMatchObject({
     react: ">=18 <20",
     "react-dom": ">=18 <20",
   });
+  for (const dependency of [
+    "@babel/core",
+    "@stylexjs/babel-plugin",
+    "@types/node",
+    "lightningcss",
+    "vite",
+  ]) {
+    expect(manifest.peerDependencies).toHaveProperty(dependency);
+    expect(manifest.peerDependenciesMeta[dependency]).toEqual({ optional: true });
+  }
   expect(readme).toContain("React 18 or 19 and React DOM 18 or 19");
+  expect(readme).toContain('import.meta.resolve("@hraness/ui/stylex-manifest.json")');
 
   const cssExports = Object.keys(manifest.exports).filter((path) => path.endsWith(".css"));
-  expect(cssExports).toHaveLength(6);
+  expect(cssExports).toHaveLength(8);
   for (const path of cssExports) expect(readme).toContain(`@hraness/ui${path.slice(1)}`);
 });
 
@@ -99,11 +111,14 @@ test("names real evidence gates and preserves the directional package boundary",
     "check:committed-dist",
     "check:portfolio-inventory",
     "check:stylex-artifacts",
+    "check:stylex-compiler-artifacts",
+    "check:stylex-consumer-layers",
     "check:stylex-determinism",
     "test",
     "test:browser",
     "test:package",
     "test:packed-bun-browser",
+    "test:vite-adopter",
     "typecheck",
   ];
 

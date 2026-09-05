@@ -5407,6 +5407,47 @@ async function verifyConsumer(
     "@hraness",
     "ui",
   );
+  const installedManifest = JSON.parse(
+    await readFile(join(installedPackageRoot, "package.json"), "utf8"),
+  ) as { exports?: Record<string, unknown> };
+  assert.deepEqual(installedManifest.exports?.["./stylex-build"], {
+    types: "./build/index.ts",
+    import: "./dist/build/index.js",
+  });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/bun"], {
+    types: "./build/bun.ts",
+    import: "./dist/build/bun.js",
+  });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/vite"], {
+    types: "./build/vite.ts",
+    import: "./dist/build/vite.js",
+  });
+  assert.equal(
+    installedManifest.exports?.["./stylex-manifest.json"],
+    "./dist/stylex-manifest.json",
+  );
+  assert.equal(
+    installedManifest.exports?.["./compiler-reset.css"],
+    undefined,
+    "compiler-reset.css must remain package-internal",
+  );
+  for (const path of [
+    "build/bun.ts",
+    "build/compiler.ts",
+    "build/contracts.ts",
+    "build/generation.ts",
+    "build/index.ts",
+    "build/vite.ts",
+    "dist/build/bun.js",
+    "dist/build/index.js",
+    "dist/build/vite.js",
+    "dist/stylex-manifest.json",
+    "src/compiler-foundation.css",
+    "src/compiler-foundation-tailwind.css",
+    "src/compiler-reset.css",
+  ]) {
+    await access(join(installedPackageRoot, ...path.split("/")));
+  }
   const [
     installedJavaScript,
     installedStylexCss,

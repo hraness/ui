@@ -1,14 +1,22 @@
 import { expect, test } from "bun:test";
 import {
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import {
+  cleanupDistPromotion,
+  commitDistPromotion,
+  DistPromotionCleanupError,
+} from "./build-package.js";
 import { checkCommittedDist } from "./check-committed-dist.js";
 
 async function git(repository: string, ...arguments_: string[]): Promise<void> {
@@ -84,6 +92,21 @@ async function requireFailure(repository: string): Promise<Error> {
     throw error;
   }
   throw new Error("Expected the committed-dist guard to fail");
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (
+      typeof error === "object"
+      && error !== null
+      && "code" in error
+      && error.code === "ENOENT"
+    ) return false;
+    throw error;
+  }
 }
 
 test("accepts clean committed dist output", async () => {
@@ -173,6 +196,78 @@ test("fails closed outside a Git repository", async () => {
   }
 });
 
+test("restores the old dist and retains the stage when the destination rename fails", async () => {
+  await withRepository(async (repository) => {
+    const destination = resolve(repository, "dist");
+    const stage = resolve(repository, ".dist-build-destination-rename-failure");
+    await mkdir(stage);
+    await writeFile(resolve(stage, "index.js"), "export const value = 2;\n");
+    const injectedFailure = new Error("injected destination rename failure");
+
+    await expect(commitDistPromotion(
+      repository,
+      stage,
+      async (source, target) => {
+        if (source === stage && target === destination) throw injectedFailure;
+        await rename(source, target);
+      },
+    )).rejects.toBe(injectedFailure);
+
+    expect(await readFile(resolve(destination, "index.js"), "utf8")).toBe(
+      "export const value = 1;\n",
+    );
+    expect(await readFile(resolve(stage, "index.js"), "utf8")).toBe(
+      "export const value = 2;\n",
+    );
+    expect(
+      (await readdir(repository)).filter((name) => name.startsWith(".dist-backup-")),
+    ).toEqual([]);
+  });
+});
+
+test("keeps the new dist live and reports the retained backup when backup removal fails", async () => {
+  await withRepository(async (repository) => {
+    const destination = resolve(repository, "dist");
+    const stage = resolve(repository, ".dist-build-backup-remove-failure");
+    await mkdir(stage);
+    await writeFile(resolve(stage, "index.js"), "export const value = 2;\n");
+    const promotion = await commitDistPromotion(repository, stage);
+    const backupPath = promotion.backupPath;
+    if (backupPath === null) throw new Error("Expected the promotion to retain the old dist backup");
+    const injectedFailure = new Error("injected backup removal failure");
+    let failure: unknown;
+
+    try {
+      await cleanupDistPromotion(promotion, async (path) => {
+        expect(path).toBe(backupPath);
+        throw injectedFailure;
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(DistPromotionCleanupError);
+    if (!(failure instanceof DistPromotionCleanupError)) {
+      throw failure ?? new Error("Expected backup cleanup to fail");
+    }
+    expect(failure.state).toBe("promoted-with-retained-backup");
+    expect(failure.destinationPath).toBe(destination);
+    expect(failure.backupPath).toBe(backupPath);
+    expect(failure.cause).toBe(injectedFailure);
+    expect(failure.message).toContain(destination);
+    expect(failure.message).toContain(backupPath);
+    expect(await readFile(resolve(destination, "index.js"), "utf8")).toBe(
+      "export const value = 2;\n",
+    );
+    expect(await readFile(resolve(backupPath, "index.js"), "utf8")).toBe(
+      "export const value = 1;\n",
+    );
+    expect(await pathExists(destination)).toBe(true);
+    expect(await pathExists(stage)).toBe(false);
+    expect(await pathExists(backupPath)).toBe(true);
+  });
+});
+
 test("keeps committed-dist parity immediately after the package build", async () => {
   const packageJson = JSON.parse(
     await readFile(resolve(import.meta.dir, "..", "package.json"), "utf8"),
@@ -193,9 +288,11 @@ test("keeps committed-dist parity immediately after the package build", async ()
   const steps = checkCommand.split(" && ");
   const buildIndex = steps.indexOf("bun run build");
   expect(buildIndex).toBeGreaterThanOrEqual(0);
-  expect(steps.slice(buildIndex, buildIndex + 3)).toEqual([
+  expect(steps.slice(buildIndex, buildIndex + 5)).toEqual([
     "bun run build",
     "bun run check:committed-dist",
     "bun run check:stylex-artifacts",
+    "bun run check:stylex-compiler-artifacts",
+    "bun run check:stylex-determinism",
   ]);
 });

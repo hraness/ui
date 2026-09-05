@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -82,6 +83,46 @@ test("the complete stylesheet composes its public layers in a stable order", asy
     expect(position).toBeGreaterThan(previous);
     previous = position;
   }
+});
+
+test("public reset keeps its current-main bytes while the compiler reset omits only fixed priorities", async () => {
+  const [compilerReset, publicReset] = await Promise.all([
+    stylesheet("./compiler-reset.css"),
+    stylesheet("./reset.css"),
+  ]);
+  const fixedPriorityPrelude = "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;\n";
+
+  expect(createHash("sha256").update(publicReset).digest("hex")).toBe(
+    "a25c340a3a656715a783d1a95f3c5f976fc4bdd020492fca5a6b77d4a6420356",
+  );
+  expect(publicReset.split(fixedPriorityPrelude)).toHaveLength(2);
+  expect(compilerReset).toBe(publicReset.replace(fixedPriorityPrelude, ""));
+  expect(compilerReset).not.toMatch(/components\.hraness-ui\.priority\d+/u);
+});
+
+test("compiler adopters start from a recipe-free foundation", async () => {
+  const [foundation, tailwindFoundation] = await Promise.all([
+    stylesheet("./compiler-foundation.css"),
+    stylesheet("./compiler-foundation-tailwind.css"),
+  ]);
+
+  expect(foundation).toBe([
+    "@layer base, components;",
+    "@layer components.hraness-ui.legacy;",
+    "",
+    '@import "./tokens.css";',
+    '@import "./compiler-reset.css";',
+    '@import "./components.css";',
+    "",
+  ].join("\n"));
+  expect(foundation).not.toContain("stylex.css");
+  expect(foundation).not.toContain("tailwind.css");
+  expect(foundation).not.toMatch(/components\.hraness-ui\.priority\d+/u);
+  expect(tailwindFoundation).toBe([
+    '@import "./compiler-foundation.css";',
+    '@import "./tailwind.css";',
+    "",
+  ].join("\n"));
 });
 
 test("portable layers expose namespaced roles and resilient interaction recipes", async () => {
