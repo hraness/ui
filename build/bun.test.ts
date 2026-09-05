@@ -324,6 +324,237 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
+  test("repairs a Bun package-root alias from one in-graph installation with one canonical input", async () => {
+    const context = await fixture();
+    await write(
+      join(context.root, "node_modules/@fixture/runtime/package.json"),
+      `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(join(context.root, "node_modules/@fixture/runtime/index.js"), "export const marker = 'runtime';\n");
+    const entry = join(context.root, "src/entry.ts");
+    await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+    const handle = await generation(context, "bare-input-singleton", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const inputs = result.metafile.inputs;
+      const entryKey = Object.keys(inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+      assert.ok(entryKey !== undefined);
+      inputs[entryKey]!.imports = [{
+        kind: "import-statement",
+        path: "@fixture/runtime",
+      }] as never;
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root });
+      expect(receipt.edges).toContainEqual({
+        external: false,
+        from: "input:src/entry.ts",
+        kind: "import-statement",
+        to: "input:node_modules/@fixture/runtime/index.js",
+      });
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("rejects zero-witness CommonJS resolution when only the conditional ESM input is known", async () => {
+    for (const [index, kind] of ["require-call", "require-resolve"].entries()) {
+      const context = await fixture();
+      const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");
+      await write(
+        join(runtimeDirectory, "package.json"),
+        `${JSON.stringify({
+          exports: { ".": { import: "./index.js", require: "./index.cjs" } },
+          name: "@fixture/runtime",
+          type: "module",
+          version: "1.0.0",
+        })}\n`,
+      );
+      await write(join(runtimeDirectory, "index.js"), "export const marker = 'esm';\n");
+      await write(join(runtimeDirectory, "index.cjs"), "exports.marker = 'commonjs';\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+      const handle = await generation(context, `bare-input-conditional-commonjs-${String(index)}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+        const knownRuntimeInputs = Object.keys(inputs).filter((path) => path.includes("node_modules/@fixture/runtime/"));
+        assert.ok(entryKey !== undefined);
+        expect(knownRuntimeInputs).toHaveLength(1);
+        expect(knownRuntimeInputs[0]?.endsWith("/index.js")).toBe(true);
+        inputs[entryKey]!.imports = [{ kind, path: "@fixture/runtime" }] as never;
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(/Bun metafile import.*is unresolved.*@fixture\/runtime/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("rejects a zero-witness package subpath without publishing a receipt", async () => {
+    const context = await fixture();
+    await write(
+      join(context.root, "node_modules/@fixture/runtime/package.json"),
+      `${JSON.stringify({ exports: { "./feature": "./feature.js" }, name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(join(context.root, "node_modules/@fixture/runtime/feature.js"), "export const marker = 'runtime';\n");
+    const entry = join(context.root, "src/entry.ts");
+    await write(entry, "import { marker } from '@fixture/runtime/feature'; export const value = marker;\n");
+    const handle = await generation(context, "bare-input-subpath", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const inputs = result.metafile.inputs;
+      const entryKey = Object.keys(inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+      assert.ok(entryKey !== undefined);
+      inputs[entryKey]!.imports = [{ kind: "import-statement", path: "@fixture/runtime/feature" }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/import.*unresolved.*@fixture\/runtime\/feature/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("rejects a zero-witness package root with two canonical inputs in one installation", async () => {
+    const context = await fixture();
+    await write(
+      join(context.root, "node_modules/@fixture/runtime/package.json"),
+      `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(
+      join(context.root, "node_modules/@fixture/runtime/index.js"),
+      "export { marker } from './marker.js';\n",
+    );
+    await write(join(context.root, "node_modules/@fixture/runtime/marker.js"), "export const marker = 'runtime';\n");
+    const entry = join(context.root, "src/entry.ts");
+    await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+    const handle = await generation(context, "bare-input-installation-ambiguity", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const inputs = result.metafile.inputs;
+      const entryKey = Object.keys(inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+      assert.ok(entryKey !== undefined);
+      inputs[entryKey]!.imports = [{ kind: "import-statement", path: "@fixture/runtime" }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/bare import target is ambiguous.*@fixture\/runtime.*in-graph package inputs/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("rejects a known root installation when a closer ordinary installation is absent from the metafile", async () => {
+    const context = await fixture();
+    await write(
+      join(context.root, "node_modules/@fixture/runtime/package.json"),
+      `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(join(context.root, "node_modules/@fixture/runtime/index.js"), "export const marker = 'root';\n");
+    const entry = join(context.root, "src/nested/entry.ts");
+    await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+    const handle = await generation(context, "bare-input-closer-physical-installation", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const inputs = result.metafile.inputs;
+      const entryKey = Object.keys(inputs).find((path) => path.endsWith("/src/nested/entry.ts"));
+      assert.ok(entryKey !== undefined);
+      await write(
+        join(context.root, "src/nested/node_modules/@fixture/runtime/package.json"),
+        `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "2.0.0" })}\n`,
+      );
+      await write(
+        join(context.root, "src/nested/node_modules/@fixture/runtime/index.js"),
+        "export const marker = 'nested';\n",
+      );
+      inputs[entryKey]!.imports = [{ kind: "import-statement", path: "@fixture/runtime" }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import.*is unresolved.*@fixture\/runtime/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("rejects a known root installation when the nearest package identity is a symlink", async () => {
+    const context = await fixture();
+    const rootRuntime = join(context.root, "node_modules/@fixture/runtime");
+    await write(
+      join(rootRuntime, "package.json"),
+      `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(join(rootRuntime, "index.js"), "export const marker = 'root';\n");
+    const entry = join(context.root, "src/nested/entry.ts");
+    await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+    const handle = await generation(context, "bare-input-symlinked-installation", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) => path.endsWith("/src/nested/entry.ts"));
+      assert.ok(entryKey !== undefined);
+      const closerRuntime = join(context.root, "src/nested/node_modules/@fixture/runtime");
+      await mkdir(resolve(closerRuntime, ".."), { recursive: true });
+      await symlink(rootRuntime, closerRuntime);
+      result.metafile.inputs[entryKey]!.imports = [{ kind: "import-statement", path: "@fixture/runtime" }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import.*is unresolved.*@fixture\/runtime/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
   test("rejects a nonexternal bare input alias without a resolved package witness", async () => {
     const context = await fixture();
     const entry = join(context.root, "src/entry.ts");
@@ -351,6 +582,361 @@ describe("collectBunStylexGraph", () => {
       expect(await receiptExists(handle, "client")).toBe(false);
     } finally {
       build.mockRestore();
+    }
+  });
+
+  test("rejects malformed and non-package-root zero-witness spellings without a receipt", async () => {
+    const malformedSpecifiers = [
+      "@fixture/runtime/feature",
+      "@fixture/runtime/",
+      "@fixture",
+      "@fixture//runtime",
+      "#runtime",
+      "node:fs",
+      "file:runtime",
+      "C:/runtime",
+      "fixture\\runtime",
+      "fixture%2fruntime",
+      "fs",
+      "bun",
+    ] as const;
+    for (const [index, specifier] of malformedSpecifiers.entries()) {
+      const context = await fixture();
+      await write(
+        join(context.root, "node_modules/@fixture/runtime/package.json"),
+        `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+      );
+      await write(join(context.root, "node_modules/@fixture/runtime/index.js"), "export const marker = 'runtime';\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+      const handle = await generation(context, `bare-input-malformed-${String(index)}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+        assert.ok(entryKey !== undefined);
+        inputs[entryKey]!.imports = [{ kind: "import-statement", path: specifier }] as never;
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(/Bun metafile import.*is unresolved/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("does not bind a raw Node builtin spelling to a singleton package installation", async () => {
+    const context = await fixture();
+    await write(
+      join(context.root, "node_modules/fs/package.json"),
+      `${JSON.stringify({ exports: "./index.js", name: "fs", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(join(context.root, "node_modules/fs/index.js"), "export const marker = 'not-the-builtin';\n");
+    const entry = join(context.root, "src/entry.ts");
+    await write(
+      entry,
+      "import { marker } from '../node_modules/fs/index.js'; export const value = marker;\n",
+    );
+    const handle = await generation(context, "bare-input-node-builtin", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [{ kind: "import-statement", path: "fs" }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import.*is unresolved.*fs/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("rejects zero-witness package spellings matched by root config paths", async () => {
+    for (const [index, pattern] of ["@fixture/runtime", "@fixture/*"].entries()) {
+      const context = await fixture();
+      await write(
+        join(context.root, "tsconfig.json"),
+        `${JSON.stringify({ compilerOptions: { paths: { [pattern]: ["./src/runtime.ts"] } } })}\n`,
+      );
+      await write(
+        join(context.root, "node_modules/@fixture/runtime/package.json"),
+        `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+      );
+      await write(join(context.root, "node_modules/@fixture/runtime/index.js"), "export const marker = 'runtime';\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(
+        entry,
+        "import { marker } from '../node_modules/@fixture/runtime/index.js'; export const value = marker;\n",
+      );
+      const handle = await generation(context, `bare-input-config-path-${String(index)}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const entryKey = Object.keys(result.metafile.inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+        assert.ok(entryKey !== undefined);
+        result.metafile.inputs[entryKey]!.imports = [{ kind: "import-statement", path: "@fixture/runtime" }] as never;
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(/Bun metafile import.*is unresolved.*@fixture\/runtime/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("rejects a zero-witness package spelling that matches the root package name", async () => {
+    const context = await fixture();
+    await write(
+      join(context.root, "package.json"),
+      `${JSON.stringify({ name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(
+      join(context.root, "node_modules/@fixture/runtime/package.json"),
+      `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(join(context.root, "node_modules/@fixture/runtime/index.js"), "export const marker = 'runtime';\n");
+    const entry = join(context.root, "src/entry.ts");
+    await write(
+      entry,
+      "import { marker } from '../node_modules/@fixture/runtime/index.js'; export const value = marker;\n",
+    );
+    const handle = await generation(context, "bare-input-package-self-reference", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [{ kind: "import-statement", path: "@fixture/runtime" }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import.*is unresolved.*@fixture\/runtime/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("rejects a zero-witness package spelling that matches the nearest workspace package scope", async () => {
+    const context = await fixture();
+    await write(
+      join(context.root, "packages/runtime/package.json"),
+      `${JSON.stringify({ name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(
+      join(context.root, "node_modules/@fixture/runtime/package.json"),
+      `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(join(context.root, "node_modules/@fixture/runtime/index.js"), "export const marker = 'installed';\n");
+    const entry = join(context.root, "packages/runtime/src/entry.ts");
+    await write(
+      entry,
+      "import { marker } from '../../../node_modules/@fixture/runtime/index.js'; export const value = marker;\n",
+    );
+    const handle = await generation(context, "bare-input-workspace-self-reference", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const entryKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/packages/runtime/src/entry.ts")
+        || path === "packages/runtime/src/entry.ts"
+      );
+      assert.ok(entryKey !== undefined);
+      result.metafile.inputs[entryKey]!.imports = [{ kind: "import-statement", path: "@fixture/runtime" }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/Bun metafile import.*is unresolved.*@fixture\/runtime/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("disables zero-witness fallback for malformed, extended, or baseUrl root configs", async () => {
+    const configs = [
+      "{\n",
+      `${JSON.stringify({ extends: "./base.json" })}\n`,
+      `${JSON.stringify({ compilerOptions: { baseUrl: "." } })}\n`,
+    ] as const;
+    for (const [index, config] of configs.entries()) {
+      const context = await fixture();
+      await write(join(context.root, "tsconfig.json"), config);
+      await write(
+        join(context.root, "node_modules/@fixture/runtime/package.json"),
+        `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+      );
+      await write(join(context.root, "node_modules/@fixture/runtime/index.js"), "export const marker = 'runtime';\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+      const handle = await generation(context, `bare-input-disabled-config-${String(index)}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const entryKey = Object.keys(result.metafile.inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+        assert.ok(entryKey !== undefined);
+        result.metafile.inputs[entryKey]!.imports = [{ kind: "import-statement", path: "@fixture/runtime" }] as never;
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow();
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("rejects root resolution config removal or replacement during the Bun build", async () => {
+    for (const mutation of ["remove", "replace"] as const) {
+      const context = await fixture();
+      const configPath = join(context.root, "tsconfig.json");
+      await write(configPath, `${JSON.stringify({ compilerOptions: { strict: true } })}\n`);
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "export const value = 1;\n");
+      const handle = await generation(context, `root-config-${mutation}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        if (mutation === "remove") await rm(configPath);
+        else await writeFile(configPath, `${JSON.stringify({ compilerOptions: { strict: false } })}\n`);
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(/root resolution configuration changed during build/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("rejects nested package scope removal or replacement during the Bun build", async () => {
+    for (const mutation of ["remove", "replace"] as const) {
+      const context = await fixture();
+      const scopePath = join(context.root, "packages/runtime/package.json");
+      await write(
+        scopePath,
+        `${JSON.stringify({ name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+      );
+      const entry = join(context.root, "packages/runtime/src/entry.ts");
+      await write(entry, "export const value = 1;\n");
+      const handle = await generation(context, `nested-scope-${mutation}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        if (mutation === "remove") await rm(scopePath);
+        else {
+          await writeFile(
+            scopePath,
+            `${JSON.stringify({ name: "@fixture/replacement", type: "module", version: "2.0.0" })}\n`,
+          );
+        }
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(/package scope configuration changed during build/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("rejects unsupported zero-witness import kinds without a receipt", async () => {
+    const unsupportedKinds = [
+      "dynamic-import",
+      "entry-point-build",
+      "entry-point-run",
+      "import-rule",
+      "internal",
+      "url-token",
+    ] as const;
+    for (const [index, kind] of unsupportedKinds.entries()) {
+      const context = await fixture();
+      await write(
+        join(context.root, "node_modules/@fixture/runtime/package.json"),
+        `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+      );
+      await write(join(context.root, "node_modules/@fixture/runtime/index.js"), "export const marker = 'runtime';\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+      const handle = await generation(context, `bare-input-unsupported-kind-${String(index)}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+        assert.ok(entryKey !== undefined);
+        inputs[entryKey]!.imports = [{ kind, path: "@fixture/runtime" }] as never;
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(/Bun metafile import.*is unresolved/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
     }
   });
 
@@ -382,6 +968,87 @@ describe("collectBunStylexGraph", () => {
         from: "input:src/entry.ts",
         kind: "import-statement",
         to: "external:src/entry.ts",
+      });
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("audits an explicit external StyleX import as an in-graph package dependency", async () => {
+    const context = await fixture();
+    await write(
+      join(context.root, "node_modules/@fixture/unregistered/package.json"),
+      `${JSON.stringify({ exports: "./index.js", name: "@fixture/unregistered", type: "module", version: "1.0.0" })}\n`,
+    );
+    await write(join(context.root, "node_modules/@fixture/unregistered/index.js"), "export const marker = 'runtime';\n");
+    const entry = join(context.root, "src/entry.ts");
+    await write(entry, "import { marker } from '@fixture/unregistered'; export const value = marker;\n");
+    const handle = await generation(context, "external-stylex-package-import", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const packageKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/node_modules/@fixture/unregistered/index.js")
+        || path === "node_modules/@fixture/unregistered/index.js"
+      );
+      assert.ok(packageKey !== undefined);
+      result.metafile.inputs[packageKey]!.imports = [{
+        external: true,
+        kind: "import-statement",
+        path: "@stylexjs/stylex",
+      }] as never;
+      return result;
+    });
+
+    try {
+      await expect(
+        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+      ).rejects.toThrow(/StyleX dependency @fixture\/unregistered has no verified package manifest/u);
+      expect(await receiptExists(handle, "client")).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("keeps an explicit bare external outside the graph when its spelling collides with an emitted output", async () => {
+    const context = await fixture();
+    const entry = join(context.root, "src/entry.ts");
+    await write(entry, "export const value = 1;\n");
+    const handle = await generation(context, "external-output-collision", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    let collidingPath: string | undefined;
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const inputKey = Object.keys(result.metafile.inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
+      const outputKey = Object.keys(result.metafile.outputs).find((path) => path.includes("entries/"));
+      assert.ok(inputKey !== undefined && outputKey !== undefined);
+      const normalizedOutput = outputKey.replaceAll("\\", "/");
+      const entriesIndex = normalizedOutput.lastIndexOf("entries/");
+      assert.ok(entriesIndex !== -1);
+      collidingPath = normalizedOutput.slice(entriesIndex);
+      result.metafile.inputs[inputKey]!.imports = [{
+        external: true,
+        kind: "import-statement",
+        path: collidingPath,
+      }] as never;
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root });
+      assert.ok(collidingPath !== undefined);
+      expect(receipt.outputs.some(({ path }) => path === collidingPath)).toBe(true);
+      expect(receipt.edges).toContainEqual({
+        external: true,
+        from: "input:src/entry.ts",
+        kind: "import-statement",
+        to: `external:${collidingPath}`,
       });
     } finally {
       build.mockRestore();
