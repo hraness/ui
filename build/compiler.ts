@@ -458,7 +458,211 @@ type CssInventory = Readonly<{
   imports: ReadonlySet<string>;
   layers: ReadonlySet<string>;
   registrations: ReadonlySet<string>;
+  tailwindBridgeSha256: string | undefined;
 }>;
+
+const stylexCssAuditSourceBrand = Symbol("StylexCssAuditSource");
+// Source and receipt witnesses are process-local capabilities. They are rebuilt
+// from verified graph inputs and are never serialized into generation receipts.
+const stylexCssAuditSources = new WeakSet<object>();
+
+export type StylexCssAuditSource = Readonly<{
+  [stylexCssAuditSourceBrand]: true;
+  logicalPath: string;
+  packageName: string;
+  packagePath: string;
+  stylesheetSha256: string;
+}>;
+
+const stylexCssAuditReceiptBrand = Symbol("StylexCssAuditReceipt");
+const stylexCssAuditReceipts = new WeakSet<object>();
+
+export type StylexCssAuditReceipt = Readonly<{
+  [stylexCssAuditReceiptBrand]: true;
+  tailwindBridgeSha256: string | undefined;
+}>;
+
+function cssAuditReceipt(tailwindBridgeSha256: string | undefined): StylexCssAuditReceipt {
+  const receipt = { tailwindBridgeSha256 } as StylexCssAuditReceipt;
+  Object.defineProperty(receipt, stylexCssAuditReceiptBrand, { value: true });
+  Object.freeze(receipt);
+  stylexCssAuditReceipts.add(receipt);
+  return receipt;
+}
+
+function assertStylexCssAuditReceipt(receipt: StylexCssAuditReceipt): void {
+  assert.ok(
+    typeof receipt === "object"
+      && receipt !== null
+      && stylexCssAuditReceipts.has(receipt)
+      && receipt[stylexCssAuditReceiptBrand] === true
+      && Object.isFrozen(receipt),
+    "CSS audit receipt was not produced by the pinned compiler",
+  );
+}
+
+function cssAuditSource(
+  logicalPath: string,
+  packageName: string,
+  stylesheetSha256: string,
+): StylexCssAuditSource {
+  const source = {
+    logicalPath,
+    packageName,
+    packagePath: "src/tailwind.css",
+    stylesheetSha256,
+  } as StylexCssAuditSource;
+  Object.defineProperty(source, stylexCssAuditSourceBrand, { value: true });
+  Object.freeze(source);
+  stylexCssAuditSources.add(source);
+  return source;
+}
+
+function assertStylexCssAuditSource(source: StylexCssAuditSource): void {
+  assert.ok(
+    stylexCssAuditSources.has(source)
+      && source[stylexCssAuditSourceBrand] === true
+      && Object.isFrozen(source),
+    "CSS audit source was not resolved by the pinned compiler",
+  );
+}
+
+export const stylexCssAuditAtRules = {
+  "custom-variant": { body: null, prelude: "*" },
+  source: { body: null, prelude: "<string>" },
+  theme: { body: "declaration-list", prelude: "<custom-ident>" },
+} as const;
+
+const stylexTailwindDarkVariantDirective = '@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *):not(:where([data-theme="light"], [data-theme="light"] *)));';
+
+function isManifestBoundTailwindBridge(
+  css: string,
+  manifests: readonly StylexPackageManifestV1[],
+  source: StylexCssAuditSource | undefined,
+): boolean {
+  if (source === undefined) return false;
+  assertStylexCssAuditSource(source);
+  if (source.packagePath !== "src/tailwind.css") return false;
+  if (source.logicalPath !== `node_modules/${source.packageName}/src/tailwind.css`) return false;
+  const candidates = manifests
+    .filter((manifest) => manifest.package.name === source.packageName)
+    .flatMap((manifest) => manifest.stylesheets)
+    .filter((artifact) => artifact.path === source.packagePath);
+  if (candidates.length !== 1) return false;
+  const [artifact] = candidates;
+  assert.ok(artifact !== undefined);
+  return artifact.sha256 === source.stylesheetSha256
+    && artifact.bytes === Buffer.byteLength(css)
+    && artifact.sha256 === sha256(css);
+}
+
+export function stylexTailwindBridgeAuditSource(
+  path: string,
+  packageManifests: readonly StylexPackageManifestV1[],
+): StylexCssAuditSource | undefined {
+  const logicalPath = normalizeLogicalPath(path, "CSS audit source path");
+  const candidates = packageManifests
+    .map(validateStylexPackageManifest)
+    .flatMap((manifest) => manifest.stylesheets
+      .filter((artifact) => artifact.path === "src/tailwind.css")
+      .map((artifact) => ({ artifact, manifest })))
+    .filter(({ manifest }) => logicalPath === `node_modules/${manifest.package.name}/src/tailwind.css`);
+  assert.ok(candidates.length <= 1, `CSS input matches multiple registered Tailwind bridges: ${path}`);
+  const candidate = candidates[0];
+  return candidate === undefined
+    ? undefined
+    : cssAuditSource(logicalPath, candidate.manifest.package.name, candidate.artifact.sha256);
+}
+
+function canonicalCustomVariantRule(serialized: string): string {
+  const match = /^@custom-variant\s+dark\s+\((.*)\);?$/su.exec(serialized);
+  const selector = match?.[1];
+  if (selector === undefined || !selector.startsWith("&")) return serialized;
+  try {
+    const ruleTypes: string[] = [];
+    const result = transformCss({
+      code: Buffer.from(`.stylex-audit-root${selector.slice(1)}{--stylex-audit:1}`),
+      filename: "stylex-tailwind-custom-variant-audit.css",
+      minify: true,
+      visitor: {
+        Rule(rule) {
+          ruleTypes.push(rule.type);
+        },
+      },
+    });
+    if (result.warnings.length !== 0 || ruleTypes.length !== 1 || ruleTypes[0] !== "style") {
+      return serialized;
+    }
+    return `@custom-variant dark ${Buffer.from(result.code).toString("utf8")}`;
+  } catch {
+    return serialized;
+  }
+}
+
+function canonicalTailwindBridgeRules(css: string, ruleCount: number): readonly string[] {
+  return Array.from({ length: ruleCount }, (_, retainedIndex) => {
+    let customRuleIndex = 0;
+    let retainedName: string | undefined;
+    const result = transformCss({
+      code: Buffer.from(css),
+      customAtRules: stylexCssAuditAtRules,
+      filename: "stylex-tailwind-bridge-audit.css",
+      minify: true,
+      visitor: {
+        Rule(rule) {
+          if (rule.type !== "custom") return [];
+          const retain = customRuleIndex === retainedIndex;
+          customRuleIndex += 1;
+          if (!retain) return [];
+          const value = plainObject(rule.value as unknown, "Tailwind bridge canonicalization rule");
+          assert.ok(typeof value.name === "string");
+          retainedName = value.name;
+          return undefined;
+        },
+      },
+    });
+    assert.equal(result.warnings.length, 0, "Tailwind bridge canonicalization emitted parser warnings");
+    assert.equal(customRuleIndex, ruleCount, "Tailwind bridge canonicalization lost a directive");
+    assert.ok(result.code.byteLength > 0, "Tailwind bridge canonicalization emitted an empty directive");
+    const serialized = Buffer.from(result.code).toString("utf8");
+    const canonical = retainedName === "custom-variant"
+      ? canonicalCustomVariantRule(serialized)
+      : serialized;
+    return Buffer.from(canonical).toString("base64");
+  });
+}
+
+const stylexTailwindDarkVariantRule = canonicalTailwindBridgeRules(
+  stylexTailwindDarkVariantDirective,
+  1,
+)[0]!;
+
+export function mergeStylexCssAuditReceipts(
+  receipts: readonly StylexCssAuditReceipt[],
+  description = "Compiler graph",
+): StylexCssAuditReceipt {
+  for (const receipt of receipts) assertStylexCssAuditReceipt(receipt);
+  const bridges = receipts.filter(({ tailwindBridgeSha256 }) => tailwindBridgeSha256 !== undefined);
+  assert.ok(
+    bridges.length <= 1,
+    `${description} contains more than one registered Tailwind bridge directive set`,
+  );
+  return cssAuditReceipt(bridges[0]?.tailwindBridgeSha256);
+}
+
+export function assertStylexCssAuditReceiptsEqual(
+  actual: StylexCssAuditReceipt,
+  expected: StylexCssAuditReceipt,
+  description = "Compiler graph",
+): void {
+  assertStylexCssAuditReceipt(actual);
+  assertStylexCssAuditReceipt(expected);
+  assert.equal(
+    actual.tailwindBridgeSha256,
+    expected.tailwindBridgeSha256,
+    `${description} Tailwind bridge directives differ from its verified graph inputs`,
+  );
+}
 
 function collectSelectorClasses(value: unknown, classes: Set<string>): void {
   if (Array.isArray(value)) {
@@ -471,19 +675,85 @@ function collectSelectorClasses(value: unknown, classes: Set<string>): void {
   for (const nested of Object.values(record)) collectSelectorClasses(nested, classes);
 }
 
-function cssInventory(css: string, description: string): CssInventory {
+function cssInventory(
+  css: string,
+  description: string,
+  packageManifests: readonly StylexPackageManifestV1[] = [],
+  source?: StylexCssAuditSource,
+  allowed?: StylexCssAuditReceipt,
+): CssInventory {
   const classes = new Set<string>();
   const imports = new Set<string>();
   const layers = new Set<string>();
   const registrations = new Set<string>();
   const layerStack: string[] = [];
+  const tailwindDirectiveNames: string[] = [];
+  const nonBridgeTopLevelRuleTypes: string[] = [];
+  const manifestBoundTailwindBridge = isManifestBoundTailwindBridge(css, packageManifests, source);
+  if (allowed !== undefined) assertStylexCssAuditReceipt(allowed);
+  let ruleDepth = 0;
   const result = transformCss({
     code: Buffer.from(css),
+    customAtRules: stylexCssAuditAtRules,
     filename: "stylex-recipe-audit.css",
     minify: false,
     visitor: {
       Rule(rule) {
-        if (rule.type === "import") imports.add(rule.value.url);
+        if (ruleDepth === 0 && rule.type !== "custom") {
+          nonBridgeTopLevelRuleTypes.push(rule.type);
+        }
+        if (rule.type === "custom") {
+          assert.equal(ruleDepth, 0, `${description} Tailwind bridge directives must be top-level`);
+          const value = plainObject(rule.value as unknown, `${description} custom at-rule`);
+          const name = value.name;
+          assert.ok(typeof name === "string", `${description} custom at-rule name must be a string`);
+          assert.ok(
+            manifestBoundTailwindBridge || allowed?.tailwindBridgeSha256 !== undefined,
+            `${description} contains an unverified Tailwind bridge directive @${name}`,
+          );
+          tailwindDirectiveNames.push(name);
+          const prelude = plainObject(value.prelude, `${description} Tailwind @${name} prelude`);
+          if (name === "source") {
+            assert.equal(value.body, null, `${description} Tailwind @source must not contain a block`);
+            assert.deepEqual(
+              prelude,
+              { type: "string", value: "./" },
+              `${description} Tailwind @source directive differs from the package bridge contract`,
+            );
+          } else if (name === "custom-variant") {
+            assert.equal(value.body, null, `${description} Tailwind @custom-variant must not contain a block`);
+            assert.equal(prelude.type, "token-list");
+          } else {
+            assert.equal(name, "theme");
+            assert.deepEqual(
+              prelude,
+              { type: "custom-ident", value: "inline" },
+              `${description} Tailwind @theme directive must use the inline contract`,
+            );
+            const body = plainObject(value.body, `${description} Tailwind @theme body`);
+            assert.equal(body.type, "declaration-list");
+            const declarations = plainObject(body.value, `${description} Tailwind @theme declarations`);
+            assert.deepEqual(
+              declarations.importantDeclarations,
+              [],
+              `${description} Tailwind @theme directive must not contain important declarations`,
+            );
+            assert.ok(Array.isArray(declarations.declarations) && declarations.declarations.length > 0);
+            for (const [index, declaration] of declarations.declarations.entries()) {
+              const record = plainObject(declaration, `${description} Tailwind @theme declaration ${String(index)}`);
+              const declarationValue = plainObject(
+                record.value,
+                `${description} Tailwind @theme declaration ${String(index)} value`,
+              );
+              assert.ok(
+                record.property === "custom"
+                  && typeof declarationValue.name === "string"
+                  && declarationValue.name.startsWith("--"),
+                `${description} Tailwind @theme directive may contain only custom-property declarations`,
+              );
+            }
+          }
+        } else if (rule.type === "import") imports.add(rule.value.url);
         else if (rule.type === "keyframes") registrations.add(rule.value.name.value);
         else if (rule.type === "property") registrations.add(rule.value.name);
         else if (rule.type === "layer-statement") {
@@ -492,11 +762,14 @@ function cssInventory(css: string, description: string): CssInventory {
           layers.add([...layerStack, ...rule.value.name].join("."));
           layerStack.push(...rule.value.name);
         }
+        ruleDepth += 1;
       },
       Selector(selector) {
         collectSelectorClasses(selector, classes);
       },
       RuleExit(rule) {
+        ruleDepth -= 1;
+        assert.ok(ruleDepth >= 0, `${description} CSS traversal lost its rule depth`);
         if (rule.type === "layer-block" && rule.value.name != null) {
           const removed = layerStack.splice(-rule.value.name.length);
           assert.deepEqual(removed, rule.value.name, `${description} CSS layer traversal lost its nesting state`);
@@ -504,17 +777,52 @@ function cssInventory(css: string, description: string): CssInventory {
       },
     },
   });
+  assert.equal(ruleDepth, 0, `${description} CSS traversal did not settle its rule depth`);
   assert.equal(result.warnings.length, 0, `${description} CSS emitted parser warnings`);
-  return { classes, imports, layers, registrations };
+  const canonicalBridgeRules = canonicalTailwindBridgeRules(css, tailwindDirectiveNames.length);
+  for (const [index, name] of tailwindDirectiveNames.entries()) {
+    if (name === "custom-variant") {
+      assert.equal(
+        canonicalBridgeRules[index],
+        stylexTailwindDarkVariantRule,
+        `${description} Tailwind @custom-variant differs from the dark selector contract`,
+      );
+    }
+  }
+  if (manifestBoundTailwindBridge) {
+    assert.deepEqual(
+      tailwindDirectiveNames,
+      ["source", "custom-variant", "theme"],
+      `${description} Tailwind bridge must contain exactly one @source, @custom-variant, and @theme directive in order`,
+    );
+    assert.deepEqual(
+      nonBridgeTopLevelRuleTypes,
+      [],
+      `${description} manifest-bound Tailwind bridge stylesheet may contain only the verified @source, @custom-variant, and @theme rules`,
+    );
+  }
+  const bridgeSha256 = canonicalBridgeRules.length === 0
+    ? undefined
+    : sha256(canonicalJson(canonicalBridgeRules));
+  if (!manifestBoundTailwindBridge && bridgeSha256 !== undefined) {
+    assert.equal(
+      bridgeSha256,
+      allowed?.tailwindBridgeSha256,
+      `${description} Tailwind bridge directives differ from the verified graph inputs`,
+    );
+  }
+  return { classes, imports, layers, registrations, tailwindBridgeSha256: bridgeSha256 };
 }
 
 export function auditCssWithoutStylexRules(
   css: string,
   rules: readonly StylexRuleV1[],
   description = "Compiler graph",
+  allowed?: StylexCssAuditReceipt,
 ): void {
   assert.ok(typeof css === "string", `${description} CSS must be a string`);
-  const graph = cssInventory(css, description);
+  if (allowed !== undefined) assertStylexCssAuditReceipt(allowed);
+  const graph = cssInventory(css, description, [], undefined, allowed);
   for (const layer of graph.layers) {
     assert.ok(
       !/^components\.hraness-ui\.priority(?:0|[1-9]\d*)(?:\.|$)/u.test(layer),
@@ -539,12 +847,20 @@ export function auditCssWithoutStylexRules(
   }
 }
 
-export function auditCssWithoutStandaloneRecipes(css: string, packageManifests: readonly StylexPackageManifestV1[]): void {
+export function auditCssWithoutStandaloneRecipes(
+  css: string,
+  packageManifests: readonly StylexPackageManifestV1[],
+  source?: StylexCssAuditSource,
+  allowed?: StylexCssAuditReceipt,
+): StylexCssAuditReceipt {
   assert.ok(typeof css === "string");
+  const manifests = packageManifests.map(validateStylexPackageManifest);
+  const graph = cssInventory(css, "Compiler graph", manifests, source, allowed);
   assert.ok(
-    ![...cssInventory(css, "Compiler graph").imports].some((url) => /(?:^|\/)stylex\.css(?:[?#]|$)/iu.test(url)),
+    ![...graph.imports].some((url) => /(?:^|\/)stylex\.css(?:[?#]|$)/iu.test(url)),
     "Compiler graph must not import standalone recipe CSS",
   );
-  const manifests = packageManifests.map(validateStylexPackageManifest);
-  auditCssWithoutStylexRules(css, manifests.flatMap(({ rules }) => rules));
+  const receipt = cssAuditReceipt(graph.tailwindBridgeSha256);
+  auditCssWithoutStylexRules(css, manifests.flatMap(({ rules }) => rules), "Compiler graph", receipt);
+  return receipt;
 }

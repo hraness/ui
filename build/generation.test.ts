@@ -28,6 +28,7 @@ import {
 } from "./contracts.js";
 import {
   artifactForFile,
+  assertStylexCssAuditReceiptsEqual,
   auditCssWithoutStandaloneRecipes,
   auditCssWithoutStylexRules,
   canonicalJson,
@@ -35,11 +36,13 @@ import {
   compilerContract,
   compilerSha256,
   createStylexTransformCollector,
+  mergeStylexCssAuditReceipts,
   normalizeLogicalPath,
   parseStylexRules,
   readStylexPackageManifest,
   serializeStylexRules,
   sha256,
+  stylexTailwindBridgeAuditSource,
   stylexRulesSha256,
   validateStylexPackageManifest,
 } from "./compiler.js";
@@ -59,6 +62,12 @@ const roots: string[] = [];
 const packageRule = ["x-package", { ltr: ".x-package{color:red}" }, 1000] as const satisfies StylexRuleV1;
 const clientRule = ["x-client", { ltr: ".x-client{display:block}" }, 3000] as const satisfies StylexRuleV1;
 const serverRule = ["x-server", { ltr: ".x-server{display:grid}" }, 3000] as const satisfies StylexRuleV1;
+const packageTailwindSource = [
+  '@source "./";',
+  '@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *):not(:where([data-theme="light"], [data-theme="light"] *)));',
+  "@theme inline { --color-background: var(--ui-background); }",
+  "",
+].join("\n");
 
 type Fixture = Readonly<{
   manifestPath: string;
@@ -132,6 +141,25 @@ async function fixture(): Promise<Fixture> {
     `<html><head><link href="/graphs/client/foundation.css" rel="stylesheet"><link href="${STYLEX_TEMPLATE_CSS_PLACEHOLDER}" rel="stylesheet"></head></html>\n`,
   );
   return { manifestPath, outputDirectory: join(root, "generations"), root, templatePath };
+}
+
+async function installManifestBoundTailwindBridge(context: Fixture): Promise<string> {
+  const packagePath = join(context.root, "package/src/tailwind.css");
+  await write(packagePath, packageTailwindSource);
+  const manifest = validateStylexPackageManifest(JSON.parse(
+    await readFile(context.manifestPath, "utf8"),
+  ) as unknown);
+  const updated = validateStylexPackageManifest({
+    ...manifest,
+    stylesheets: [
+      ...manifest.stylesheets,
+      await artifactForFile(join(context.root, "package"), "src/tailwind.css"),
+    ],
+  });
+  await writeFile(context.manifestPath, `${canonicalJson(updated)}\n`);
+  const installed = join(context.root, "node_modules/@fixture/ui/src/tailwind.css");
+  await write(installed, packageTailwindSource);
+  return logical(context.root, installed);
 }
 
 function expectedGraph(id: string, kind: "client" | "ssr" = "client") {
@@ -445,6 +473,153 @@ describe("compiler boundary", () => {
     expect(() => auditCssWithoutStylexRules("@keyframes \\78-spin { to { opacity: 0 } }", [registration])).toThrow(/registration/u);
   });
 
+  test("accepts only the manifest-bound Tailwind bridge directive grammar", () => {
+    const bridgeCss = packageTailwindSource;
+    const manifestFor = (css: string): StylexPackageManifestV1 => validateStylexPackageManifest({
+      buildTools: [], compiler: compilerContract, compilerSha256, kind: "hraness-stylex-package-manifest",
+      package: { name: "@fixture/ui", version: "1.0.0" }, rules: [packageRule], rulesSha256: stylexRulesSha256([packageRule]),
+      runtime: [], schemaVersion: 1, standaloneCss: { bytes: 0, path: "dist/stylex.css", sha256: sha256("") },
+      stylesheets: [{ bytes: Buffer.byteLength(css), path: "src/tailwind.css", sha256: sha256(css) }],
+    });
+    const manifest = manifestFor(bridgeCss);
+    const source = stylexTailwindBridgeAuditSource(
+      "node_modules/@fixture/ui/src/tailwind.css",
+      [manifest],
+    );
+    if (source === undefined) throw new Error("Expected the fixture Tailwind bridge to resolve");
+    expect(Object.isFrozen(source)).toBe(true);
+    const expected = auditCssWithoutStandaloneRecipes(bridgeCss, [manifest], source);
+    expect(Object.isFrozen(expected)).toBe(true);
+    expect(() => auditCssWithoutStylexRules(
+      bridgeCss,
+      [],
+      "Registered package input",
+      expected,
+    )).not.toThrow();
+
+    const minifiedDarkVariant = '@custom-variant dark (&:where(.dark,.dark *,[data-theme="dark"],[data-theme="dark"] *):not(:where([data-theme="light"],[data-theme="light"] *)));';
+    const minified = `@source "./";${minifiedDarkVariant}@theme inline{--color-background:var(--ui-background)}`;
+    const minifiedReceipt = auditCssWithoutStandaloneRecipes(
+      minified,
+      [manifest],
+      undefined,
+      expected,
+    );
+    expect(() => assertStylexCssAuditReceiptsEqual(
+      mergeStylexCssAuditReceipts([minifiedReceipt]),
+      expected,
+    )).not.toThrow();
+
+    const removedReceipt = auditCssWithoutStandaloneRecipes(".foundation{display:block}", [manifest], undefined, expected);
+    expect(() => assertStylexCssAuditReceiptsEqual(
+      mergeStylexCssAuditReceipts([removedReceipt]),
+      expected,
+    )).toThrow(/differ from its verified graph inputs/u);
+    expect(() => auditCssWithoutStandaloneRecipes('@source "./";', [manifest], undefined, expected)).toThrow(/differ/u);
+    expect(() => auditCssWithoutStandaloneRecipes(`${minified}${minified}`, [manifest], undefined, expected)).toThrow(/differ/u);
+    expect(() => auditCssWithoutStandaloneRecipes(
+      '@custom-variant dark (&:where(.dark,.dark *,[data-theme="dark"],[data-theme="dark"] *):not(:where([data-theme="light"],[data-theme="light"] *)));@source "./";@theme inline{--color-background:var(--ui-background)}',
+      [manifest],
+      undefined,
+      expected,
+    )).toThrow(/differ/u);
+    expect(() => auditCssWithoutStandaloneRecipes(
+      minified.replace('[data-theme="dark"]', '[data-theme="night"]'),
+      [manifest],
+      undefined,
+      expected,
+    )).toThrow(/dark selector contract/u);
+    for (const invalidCustomVariant of [
+      minified.replace(minifiedDarkVariant, "@custom-variant dark ();"),
+      minified.replace(minifiedDarkVariant, "@custom-variant dark (garbage);"),
+      minified.replace(
+        minifiedDarkVariant,
+        '@custom-variant dark (&{} .stylex-audit-root:where(.dark,.dark *,[data-theme="dark"],[data-theme="dark"] *):not(:where([data-theme="light"],[data-theme="light"] *)));',
+      ),
+    ]) expect(() => auditCssWithoutStandaloneRecipes(
+      invalidCustomVariant,
+      [manifest],
+      undefined,
+      expected,
+    )).toThrow(/dark selector contract/u);
+    expect(() => auditCssWithoutStandaloneRecipes(
+      minified.replace("@theme inline", "@theme reference"),
+      [manifest],
+      undefined,
+      expected,
+    )).toThrow(/inline contract/u);
+    expect(() => auditCssWithoutStandaloneRecipes(
+      minified.replace("var(--ui-background)", "var(--ui-foreground)"),
+      [manifest],
+      undefined,
+      expected,
+    )).toThrow(/differ/u);
+    expect(() => mergeStylexCssAuditReceipts(
+      [minifiedReceipt, minifiedReceipt],
+      "Duplicated graph output",
+    )).toThrow(/more than one/u);
+    expect(() => mergeStylexCssAuditReceipts([
+      { ...expected, tailwindBridgeSha256: sha256("forged") },
+    ])).toThrow(/not produced by the pinned compiler/u);
+    expect(() => auditCssWithoutStandaloneRecipes(
+      bridgeCss,
+      [manifest],
+      { ...source },
+    )).toThrow(/not resolved by the pinned compiler/u);
+
+    expect(() => auditCssWithoutStandaloneRecipes(bridgeCss, [manifest])).toThrow(/unverified Tailwind bridge/u);
+    expect(() => auditCssWithoutStandaloneRecipes(
+      bridgeCss,
+      [manifest],
+      stylexTailwindBridgeAuditSource("src/copied-tailwind.css", [manifest]),
+    )).toThrow(/unverified Tailwind bridge/u);
+    expect(stylexTailwindBridgeAuditSource(
+      "nested/node_modules/@fixture/ui/src/tailwind.css",
+      [manifest],
+    )).toBeUndefined();
+    expect(() => auditCssWithoutStandaloneRecipes(`${bridgeCss}\n`, [manifest], source)).toThrow(/unverified Tailwind bridge/u);
+    const replayedCss = `${bridgeCss}/* changed after the source capability was issued */\n`;
+    expect(() => auditCssWithoutStandaloneRecipes(
+      replayedCss,
+      [manifestFor(replayedCss)],
+      source,
+    )).toThrow(/unverified Tailwind bridge/u);
+    expect(() => auditCssWithoutStandaloneRecipes("@unknown-directive value;", [manifest])).toThrow(/parser warnings/u);
+
+    for (const extraRule of [
+      "body { color: red; }",
+      '.extra { background: url("./asset.png"); }',
+      '@import "./extra.css";',
+    ]) {
+      const css = extraRule.startsWith("@import")
+        ? `${extraRule}\n${bridgeCss}`
+        : `${bridgeCss}${extraRule}\n`;
+      const extraManifest = manifestFor(css);
+      expect(() => auditCssWithoutStandaloneRecipes(
+        css,
+        [extraManifest],
+        stylexTailwindBridgeAuditSource("node_modules/@fixture/ui/src/tailwind.css", [extraManifest]),
+      )).toThrow(/may contain only the verified/u);
+    }
+
+    const invalidTheme = bridgeCss.replace(
+      "--color-background: var(--ui-background);",
+      "color: red;",
+    );
+    expect(() => auditCssWithoutStandaloneRecipes(
+      invalidTheme,
+      [manifestFor(invalidTheme)],
+      stylexTailwindBridgeAuditSource("node_modules/@fixture/ui/src/tailwind.css", [manifestFor(invalidTheme)]),
+    )).toThrow(/only custom-property declarations/u);
+
+    const leakedRecipe = `${bridgeCss}.x-package { color: red; }\n`;
+    expect(() => auditCssWithoutStandaloneRecipes(
+      leakedRecipe,
+      [manifestFor(leakedRecipe)],
+      stylexTailwindBridgeAuditSource("node_modules/@fixture/ui/src/tailwind.css", [manifestFor(leakedRecipe)]),
+    )).toThrow(/may contain only the verified/u);
+  });
+
   test("keeps the upstream within-priority contract invariant to graph arrival order", () => {
     const rules = [
       ["media", { ltr: "@media (max-width:600px){.x-media{color:red}}" }, 3130],
@@ -605,6 +780,96 @@ describe("generation lifecycle", () => {
     const cleanRecipes = await readFile(join(cleanOutput, "stylex.css"), "utf8");
     expect(cleanRecipes).toContain("x-client");
     expect(cleanRecipes).toContain("x-server");
+  });
+
+  test("keeps a verified Tailwind bridge receipt local to its graph before copying payload outputs", async () => {
+    const context = await fixture();
+    const bridgePath = await installManifestBoundTailwindBridge(context);
+    const generation = await create(
+      context,
+      "tailwind-bridge-graph-isolation",
+      [["client", "client"], ["server", "ssr"]],
+    );
+
+    const clientReceipt = await receiptValue(
+      context,
+      generation,
+      "client",
+      clientRule,
+      "client.css",
+      packageTailwindSource,
+    );
+    await writeStylexGraphReceipt({
+      generation,
+      receipt: {
+        ...clientReceipt,
+        inputs: [
+          ...clientReceipt.inputs,
+          await artifactForFile(context.root, bridgePath),
+        ].sort((left, right) => left.path.localeCompare(right.path)),
+      },
+      rootDirectory: context.root,
+    });
+
+    const serverReceipt = await seal(
+      context,
+      generation,
+      "server",
+      serverRule,
+      "server.css",
+      ".server-foundation{display:block}\n",
+    );
+    const serverOutputRoot = join(generation.directory, ...serverReceipt.outputRoot.split("/"));
+    await writeFile(join(serverOutputRoot, "server.css"), packageTailwindSource);
+    const rewrittenServerReceipt = {
+      ...serverReceipt,
+      outputs: [await artifactForFile(serverOutputRoot, "server.css")],
+    } satisfies StylexGraphReceiptV1;
+    await writeFile(
+      join(generation.directory, ".stylex-generation/receipts/server.json"),
+      `${canonicalJson(rewrittenServerReceipt)}\n`,
+    );
+
+    await expect(finalize(context, generation)).rejects.toThrow(/unverified Tailwind bridge/u);
+    expect(await readdir(join(generation.directory, "payload"))).toEqual([]);
+
+    const clean = await create(
+      context,
+      "tailwind-bridge-graph-isolation-control",
+      [["client", "client"], ["server", "ssr"]],
+    );
+    const cleanClientReceipt = await receiptValue(
+      context,
+      clean,
+      "client",
+      clientRule,
+      "client.css",
+      packageTailwindSource,
+    );
+    await writeStylexGraphReceipt({
+      generation: clean,
+      receipt: {
+        ...cleanClientReceipt,
+        inputs: [
+          ...cleanClientReceipt.inputs,
+          await artifactForFile(context.root, bridgePath),
+        ].sort((left, right) => left.path.localeCompare(right.path)),
+      },
+      rootDirectory: context.root,
+    });
+    await seal(
+      context,
+      clean,
+      "server",
+      serverRule,
+      "server.css",
+      ".server-foundation{display:block}\n",
+    );
+    const output = await finalize(context, clean);
+    expect(await readFile(join(output, "graphs/client/client.css"), "utf8")).toBe(packageTailwindSource);
+    expect(await readFile(join(output, "graphs/server/server.css"), "utf8")).toBe(
+      ".server-foundation{display:block}\n",
+    );
   });
 
   test("rejects duplicate package names across divergent manifests or versions", async () => {

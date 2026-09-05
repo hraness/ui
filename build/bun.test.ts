@@ -29,6 +29,12 @@ import {
 } from "./bun.js";
 
 const roots: string[] = [];
+const packageTailwindSource = [
+  '@source "./";',
+  '@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *):not(:where([data-theme="light"], [data-theme="light"] *)));',
+  "@theme inline { --color-background: var(--fixture-background); }",
+  "",
+].join("\n");
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
@@ -77,7 +83,7 @@ async function fixture(): Promise<{
   await write(
     join(packageRoot, "package.json"),
     `${JSON.stringify({
-      exports: { ".": "./dist/runtime.js", "./build": "./build/index.js", "./compiler-foundation.css": "./src/compiler-foundation.css", "./stylex.css": "./dist/stylex.css" },
+      exports: { ".": "./dist/runtime.js", "./build": "./build/index.js", "./compiler-foundation.css": "./src/compiler-foundation.css", "./stylex.css": "./dist/stylex.css", "./tailwind.css": "./src/tailwind.css" },
       name: "@fixture/ui",
       type: "module",
       version: "1.0.0",
@@ -87,6 +93,7 @@ async function fixture(): Promise<{
   await write(join(packageRoot, "build/index.js"), "export const packageBuildTool = true;\n");
   await write(join(packageRoot, "dist/stylex.css"), ".x-package{color:red}\n");
   await write(join(packageRoot, "src/compiler-foundation.css"), ".foundation{display:block}\n");
+  await write(join(packageRoot, "src/tailwind.css"), packageTailwindSource);
   const rules: readonly StylexRuleV1[] = [["x-package", { ltr: ".x-package{color:red}" }, 1000]];
   const manifest: StylexPackageManifestV1 = {
     buildTools: [await artifactForFile(packageRoot, "build/index.js")],
@@ -99,7 +106,10 @@ async function fixture(): Promise<{
     runtime: [await artifactForFile(packageRoot, "dist/runtime.js")],
     schemaVersion: 1,
     standaloneCss: await artifactForFile(packageRoot, "dist/stylex.css"),
-    stylesheets: [await artifactForFile(packageRoot, "src/compiler-foundation.css")],
+    stylesheets: await Promise.all([
+      artifactForFile(packageRoot, "src/compiler-foundation.css"),
+      artifactForFile(packageRoot, "src/tailwind.css"),
+    ]),
   };
   const manifestPath = join(packageRoot, "dist/stylex-manifest.json");
   await write(manifestPath, `${canonicalJson(manifest)}\n`);
@@ -213,6 +223,62 @@ describe("collectBunStylexGraph", () => {
     expect(await receiptExists(firstGeneration, "client")).toBe(true);
   });
 
+  test("preserves one manifest-bound Tailwind bridge through graph sealing and finalization", async () => {
+    for (const minify of [false, true]) {
+      const context = await fixture();
+      const entry = join(context.root, "src/tailwind-entry.ts");
+      await write(entry, "import '@fixture/ui/tailwind.css'; export const value = true;\n");
+      const handle = await generation(context, `tailwind-bridge-${String(minify)}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const receipt = await collectBunStylexGraph({
+        build: { minify },
+        generation: handle,
+        graphId: "client",
+        rootDirectory: context.root,
+      });
+
+      expect(receipt.inputs.map(({ path }) => path)).toContain(
+        "node_modules/@fixture/ui/src/tailwind.css",
+      );
+      const stylesheet = receipt.outputs.find(({ path }) => path.endsWith(".css"));
+      assert.ok(stylesheet !== undefined);
+      const stagedCss = await readFile(
+        join(handle.directory, ...receipt.outputRoot.split("/"), ...stylesheet.path.split("/")),
+        "utf8",
+      );
+      expect(stagedCss).toContain('@source "./"');
+      expect(stagedCss).toContain(packageTailwindSource.split("\n")[1]!);
+      expect(stagedCss).toContain("@theme inline");
+      expect(stagedCss).not.toContain("stylex-tailwind-bridge-");
+
+      const output = await finalizeStylexGeneration({
+        generation: handle,
+        outputDirectory: context.generationOutput,
+        rootDirectory: context.root,
+      });
+      expect(await readFile(join(output, "graphs/client", stylesheet.path), "utf8")).toBe(stagedCss);
+    }
+  });
+
+  test("reserves the private Tailwind restoration marker from graph inputs", async () => {
+    const context = await fixture();
+    const entry = join(context.root, "src/reserved-marker-entry.ts");
+    const stylesheet = join(context.root, "src/reserved-marker.css");
+    await write(stylesheet, '.reserved{--value:"stylex-tailwind-bridge-"}\n');
+    await write(entry, "import './reserved-marker.css'; export const value = true;\n");
+    const handle = await generation(context, "reserved-tailwind-marker", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+
+    await expect(collectBunStylexGraph({
+      generation: handle,
+      graphId: "client",
+      rootDirectory: context.root,
+    })).rejects.toThrow(/reserved Bun Tailwind bridge marker/u);
+    expect(await receiptExists(handle, "client")).toBe(false);
+  });
+
   test("collects a separate SSR-only graph and its lazy module", async () => {
     const context = await fixture();
     const sources = await makeGraphSources(context.root);
@@ -253,6 +319,7 @@ describe("collectBunStylexGraph", () => {
       const plugin = options.plugins?.[0];
       assert.ok(plugin !== undefined);
       plugin.setup({
+        onEnd() {},
         onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
           handlers.push(callback);
         },
@@ -315,6 +382,7 @@ describe("collectBunStylexGraph", () => {
         const plugin = options.plugins?.[0];
         assert.ok(plugin !== undefined);
         plugin.setup({
+          onEnd() {},
           onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
             handlers.push(callback);
           },
@@ -776,6 +844,74 @@ describe("collectBunStylexGraph", () => {
       expect(receipt.edges.some(({ external, to }) => external || to === "external:@fixture/runtime")).toBe(false);
     } finally {
       build.mockRestore();
+    }
+  });
+
+  test("rejects a witnessed bare alias behind a hidden closer package installation", async () => {
+    for (const kind of ["ordinary", "symlink"] as const) {
+      const context = await fixture();
+      const rootRuntime = join(context.root, "node_modules/@fixture/runtime");
+      await write(
+        join(rootRuntime, "package.json"),
+        `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+      );
+      await write(join(rootRuntime, "index.js"), "export const marker = 'root';\n");
+      const witness = join(context.root, "src/witness.ts");
+      const raw = join(context.root, "src/nested/raw.ts");
+      const entry = join(context.root, "src/entry.ts");
+      await write(witness, "import { marker } from '@fixture/runtime'; export const witnessed = marker;\n");
+      await write(raw, "import { marker } from '@fixture/runtime'; export const deduplicated = marker;\n");
+      await write(entry, "export { witnessed } from './witness.ts'; export { deduplicated } from './nested/raw.ts';\n");
+      const handle = await generation(context, `witnessed-alias-hidden-closer-${kind}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const inputs = result.metafile.inputs;
+        const runtimeKey = Object.keys(inputs).find((path) =>
+          path === "node_modules/@fixture/runtime/index.js"
+          || path.endsWith("/node_modules/@fixture/runtime/index.js")
+        );
+        const witnessKey = Object.keys(inputs).find((path) =>
+          path === "src/witness.ts" || path.endsWith("/src/witness.ts")
+        );
+        const rawKey = Object.keys(inputs).find((path) =>
+          path === "src/nested/raw.ts" || path.endsWith("/src/nested/raw.ts")
+        );
+        assert.ok(runtimeKey !== undefined && witnessKey !== undefined && rawKey !== undefined);
+        const closerRuntime = join(context.root, "src/nested/node_modules/@fixture/runtime");
+        if (kind === "ordinary") {
+          await write(
+            join(closerRuntime, "package.json"),
+            `${JSON.stringify({ exports: "./index.js", name: "@fixture/runtime", type: "module", version: "2.0.0" })}\n`,
+          );
+          await write(join(closerRuntime, "index.js"), "export const marker = 'nested';\n");
+        } else {
+          await mkdir(resolve(closerRuntime, ".."), { recursive: true });
+          await symlink(rootRuntime, closerRuntime);
+        }
+        inputs[witnessKey]!.imports = [{
+          kind: "import-statement",
+          original: "@fixture/runtime",
+          path: runtimeKey,
+        }] as never;
+        inputs[rawKey]!.imports = [{
+          kind: "import-statement",
+          path: "@fixture/runtime",
+        }] as never;
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(/Bun metafile import.*is unresolved.*@fixture\/runtime/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
     }
   });
 
@@ -1776,6 +1912,23 @@ describe("collectBunStylexGraph", () => {
         expect(artifact).toMatchObject({ bytes: bytes.byteLength, sha256: sha256(bytes) });
       }
     }
+  });
+
+  test("rejects an inline sourcemap when restoring a verified Tailwind bridge", async () => {
+    const context = await fixture();
+    const entry = join(context.root, "src/tailwind-inline-sourcemap.ts");
+    await write(entry, "import '@fixture/ui/tailwind.css'; export const value = true;\n");
+    const handle = await generation(context, "tailwind-inline-sourcemap", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+
+    await expect(collectBunStylexGraph({
+      build: { sourcemap: "inline" },
+      generation: handle,
+      graphId: "client",
+      rootDirectory: context.root,
+    })).rejects.toThrow(/cannot restore a verified Tailwind bridge into an inline-sourcemapped CSS output/u);
+    expect(await receiptExists(handle, "client")).toBe(false);
   });
 
   test("rejects malformed metafiles and output topology without publishing a receipt", async () => {

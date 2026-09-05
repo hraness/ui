@@ -47,6 +47,7 @@ import {
 } from "./contracts.js";
 import {
   artifactForFile,
+  assertStylexCssAuditReceiptsEqual,
   auditCssWithoutStandaloneRecipes,
   auditCssWithoutStylexRules,
   canonicalJson,
@@ -59,8 +60,11 @@ import {
   resolveRootRelativeInput,
   serializeStylexRules,
   sha256,
+  stylexTailwindBridgeAuditSource,
   stylexRulesSha256,
   validateStylexPackageManifest,
+  mergeStylexCssAuditReceipts,
+  type StylexCssAuditReceipt,
 } from "./compiler.js";
 
 const CONTROL = ".stylex-generation";
@@ -806,6 +810,31 @@ async function verifyArtifact(root: string, artifact: StylexArtifactV1): Promise
   assert.deepEqual(actual, artifact, `Artifact changed: ${artifact.path}`);
 }
 
+async function cssAuditReceiptForInputs(
+  rootDirectory: string,
+  inputs: readonly StylexArtifactV1[],
+  manifests: readonly StylexPackageManifestV1[],
+  description: string,
+): Promise<StylexCssAuditReceipt> {
+  const receipts: StylexCssAuditReceipt[] = [];
+  for (const input of inputs.filter(({ path }) => path.endsWith(".css"))) {
+    const ordinary = await resolveRootRelativeInput(rootDirectory, input.path);
+    const bytes = await readFile(ordinary);
+    assert.deepEqual(
+      { bytes: bytes.byteLength, sha256: sha256(bytes) },
+      { bytes: input.bytes, sha256: input.sha256 },
+      `CSS input changed while reconstructing its audit receipt: ${input.path}`,
+    );
+    const css = bytes.toString("utf8");
+    receipts.push(auditCssWithoutStandaloneRecipes(
+      css,
+      manifests,
+      stylexTailwindBridgeAuditSource(input.path, manifests),
+    ));
+  }
+  return mergeStylexCssAuditReceipts(receipts, description);
+}
+
 export type WriteStylexGraphReceiptOptions = Readonly<{
   generation: StylexGenerationHandleV1;
   receipt: unknown;
@@ -831,15 +860,39 @@ export async function writeStylexGraphReceipt(options: WriteStylexGraphReceiptOp
   assert.equal(receipt.outputRoot, `${GRAPHS}/${receipt.graphId}/output`, "Graph outputRoot is not the owned staging root");
   const rootDirectory = await realDirectory(string(rawOptions.rootDirectory, "rootDirectory"), "rootDirectory");
   await Promise.all(receipt.inputs.map((item) => verifyArtifact(rootDirectory, item)));
+  const expectedCssAuditReceipt = await cssAuditReceiptForInputs(
+    rootDirectory,
+    receipt.inputs,
+    loaded.packageManifests,
+    `Graph ${receipt.graphId} inputs`,
+  );
   const graphRoot = join(generation.directory, ...receipt.outputRoot.split("/"));
   assert.deepEqual(await readdir(join(generation.directory, GRAPHS, receipt.graphId)), ["output"], "Graph staging contains unexpected entries");
   assert.deepEqual(await filesBelow(graphRoot), receipt.outputs.map(({ path }) => path), "Graph receipt outputs differ from the settled graph output inventory");
   await Promise.all(receipt.outputs.map((item) => verifyArtifact(graphRoot, item)));
+  const outputCssAuditReceipts: StylexCssAuditReceipt[] = [];
   for (const css of receipt.outputs.filter(({ path }) => path.endsWith(".css"))) {
-    const source = await readFile(join(graphRoot, ...css.path.split("/")), "utf8");
-    auditCssWithoutStandaloneRecipes(source, loaded.packageManifests);
-    auditCssWithoutStylexRules(source, receipt.rules, `Graph ${receipt.graphId}`);
+    const bytes = await readFile(join(graphRoot, ...css.path.split("/")));
+    assert.deepEqual(
+      { bytes: bytes.byteLength, sha256: sha256(bytes) },
+      { bytes: css.bytes, sha256: css.sha256 },
+      `Graph CSS output changed while reconstructing its audit receipt: ${css.path}`,
+    );
+    const source = bytes.toString("utf8");
+    const outputReceipt = auditCssWithoutStandaloneRecipes(
+      source,
+      loaded.packageManifests,
+      undefined,
+      expectedCssAuditReceipt,
+    );
+    auditCssWithoutStylexRules(source, receipt.rules, `Graph ${receipt.graphId}`, outputReceipt);
+    outputCssAuditReceipts.push(outputReceipt);
   }
+  assertStylexCssAuditReceiptsEqual(
+    mergeStylexCssAuditReceipts(outputCssAuditReceipts, `Graph ${receipt.graphId} outputs`),
+    expectedCssAuditReceipt,
+    `Graph ${receipt.graphId} outputs`,
+  );
   await withMutationLock(generation.directory, async () => {
     assert.equal(await exists(join(generation.directory, FINALIZE_LOCK)), false, "Generation finalization already started; graph receipt is late");
     await writeCanonicalExclusive(join(generation.directory, RECEIPTS, `${receipt.graphId}.json`), receipt);
@@ -1380,6 +1433,11 @@ export async function finalizeStylexGeneration(options: FinalizeStylexGeneration
     const artifacts: StylexArtifactV1[] = [];
     const graphStylesheetsById = new Map<string, Set<string>>();
     const occupied = new Set<string>([loaded.plan.finalCssPath, COMPLETE_RECORD]);
+    const verifiedGraphOutputs: {
+      graphId: string;
+      graphRoot: string;
+      outputs: readonly StylexArtifactV1[];
+    }[] = [];
     for (const item of loadedReceipts) {
       const receipt = item.receipt;
       const expected = loaded.expectedGraph(receipt.graphId);
@@ -1398,23 +1456,53 @@ export async function finalizeStylexGeneration(options: FinalizeStylexGeneration
       const inputPaths = new Set(receipt.inputs.map(({ path }) => path));
       for (const entrypoint of expected.entrypoints) assert.ok(inputPaths.has(entrypoint), `Graph receipt omits entrypoint input ${entrypoint}`);
       await Promise.all(receipt.inputs.map((artifact) => verifyArtifact(rootDirectory, artifact)));
+      const expectedCssAuditReceipt = await cssAuditReceiptForInputs(
+        rootDirectory,
+        receipt.inputs,
+        loaded.packageManifests,
+        `Graph ${receipt.graphId} inputs`,
+      );
       const graphRoot = join(parsedOptions.generation.directory, ...receipt.outputRoot.split("/"));
       assert.deepEqual(await readdir(join(parsedOptions.generation.directory, GRAPHS, receipt.graphId)), ["output"], `Graph ${receipt.graphId} staging contains unexpected entries`);
       assert.deepEqual(await filesBelow(graphRoot), receipt.outputs.map(({ path }) => path), `Graph ${receipt.graphId} output inventory changed after receipt`);
       await Promise.all(receipt.outputs.map((artifact) => verifyArtifact(graphRoot, artifact)));
+      const outputCssAuditReceipts: StylexCssAuditReceipt[] = [];
+      const graphStylesheets = new Set<string>();
+      for (const output of receipt.outputs.filter(({ path }) => path.endsWith(".css"))) {
+        const publishedPath = normalizeLogicalPath(`graphs/${receipt.graphId}/${output.path}`, "published graph output path");
+        const bytes = await readFile(join(graphRoot, ...output.path.split("/")));
+        assert.deepEqual(
+          { bytes: bytes.byteLength, sha256: sha256(bytes) },
+          { bytes: output.bytes, sha256: output.sha256 },
+          `Graph CSS output changed while reconstructing its audit receipt: ${output.path}`,
+        );
+        const css = bytes.toString("utf8");
+        const outputReceipt = auditCssWithoutStandaloneRecipes(
+          css,
+          loaded.packageManifests,
+          undefined,
+          expectedCssAuditReceipt,
+        );
+        auditCssWithoutStylexRules(css, combinedRules, `Graph ${receipt.graphId}`, outputReceipt);
+        outputCssAuditReceipts.push(outputReceipt);
+        graphStylesheets.add(publishedPath);
+      }
+      assertStylexCssAuditReceiptsEqual(
+        mergeStylexCssAuditReceipts(outputCssAuditReceipts, `Graph ${receipt.graphId} outputs`),
+        expectedCssAuditReceipt,
+        `Graph ${receipt.graphId} outputs`,
+      );
+      if (graphStylesheets.size > 0) graphStylesheetsById.set(receipt.graphId, graphStylesheets);
       for (const output of receipt.outputs) {
         const publishedPath = normalizeLogicalPath(`graphs/${receipt.graphId}/${output.path}`, "published graph output path");
         assert.equal(occupied.has(publishedPath), false, `Output collision: ${publishedPath}`);
         occupied.add(publishedPath);
-        if (output.path.endsWith(".css")) {
-          const css = await readFile(join(graphRoot, ...output.path.split("/")), "utf8");
-          auditCssWithoutStandaloneRecipes(css, loaded.packageManifests);
-          auditCssWithoutStylexRules(css, combinedRules, `Graph ${receipt.graphId}`);
-          const graphStylesheets = graphStylesheetsById.get(receipt.graphId)
-            ?? new Set<string>();
-          graphStylesheets.add(publishedPath);
-          graphStylesheetsById.set(receipt.graphId, graphStylesheets);
-        }
+      }
+      verifiedGraphOutputs.push({ graphId: receipt.graphId, graphRoot, outputs: receipt.outputs });
+    }
+    for (const { graphId, graphRoot, outputs } of verifiedGraphOutputs) {
+      for (const output of outputs) {
+        const publishedPath = normalizeLogicalPath(`graphs/${graphId}/${output.path}`, "published graph output path");
         const published = await copyExclusive(
           join(graphRoot, ...output.path.split("/")),
           join(parsedOptions.generation.directory, PAYLOAD),
@@ -1423,7 +1511,7 @@ export async function finalizeStylexGeneration(options: FinalizeStylexGeneration
         assert.deepEqual(
           { bytes: published.bytes, sha256: published.sha256 },
           { bytes: output.bytes, sha256: output.sha256 },
-          `Graph ${receipt.graphId} output changed while publishing: ${output.path}`,
+          `Graph ${graphId} output changed while publishing: ${output.path}`,
         );
         artifacts.push(published);
       }
