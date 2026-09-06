@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.4.10"
+    "@hraness/ui": "github:hraness/ui#v0.5.0"
   }
 }
 ```
@@ -112,9 +112,13 @@ For a standards-only or narrower integration, import the required layers directl
 @import "@hraness/ui/stylex.css";
 ```
 
-The built-in recipes are already compiled, so ordinary consumers do not need a StyleX compiler. Applications that compile local StyleX declarations or pass typed `xstyle` recipes use `@hraness/ui/stylex-build` with its `/bun` or `/vite` adapter and the versioned `@hraness/ui/stylex-manifest.json`. They register every client, lazy, multi-entry, and SSR graph before building, then finalize once. Every HTML or SSR entry links the returned combined recipe stylesheet. Compiler adopters import one compiler foundation and must not also import `styles.css` or `stylex.css`.
+The built-in recipes are already compiled, so ordinary consumers do not need a StyleX compiler. Applications that compile local StyleX declarations or pass typed `xstyle` recipes use `@hraness/ui/stylex-build` with its `/bun` or `/vite` adapter and the versioned `@hraness/ui/stylex-manifest.json`. They register every client, lazy, multi-entry, and SSR graph before building, then finalize once. Every HTML or SSR entry links the returned combined recipe stylesheet. Compiler adopters include every registered package's compiler foundation in the stylesheet graph, directly or transitively, and must not also import `styles.css` or `stylex.css`.
 
 Compiler adopters install the package's exact build-tool peers: `@babel/core@7.29.7`, `@stylexjs/babel-plugin@0.19.0`, `lightningcss@1.33.0`, and `@types/babel__core@7.20.5`. TypeScript projects using the Bun adapter also install `@types/bun@1.3.14`; Vite adapter projects install a supported Vite 7 release and compatible Node types (`@types/node@^20.19.0 || >=22.12.0`). These peers are optional for ordinary precompiled-stylesheet consumers.
+
+Package authors use the lower-level exports from `@hraness/ui/stylex-build` inside their own build: `createStylexTransformCollector` compiles package source, `serializeStylexPackageRules` produces that package's independently usable CSS under a package-owned `components.*` namespace, and the artifact and manifest helpers bind the resulting JavaScript, CSS, raw rules, and `compilerFoundation` without independently serialized StyleX rules. That standalone CSS remains the plugin-free package route. Each package must choose a distinct namespace and publish its manifest with the package.
+
+Final applications do not concatenate those independently compiled recipe sheets. They register every participating package manifest and all application graphs, load each package's compiler foundation, and let the finalizer union the raw package and application rules before the fixed serializer runs once. Every foundation stylesheet must precede the one finalized recipe stylesheet in the document. Loading a package's `styles.css` or `stylex.css` beside that final asset is an unsupported mixed route and fails the checked adapters.
 
 The registered `src/client.tsx` entry imports `@hraness/ui/compiler-foundation.css` before product CSS. This one-shot Vite build registers that complete client graph, resolves the package manifest through its public export, seals the generated HTML, and publishes only after the graph and template have settled:
 

@@ -5,9 +5,10 @@ import { pathToFileURL } from "node:url";
 
 import {
   canonicalJson,
+  compilerContract,
   compilerSha256,
   readStylexPackageManifest,
-  serializeStylexRules,
+  serializeStylexPackageRules,
   sha256,
 } from "../build/compiler.js";
 
@@ -121,7 +122,12 @@ assert.deepEqual(manifest.runtime.map(({ path }) => path), runtime.map((path) =>
 assert.deepEqual(manifest.buildTools.map(({ path }) => path), buildTools.map((path) => `dist/${path}`), "Manifest build-tool inventory is incomplete");
 assert.equal(manifest.standaloneCss.path, "dist/stylex.css");
 assert.equal(manifest.standaloneCss.sha256, sha256(await readFile(resolve(dist, "stylex.css"))));
-assert.equal(await readFile(resolve(dist, "stylex.css"), "utf8"), serializeStylexRules(manifest.rules));
+assert.equal(
+  await readFile(resolve(dist, "stylex.css"), "utf8"),
+  serializeStylexPackageRules(manifest.rules, manifest.standaloneSerializer),
+);
+assert.deepEqual(manifest.standaloneSerializer, compilerContract.serializer.useLayers);
+assert.equal(manifest.compilerFoundation, "src/compiler-foundation.css");
 assert.deepEqual(
   manifest.stylesheets.map(({ path }) => path),
   [...compilerStylesheetPaths].sort(),
@@ -135,6 +141,11 @@ for (const stylesheet of manifest.stylesheets) {
     `Manifest compiler stylesheet binding changed: ${stylesheet.path}`,
   );
 }
+assert.equal(
+  manifest.stylesheets.filter(({ path }) => path === manifest.compilerFoundation).length,
+  1,
+  "Manifest compiler foundation must identify exactly one bound stylesheet",
+);
 
 for (const path of runtime) {
   const source = await readFile(resolve(dist, ...path.split("/")), "utf8");

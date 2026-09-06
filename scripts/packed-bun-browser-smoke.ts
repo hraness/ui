@@ -175,9 +175,26 @@ const negativeRenderSource = `import "./app.css";
 ${renderSource}`;
 
 const typeContractSource = `import {
+  STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION,
+  artifactForFile,
+  canonicalJson,
+  compilerContract,
+  compilerSha256,
+  createStylexTransformCollector,
   createStylexGeneration,
   finalizeStylexGeneration,
+  readStylexPackageManifest,
+  serializeStylexPackageRules,
+  stylexRulesSha256,
+  validateStylexPackageManifest,
+  type StylexArtifactV1,
+  type StylexCompilerContractV1,
   type StylexGenerationHandleV1,
+  type StylexPackageManifestV1,
+  type StylexRuleV1,
+  type StylexStandaloneSerializerV1,
+  type StylexTransformCollector,
+  type StylexTransformResult,
 } from "@hraness/ui/stylex-build";
 import {
   collectBunStylexGraph,
@@ -187,11 +204,57 @@ import { stylexVite } from "@hraness/ui/stylex-build/vite";
 
 const generation = null as unknown as StylexGenerationHandleV1;
 const bunOptions: BunStylexBuildOptions = { minify: true };
+const standaloneSerializer = {
+  before: ["components.fixture-package.legacy"],
+  prefix: "components.fixture-package",
+} satisfies StylexStandaloneSerializerV1;
+const standaloneCss: string = serializeStylexPackageRules([], standaloneSerializer);
+const artifact: StylexArtifactV1 = {
+  bytes: 0,
+  path: "dist/index.js",
+  sha256: "0".repeat(64),
+};
+const rules: readonly StylexRuleV1[] = [];
+const manifestInput: StylexPackageManifestV1 = {
+  buildTools: [],
+  compiler: compilerContract,
+  compilerFoundation: "src/compiler-foundation.css",
+  compilerSha256,
+  kind: "hraness-stylex-package-manifest",
+  package: { name: "@fixture/stylex-author", version: "1.0.0" },
+  rules,
+  rulesSha256: stylexRulesSha256(rules),
+  runtime: [artifact],
+  schemaVersion: STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION,
+  standaloneCss: { ...artifact, path: "dist/stylex.css" },
+  standaloneSerializer,
+  stylesheets: [{ ...artifact, path: "src/compiler-foundation.css" }],
+};
+const artifactPromise: Promise<StylexArtifactV1> = artifactForFile(process.cwd(), "dist/index.js");
+const canonicalManifest: string = canonicalJson(manifestInput);
+const contract: StylexCompilerContractV1 = compilerContract;
+const collector: StylexTransformCollector = createStylexTransformCollector(process.cwd());
+const transformed: Promise<StylexTransformResult> = collector.transform(
+  'import * as stylex from "@stylexjs/stylex"; export const styles = stylex.create({ root: { color: "red" } });',
+  "src/index.ts",
+);
+const validated: StylexPackageManifestV1 = validateStylexPackageManifest(manifestInput);
+const readManifest: Promise<StylexPackageManifestV1> = readStylexPackageManifest(
+  "dist/stylex-manifest.json",
+  process.cwd(),
+);
 void createStylexGeneration;
 void finalizeStylexGeneration;
 void collectBunStylexGraph;
 void stylexVite({ generation, graphId: "client", rootDirectory: process.cwd() });
+void artifactPromise;
 void bunOptions;
+void canonicalManifest;
+void contract;
+void transformed;
+void validated;
+void readManifest;
+void standaloneCss;
 `;
 
 const typeContractConfig = `${JSON.stringify({

@@ -545,6 +545,26 @@ export type LoadedStylexGeneration = Readonly<{
   plan: StylexGenerationPlanV1;
 }>;
 
+type LivePackageFoundation = Readonly<{
+  artifact: StylexArtifactV1;
+  compilerFoundation: string;
+  packageName: string;
+}>;
+
+function packageInputIdentity(path: string): Readonly<{ name: string; path: string }> | undefined {
+  const parts = path.split("/");
+  const nodeModulesIndex = parts.lastIndexOf("node_modules");
+  if (nodeModulesIndex === -1 || nodeModulesIndex + 1 >= parts.length) return undefined;
+  const first = parts[nodeModulesIndex + 1]!;
+  const scoped = first.startsWith("@");
+  const nameEnd = nodeModulesIndex + (scoped ? 3 : 2);
+  if (nameEnd > parts.length) return undefined;
+  const name = parts.slice(nodeModulesIndex + 1, nameEnd).join("/");
+  const packagePath = parts.slice(nameEnd).join("/");
+  if (packagePath.length === 0) return undefined;
+  return { name, path: packagePath };
+}
+
 export async function loadStylexGeneration(handle: StylexGenerationHandleV1): Promise<LoadedStylexGeneration> {
   const handleRecord = object(handle, "generation handle");
   keys(handleRecord, ["directory", "planSha256"], "generation handle");
@@ -592,6 +612,63 @@ async function verifyLivePackageInputs(rootDirectory: string, directory: string,
     const manifestSource = `${canonicalJson(manifest)}\n`;
     assert.equal(sha256(manifestSource), identity.manifestSha256, `Package manifest changed after generation preparation: ${identity.name}@${identity.version}`);
     assert.deepEqual(manifest.package, { name: identity.name, version: identity.version }, `Package identity changed after generation preparation: ${identity.name}@${identity.version}`);
+  }
+}
+
+async function livePackageFoundations(
+  rootDirectory: string,
+  directory: string,
+  loaded: LoadedStylexGeneration,
+): Promise<readonly LivePackageFoundation[]> {
+  const foundations: LivePackageFoundation[] = [];
+  for (const identity of loaded.plan.packages) {
+    const locatorSource = await readFile(join(directory, PACKAGE_INPUTS, `${identity.manifestSha256}.path`), "utf8");
+    assert.equal(locatorSource.endsWith("\n"), true, `Package input locator is malformed for ${identity.name}@${identity.version}`);
+    const manifestPath = normalizeLogicalPath(locatorSource.slice(0, -1), `Package input for ${identity.name}@${identity.version}`);
+    assert.equal(locatorSource, `${manifestPath}\n`, `Package input locator is noncanonical for ${identity.name}@${identity.version}`);
+    const manifestAbsolute = await resolveRootRelativeInput(rootDirectory, manifestPath);
+    const manifest = await readStylexPackageManifest(manifestAbsolute);
+    assert.deepEqual(manifest.package, { name: identity.name, version: identity.version });
+    const packageRoot = resolve(dirname(manifestAbsolute), "..");
+    const foundationAbsolute = await resolveRootRelativeInput(packageRoot, manifest.compilerFoundation);
+    const foundationPath = normalizeLogicalPath(
+      relative(rootDirectory, foundationAbsolute).split(sep).join("/"),
+      `Compiler foundation for ${identity.name}@${identity.version}`,
+    );
+    const foundation = manifest.stylesheets.find(({ path }) => path === manifest.compilerFoundation);
+    assert.ok(foundation !== undefined, `Package manifest omits its compiler foundation: ${identity.name}@${identity.version}`);
+    foundations.push({
+      artifact: { ...foundation, path: foundationPath },
+      compilerFoundation: manifest.compilerFoundation,
+      packageName: identity.name,
+    });
+  }
+  return foundations;
+}
+
+function assertGraphIncludesPackageFoundations(
+  receipt: StylexGraphReceiptV1,
+  foundations: readonly LivePackageFoundation[],
+): void {
+  for (const foundation of foundations) {
+    const matches = receipt.inputs.filter(({ path }) => {
+      if (path === foundation.artifact.path) return true;
+      const identity = packageInputIdentity(path);
+      return identity?.name === foundation.packageName
+        && identity.path === foundation.compilerFoundation;
+    });
+    assert.equal(
+      matches.length,
+      1,
+      `Stylesheet graph ${receipt.graphId} must include the compiler foundation for ${foundation.packageName}: ${foundation.artifact.path}`,
+    );
+    assert.deepEqual(
+      matches[0] === undefined
+        ? undefined
+        : { bytes: matches[0].bytes, sha256: matches[0].sha256 },
+      { bytes: foundation.artifact.bytes, sha256: foundation.artifact.sha256 },
+      `Stylesheet graph ${receipt.graphId} compiler foundation differs from ${foundation.packageName}'s manifest`,
+    );
   }
 }
 
@@ -661,11 +738,12 @@ export async function createStylexGeneration(options: CreateStylexGenerationOpti
       const absolute = await resolveRootRelativeInput(rootDirectory, manifestPath);
       const manifest = await readStylexPackageManifest(absolute);
       const source = `${canonicalJson(manifest)}\n`;
-      return { identity: { manifestSha256: sha256(source), ...manifest.package }, manifestPath, source };
+      return { identity: { manifestSha256: sha256(source), ...manifest.package }, manifest, manifestPath, source };
     }));
     loadedPackages.sort((a, b) => compareStrings(canonicalJson(a.identity), canonicalJson(b.identity)));
     assert.equal(new Set(loadedPackages.map(({ identity }) => canonicalJson(identity))).size, loadedPackages.length, "Package manifests must be unique");
     const packageIdentities = new Map<string, StylexPackageIdentityV1>();
+    const standalonePrefixes = new Map<string, string>();
     for (const item of loadedPackages) {
       const previous = packageIdentities.get(item.identity.name);
       assert.equal(
@@ -674,6 +752,18 @@ export async function createStylexGeneration(options: CreateStylexGenerationOpti
         `More than one identity was supplied for package ${item.identity.name}`,
       );
       packageIdentities.set(item.identity.name, item.identity);
+      const prefix = item.manifest.standaloneSerializer.prefix;
+      const overlappingPrefix = [...standalonePrefixes.entries()].find(([registered]) =>
+        registered === prefix
+          || registered.startsWith(`${prefix}.`)
+          || prefix.startsWith(`${registered}.`)
+      );
+      assert.equal(
+        overlappingPrefix,
+        undefined,
+        `Packages ${overlappingPrefix?.[1] ?? "<unknown>"} and ${item.identity.name} have overlapping standalone StyleX namespaces: ${overlappingPrefix?.[0] ?? prefix} and ${prefix}`,
+      );
+      standalonePrefixes.set(prefix, item.identity.name);
       await writeFile(join(directory, PACKAGES, `${item.identity.manifestSha256}.json`), item.source, { flag: "wx", mode: 0o600 });
       await writeFile(join(directory, PACKAGE_INPUTS, `${item.identity.manifestSha256}.path`), `${item.manifestPath}\n`, { flag: "wx", mode: 0o600 });
     }
@@ -850,6 +940,12 @@ export async function writeStylexGraphReceipt(options: WriteStylexGraphReceiptOp
   assert.equal(receipt.outputRoot, `${GRAPHS}/${receipt.graphId}/output`, "Graph outputRoot is not the owned staging root");
   const rootDirectory = await realDirectory(string(rawOptions.rootDirectory, "rootDirectory"), "rootDirectory");
   await Promise.all(receipt.inputs.map((item) => verifyArtifact(rootDirectory, item)));
+  if (loaded.plan.templates.some(({ stylesheetGraphId }) => stylesheetGraphId === receipt.graphId)) {
+    assertGraphIncludesPackageFoundations(
+      receipt,
+      await livePackageFoundations(rootDirectory, generation.directory, loaded),
+    );
+  }
   await auditCssInputs(
     rootDirectory,
     receipt.inputs,
@@ -1331,14 +1427,20 @@ function assertRenderedTemplateLinks(
 ): void {
   const links = stylesheetLinks(source);
   assert.equal(links.filter((href) => href === templateValue.cssHref).length, 1, "Rendered template must link the finalized CSS exactly once");
+  const finalStylesheetIndex = links.indexOf(templateValue.cssHref);
+  assert.ok(finalStylesheetIndex >= 0, "Rendered template must link the finalized CSS");
   const graphTargets: string[] = [];
-  for (const href of links) {
+  for (const [index, href] of links.entries()) {
     const target = linkedOutputTarget(templateValue.outputPath, href);
     if (href === templateValue.cssHref) {
       assert.equal(target, finalCssPath, "Rendered template final stylesheet target changed");
       continue;
     }
     assert.ok(allowedGraphStylesheets.has(target), `Registered template links an unregistered stylesheet: ${href}`);
+    assert.ok(
+      index < finalStylesheetIndex,
+      `Rendered template graph stylesheet must precede the finalized CSS: ${href}`,
+    );
     graphTargets.push(target);
   }
   for (const required of requiredGraphStylesheets) {
@@ -1389,6 +1491,11 @@ export async function finalizeStylexGeneration(options: FinalizeStylexGeneration
     assert.deepEqual(receiptEntries, expectedEntries, "Graph receipts are missing or unexpected");
     assert.deepEqual((await readdir(join(parsedOptions.generation.directory, GRAPHS))).sort(), loaded.plan.expectedGraphs.map(({ id }) => id).sort(), "Graph staging directories are missing or unexpected");
     const loadedReceipts = await Promise.all(loaded.plan.expectedGraphs.map(({ id }) => loadReceipt(parsedOptions.generation.directory, id)));
+    const packageFoundations = await livePackageFoundations(
+      rootDirectory,
+      parsedOptions.generation.directory,
+      loaded,
+    );
     assert.deepEqual(
       loadedReceipts.map(({ receipt }) => receipt.graphId).sort(compareStrings),
       loaded.plan.expectedGraphs.map(({ id }) => id).sort(compareStrings),
@@ -1438,6 +1545,9 @@ export async function finalizeStylexGeneration(options: FinalizeStylexGeneration
       const inputPaths = new Set(receipt.inputs.map(({ path }) => path));
       for (const entrypoint of expected.entrypoints) assert.ok(inputPaths.has(entrypoint), `Graph receipt omits entrypoint input ${entrypoint}`);
       await Promise.all(receipt.inputs.map((artifact) => verifyArtifact(rootDirectory, artifact)));
+      if (loaded.plan.templates.some(({ stylesheetGraphId }) => stylesheetGraphId === receipt.graphId)) {
+        assertGraphIncludesPackageFoundations(receipt, packageFoundations);
+      }
       await auditCssInputs(
         rootDirectory,
         receipt.inputs,

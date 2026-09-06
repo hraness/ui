@@ -20,6 +20,7 @@ import {
   type StylexPackageManifestV1,
   type StylexRuleV1,
   type StylexRuleValueV1,
+  type StylexStandaloneSerializerV1,
 } from "./contracts.js";
 
 // StyleX 0.19 combines a CommonJS module.exports runtime with ESM-shaped declarations,
@@ -153,6 +154,55 @@ function requiredString(value: unknown, description: string): string {
 }
 
 const packageNamePattern = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u;
+const normalizedLayerSegmentPattern = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
+const priorityLayerSegmentPattern = /^priority(?:0|[1-9]\d*)$/u;
+
+function normalizedLayerName(value: unknown, description: string): string {
+  const name = requiredString(value, description);
+  const segments = name.split(".");
+  assert.ok(
+    segments.every((segment) => normalizedLayerSegmentPattern.test(segment)),
+    `${description} must be a normalized dotted layer name`,
+  );
+  return name;
+}
+
+function parseStandaloneSerializer(
+  value: unknown,
+  description = "standalone serializer",
+): StylexStandaloneSerializerV1 {
+  const record = plainObject(value, description);
+  exactKeys(record, ["before", "prefix"], [], description);
+  const prefix = normalizedLayerName(record.prefix, `${description}.prefix`);
+  const prefixSegments = prefix.split(".");
+  assert.ok(
+    prefixSegments.length > 1 && prefixSegments[0] === "components",
+    `${description}.prefix must be a non-bare components namespace`,
+  );
+  assert.ok(
+    !prefixSegments.some((segment) => priorityLayerSegmentPattern.test(segment)),
+    `${description}.prefix must not contain a priority layer segment`,
+  );
+  assert.ok(Array.isArray(record.before), `${description}.before must be an array`);
+  canonicalValue(record.before, `${description}.before`);
+  const before = record.before.map((item, index) =>
+    normalizedLayerName(item, `${description}.before[${String(index)}]`)
+  );
+  assert.ok(before.length > 0, `${description}.before must be nonempty`);
+  assert.equal(new Set(before).size, before.length, `${description}.before must be unique`);
+  const legacyPrefix = `${prefix}.legacy`;
+  for (const layer of before) {
+    assert.ok(
+      layer === legacyPrefix || layer.startsWith(`${legacyPrefix}.`),
+      `${description}.before entries must be ${legacyPrefix} or its descendants`,
+    );
+    assert.ok(
+      !layer.split(".").some((segment) => priorityLayerSegmentPattern.test(segment)),
+      `${description}.before must not contain priority layers`,
+    );
+  }
+  return { before, prefix };
+}
 
 function optionalString(value: unknown, description: string): string | undefined {
   return value === undefined ? undefined : requiredString(value, description);
@@ -302,16 +352,21 @@ export function createStylexTransformCollector(rootDirectory: string): StylexTra
   };
 }
 
-export function serializeStylexRules(value: unknown): string {
-  verifyCompilerContract();
+function serializeStylexRulesWithSerializer(
+  value: unknown,
+  serializer: StylexStandaloneSerializerV1,
+): string {
   const rules = canonicalizeStylexRules(parseStylexRules(value));
-  const prefix = compilerContract.serializer.useLayers.prefix;
-  const legacyLayers = compilerContract.serializer.useLayers.before;
+  const prefix = serializer.prefix;
+  const legacyLayers = serializer.before;
   const topLevelPrelude = `@layer ${compilerContract.css.topLevelLayers.join(", ")};`;
   if (rules.length === 0) return `${topLevelPrelude}\n@layer ${legacyLayers.join(", ")};\n`;
   const serialized = stylexPlugin.processStylexRules(
     rules.map((rule) => [rule[0], { ...rule[1] }, rule[2]] as UpstreamStylexRule),
-    compilerContract.serializer,
+    {
+      enableLTRRTLComments: compilerContract.serializer.enableLTRRTLComments,
+      useLayers: { before: [...legacyLayers], prefix },
+    },
   );
   const result = transformCss({
     code: Buffer.from(serialized),
@@ -323,7 +378,7 @@ export function serializeStylexRules(value: unknown): string {
   const css = Buffer.from(result.code).toString("utf8");
   const priorities: number[] = [];
   for (const layer of cssInventory(css, "Serialized StyleX rules").layers) {
-    if (layer === prefix || legacyLayers.includes(layer as typeof legacyLayers[number])) continue;
+    if (layer === prefix || legacyLayers.includes(layer)) continue;
     const match = new RegExp(`^${prefix.replaceAll(".", "\\.")}\\.priority([1-9]\\d*)$`, "u").exec(layer);
     assert.ok(match !== null, `Serialized StyleX rules emitted an unsupported layer: ${layer}`);
     priorities.push(Number(match[1]));
@@ -343,6 +398,25 @@ export function serializeStylexRules(value: unknown): string {
     "Lightning CSS introduced a layer outside the complete StyleX inventory",
   );
   return `${topLevelPrelude}\n@layer ${names.join(", ")};\n${css.slice(leading[0].length)}`;
+}
+
+export function serializeStylexPackageRules(
+  value: unknown,
+  serializerValue: unknown,
+): string {
+  verifyCompilerContract();
+  return serializeStylexRulesWithSerializer(
+    value,
+    parseStandaloneSerializer(serializerValue),
+  );
+}
+
+export function serializeStylexRules(value: unknown): string {
+  verifyCompilerContract();
+  return serializeStylexRulesWithSerializer(
+    value,
+    compilerContract.serializer.useLayers,
+  );
 }
 
 function parseArtifact(value: unknown, description: string): StylexArtifactV1 {
@@ -369,7 +443,7 @@ function validateCompiler(value: unknown): StylexCompilerContractV1 {
 
 export function validateStylexPackageManifest(value: unknown): StylexPackageManifestV1 {
   const record = plainObject(value, "package manifest");
-  exactKeys(record, ["buildTools", "compiler", "compilerSha256", "kind", "package", "rules", "rulesSha256", "runtime", "schemaVersion", "standaloneCss", "stylesheets"], [], "package manifest");
+  exactKeys(record, ["buildTools", "compiler", "compilerFoundation", "compilerSha256", "kind", "package", "rules", "rulesSha256", "runtime", "schemaVersion", "standaloneCss", "standaloneSerializer", "stylesheets"], [], "package manifest");
   assert.equal(record.kind, "hraness-stylex-package-manifest");
   assert.equal(record.schemaVersion, STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION);
   const compiler = validateCompiler(record.compiler);
@@ -386,16 +460,31 @@ export function validateStylexPackageManifest(value: unknown): StylexPackageMani
   const buildTools = parseArtifacts(record.buildTools, "package manifest buildTools");
   const runtime = parseArtifacts(record.runtime, "package manifest runtime");
   const standaloneCss = parseArtifact(record.standaloneCss, "package manifest standaloneCss");
+  const standaloneSerializer = parseStandaloneSerializer(
+    record.standaloneSerializer,
+    "package manifest standaloneSerializer",
+  );
   const stylesheets = parseArtifacts(record.stylesheets, "package manifest stylesheets");
+  const compilerFoundation = normalizeLogicalPath(
+    record.compilerFoundation,
+    "package manifest compilerFoundation",
+  );
   assert.ok(stylesheets.length > 0, "Package manifest must bind at least one compiler-adopter stylesheet");
   assert.ok(stylesheets.every(({ path }) => path.endsWith(".css")), "Package manifest stylesheets must contain only CSS paths");
   assert.ok(standaloneCss.path.endsWith(".css"), "Package manifest standaloneCss must be a CSS path");
+  assert.ok(compilerFoundation.endsWith(".css"), "Package manifest compilerFoundation must be a CSS path");
+  assert.equal(
+    stylesheets.filter(({ path }) => path === compilerFoundation).length,
+    1,
+    "Package manifest compilerFoundation must match exactly one stylesheet",
+  );
   const paths = [...buildTools, ...runtime, standaloneCss, ...stylesheets].map((item) => item.path);
   assert.equal(new Set(paths).size, paths.length, "Package manifest artifact roles must not overlap");
   return {
-    buildTools, compiler, compilerSha256, kind: "hraness-stylex-package-manifest",
+    buildTools, compiler, compilerFoundation, compilerSha256, kind: "hraness-stylex-package-manifest",
     package: { name: packageName, version: packageVersionValue }, rules, rulesSha256,
-    runtime, schemaVersion: STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION, standaloneCss, stylesheets,
+    runtime, schemaVersion: STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION, standaloneCss,
+    standaloneSerializer, stylesheets,
   };
 }
 
@@ -404,6 +493,22 @@ async function verifyArtifact(packageRoot: string, artifact: StylexArtifactV1): 
   const bytes = await readFile(path);
   assert.equal(bytes.byteLength, artifact.bytes, `Artifact byte count changed: ${artifact.path}`);
   assert.equal(sha256(bytes), artifact.sha256, `Artifact hash changed: ${artifact.path}`);
+}
+
+async function verifyStandaloneCssSemantics(
+  packageRoot: string,
+  manifest: StylexPackageManifestV1,
+): Promise<void> {
+  const path = await resolveRootRelativeInput(packageRoot, manifest.standaloneCss.path);
+  const actual = await readFile(path);
+  const expected = Buffer.from(serializeStylexPackageRules(
+    manifest.rules,
+    manifest.standaloneSerializer,
+  ));
+  assert.ok(
+    actual.equals(expected),
+    `Standalone StyleX CSS differs from its declared rules and serializer: ${manifest.standaloneCss.path}`,
+  );
 }
 
 export async function artifactForFile(rootDirectory: string, logicalPath: unknown): Promise<StylexArtifactV1> {
@@ -452,6 +557,7 @@ export async function readStylexPackageManifest(manifestPath: string, packageRoo
     [...parsed.buildTools, ...parsed.runtime, parsed.standaloneCss, ...parsed.stylesheets]
       .map((artifact) => verifyArtifact(root, artifact)),
   );
+  await verifyStandaloneCssSemantics(root, parsed);
   return parsed;
 }
 
@@ -524,16 +630,23 @@ function cssInventory(
   return { classes, imports, layers, registrations };
 }
 
-export function auditCssWithoutStylexRules(
+function isPriorityLayerUnderPrefix(layer: string, prefix: string): boolean {
+  if (!layer.startsWith(`${prefix}.`)) return false;
+  const nextSegment = layer.slice(prefix.length + 1).split(".", 1)[0];
+  return nextSegment !== undefined && priorityLayerSegmentPattern.test(nextSegment);
+}
+
+function auditCssWithoutStylexRulesUnderPrefixes(
   css: string,
   rules: readonly StylexRuleV1[],
+  prefixes: readonly string[],
   description = "Compiler graph",
 ): void {
   assert.ok(typeof css === "string", `${description} CSS must be a string`);
   const graph = cssInventory(css, description);
   for (const layer of graph.layers) {
     assert.ok(
-      !/^components\.hraness-ui\.priority(?:0|[1-9]\d*)(?:\.|$)/u.test(layer),
+      !prefixes.some((prefix) => isPriorityLayerUnderPrefix(layer, prefix)),
       `${description} must not emit an independently serialized recipe layer`,
     );
   }
@@ -555,6 +668,19 @@ export function auditCssWithoutStylexRules(
   }
 }
 
+export function auditCssWithoutStylexRules(
+  css: string,
+  rules: readonly StylexRuleV1[],
+  description = "Compiler graph",
+): void {
+  auditCssWithoutStylexRulesUnderPrefixes(
+    css,
+    rules,
+    [compilerContract.serializer.useLayers.prefix],
+    description,
+  );
+}
+
 export function auditCssWithoutStandaloneRecipes(
   css: string,
   packageManifests: readonly StylexPackageManifestV1[],
@@ -567,5 +693,13 @@ export function auditCssWithoutStandaloneRecipes(
     ![...graph.imports].some((url) => /(?:^|\/)stylex\.css(?:[?#]|$)/iu.test(url)),
     "Compiler graph must not import standalone recipe CSS",
   );
-  auditCssWithoutStylexRules(css, manifests.flatMap(({ rules }) => rules), description);
+  auditCssWithoutStylexRulesUnderPrefixes(
+    css,
+    manifests.flatMap(({ rules }) => rules),
+    [...new Set([
+      compilerContract.serializer.useLayers.prefix,
+      ...manifests.map(({ standaloneSerializer }) => standaloneSerializer.prefix),
+    ])],
+    description,
+  );
 }

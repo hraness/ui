@@ -7,10 +7,15 @@ import {
   STYLEX_TEMPLATE_CSS_PLACEHOLDER as TEMPLATE_CSS_PLACEHOLDER,
 } from "./contracts.js";
 import {
+  artifactForFile as artifactForFileImplementation,
+  canonicalJson as canonicalJsonImplementation,
   compilerContract as compilerContractValue,
   compilerSha256 as compilerSha256Value,
+  createStylexTransformCollector as createStylexTransformCollectorImplementation,
   readStylexPackageManifest as readStylexPackageManifestImplementation,
+  serializeStylexPackageRules as serializeStylexPackageRulesImplementation,
   serializeStylexRules as serializeStylexRulesImplementation,
+  stylexRulesSha256 as stylexRulesSha256Implementation,
   validateStylexPackageManifest as validateStylexPackageManifestImplementation,
 } from "./compiler.js";
 import {
@@ -26,14 +31,19 @@ export const STYLEX_GENERATION_SCHEMA_VERSION = GENERATION_SCHEMA_VERSION;
 export const STYLEX_GRAPH_RECEIPT_SCHEMA_VERSION = GRAPH_RECEIPT_SCHEMA_VERSION;
 export const STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION = PACKAGE_MANIFEST_SCHEMA_VERSION;
 export const STYLEX_TEMPLATE_CSS_PLACEHOLDER = TEMPLATE_CSS_PLACEHOLDER;
+export const artifactForFile: typeof artifactForFileImplementation = (...arguments_) => artifactForFileImplementation(...arguments_);
+export const canonicalJson: typeof canonicalJsonImplementation = (...arguments_) => canonicalJsonImplementation(...arguments_);
 export const compilerContract = compilerContractValue;
 export const compilerSha256 = compilerSha256Value;
 export const createStylexGeneration: typeof createStylexGenerationImplementation = (...arguments_) => createStylexGenerationImplementation(...arguments_);
+export const createStylexTransformCollector: typeof createStylexTransformCollectorImplementation = (...arguments_) => createStylexTransformCollectorImplementation(...arguments_);
 export const finalizeStylexGeneration: typeof finalizeStylexGenerationImplementation = (...arguments_) => finalizeStylexGenerationImplementation(...arguments_);
 export const prepareStylexProducedTemplate: typeof prepareStylexProducedTemplateImplementation = (...arguments_) => prepareStylexProducedTemplateImplementation(...arguments_);
 export const readStylexPackageManifest: typeof readStylexPackageManifestImplementation = (...arguments_) => readStylexPackageManifestImplementation(...arguments_);
 export const sealStylexProducedTemplate: typeof sealStylexProducedTemplateImplementation = (...arguments_) => sealStylexProducedTemplateImplementation(...arguments_);
+export const serializeStylexPackageRules: typeof serializeStylexPackageRulesImplementation = (...arguments_) => serializeStylexPackageRulesImplementation(...arguments_);
 export const serializeStylexRules: typeof serializeStylexRulesImplementation = (...arguments_) => serializeStylexRulesImplementation(...arguments_);
+export const stylexRulesSha256: typeof stylexRulesSha256Implementation = (...arguments_) => stylexRulesSha256Implementation(...arguments_);
 export const validateStylexPackageManifest: typeof validateStylexPackageManifestImplementation = (...arguments_) => validateStylexPackageManifestImplementation(...arguments_);
 export type {
   CreateStylexGenerationOptions,
@@ -53,6 +63,8 @@ export type {
   StylexPackageManifestV1,
   StylexRuleV1,
   StylexRuleValueV1,
+  StylexStandaloneSerializerV1,
   StylexTemplateV1,
 } from "./contracts.js";
+export type { StylexTransformCollector, StylexTransformResult } from "./compiler.js";
 export type { PreparedStylexProducedTemplate } from "./generation.js";

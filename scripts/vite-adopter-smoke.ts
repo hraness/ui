@@ -552,7 +552,9 @@ assert.equal(finalDirectory, resolve(outputDirectory, "packed-vite-adopter"));
 const typeContractSource = `import {
   createStylexGeneration,
   finalizeStylexGeneration,
+  serializeStylexPackageRules,
   type StylexGenerationHandleV1,
+  type StylexStandaloneSerializerV1,
 } from "@hraness/ui/stylex-build";
 import {
   stylexVite,
@@ -566,10 +568,16 @@ const options = {
   graphId: "client",
   rootDirectory: process.cwd(),
 } satisfies StylexViteOptions;
+const standaloneSerializer = {
+  before: ["components.fixture-package.legacy"],
+  prefix: "components.fixture-package",
+} satisfies StylexStandaloneSerializerV1;
+const standaloneCss: string = serializeStylexPackageRules([], standaloneSerializer);
 const plugin: Plugin = stylexVite(options);
 void createStylexGeneration;
 void finalizeStylexGeneration;
 void plugin;
+void standaloneCss;
 
 // @ts-expect-error Portable StyleX and Vite declarations must not expose Bun globals.
 void Bun;
