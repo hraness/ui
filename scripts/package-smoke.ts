@@ -79,6 +79,43 @@ const PACKAGE_LIST_BOX_STYLE_KEYS = [
   "header", "horizontalChild", "horizontalRoot", "item", "itemDisabled",
   "itemHighlighted", "itemSelected", "root", "section",
 ] as const;
+const PACKAGE_NAVIGATION_STYLE_KEYS = [
+  "breadcrumbCurrent", "breadcrumbCurrentItem", "breadcrumbItem", "breadcrumbList",
+  "breadcrumbRoot", "breadcrumbSeparator", "paginationBoundary", "paginationCurrent",
+  "paginationDisabled", "paginationEllipsis", "paginationLink", "paginationList",
+  "paginationRoot",
+] as const;
+const PACKAGE_FEEDBACK_STYLE_KEYS = [
+  "progressControl", "progressLabelRow", "progressRoot", "skeletonRoot",
+  "skeletonText", "spinnerLarge", "spinnerRoot", "spinnerSmall",
+] as const;
+const PACKAGE_MOTION_STYLE_KEYS = [
+  "fadeIn", "fadeOut", "overlayEnter", "overlayExit", "progressIndeterminate",
+  "skeleton", "spin", "toastEnter", "toastExit",
+] as const;
+const PACKAGE_MOTION_RUNTIME_STYLE_KEYS = [
+  "fadeIn", "fadeOut", "overlayEnter", "overlayExit", "progressIndeterminate",
+  "skeleton", "spin", "toastEnter",
+] as const;
+const PACKAGE_COLLECTION_STYLE_KEYS = [
+  "accordionRoot", "disclosureHeading", "disclosureIndicator",
+  "disclosureIndicatorExpanded", "disclosurePanel", "disclosurePanelHidden",
+  "disclosureRoot", "disclosureTitle", "disclosureTrigger",
+  "disclosureTriggerCompact", "disclosureTriggerFocusVisible",
+  "disclosureTriggerLarge", "disclosureTriggerNativeFocusFallback",
+  "segmentedControlRoot", "segmentedControlRootCompact", "segmentedIndicator",
+  "segmentedItem", "segmentedItemCompact", "segmentedItemDisabled",
+  "segmentedItemFocusVisible", "segmentedItemHovered",
+  "segmentedItemNativeInteractionFallbacks", "segmentedItemSelected",
+  "segmentedLabel", "tab", "tabCompact", "tabFocusVisible",
+  "tabNativeFocusFallback", "tabSelected", "tabVertical", "tabBar",
+  "tabBarVertical", "tabEnd", "tabLabel", "tabLeading", "tabList",
+  "tabListVertical", "tabPanel", "tabPanelFocusVisible",
+  "tabPanelNativeFocusFallback", "tabPanels", "tabsRoot", "toggleGroupRoot",
+  "toggleGroupRootVertical", "toggleItem", "toggleItemDisabled",
+  "toggleItemFocusVisible", "toggleItemNativeFocusFallback", "toggleItemSelected",
+  "toggleItemVertical", "toggleLabel", "toggleLeading",
+] as const;
 type PackageListBoxStyleKey = (typeof PACKAGE_LIST_BOX_STYLE_KEYS)[number];
 type PackageListBoxProbe = Readonly<{
   classes: Readonly<Record<PackageListBoxStyleKey, readonly string[]>>;
@@ -198,6 +235,7 @@ interface PackageDataTableProbe {
 interface PackageNamedStyleMap {
   readonly classNames: ReadonlySet<string>;
   readonly entries: ReadonlyMap<string, string>;
+  readonly identifier: string;
   readonly object: string;
 }
 
@@ -440,7 +478,7 @@ function packageNamedStyleMap(
       for (const className of classMatch[1]!.split(/\s+/u)) classNames.add(className);
     }
     if (classNames.size === 0) continue;
-    candidates.push({ classNames, entries, object });
+    candidates.push({ classNames, entries, identifier: match[1]!, object });
   }
   assert.equal(
     candidates.length,
@@ -962,13 +1000,13 @@ const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
     /color:\s*var\(--ui-popover-foreground\);/u, /box-shadow:\s*var\(--elevation-overlay\);/u,
   ],
   popoverEntering: [
-    /animation-name:\s*hraness-overlay-enter;/u, /animation-duration:\s*var\(--motion-duration-standard\);/u,
+    /animation-duration:\s*var\(--motion-duration-standard\);/u,
     /animation-timing-function:\s*var\(--motion-easing-emphasized\);/u, /animation-delay:\s*0s;/u,
     /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
     /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
   ],
   popoverExiting: [
-    /animation-name:\s*hraness-overlay-exit;/u, /animation-duration:\s*var\(--motion-duration-fast\);/u,
+    /animation-duration:\s*var\(--motion-duration-fast\);/u,
     /animation-timing-function:\s*var\(--motion-easing-standard\);/u, /animation-delay:\s*0s;/u,
     /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
     /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
@@ -997,8 +1035,6 @@ const MENU_CONDITIONAL_DECLARATIONS: Partial<Record<MenuStyleKey, readonly Reado
     { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
     { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
   ],
-  popoverEntering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
-  popoverExiting: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
 };
 
 function menuDeclarationMatches(body: string, declaration: RegExp): boolean {
@@ -1143,7 +1179,6 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /overscroll-behavior-y:\s*contain;/u
   ],
   overlayEntering: [
-    /animation-name:\s*hraness-fade-in;/u,
     /animation-duration:\s*var\(--motion-duration-standard\);/u,
     /animation-timing-function:\s*var\(--motion-easing-standard\);/u,
     /animation-delay:\s*0s;/u,
@@ -1153,7 +1188,6 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /animation-play-state:\s*running;/u
   ],
   overlayExiting: [
-    /animation-name:\s*hraness-fade-out;/u,
     /animation-duration:\s*var\(--motion-duration-fast\);/u,
     /animation-timing-function:\s*var\(--motion-easing-standard\);/u,
     /animation-delay:\s*0s;/u,
@@ -1211,8 +1245,6 @@ const DIALOG_CONDITIONAL_DECLARATIONS: Partial<Record<DialogStyleKey, readonly R
     { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
     { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
   ],
-  overlayEntering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
-  overlayExiting: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
 };
 const DIALOG_NATIVE_DECLARATIONS = [
   ...DIALOG_DECLARATIONS.closeHovered.map((declaration) => ({ pseudo: "hover" as const, declaration })),
@@ -1239,8 +1271,6 @@ const OVERLAY_DECLARATIONS: Readonly<Record<OverlayStyleKey, readonly RegExp[]>>
 };
 const OVERLAY_CONDITIONAL_DECLARATIONS: Partial<Record<OverlayStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
   surface: MENU_CONDITIONAL_DECLARATIONS.popover!,
-  popoverEntering: MENU_CONDITIONAL_DECLARATIONS.popoverEntering!,
-  popoverExiting: MENU_CONDITIONAL_DECLARATIONS.popoverExiting!,
 };
 function requirePackageOverlay(javaScript: string, css: string, legacy: string): void {
   const map = packageNamedStyleMap(javaScript, OVERLAY_STYLE_KEYS, "overlayStyles class map");
@@ -1319,7 +1349,7 @@ const TOAST_DECLARATIONS: Readonly<Record<ToastStyleKey, readonly RegExp[]>> = {
     /pointer-events:\s*auto;/u,
   ],
   entering: [
-    /animation-name:\s*hraness-toast-enter;/u, /animation-duration:\s*var\(--motion-duration-standard\);/u,
+    /animation-duration:\s*var\(--motion-duration-standard\);/u,
     /animation-timing-function:\s*var\(--motion-easing-emphasized\);/u, /animation-delay:\s*0s;/u,
     /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
     /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
@@ -1360,7 +1390,6 @@ const TOAST_CONDITIONAL_DECLARATIONS: Partial<Record<ToastStyleKey, readonly Rea
     { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
     { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
   ],
-  entering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
   toneDanger: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
   toneInfo: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
   toneSuccess: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
@@ -1412,8 +1441,7 @@ function requirePackageToast(javaScript: string, css: string, legacy: string): v
   assert.doesNotMatch(css, /\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u, "packed Toast semantic selector");
   assert.doesNotMatch(css, /--gallery-toast-collision/u, "packed Toast gallery marker");
   assert.match(legacy, /--hraness-toast-coarse-min:\s*var\(--interactive-target-min\);/u, "packed Toast synthetic coarse minimum");
-  assert.match(legacy, /@keyframes\s+hraness-toast-enter/u, "packed Toast enter keyframes");
-  assert.match(legacy, /@keyframes\s+hraness-toast-exit/u, "packed Toast exit keyframes");
+  assert.doesNotMatch(legacy, /@keyframes\b/u, "packed components.css must not retain Toast keyframes");
   for (const slot of ["toast-region", "toast", "toast-content", "toast-copy", "toast-title", "toast-description", "toast-action", "toast-close"]) {
     assert.match(javaScript, new RegExp("[\"']" + slot + "[\"']", "u"), "packed Toast " + slot + " semantic slot");
   }
@@ -2200,7 +2228,6 @@ function requirePackageIndicatorKnobStyles(
     [indicators, "sliderThumb", /max\(1\.25rem,\s*var\(--hraness-slider-coarse-min,\s*0px\)\)/u, "synthetic coarse Slider target"],
     [indicators, "sliderThumbIndicator", /height:\s*1\.25rem/u, "Slider visible thumb height"],
     [indicators, "sliderThumbIndicator", /width:\s*1\.25rem/u, "Slider visible thumb width"],
-    [indicators, "indeterminateFill", /animation-name:\s*hraness-progress-indeterminate/u, "indeterminate animation name"],
     [indicators, "indeterminateFill", /animation-duration:\s*1\.25s/u, "indeterminate animation duration"],
     [indicators, "indeterminateFill", /width:\s*40%\s*!important/u, "indeterminate fill width"],
     [knob, "root", /display:\s*inline-grid/u, "Knob root display"],
@@ -2325,7 +2352,6 @@ function requirePackageIndicatorKnobStyles(
     "@media(prefers-reduced-motion:reduce)",
   );
   for (const [map, key, declaration, description] of [
-    [indicators, "indeterminateFill", /animation-name:\s*none/u, "ProgressBar animation stop"],
     [indicators, "indeterminateFill", /animation-duration:\s*0s/u, "ProgressBar zero duration"],
     [knob, "dial", /transition-duration:\s*0s/u, "Knob zero transition duration"],
     [knob, "dial", /transition-property:\s*none/u, "Knob transition stop"],
@@ -2394,10 +2420,308 @@ function requirePackageIndicatorKnobStyles(
     "packed indeterminate ProgressBar must retain its RTL direction reversal",
   );
   assert.doesNotMatch(
+    entryCss(indicators, "indeterminateFill"),
+    /animation-name\s*:/u,
+    "packed indeterminate ProgressBar must compose its name from shared motionStyles",
+  );
+  assert.doesNotMatch(
     css,
     /@layer\s+components\.hraness-ui\.priority5/u,
     "packed StyleX CSS must stay inside the priority1 through priority4 envelope",
   );
+}
+
+function requirePackageFinalMigrationStyles(
+  javaScript: string,
+  css: string,
+  legacyCss: string,
+): void {
+  assert.deepEqual(
+    [...PACKAGE_MOTION_RUNTIME_STYLE_KEYS, "toastExit"],
+    PACKAGE_MOTION_STYLE_KEYS,
+    "packed shared motion inventory must contain eight runtime recipes and one registered-but-unattached Toast exit recipe",
+  );
+  const navigation = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_NAVIGATION_STYLE_KEYS,
+    "navigationStyles class map",
+  );
+  const feedback = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_FEEDBACK_STYLE_KEYS,
+    "feedbackStyles class map",
+  );
+  const motion = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_MOTION_STYLE_KEYS,
+    "motionStyles class map",
+  );
+  const collection = packageNamedStyleMap(
+    javaScript,
+    PACKAGE_COLLECTION_STYLE_KEYS,
+    "collectionStyles class map",
+  );
+  const allStyleRules = packageCssRules(css);
+  for (const [map, keys, description] of [
+    [navigation, PACKAGE_NAVIGATION_STYLE_KEYS, "navigationStyles"],
+    [feedback, PACKAGE_FEEDBACK_STYLE_KEYS, "feedbackStyles"],
+    [motion, PACKAGE_MOTION_STYLE_KEYS, "motionStyles"],
+    [collection, PACKAGE_COLLECTION_STYLE_KEYS, "collectionStyles"],
+  ] as const) {
+    assert.deepEqual(
+      packageTopLevelStyleKeys(map.object, `packed ${description} class map`),
+      keys,
+      `packed ${description} must retain its exact finite recipe keys and order`,
+    );
+    for (const key of keys) {
+      for (const className of packageEntryClassNames(map, key)) {
+        assert.ok(
+          allStyleRules.some((rule) =>
+            new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+          ),
+          `packed StyleX CSS must retain a rule for every ${description}.${key} atom: ${className}`,
+        );
+      }
+    }
+  }
+  const entryRules = (map: PackageNamedStyleMap, key: string) =>
+    packageStyleRules(css, packageEntryClassNames(map, key));
+  const entryCss = (map: PackageNamedStyleMap, key: string) =>
+    entryRules(map, key).map((rule) => rule.source).join("\n");
+  const baseCss = (map: PackageNamedStyleMap, key: string) =>
+    entryRules(map, key).filter((rule) => rule.conditions.length === 0)
+      .map((rule) => rule.source).join("\n");
+  const conditionalCss = (
+    map: PackageNamedStyleMap,
+    key: string,
+    condition: string,
+  ) => {
+    const normalized = normalizedPackageCondition(condition);
+    return entryRules(map, key)
+      .filter((rule) => rule.conditions.length === 1 && rule.conditions[0] === normalized)
+      .map((rule) => rule.source).join("\n");
+  };
+
+  for (const [key, declaration, description] of [
+    ["breadcrumbCurrent", /min-width:\s*0/u, "current Breadcrumbs shrink boundary"],
+    ["breadcrumbCurrentItem", /flex:\s*1 1 auto/u, "current Breadcrumbs flexible item"],
+    ["breadcrumbList", /overflow:\s*hidden/u, "Breadcrumbs clipping"],
+    ["paginationBoundary", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-pagination-coarse-min,\s*0px\)\)/u, "synthetic coarse Pagination boundary"],
+    ["paginationLink", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-pagination-coarse-min,\s*0px\)\)/u, "synthetic coarse Pagination link"],
+  ] as const) {
+    assert.match(baseCss(navigation, key), declaration, `packed ${description} must remain compiled`);
+  }
+  for (const key of ["paginationBoundary", "paginationLink"] as const) {
+    assert.match(
+      conditionalCss(navigation, key, "@media(pointer:coarse)"),
+      /min-height:\s*var\(--interactive-target-min\)/u,
+      `packed real coarse-pointer ${key} must remain in its exact media block`,
+    );
+  }
+  assert.match(
+    conditionalCss(navigation, "paginationRoot", "@media(max-width:40rem)"),
+    /justify-content:\s*center/u,
+    "packed compact Pagination centering must remain in its exact media block",
+  );
+  assert.doesNotMatch(
+    entryCss(navigation, "paginationEllipsis"),
+    /hraness-pagination-coarse-min|@media\s*\(pointer:\s*coarse\)/u,
+    "packed Pagination ellipses must not inherit the navigation coarse minimum",
+  );
+
+  for (const [key, declaration, description] of [
+    ["progressRoot", /display:\s*grid/u, "native Progress grid"],
+    ["progressRoot", /gap:\s*var\(--space-2\)/u, "native Progress gap"],
+    ["progressLabelRow", /justify-content:\s*space-between/u, "native Progress label distribution"],
+    ["progressControl", /appearance:\s*none/u, "native Progress appearance reset"],
+    ["progressControl", /height:\s*0?\.5rem/u, "native Progress track height"],
+  ] as const) {
+    assert.match(baseCss(feedback, key), declaration, `packed ${description} must remain compiled`);
+  }
+  for (const key of ["skeletonRoot", "spinnerRoot"] as const) {
+    assert.doesNotMatch(
+      entryCss(feedback, key),
+      /animation-name\s*:/u,
+      `packed feedbackStyles.${key} must compose its name from shared motionStyles`,
+    );
+  }
+  assert.match(
+    conditionalCss(feedback, "progressControl", "@media(forced-colors:active)"),
+    /color:\s*highlight/u,
+    "packed native Progress must retain its forced-color fill",
+  );
+  assert.match(
+    conditionalCss(feedback, "progressControl", "@media(forced-colors:active)"),
+    /forced-color-adjust:\s*none/u,
+    "packed native Progress must retain forced-color ownership",
+  );
+  const legacyProgressRules = packageCssRules(legacyCss).filter((rule) =>
+    /\.hraness-progress(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u.test(rule.header)
+  );
+  const progressSeams = [
+    [".hraness-progress__control::-webkit-progress-bar", /background:\s*var\(--ui-muted\);?/u, "native Progress WebKit track"],
+    [".hraness-progress__control::-webkit-progress-value", /background:\s*var\(--ui-primary\);?/u, "native Progress WebKit value"],
+    [".hraness-progress__control::-moz-progress-bar", /background:\s*var\(--ui-primary\);?/u, "native Progress Gecko value"],
+  ] as const;
+  assert.deepEqual(
+    legacyProgressRules.map((rule) => rule.header),
+    progressSeams.map(([header]) => header),
+    "packed components.css must retain only the three native Progress pseudo-element seams",
+  );
+  for (const [header, declaration, description] of progressSeams) {
+    assert.match(
+      legacyProgressRules.find((rule) => rule.header === header)?.body ?? "",
+      declaration,
+      `packed components.css must retain the ${description} background`,
+    );
+  }
+
+  assert.equal(
+    javaScript.split(motion.object).length - 1,
+    1,
+    "packed motionStyles map must have exactly one removable definition",
+  );
+  const runtimeWithoutMotionMap = javaScript.replace(motion.object, "");
+  const escapedMotionIdentifier = motion.identifier.replace(
+    /[.*+?^${}()|[\]\\]/gu,
+    "\\$&",
+  );
+  const runtimeMotionReferenceCount = (key: string) => {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    return runtimeWithoutMotionMap.match(
+      new RegExp(
+        `${escapedMotionIdentifier}(?:\\.${escapedKey}(?![A-Za-z0-9_$])|\\[["']${escapedKey}["']\\])`,
+        "gu",
+      ),
+    )?.length ?? 0;
+  };
+  for (const key of PACKAGE_MOTION_RUNTIME_STYLE_KEYS) {
+    assert.notEqual(
+      runtimeMotionReferenceCount(key),
+      0,
+      `packed JavaScript must retain a generated runtime consumer for motionStyles.${key}`,
+    );
+  }
+  assert.equal(
+    runtimeMotionReferenceCount("toastExit"),
+    0,
+    "packed JavaScript must keep motionStyles.toastExit registered but unattached while React Aria exposes no Toast exit render state",
+  );
+
+  const keyframeBlocks = new Map<string, string>();
+  for (const match of css.matchAll(/@keyframes\s+([A-Za-z0-9_-]+)\s*\{/gu)) {
+    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+    keyframeBlocks.set(match[1]!, `@keyframes ${match[1]!}${balancedBlock(css, open, "packed shared keyframes")}`);
+  }
+  assert.equal(
+    keyframeBlocks.size,
+    PACKAGE_MOTION_STYLE_KEYS.length,
+    "packed StyleX CSS must contain exactly the nine shared motion keyframes",
+  );
+  const motionGeometry = [
+    ["fadeIn", /from\s*\{[^{}]*opacity:\s*0/u],
+    ["fadeOut", /to\s*\{[^{}]*opacity:\s*0/u],
+    ["overlayEnter", /from\s*\{[^{}]*opacity:\s*0[^{}]*transform:\s*translateY\(-0?\.25rem\)\s*scale\(0?\.98\)/u],
+    ["overlayExit", /to\s*\{[^{}]*opacity:\s*0[^{}]*transform:\s*translateY\(-0?\.125rem\)\s*scale\(0?\.99\)/u],
+    ["progressIndeterminate", /from\s*\{[^{}]*transform:\s*translateX\(-125%\)[^{}]*\}[\s\S]*to\s*\{[^{}]*transform:\s*translateX\(250%\)/u],
+    ["skeleton", /to\s*\{[^{}]*background-position:\s*-200% 0(?:%|px)?/u],
+    ["spin", /to\s*\{[^{}]*transform:\s*rotate\(1turn\)/u],
+    ["toastEnter", /from\s*\{[^{}]*opacity:\s*0[^{}]*transform:\s*translateX\(1rem\)/u],
+    ["toastExit", /to\s*\{[^{}]*opacity:\s*0[^{}]*transform:\s*translateX\(1rem\)/u],
+  ] as const;
+  for (const [key, geometry] of motionGeometry) {
+    const motionEntry = packageNamedStyleEntry(motion, key);
+    assert.equal(
+      [...motionEntry.matchAll(/(?:^|[,{])\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu)].length,
+      1,
+      `packed motionStyles.${key} must own exactly one compiled property`,
+    );
+    const motionRules = entryRules(motion, key);
+    assert.equal(motionRules.length, 2, `packed motionStyles.${key} must own only a base and reduced-motion name`);
+    for (const rule of motionRules) {
+      assert.match(
+        rule.body.trim(),
+        /^animation-name:\s*(?:none|[A-Za-z0-9_-]+);?$/u,
+        `packed motionStyles.${key} must own only animation-name`,
+      );
+      assert.ok(
+        rule.conditions.length === 0
+          || (rule.conditions.length === 1 && rule.conditions[0] === "@media(prefers-reduced-motion:reduce)"),
+        `packed motionStyles.${key} must own only its reduced-motion condition`,
+      );
+    }
+    const names = entryRules(motion, key)
+      .filter((rule) => rule.conditions.length === 0)
+      .flatMap((rule) => [...rule.body.matchAll(/animation-name:\s*([A-Za-z0-9_-]+)/gu)])
+      .map((match) => match[1]!)
+      .filter((name) => name !== "none");
+    assert.equal(names.length, 1, `packed motionStyles.${key} must bind one shared keyframe`);
+    assert.match(
+      keyframeBlocks.get(names[0]!) ?? "",
+      geometry,
+      `packed motionStyles.${key} must retain its shared keyframe geometry`,
+    );
+    assert.match(
+      conditionalCss(motion, key, "@media(prefers-reduced-motion:reduce)"),
+      /animation-name:\s*none/u,
+      `packed motionStyles.${key} must reduce its animation name to none`,
+    );
+  }
+  assert.doesNotMatch(legacyCss, /@keyframes\b/u, "packed components.css must not duplicate shared StyleX keyframes");
+
+  for (const [key, declaration, coarseDeclaration, description] of [
+    ["disclosureTrigger", /min-height:\s*max\(var\(--interactive-target-min\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\)/u, /min-height:\s*var\(--interactive-target-min\)/u, "synthetic coarse Disclosure target"],
+    ["disclosureTriggerCompact", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\)/u, /min-height:\s*var\(--interactive-target-min\)/u, "synthetic coarse compact Disclosure target"],
+    ["disclosureTriggerLarge", /min-height:\s*max\(var\(--control-height-primary\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\)/u, /min-height:\s*max\(var\(--control-height-primary\),\s*var\(--interactive-target-min\)\)/u, "synthetic coarse large Disclosure target"],
+    ["segmentedItem", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\)/u, /min-height:\s*var\(--interactive-target-min\)/u, "synthetic coarse SegmentedControl target"],
+    ["segmentedItemCompact", /min-height:\s*max\(2rem,\s*var\(--hraness-collection-coarse-min,\s*0px\)\)/u, /min-height:\s*var\(--interactive-target-min\)/u, "synthetic coarse compact SegmentedControl target"],
+    ["tab", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\)/u, /min-height:\s*var\(--interactive-target-min\)/u, "synthetic coarse Tab target"],
+    ["tabCompact", /min-height:\s*max\(2rem,\s*var\(--hraness-collection-coarse-min,\s*0px\)\)/u, /min-height:\s*var\(--interactive-target-min\)/u, "synthetic coarse compact Tab target"],
+    ["toggleItem", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\)/u, /min-height:\s*var\(--interactive-target-min\)/u, "synthetic coarse ToggleGroup target"],
+  ] as const) {
+    assert.match(baseCss(collection, key), declaration, `packed ${description} must remain compiled`);
+    assert.match(
+      conditionalCss(collection, key, "@media(pointer:coarse)"),
+      coarseDeclaration,
+      `packed real coarse-pointer ${description} must remain in its exact media block`,
+    );
+  }
+  assert.match(
+    conditionalCss(collection, "segmentedItem", "@media(pointer:coarse)"),
+    /min-width:\s*var\(--interactive-target-min\)/u,
+    "packed real coarse-pointer SegmentedControl width must remain in its exact media block",
+  );
+  for (const [key, declaration, description] of [
+    ["segmentedControlRoot", /border-color:\s*canvastext/u, "SegmentedControl system border"],
+    ["segmentedItemSelected", /background-color:\s*buttonface/u, "selected SegmentedControl system surface"],
+    ["tabList", /background-color:\s*canvas/u, "TabList system surface"],
+    ["tabSelected", /color:\s*buttontext/u, "selected Tab system text"],
+    ["toggleGroupRoot", /border-color:\s*canvastext/u, "ToggleGroup system border"],
+    ["toggleItemSelected", /background-color:\s*buttonface/u, "selected ToggleGroup system surface"],
+  ] as const) {
+    assert.match(
+      conditionalCss(collection, key, "@media(forced-colors:active)"),
+      declaration,
+      `packed forced-colors ${description} must remain in its exact media block`,
+    );
+  }
+  assert.doesNotMatch(
+    legacyCss,
+    /\.hraness-(?:tabs__tab|disclosure__trigger|toggle-group__item|segmented-control__item)(?![A-Za-z0-9_-])/u,
+    "packed components.css must not retain migrated collection recipes",
+  );
+  assert.match(
+    legacyCss,
+    /--hraness-collection-coarse-min:\s*var\(--interactive-target-min\)/u,
+    "packed components.css must retain the synthetic collection coarse-pointer seam",
+  );
+  for (const hook of [
+    "hraness-breadcrumbs", "hraness-pagination", "hraness-progress",
+    "hraness-tabs", "hraness-disclosure", "hraness-toggle-group",
+    "hraness-segmented-control",
+  ]) {
+    assert.match(javaScript, new RegExp(hook, "u"), `packed JavaScript must retain ${hook}`);
+  }
 }
 
 function requirePackageContentStyles(javaScript: string, css: string): void {
@@ -2911,7 +3235,11 @@ function requirePackageFieldSelectStyles(javaScript: string, css: string): void 
   for (const key of ["popoverEntering", "popoverExiting"] as const) {
     const keyCss = entryCss(select, key, reducedConditionalCss);
     assert.match(keyCss, /animation-duration:\s*0s/u);
-    assert.match(keyCss, /animation-name:\s*none/u);
+    assert.doesNotMatch(
+      entryCss(select, key),
+      /animation-name\s*:/u,
+      `packed ${key} must compose its name from shared motionStyles`,
+    );
   }
   for (const hook of [
     "hraness-text-field",
@@ -3234,6 +3562,7 @@ import {
   AskAiAboutThis,
   Avatar,
   Badge,
+  Breadcrumbs,
   Card,
   CardContent,
   CardDescription,
@@ -3257,7 +3586,9 @@ import {
   Meter,
   NativeSelectField,
   PageIntro,
+  Pagination,
   PressableCard,
+  Progress,
   ProgressBar,
   QuietSiteFooter,
   QuietSitePage,
@@ -3438,7 +3769,6 @@ assert.match(stylexCss, /font-family:\s*inherit/u);
 assert.match(stylexCss, /font-stretch:\s*inherit/u);
 assert.match(stylexCss, /font-style:\s*inherit/u);
 assert.match(stylexCss, /font-variant:\s*inherit/u);
-assert.match(stylexCss, /animation-name:\s*hraness-spin/u);
 assert.match(stylexCss, /background-color:\s*buttonface/u);
 assert.match(stylexCss, /color:\s*buttontext/u);
 assert.match(stylexCss, /@media\s*\(pointer:\s*coarse\)/u);
@@ -3481,6 +3811,10 @@ assert.equal(
 
 const componentsCssUrl = import.meta.resolve("@hraness/ui/components.css");
 const componentsCss = await readFile(new URL(componentsCssUrl), "utf8");
+await access(new URL("./collections.stylex.ts", componentsCssUrl));
+await access(new URL("./feedback.stylex.ts", componentsCssUrl));
+await access(new URL("./motion.stylex.ts", componentsCssUrl));
+await access(new URL("./navigation.stylex.ts", componentsCssUrl));
 await access(new URL("./skip-link.stylex.ts", componentsCssUrl));
 await access(new URL("./visually-hidden.stylex.ts", componentsCssUrl));
 await access(new URL("./form.stylex.ts", componentsCssUrl));
@@ -3491,9 +3825,10 @@ await access(new URL("./knob.stylex.ts", componentsCssUrl));
 await access(new URL("./content.stylex.ts", componentsCssUrl));
 await access(new URL("./data-table.stylex.ts", componentsCssUrl));
 await access(new URL("./data-display.tsx", componentsCssUrl));
-assert.match(
+assert.doesNotMatch(
   componentsCss,
-  /@keyframes\s+hraness-progress-indeterminate\s*\{\s*from\s*\{\s*transform:\s*translateX\(-125%\);\s*\}\s*to\s*\{\s*transform:\s*translateX\(250%\);\s*\}\s*\}/u,
+  /@keyframes\b/u,
+  "components.css must not duplicate shared StyleX keyframes",
 );
 assert.match(
   componentsCss,
@@ -3504,6 +3839,11 @@ assert.doesNotMatch(
   componentsCss,
   /\.hraness-(?:progress-bar|meter|slider|knob)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
   "components.css must not retain migrated indicator or Knob recipes",
+);
+assert.doesNotMatch(
+  componentsCss,
+  /\.hraness-(?:breadcrumbs|pagination)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])|\.hraness-(?:tabs__tab|disclosure__trigger|toggle-group__item|segmented-control__item)(?![A-Za-z0-9_-])/u,
+  "components.css must not retain migrated navigation or collection item recipes",
 );
 assert.doesNotMatch(
   componentsCss,
@@ -3639,6 +3979,7 @@ assert.equal(
 
 const stylesCssUrl = import.meta.resolve("@hraness/ui/styles.css");
 const stylesCss = await readFile(new URL(stylesCssUrl), "utf8");
+assert.doesNotMatch(stylesCss, /tailwind/iu, "the complete stylesheet must be standards-based");
 assert.equal(
   stylesCss.match(/@import "\.\.\/dist\/stylex\.css";/gu)?.length,
   1,
@@ -3648,6 +3989,47 @@ assert.match(
   stylesCss,
   /@layer components\.hraness-ui\.legacy, components\.hraness-ui\.priority1, components\.hraness-ui\.priority2, components\.hraness-ui\.priority3, components\.hraness-ui\.priority4;/u,
 );
+
+const breadcrumbsMarkup = renderToStaticMarkup(React.createElement(Breadcrumbs, {
+  className: "consumer-breadcrumbs",
+  items: [
+    { href: "/", id: "home", label: "Home" },
+    { href: "/library", id: "library", label: "Library" },
+    { id: "current", label: "Current" },
+  ],
+  style: { width: "15rem" },
+  xstyle: { packageRoot: "package-breadcrumbs-xstyle", $$css: true },
+}));
+assert.match(breadcrumbsMarkup, /<nav[^>]*aria-label="Breadcrumbs"[^>]*class="hraness-breadcrumbs [^"]*package-breadcrumbs-xstyle consumer-breadcrumbs"/u);
+assert.match(breadcrumbsMarkup, /aria-current="page"[^>]*data-slot="breadcrumbs-current"/u);
+assert.match(breadcrumbsMarkup, /style="width:15rem"/u);
+
+const paginationMarkup = renderToStaticMarkup(React.createElement(Pagination, {
+  className: "consumer-pagination",
+  currentPage: 4,
+  hrefForPage: (page) => "/page/" + String(page),
+  totalPages: 8,
+  xstyle: { packageRoot: "package-pagination-xstyle", $$css: true },
+}));
+assert.match(paginationMarkup, /<nav[^>]*aria-label="Pagination"[^>]*class="hraness-pagination [^"]*package-pagination-xstyle consumer-pagination"/u);
+assert.match(paginationMarkup, /data-slot="pagination-previous"[^>]*href="\/page\/3"[^>]*rel="prev"/u);
+assert.match(paginationMarkup, /aria-current="page"[^>]*href="\/page\/4"/u);
+assert.match(paginationMarkup, /data-slot="pagination-next"[^>]*href="\/page\/5"[^>]*rel="next"/u);
+
+const nativeProgressMarkup = renderToStaticMarkup(React.createElement(Progress, {
+  className: "consumer-native-progress",
+  label: "Upload",
+  max: 8,
+  showValue: true,
+  style: { width: "15rem" },
+  value: 4,
+  xstyle: { packageRoot: "package-native-progress-xstyle", $$css: true },
+}));
+assert.match(nativeProgressMarkup, /<div[^>]*class="hraness-progress [^"]*package-native-progress-xstyle consumer-native-progress"[^>]*data-slot="progress"/u);
+assert.match(nativeProgressMarkup, /data-slot="progress-label"[^>]*id="([^"]+)-label"[^>]*>Upload<\/span>/u);
+assert.match(nativeProgressMarkup, /<progress[^>]*aria-labelledby="[^"]+-label"[^>]*data-slot="progress-control"[^>]*max="8"[^>]*value="4"/u);
+assert.match(nativeProgressMarkup, />50%<\/span>/u);
+assert.match(nativeProgressMarkup, /style="width:15rem"/u);
 
 const markup = renderToStaticMarkup(React.createElement(Icon, {
   className: "consumer-icon",
@@ -6310,6 +6692,25 @@ async function verifyConsumer(
   const installedManifest = JSON.parse(
     await readFile(join(installedPackageRoot, "package.json"), "utf8"),
   ) as { exports?: Record<string, unknown> };
+  assert.doesNotMatch(
+    JSON.stringify(installedManifest),
+    /tailwind/iu,
+    "packed package manifest must not retain a first-party Tailwind contract",
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(installedManifest.exports ?? {}).filter(([key]) => key.endsWith(".css")),
+    ),
+    {
+      "./compiler-foundation.css": "./src/compiler-foundation.css",
+      "./components.css": "./src/components.css",
+      "./reset.css": "./src/reset.css",
+      "./styles.css": "./src/styles.css",
+      "./stylex.css": "./dist/stylex.css",
+      "./tokens.css": "./src/tokens.css",
+    },
+    "packed package must expose exactly the six standards-based CSS entrypoints",
+  );
   assert.deepEqual(installedManifest.exports?.["./stylex-build"], {
     types: "./build/index.ts",
     import: "./dist/build/index.js",
@@ -6341,10 +6742,14 @@ async function verifyConsumer(
     "dist/build/bun.js",
     "dist/build/index.js",
     "dist/build/vite.js",
+    "dist/stylex.css",
     "dist/stylex-manifest.json",
     "src/compiler-foundation.css",
-    "src/compiler-foundation-tailwind.css",
     "src/compiler-reset.css",
+    "src/components.css",
+    "src/reset.css",
+    "src/styles.css",
+    "src/tokens.css",
   ]) {
     await access(join(installedPackageRoot, ...path.split("/")));
   }
@@ -6391,6 +6796,11 @@ async function verifyConsumer(
   );
   requirePackageFormStyles(installedJavaScript, installedStylexCss);
   requirePackageIndicatorKnobStyles(installedJavaScript, installedStylexCss);
+  requirePackageFinalMigrationStyles(
+    installedJavaScript,
+    installedStylexCss,
+    installedComponentsCss,
+  );
   requirePackageContentStyles(installedJavaScript, installedStylexCss);
   requirePackageDataTableStyles(installedJavaScript, installedStylexCss);
   requireNoMigratedGallerySentinels(

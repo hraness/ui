@@ -304,6 +304,8 @@ interface ForcedColorsEvidence {
   readonly selectedTabColor: string;
   readonly selectedSegmentBackground: string;
   readonly selectedSegmentColor: string;
+  readonly selectedToggleBackground: string;
+  readonly selectedToggleColor: string;
   readonly spinnerAnimationName: string;
   readonly statusFamilyContracts: boolean;
   readonly statusFamilyDiagnostics: string;
@@ -1693,10 +1695,20 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     /font-variant:\s*inherit/u,
     "the packed default stylesheet must preserve the inherited action font variant",
   );
-  assert.match(
+  const compilerAnimationNames = [
+    ...css.matchAll(/animation-name:\s*([^;{}]+)/gu),
+  ].flatMap((match) => match[1]!.split(","))
+    .map((name) => name.trim())
+    .filter((name) => name !== "none");
+  assert.ok(
+    compilerAnimationNames.length > 0
+    && compilerAnimationNames.every((name) => /^x[A-Za-z0-9_-]+$/u.test(name)),
+    `the packed stylesheet must use nonempty compiler-generated animation names: ${compilerAnimationNames.join(", ")}`,
+  );
+  assert.doesNotMatch(
     css,
-    /animation-name:\s*hraness-spin/u,
-    "the packed default stylesheet must include the compiled action spinner",
+    /(?:animation-name:\s*|@keyframes\s+)hraness-/u,
+    "the packed stylesheet must not retain hand-authored hraness-* animation names",
   );
   assert.match(
     css,
@@ -5315,6 +5327,474 @@ function verifySegmentedControlRecipe(
   );
 }
 
+async function navigationEvidence(page: Page) {
+  return page.evaluate(() => {
+    const required = <ElementType extends Element>(
+      selector: string,
+      description: string,
+      root: ParentNode = document,
+    ): ElementType => {
+      const element = root.querySelector<ElementType>(selector);
+      if (element === null) {
+        throw new Error(`The navigation ${description} is missing.`);
+      }
+      return element;
+    };
+    const generatedOnly = (element: Element): boolean => {
+      const classes = [...element.classList];
+      return classes.length > 0
+        && classes.every((name) => /^x[A-Za-z0-9_-]+$/u.test(name));
+    };
+    const semanticGeneratedCaller = (
+      element: Element,
+      semantic: string,
+    ): boolean => {
+      const classes = [...element.classList];
+      const callerIndex = classes.findIndex((name) => name.startsWith("gallery-"));
+      return classes[0] === semantic
+        && callerIndex > 1
+        && classes.slice(1, callerIndex).every((name) =>
+          /^x[A-Za-z0-9_-]+$/u.test(name)
+        )
+        && classes.slice(callerIndex).every((name) => name.startsWith("gallery-"));
+    };
+    const pagination = (fixture: string) => {
+      const root = required<HTMLElement>(
+        `[data-gallery-pagination="${fixture}"]`,
+        `${fixture} Pagination root`,
+      );
+      const previous = required<HTMLElement>(
+        '[data-slot="pagination-previous"]',
+        `${fixture} previous boundary`,
+        root,
+      );
+      const next = required<HTMLElement>(
+        '[data-slot="pagination-next"]',
+        `${fixture} next boundary`,
+        root,
+      );
+      const list = required<HTMLOListElement>(
+        '[data-slot="pagination-list"]',
+        `${fixture} page list`,
+        root,
+      );
+      const links = [
+        ...list.querySelectorAll<HTMLAnchorElement>('[data-slot="pagination-link"]'),
+      ];
+      const ellipses = [
+        ...list.querySelectorAll<HTMLElement>('[data-slot="pagination-ellipsis"]'),
+      ];
+      const targets = [
+        previous,
+        ...links,
+        next,
+      ];
+      return {
+        boundaryClassContract: [previous, next].every((boundary) => {
+          const classes = [...boundary.classList];
+          return classes[0] === "hraness-pagination__boundary"
+            && classes.slice(1).every((name) => /^x[A-Za-z0-9_-]+$/u.test(name));
+        }),
+        current: list.querySelector('[aria-current="page"]')?.textContent?.trim() ?? "",
+        ellipsisClassContract: ellipses.every((ellipsis) => {
+          const classes = [...ellipsis.classList];
+          return classes[0] === "hraness-pagination__ellipsis"
+            && classes.slice(1).every((name) => /^x[A-Za-z0-9_-]+$/u.test(name));
+        }),
+        ellipsisMinHeights: ellipses.map((ellipsis) =>
+          Number.parseFloat(getComputedStyle(ellipsis).minHeight)
+        ),
+        ellipsisMinWidths: ellipses.map((ellipsis) =>
+          Number.parseFloat(getComputedStyle(ellipsis).minWidth)
+        ),
+        ellipsisCount: ellipses.length,
+        gap: Number.parseFloat(getComputedStyle(root).gap),
+        justifyContent: getComputedStyle(root).justifyContent,
+        linkClassContract: links.every(generatedOnly),
+        nextDisabled: next.getAttribute("aria-disabled") === "true",
+        nextRel: next.getAttribute("rel") ?? "",
+        nextTag: next.tagName,
+        pageLabels: links.map((link) => link.textContent?.trim() ?? ""),
+        previousDisabled: previous.getAttribute("aria-disabled") === "true",
+        previousRel: previous.getAttribute("rel") ?? "",
+        previousTag: previous.tagName,
+        rootClassContract: fixture !== "middle"
+          ? root.classList[0] === "hraness-pagination"
+            && [...root.classList].slice(1).every((name) =>
+              /^x[A-Za-z0-9_-]+$/u.test(name)
+            )
+          : semanticGeneratedCaller(root, "hraness-pagination"),
+        targetMinHeights: targets.map((target) =>
+          Number.parseFloat(getComputedStyle(target).minHeight)
+        ),
+        width: root.getBoundingClientRect().width,
+      };
+    };
+
+    const breadcrumbs = required<HTMLElement>(
+      '[data-gallery-breadcrumbs="constrained"]',
+      "constrained Breadcrumbs root",
+    );
+    const breadcrumbList = required<HTMLOListElement>(
+      '[data-slot="breadcrumbs-list"]',
+      "Breadcrumbs list",
+      breadcrumbs,
+    );
+    const breadcrumbItems = [
+      ...breadcrumbList.querySelectorAll<HTMLElement>(
+        ':scope > [data-slot="breadcrumbs-item"]',
+      ),
+    ];
+    const current = required<HTMLElement>(
+      '[data-slot="breadcrumbs-current"]',
+      "Breadcrumbs current item",
+      breadcrumbs,
+    );
+
+    return {
+      breadcrumb: {
+        callerGap: Number.parseFloat(getComputedStyle(breadcrumbs).gap),
+        classContract: semanticGeneratedCaller(breadcrumbs, "hraness-breadcrumbs"),
+        currentAria: current.getAttribute("aria-current") ?? "",
+        currentOverflow: getComputedStyle(current).overflow,
+        currentOverflowing: current.scrollWidth > current.clientWidth,
+        currentTextOverflow: getComputedStyle(current).textOverflow,
+        currentWhiteSpace: getComputedStyle(current).whiteSpace,
+        itemCount: breadcrumbItems.length,
+        linkCount: breadcrumbList.querySelectorAll('[data-slot="breadcrumbs-link"]').length,
+        listDisplay: getComputedStyle(breadcrumbList).display,
+        listFlexWrap: getComputedStyle(breadcrumbList).flexWrap,
+        listOverflow: getComputedStyle(breadcrumbList).overflow,
+        separators: breadcrumbItems.map((item) =>
+          getComputedStyle(item, "::before").content
+        ),
+        width: breadcrumbs.getBoundingClientRect().width,
+      },
+      coarsePointer: matchMedia("(pointer: coarse)").matches,
+      compactViewport: matchMedia("(max-width: 40rem)").matches,
+      first: pagination("first"),
+      last: pagination("last"),
+      middle: pagination("middle"),
+      synthetic: pagination("synthetic-coarse"),
+    };
+  });
+}
+
+function verifyNavigationEvidence(
+  evidence: Awaited<ReturnType<typeof navigationEvidence>>,
+  id: string,
+): void {
+  invariant(
+    evidence.breadcrumb.classContract
+    && evidence.breadcrumb.itemCount === 3
+    && evidence.breadcrumb.linkCount === 2
+    && evidence.breadcrumb.currentAria === "page"
+    && evidence.breadcrumb.listDisplay === "flex"
+    && evidence.breadcrumb.listFlexWrap === "nowrap"
+    && evidence.breadcrumb.listOverflow === "hidden"
+    && evidence.breadcrumb.currentOverflow === "hidden"
+    && evidence.breadcrumb.currentOverflowing
+    && evidence.breadcrumb.currentTextOverflow === "ellipsis"
+    && evidence.breadcrumb.currentWhiteSpace === "nowrap"
+    && evidence.breadcrumb.separators[0] !== '"/"'
+    && evidence.breadcrumb.separators.slice(1).every((value) => value === '"/"')
+    && nearlyEqual(evidence.breadcrumb.callerGap, 7)
+    && nearlyEqual(evidence.breadcrumb.width, 17 * 16),
+    `${id}: Breadcrumbs presentation or caller/native ordering changed: ${JSON.stringify(evidence.breadcrumb)}`,
+  );
+
+  const expectedTargetMinimum = evidence.coarsePointer ? 48 : 40;
+  for (const pagination of [evidence.first, evidence.last, evidence.middle]) {
+    invariant(
+      pagination.rootClassContract
+      && pagination.boundaryClassContract
+      && pagination.linkClassContract
+      && pagination.ellipsisClassContract
+      && pagination.targetMinHeights.every((height) =>
+        nearlyEqual(height, expectedTargetMinimum)
+      )
+      && pagination.ellipsisMinHeights.every((height) => nearlyEqual(height, 40))
+      && pagination.ellipsisMinWidths.every((width) => nearlyEqual(width, 40)),
+      `${id}: Pagination recipe or target geometry changed: ${JSON.stringify(pagination)}`,
+    );
+  }
+  invariant(
+    evidence.middle.current === "6"
+    && evidence.middle.pageLabels.join("|") === "1|5|6|7|12"
+    && evidence.middle.ellipsisCount === 2
+    && evidence.middle.previousTag === "A"
+    && evidence.middle.previousRel === "prev"
+    && evidence.middle.nextTag === "A"
+    && evidence.middle.nextRel === "next"
+    && !evidence.middle.previousDisabled
+    && !evidence.middle.nextDisabled
+    && nearlyEqual(evidence.middle.gap, 7)
+    && nearlyEqual(evidence.middle.width, 19 * 16)
+    && evidence.middle.justifyContent === (
+      evidence.compactViewport ? "center" : "space-between"
+    ),
+    `${id}: middle Pagination range, responsive layout, or caller/native ordering changed: ${JSON.stringify(evidence.middle)}`,
+  );
+  invariant(
+    evidence.first.current === "1"
+    && evidence.first.previousDisabled
+    && evidence.first.previousTag === "SPAN"
+    && !evidence.first.nextDisabled
+    && evidence.first.nextTag === "A"
+    && evidence.last.current === "12"
+    && !evidence.last.previousDisabled
+    && evidence.last.previousTag === "A"
+    && evidence.last.nextDisabled
+    && evidence.last.nextTag === "SPAN",
+    `${id}: Pagination boundary semantics changed: ${JSON.stringify({ first: evidence.first, last: evidence.last })}`,
+  );
+  invariant(
+    evidence.synthetic.targetMinHeights.every((height) => nearlyEqual(height, 48))
+    && evidence.synthetic.ellipsisCount === 2
+    && evidence.synthetic.ellipsisMinHeights.every((height) => nearlyEqual(height, 40))
+    && evidence.synthetic.ellipsisMinWidths.every((width) => nearlyEqual(width, 40)),
+    `${id}: synthetic coarse Pagination targets or ellipsis isolation changed: ${JSON.stringify(evidence.synthetic)}`,
+  );
+}
+
+async function nativeProgressEvidence(page: Page) {
+  return page.evaluate(() => {
+    const fixtures = ["normalized", "override"] as const;
+    return fixtures.map((fixture) => {
+      const root = document.querySelector<HTMLElement>(
+        `[data-gallery-native-progress="${fixture}"]`,
+      );
+      const labelRow = root?.querySelector<HTMLElement>(
+        '[data-slot="progress-label-row"]',
+      );
+      const label = root?.querySelector<HTMLElement>('[data-slot="progress-label"]');
+      const value = root?.querySelector<HTMLElement>('[data-slot="progress-value"]');
+      const control = root?.querySelector<HTMLProgressElement>(
+        '[data-slot="progress-control"]',
+      );
+      if (!root || !labelRow || !label || !value || !control) {
+        throw new Error(`The ${fixture} native Progress fixture is incomplete.`);
+      }
+      const rootClasses = [...root.classList];
+      const controlClasses = [...control.classList];
+      const labelRowClasses = [...labelRow.classList];
+      const rootStyle = getComputedStyle(root);
+      const controlStyle = getComputedStyle(control);
+      const rootCallerCount = fixture === "override" ? 2 : 0;
+      const rootGenerated = rootClasses.slice(
+        1,
+        rootClasses.length - rootCallerCount,
+      );
+      const controlGenerated = controlClasses.slice(1);
+      const labelRowGenerated = labelRowClasses.slice(1);
+      return {
+        ariaLabelledBy: control.getAttribute("aria-labelledby") ?? "",
+        classContract: rootClasses[0] === "hraness-progress"
+          && rootGenerated.length > 0
+          && rootGenerated.every((name) => /^x[A-Za-z0-9_-]+$/u.test(name))
+          && (
+            fixture !== "override"
+            || rootClasses.slice(-2).join(" ")
+              === "gallery-native-progress gallery-native-progress--override"
+          ),
+        controlClassContract: controlClasses[0] === "hraness-progress__control"
+          && controlGenerated.length > 0
+          && controlGenerated.every((name) => /^x[A-Za-z0-9_-]+$/u.test(name)),
+        controlHeight: control.getBoundingClientRect().height,
+        controlWidth: control.getBoundingClientRect().width,
+        fixture,
+        gap: Number.parseFloat(rootStyle.gap),
+        labelId: label.id,
+        labelRowClassContract:
+          labelRowClasses[0] === "hraness-progress__label-row"
+          && labelRowGenerated.length > 0
+          && labelRowGenerated.every((name) => /^x[A-Za-z0-9_-]+$/u.test(name)),
+        labelRowDisplay: getComputedStyle(labelRow).display,
+        max: control.max,
+        nativeAppearance: controlStyle.appearance,
+        nativeTag: control.tagName,
+        rootDisplay: rootStyle.display,
+        value: control.value,
+        valueText: value.textContent?.trim() ?? "",
+        width: root.getBoundingClientRect().width,
+      };
+    });
+  });
+}
+
+function verifyNativeProgressEvidence(
+  evidence: Awaited<ReturnType<typeof nativeProgressEvidence>>,
+  id: string,
+): void {
+  invariant(evidence.length === 2, `${id}: native Progress fixture count changed`);
+  for (const progress of evidence) {
+    invariant(
+      progress.classContract
+      && progress.controlClassContract
+      && progress.labelRowClassContract
+      && progress.labelId.length > 0
+      && progress.ariaLabelledBy === progress.labelId
+      && progress.nativeTag === "PROGRESS"
+      && progress.rootDisplay === "grid"
+      && progress.labelRowDisplay === "flex"
+      && progress.nativeAppearance === "none"
+      && nearlyEqual(progress.controlHeight, 8)
+      && nearlyEqual(progress.controlWidth, progress.width),
+      `${id}: ${progress.fixture} native Progress recipe or semantics changed: ${JSON.stringify(progress)}`,
+    );
+  }
+  const normalized = evidence.find(({ fixture }) => fixture === "normalized")!;
+  const override = evidence.find(({ fixture }) => fixture === "override")!;
+  invariant(
+    normalized.max === 100
+    && normalized.value === 0
+    && normalized.valueText === "0%"
+    && nearlyEqual(normalized.gap, 8),
+    `${id}: native Progress foreign-value normalization changed: ${JSON.stringify(normalized)}`,
+  );
+  invariant(
+    override.max === 80
+    && override.value === 80
+    && override.valueText === "100%"
+    && nearlyEqual(override.gap, 17)
+    && nearlyEqual(override.width, 13 * 16),
+    `${id}: native Progress caller xstyle or final native style changed: ${JSON.stringify(override)}`,
+  );
+}
+
+async function collectionCoarseEvidence(page: Page) {
+  return page.evaluate(() => {
+    const matrix = (kind: "ordinary" | "synthetic-coarse") => {
+      const root = document.querySelector<HTMLElement>(
+        `[data-gallery-collection-matrix="${kind}"]`,
+      );
+      if (root === null) throw new Error(`The ${kind} collection matrix is missing.`);
+      const suffix = kind === "ordinary" ? "" : "-synthetic";
+      const readItems = (selector: string, semantic: string) => {
+        const items = [...root.querySelectorAll<HTMLElement>(selector)];
+        if (items.length === 0) {
+          throw new Error(`The ${kind} ${semantic} collection is empty.`);
+        }
+        return items.map((item) => {
+          const classes = [...item.classList];
+          const style = getComputedStyle(item);
+          return {
+            classContract: classes[0] === semantic
+              && classes.length > 1
+              && classes.slice(1).every((name) => /^x[A-Za-z0-9_-]+$/u.test(name)),
+            minHeight: Number.parseFloat(style.minHeight),
+            minWidth: style.minWidth,
+            selected: item.hasAttribute("data-selected")
+              || item.getAttribute("aria-selected") === "true"
+              || item.getAttribute("aria-pressed") === "true",
+          };
+        });
+      };
+      const tabs = readItems(
+        `.gallery-collection-tabs${suffix} [data-slot="tab"]`,
+        "hraness-tabs__tab",
+      );
+      const disclosure = root.querySelector<HTMLElement>(
+        `.gallery-collection-disclosure${suffix} [data-slot="disclosure-trigger"]`,
+      );
+      const toggles = readItems(
+        `.gallery-toggle-group${suffix} [data-slot="toggle-group-item"]`,
+        "hraness-toggle-group__item",
+      );
+      const segments = readItems(
+        `.gallery-segmented-control${suffix} [data-slot="segmented-control-item"]`,
+        "hraness-segmented-control__item",
+      );
+      if (!disclosure) {
+        throw new Error(`The ${kind} collection target matrix is incomplete.`);
+      }
+      const disclosureClasses = [...disclosure.classList];
+      return {
+        disclosure: {
+          classContract: disclosureClasses[0] === "hraness-disclosure__trigger"
+            && disclosureClasses.length > 1
+            && disclosureClasses.slice(1).every((name) =>
+              /^x[A-Za-z0-9_-]+$/u.test(name)
+            ),
+          minHeight: Number.parseFloat(getComputedStyle(disclosure).minHeight),
+        },
+        segments,
+        tabs,
+        toggles,
+        variable: getComputedStyle(root)
+          .getPropertyValue("--hraness-collection-coarse-min")
+          .trim(),
+      };
+    };
+    return {
+      coarsePointer: matchMedia("(pointer: coarse)").matches,
+      ordinary: matrix("ordinary"),
+      synthetic: matrix("synthetic-coarse"),
+    };
+  });
+}
+
+function verifyCollectionCoarseEvidence(
+  evidence: Awaited<ReturnType<typeof collectionCoarseEvidence>>,
+  id: string,
+): void {
+  const completeSelection = (
+    items: readonly { readonly selected: boolean }[],
+    count: number,
+  ): boolean => items.length === count
+    && items.some(({ selected }) => selected)
+    && items.some(({ selected }) => !selected);
+  const completeRecipe = (
+    items: readonly {
+      readonly classContract: boolean;
+      readonly minHeight: number;
+    }[],
+    height: number,
+  ): boolean => items.every(({ classContract, minHeight }) =>
+    classContract && nearlyEqual(minHeight, height)
+  );
+  const ordinaryTabHeight = evidence.coarsePointer ? 48 : 32;
+  const ordinaryDisclosureHeight = evidence.coarsePointer ? 48 : 40;
+  const ordinaryToggleHeight = evidence.coarsePointer ? 48 : 40;
+  const ordinarySegmentHeight = evidence.coarsePointer ? 48 : 32;
+  invariant(
+    completeSelection(evidence.ordinary.tabs, 2)
+    && completeSelection(evidence.ordinary.toggles, 2)
+    && completeSelection(evidence.ordinary.segments, 4)
+    && completeRecipe(evidence.ordinary.tabs, ordinaryTabHeight)
+    && evidence.ordinary.disclosure.classContract
+    && nearlyEqual(
+      evidence.ordinary.disclosure.minHeight,
+      ordinaryDisclosureHeight,
+    )
+    && completeRecipe(evidence.ordinary.toggles, ordinaryToggleHeight)
+    && completeRecipe(evidence.ordinary.segments, ordinarySegmentHeight)
+    && (
+      evidence.coarsePointer
+        ? evidence.ordinary.segments.every(({ minWidth }) =>
+            nearlyEqual(Number.parseFloat(minWidth), 48)
+          )
+        : evidence.ordinary.segments.every(({ minWidth }) => minWidth === "auto")
+    ),
+    `${id}: ordinary collection target contract changed: ${JSON.stringify(evidence.ordinary)}`,
+  );
+  invariant(
+    evidence.synthetic.variable === "3rem"
+    && completeSelection(evidence.synthetic.tabs, 2)
+    && completeSelection(evidence.synthetic.toggles, 2)
+    && completeSelection(evidence.synthetic.segments, 2)
+    && completeRecipe(evidence.synthetic.tabs, 48)
+    && evidence.synthetic.disclosure.classContract
+    && nearlyEqual(evidence.synthetic.disclosure.minHeight, 48)
+    && completeRecipe(evidence.synthetic.toggles, 48)
+    && completeRecipe(evidence.synthetic.segments, 48)
+    && evidence.synthetic.segments.every(({ minWidth }) =>
+      nearlyEqual(Number.parseFloat(minWidth), 48)
+    ),
+    `${id}: synthetic coarse collection target contract changed: ${JSON.stringify(evidence.synthetic)}`,
+  );
+}
+
 async function verifyVisuallyHiddenPresentation(
   page: Page,
   id: string,
@@ -5532,6 +6012,34 @@ async function verifySegmentedControlInteraction(page: Page, id: string): Promis
   });
 }
 
+async function verifyToggleGroupInteraction(page: Page, id: string): Promise<void> {
+  const primary = page.getByRole("button", { exact: true, name: "Primary" });
+  const secondary = page.getByRole("button", { exact: true, name: "Secondary" });
+
+  await secondary.click();
+  await page.waitForFunction(() =>
+    document.querySelector('.gallery-toggle-group [id="secondary"]')
+      ?.getAttribute("aria-pressed") === "true"
+  );
+  invariant(
+    await secondary.getAttribute("aria-pressed") === "true"
+    && await primary.getAttribute("aria-pressed") === "false",
+    `${id}: pointer input did not update controlled ToggleGroup selection`,
+  );
+
+  await primary.focus();
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() =>
+    document.querySelector('.gallery-toggle-group [id="primary"]')
+      ?.getAttribute("aria-pressed") === "true"
+  );
+  invariant(
+    await primary.getAttribute("aria-pressed") === "true"
+    && await secondary.getAttribute("aria-pressed") === "false",
+    `${id}: keyboard input did not update controlled ToggleGroup selection`,
+  );
+}
+
 async function verticalWritingEvidence(
   page: Page,
 ): Promise<VerticalWritingEvidence> {
@@ -5600,6 +6108,170 @@ function seconds(durationList: string): readonly number[] {
     if (value.endsWith("s")) return Number.parseFloat(value);
     return Number.NaN;
   });
+}
+
+function activeAnimationNames(animationName: string): readonly string[] {
+  return animationName
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0 && name !== "none");
+}
+
+function compilerGeneratedAnimationName(animationName: string): boolean {
+  const names = activeAnimationNames(animationName);
+  return names.length > 0
+    && names.every((name) => /^x[A-Za-z0-9_-]+$/u.test(name));
+}
+
+function positiveAnimationDuration(animationDuration: string): boolean {
+  const durations = seconds(animationDuration);
+  return durations.length > 0
+    && durations.every((duration) => Number.isFinite(duration) && duration > 0.000_01);
+}
+
+async function armFiniteMotionProbe(page: Page, selector: string): Promise<void> {
+  await page.evaluate((targetSelector) => {
+    type MotionProbeWindow = Window & {
+      __galleryMotionProbeAbort?: AbortController;
+    };
+    const motionWindow = window as MotionProbeWindow;
+    motionWindow.__galleryMotionProbeAbort?.abort();
+    const controller = new AbortController();
+    motionWindow.__galleryMotionProbeAbort = controller;
+    const root = document.documentElement;
+    delete root.dataset.galleryMotionStartCount;
+    delete root.dataset.galleryMotionStartNames;
+    document.addEventListener("animationstart", (event) => {
+      if (!(event instanceof AnimationEvent) || !(event.target instanceof Element)) {
+        return;
+      }
+      if (
+        !event.target.matches(targetSelector)
+        && event.target.closest(targetSelector) === null
+      ) {
+        return;
+      }
+      const names = (root.dataset.galleryMotionStartNames ?? "")
+        .split(",")
+        .filter(Boolean);
+      names.push(event.animationName);
+      root.dataset.galleryMotionStartNames = names.join(",");
+      root.dataset.galleryMotionStartCount = String(
+        Number.parseInt(root.dataset.galleryMotionStartCount ?? "0", 10) + 1,
+      );
+    }, { capture: true, signal: controller.signal });
+  }, selector);
+}
+
+async function readFiniteMotionProbe(page: Page) {
+  return page.evaluate(() => {
+    type MotionProbeWindow = Window & {
+      __galleryMotionProbeAbort?: AbortController;
+    };
+    const motionWindow = window as MotionProbeWindow;
+    motionWindow.__galleryMotionProbeAbort?.abort();
+    delete motionWindow.__galleryMotionProbeAbort;
+    const root = document.documentElement;
+    const evidence = {
+      count: Number.parseInt(root.dataset.galleryMotionStartCount ?? "0", 10),
+      names: (root.dataset.galleryMotionStartNames ?? "")
+        .split(",")
+        .filter(Boolean),
+    };
+    delete root.dataset.galleryMotionStartCount;
+    delete root.dataset.galleryMotionStartNames;
+    return evidence;
+  });
+}
+
+function finiteMotionContract(
+  evidence: {
+    readonly animationDuration: string;
+    readonly animationName: string;
+    readonly reduced: boolean;
+    readonly running: number;
+  },
+  starts: Awaited<ReturnType<typeof readFiniteMotionProbe>>,
+): boolean {
+  if (evidence.reduced) {
+    return evidence.animationName === "none"
+      && seconds(evidence.animationDuration).every((duration) => duration <= 0.000_01)
+      && evidence.running === 0
+      && starts.count === 0
+      && starts.names.length === 0;
+  }
+  const computedNames = activeAnimationNames(evidence.animationName);
+  return compilerGeneratedAnimationName(evidence.animationName)
+    && positiveAnimationDuration(evidence.animationDuration)
+    && starts.count > 0
+    && starts.names.some((name) =>
+      /^x[A-Za-z0-9_-]+$/u.test(name) && computedNames.includes(name)
+    );
+}
+
+async function settleAnimationFrame(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+}
+
+async function verifySharedMotionRoots(page: Page, id: string): Promise<void> {
+  await settleAnimationFrame(page);
+  const evidence = await page.evaluate(() => {
+    const fixtures = [
+      ["spinner", document.querySelector<HTMLElement>('[data-slot="spinner"]')],
+      ["skeleton", document.querySelector<HTMLElement>('[data-slot="skeleton"]')],
+      [
+        "progress",
+        document.querySelector<HTMLElement>(
+          '[data-gallery-progress-bar="indeterminate"] [data-slot="progress-bar-fill"]',
+        ),
+      ],
+    ] as const;
+    return {
+      reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      values: fixtures.map(([fixture, element]) => {
+        if (element === null) throw new Error(`The ${fixture} motion fixture is missing.`);
+        const style = getComputedStyle(element);
+        const animations = element.getAnimations({ subtree: true }).filter(
+          (animation): animation is CSSAnimation => animation instanceof CSSAnimation,
+        );
+        return {
+          animationDuration: style.animationDuration,
+          animationIterationCount: style.animationIterationCount,
+          animationName: style.animationName,
+          animationNames: animations.map((animation) => animation.animationName),
+          fixture,
+          progressed: animations.some((animation) =>
+            typeof animation.currentTime === "number" && animation.currentTime > 0
+          ),
+          running: animations.filter((animation) =>
+            animation.playState !== "finished" && animation.playState !== "idle"
+          ).length,
+        };
+      }),
+    };
+  });
+  for (const value of evidence.values) {
+    invariant(
+      evidence.reduced
+        ? value.animationName === "none"
+          && seconds(value.animationDuration).every((duration) => duration <= 0.000_01)
+          && value.running === 0
+          && value.animationNames.length === 0
+        : compilerGeneratedAnimationName(value.animationName)
+          && positiveAnimationDuration(value.animationDuration)
+          && value.animationIterationCount.split(",").every(
+            (iterationCount) => iterationCount.trim() === "infinite",
+          )
+          && activeAnimationNames(value.animationName).every((name) =>
+            value.animationNames.includes(name)
+          )
+          && value.running > 0
+          && value.progressed,
+      `${id}: ${value.fixture} shared-motion contract changed: ${JSON.stringify(value)}`,
+    );
+  }
 }
 
 function nearlyEqual(actual: number, expected: number): boolean {
@@ -6487,6 +7159,7 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     `${id}: caller Select focus presentation changed: ${JSON.stringify(focusEvidence)}`,
   );
 
+  await armFiniteMotionProbe(page, ".hraness-select-field__popover");
   await page.keyboard.press("Enter");
   const callerPopover = page.locator(".hraness-select-field__popover");
   await callerPopover.waitFor();
@@ -6539,26 +7212,26 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     && disabledEvidence.sentinel === "legacy",
     `${id}: disabled Select option accepted native hover or legacy geometry: ${JSON.stringify(disabledEvidence)}`,
   );
-  if (await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)) {
-    const reducedMotionEvidence = await callerPopover.evaluate((popover) => {
-      const style = getComputedStyle(popover);
-      return {
-        animationDuration: style.animationDuration,
-        animationName: style.animationName,
-        running: popover.getAnimations({ subtree: true }).filter((animation) =>
-          animation.playState !== "finished" && animation.playState !== "idle"
-        ).length,
-      };
-    });
-    invariant(
-      reducedMotionEvidence.animationName === "none"
-      && seconds(reducedMotionEvidence.animationDuration).every(
-        (value) => value <= 0.000_01,
-      )
-      && reducedMotionEvidence.running === 0,
-      `${id}: reduced-motion Select did not settle: ${JSON.stringify(reducedMotionEvidence)}`,
-    );
-  }
+  await settleAnimationFrame(page);
+  const selectMotionEvidence = await callerPopover.evaluate((popover) => {
+    const style = getComputedStyle(popover);
+    return {
+      animationDuration: style.animationDuration,
+      animationName: style.animationName,
+      reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      running: popover.getAnimations({ subtree: true }).filter((animation) =>
+        animation.playState !== "finished" && animation.playState !== "idle"
+      ).length,
+    };
+  });
+  const selectMotionStarts = await readFiniteMotionProbe(page);
+  invariant(
+    finiteMotionContract(selectMotionEvidence, selectMotionStarts),
+    `${id}: Select shared-motion contract changed: ${JSON.stringify({
+      ...selectMotionEvidence,
+      starts: selectMotionStarts,
+    })}`,
+  );
   await callerPopover.getByRole("option", { exact: true, name: "following" }).click();
   await callerPopover.waitFor({ state: "detached" });
 
@@ -8287,6 +8960,9 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     const selectedSegment = document.querySelector(
       '.gallery-segmented-control .hraness-segmented-control__item[data-selected]',
     );
+    const selectedToggle = document.querySelector(
+      '.gallery-toggle-group .hraness-toggle-group__item[data-selected]',
+    );
     const spinner = document.querySelector('[data-slot="spinner"]');
     const keyHint = document.querySelector('[data-gallery-key-hint="default"]');
     const links = [
@@ -8319,6 +8995,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       || !(card instanceof HTMLElement)
       || !(selectedTab instanceof HTMLElement)
       || !(selectedSegment instanceof HTMLElement)
+      || !(selectedToggle instanceof HTMLElement)
       || !(spinner instanceof HTMLElement)
       || !(keyHint instanceof HTMLElement)
       || links.length !== 2
@@ -8342,6 +9019,7 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
     const cardStyle = getComputedStyle(card);
     const tabStyle = getComputedStyle(selectedTab);
     const segmentStyle = getComputedStyle(selectedSegment);
+    const toggleStyle = getComputedStyle(selectedToggle);
     const keyHintStyle = getComputedStyle(keyHint);
     const canvas = normalize("backgroundColor", "Canvas");
     const canvasText = normalize("color", "CanvasText");
@@ -8486,6 +9164,8 @@ async function forcedColorsEvidence(page: Page): Promise<ForcedColorsEvidence> {
       selectedTabColor: tabStyle.color,
       selectedSegmentBackground: segmentStyle.backgroundColor,
       selectedSegmentColor: segmentStyle.color,
+      selectedToggleBackground: toggleStyle.backgroundColor,
+      selectedToggleColor: toggleStyle.color,
       spinnerAnimationName: getComputedStyle(spinner).animationName,
       statusFamilyContracts:
         statusPillEvidence.every(
@@ -9491,17 +10171,20 @@ async function verifyPopoverTooltipInteractions(page: Page, id: string): Promise
 }
 
 async function verifyPopoverTooltipEnvironment(page: Page, id: string): Promise<void> {
+  await armFiniteMotionProbe(page, '[data-slot="popover"]');
   await page.getByRole("button", { name: "Open compiled Popover", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Compiled Popover", exact: true }); await dialog.waitFor({ state: "visible" });
   const popover = page.locator('[data-slot="popover"]');
+  await settleAnimationFrame(page);
   const surface = await popover.evaluate((element) => {
     const style = getComputedStyle(element); const probe = document.createElement("span");
     probe.style.backgroundColor = "var(--ui-popover)"; probe.style.color = "CanvasText"; element.append(probe);
     const expected = getComputedStyle(probe);
-    const snapshot = { background: style.backgroundColor, expectedBackground: expected.backgroundColor, border: style.borderTopColor, canvas: expected.color, adjust: style.forcedColorAdjust, forced: matchMedia("(forced-colors: active)").matches, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches, animation: style.animationName };
+    const snapshot = { background: style.backgroundColor, expectedBackground: expected.backgroundColor, border: style.borderTopColor, canvas: expected.color, adjust: style.forcedColorAdjust, forced: matchMedia("(forced-colors: active)").matches, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches, animation: style.animationName, animationDuration: style.animationDuration, running: element.getAnimations({ subtree: true }).filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length };
     probe.remove(); return snapshot;
   });
-  invariant(surface.background === surface.expectedBackground && (!surface.forced || (surface.border === surface.canvas && surface.adjust === "auto")) && (!surface.reduced || surface.animation === "none"), id + ": Popover theme, forced-color border, or reduced motion changed: " + JSON.stringify(surface));
+  const popoverMotionStarts = await readFiniteMotionProbe(page);
+  invariant(surface.background === surface.expectedBackground && (!surface.forced || (surface.border === surface.canvas && surface.adjust === "auto")) && finiteMotionContract({ animationDuration: surface.animationDuration, animationName: surface.animation, reduced: surface.reduced, running: surface.running }, popoverMotionStarts), id + ": Popover theme, forced-color border, or shared motion changed: " + JSON.stringify({ ...surface, starts: popoverMotionStarts }));
   await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
   const toggle = page.getByRole("button", { name: "Toggle controlled Tooltip", exact: true });
   await toggle.evaluate((element) => element.scrollIntoView({ block: "center" })); await toggle.click();
@@ -9648,10 +10331,12 @@ async function verifyToastInteractions(page: Page, id: string): Promise<void> {
 
 async function verifyToastEnvironment(page: Page, id: string): Promise<void> {
   await page.getByRole("button", { name: "Clear compiled Toasts", exact: true }).click();
+  await armFiniteMotionProbe(page, '[data-slot="toast"]');
   await page.getByRole("button", { name: "Show info compiled Toast", exact: true }).click();
   const region = page.locator('[data-slot="toast-region"][aria-label="Compiled notifications"]');
   const toast = region.locator('[data-slot="toast"][data-tone="info"]');
   await toast.waitFor({ state: "visible" });
+  await settleAnimationFrame(page);
   const evidence = await toast.evaluate((element) => {
     const region = element.closest<HTMLElement>('[data-slot="toast-region"]')!;
     const close = element.querySelector<HTMLElement>('[data-slot="toast-close"]')!;
@@ -9667,6 +10352,7 @@ async function verifyToastEnvironment(page: Page, id: string): Promise<void> {
     const compactRect = compactProbe.getBoundingClientRect();
     const snapshot = {
       animation: style.animationName,
+      animationDuration: style.animationDuration,
       background: style.backgroundColor,
       canvas: expected.color,
       closeMinHeight: Number.parseFloat(closeStyle.minHeight),
@@ -9677,13 +10363,15 @@ async function verifyToastEnvironment(page: Page, id: string): Promise<void> {
       compactGeometry: Math.abs(regionRect.left - compactRect.left) < 1 && Math.abs(regionRect.right - compactRect.right) < 1 && Math.abs(regionRect.width - compactRect.width) < 1,
       left: regionRect.left,
       reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      running: element.getAnimations({ subtree: true }).filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length,
       right: window.innerWidth - regionRect.right,
       border: style.borderTopColor,
       width: regionStyle.width,
     };
     probe.remove(); compactProbe.remove(); return snapshot;
   });
-  invariant(evidence.background === evidence.expectedBackground && (!evidence.forced || (evidence.border === evidence.canvas && evidence.forcedAdjust === "auto")) && (evidence.reduced ? evidence.animation === "none" : evidence.animation === "hraness-toast-enter") && (!evidence.compact || (evidence.left >= 11 && evidence.right >= 11 && evidence.compactGeometry)) && evidence.closeMinHeight >= 40, `${id}: Toast environment contract changed: ${JSON.stringify(evidence)}`);
+  const toastMotionStarts = await readFiniteMotionProbe(page);
+  invariant(evidence.background === evidence.expectedBackground && (!evidence.forced || (evidence.border === evidence.canvas && evidence.forcedAdjust === "auto")) && finiteMotionContract({ animationDuration: evidence.animationDuration, animationName: evidence.animation, reduced: evidence.reduced, running: evidence.running }, toastMotionStarts) && (!evidence.compact || (evidence.left >= 11 && evidence.right >= 11 && evidence.compactGeometry)) && evidence.closeMinHeight >= 40, `${id}: Toast environment contract changed: ${JSON.stringify({ ...evidence, starts: toastMotionStarts })}`);
   if (await page.evaluate(() => matchMedia("(pointer: coarse)").matches)) invariant(evidence.closeMinHeight >= 48, `${id}: real coarse Toast close target is ${String(evidence.closeMinHeight)}px`);
   await page.getByRole("button", { name: "Clear compiled Toasts", exact: true }).click();
   await toast.waitFor({ state: "detached" });
@@ -9802,9 +10490,11 @@ async function verifyDialogInteractions(page: Page, id: string): Promise<void> {
 
 async function verifyDialogEnvironment(page: Page, id: string): Promise<void> {
   const trigger = page.getByRole("button", { name: "Open compiled Dialog medium", exact: true });
+  await armFiniteMotionProbe(page, '[data-slot="dialog-overlay"]');
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Compiled Dialog medium", exact: true });
   await dialog.waitFor({ state: "visible" });
+  await settleAnimationFrame(page);
   const evidence = await dialog.evaluate((element) => {
     const root = element.closest<HTMLElement>('[data-slot="dialog"]')!;
     const overlay = element.closest<HTMLElement>('[data-slot="dialog-overlay"]')!;
@@ -9819,12 +10509,15 @@ async function verifyDialogEnvironment(page: Page, id: string): Promise<void> {
       background: rootStyle.backgroundColor, expectedBackground: getComputedStyle(probe).backgroundColor,
       reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
       animation: getComputedStyle(overlay).animationName,
+      animationDuration: getComputedStyle(overlay).animationDuration,
+      running: overlay.getAnimations({ subtree: true }).filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length,
     };
     probe.remove(); return snapshot;
   });
+  const dialogMotionStarts = await readFiniteMotionProbe(page);
   invariant(!evidence.coarse || evidence.minimum >= 48, id + ": Dialog real coarse target changed");
   invariant(!evidence.forced || (evidence.border === evidence.canvas && evidence.adjustment === "auto"), id + ": Dialog forced-color border changed");
-  invariant(!evidence.reduced || evidence.animation === "none", id + ": Dialog reduced-motion contract changed");
+  invariant(finiteMotionContract({ animationDuration: evidence.animationDuration, animationName: evidence.animation, reduced: evidence.reduced, running: evidence.running }, dialogMotionStarts), id + ": Dialog shared-motion contract changed: " + JSON.stringify({ ...evidence, starts: dialogMotionStarts }));
   invariant(evidence.background === evidence.expectedBackground, id + ": Dialog theme token changed");
   const synthetic = await dialog.evaluate((element) => {
     const close = element.querySelector<HTMLElement>('[data-slot="dialog-close"]')!;
@@ -9959,9 +10652,11 @@ async function verifyListBoxForcedColors(page: Page): Promise<void> {
 }
 
 async function verifyMenuEnvironment(page: Page, id: string): Promise<void> {
+  await armFiniteMotionProbe(page, '[data-slot="menu-popover"]');
   await page.getByRole("button", { name: "Open compiled Menu", exact: true }).click();
   const menu = page.getByRole("menu", { name: "Compiled Menu", exact: true });
   await menu.waitFor({ state: "visible" });
+  await settleAnimationFrame(page);
   const evidence = await menu.evaluate((element) => {
     const popover = element.closest<HTMLElement>('[data-slot="menu-popover"]');
     const item = element.querySelector<HTMLElement>('[data-slot="menu-item"]');
@@ -9983,13 +10678,16 @@ async function verifyMenuEnvironment(page: Page, id: string): Promise<void> {
       background: style.backgroundColor,
       expectedBackground: expected.backgroundColor,
       animation: style.animationName,
+      animationDuration: style.animationDuration,
+      running: popover.getAnimations({ subtree: true }).filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length,
     };
     probe.remove();
     return result;
   });
+  const menuMotionStarts = await readFiniteMotionProbe(page);
   invariant(!evidence.coarse || evidence.minHeight >= 48, `${id}: real coarse Menu target changed`);
   invariant(!evidence.forced || (evidence.border === evidence.canvasText && evidence.adjustment === "auto"), `${id}: Menu forced-color border changed`);
-  invariant(!evidence.reduced || evidence.animation === "none", `${id}: Menu reduced-motion animation changed`);
+  invariant(finiteMotionContract({ animationDuration: evidence.animationDuration, animationName: evidence.animation, reduced: evidence.reduced, running: evidence.running }, menuMotionStarts), `${id}: Menu shared-motion animation changed: ${JSON.stringify({ ...evidence, starts: menuMotionStarts })}`);
   invariant(evidence.background === evidence.expectedBackground, `${id}: Menu theme tokens changed`);
   await page.keyboard.press("Escape");
   await menu.waitFor({ state: "hidden" });
@@ -12695,8 +13393,12 @@ try {
     access(resolve(installedRoot, "dist/build/bun.js")),
     access(resolve(installedRoot, "src/actions.stylex.ts")),
     access(resolve(installedRoot, "src/checkbox-field.stylex.ts")),
+    access(resolve(installedRoot, "src/collections.stylex.ts")),
+    access(resolve(installedRoot, "src/feedback.stylex.ts")),
     access(resolve(installedRoot, "src/indicators.stylex.ts")),
     access(resolve(installedRoot, "src/knob.stylex.ts")),
+    access(resolve(installedRoot, "src/motion.stylex.ts")),
+    access(resolve(installedRoot, "src/navigation.stylex.ts")),
     access(resolve(installedRoot, "src/skip-link.stylex.ts")),
     access(resolve(installedRoot, "src/visually-hidden.stylex.ts")),
     access(resolve(installedRoot, "src/form.stylex.ts")),
@@ -12707,13 +13409,15 @@ try {
     /ENOENT/u,
     "the gallery conflict sentinel must stay outside the packed package",
   );
-  const installedPackageCss = (
-    await Promise.all([
-      readFile(resolve(installedRoot, "src/components.css"), "utf8"),
-      readFile(resolve(installedRoot, "src/styles.css"), "utf8"),
-      readFile(resolve(installedRoot, "dist/stylex.css"), "utf8"),
-    ])
-  ).join("\n");
+  const installedComponentsCss = await readFile(
+    resolve(installedRoot, "src/components.css"),
+    "utf8",
+  );
+  const installedPackageCss = [
+    installedComponentsCss,
+    await readFile(resolve(installedRoot, "src/styles.css"), "utf8"),
+    await readFile(resolve(installedRoot, "dist/stylex.css"), "utf8"),
+  ].join("\n");
   assert.doesNotMatch(
     installedPackageCss,
     /data-gallery-(?:stylex-layer-conflict|quiet-site-(?:layer|priority4)-conflict|(?:avatar|card-family|checkbox-field|content|fields|form|indicators|key-hint|knob|link|list-box|select-option|skip-link|status-family|themed-surface|toolbar|viewport-frame|visually-hidden|wrapping-row)-layer-conflict)/u,
@@ -12788,6 +13492,26 @@ try {
     installedPackageCss,
     /\.hraness-list-box(?:__(?:header|item|section))?(?![A-Za-z0-9_-])/u,
     "the packed package must not duplicate ListBox declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedComponentsCss,
+    /\.hraness-(?:breadcrumbs(?:__(?:current|item|label|link|list))?|pagination(?:__(?:boundary|ellipsis|item|link|list|next|previous))?)(?![A-Za-z0-9_-])/u,
+    "Breadcrumbs and Pagination presentation must be owned by StyleX recipes",
+  );
+  assert.doesNotMatch(
+    installedComponentsCss,
+    /\.hraness-(?:tabs__tab|disclosure__trigger|toggle-group__item|segmented-control__item)(?![A-Za-z0-9_-])/u,
+    "collection target and selected-state presentation must be owned by StyleX recipes",
+  );
+  assert.deepEqual(
+    [...installedComponentsCss.matchAll(/\.hraness-progress[^,{]*?(?=\s*\{)/gu)]
+      .map((match) => match[0].trim()),
+    [
+      ".hraness-progress__control::-webkit-progress-bar",
+      ".hraness-progress__control::-webkit-progress-value",
+      ".hraness-progress__control::-moz-progress-bar",
+    ],
+    "native Progress legacy CSS must retain only its three vendor pseudo-element seams",
   );
   assert.doesNotMatch(
     installedPackageCss,
@@ -13019,6 +13743,52 @@ try {
   assert.match(html, /data-gallery-field="switch-unselected"/u);
   assert.match(html, /data-gallery-field="select"/u);
   assert.match(html, /data-gallery-synthetic-coarse="true"/u);
+  assert.match(html, /data-gallery-section="navigation"/u);
+  assert.match(html, /data-gallery-breadcrumbs="constrained"/u);
+  assert.match(
+    html,
+    /class="hraness-breadcrumbs(?: x[A-Za-z0-9_-]+)+ gallery-breadcrumbs gallery-breadcrumbs--constrained"/u,
+    "SSR must preserve Breadcrumbs semantic, generated, then caller class order",
+  );
+  assert.equal(
+    html.match(/data-gallery-pagination="(?:middle|first|last|synthetic-coarse)"/gu)?.length,
+    4,
+    "SSR must include middle, both boundary, and synthetic-coarse Pagination specimens",
+  );
+  assert.match(
+    html,
+    /class="hraness-pagination(?: x[A-Za-z0-9_-]+)+ gallery-pagination gallery-pagination--middle"/u,
+    "SSR must preserve Pagination semantic, generated, then caller class order",
+  );
+  assert.match(html, /data-slot="breadcrumbs-current"[^>]*aria-current="page"/u);
+  assert.match(html, /data-slot="pagination-ellipsis"/u);
+  assert.match(html, /data-gallery-pagination-coarse="synthetic"/u);
+  assert.equal(
+    html.match(/data-gallery-collection-matrix="(?:ordinary|synthetic-coarse)"/gu)?.length,
+    2,
+    "SSR must include ordinary and synthetic-coarse collection matrices",
+  );
+  for (const slot of [
+    "tab",
+    "disclosure-trigger",
+    "toggle-group-item",
+    "segmented-control-item",
+  ] as const) {
+    assert.match(html, new RegExp(`data-slot="${slot}"`, "u"));
+  }
+  assert.equal(
+    html.match(/data-gallery-native-progress="(?:normalized|override)"/gu)?.length,
+    2,
+    "SSR must include normalization and caller/native-order Progress specimens",
+  );
+  assert.match(
+    html,
+    /class="hraness-progress(?: x[A-Za-z0-9_-]+)+ gallery-native-progress gallery-native-progress--override"/u,
+    "SSR must preserve native Progress semantic, generated, then caller class order",
+  );
+  assert.match(html, /<progress[^>]*data-slot="progress-control"[^>]*max="100"[^>]*value="0"/u);
+  assert.match(html, /data-slot="progress-value">0%<\/span>/u);
+  assert.match(html, /data-slot="progress-value">100%<\/span>/u);
   assert.match(html, /name="project"/u);
   assert.match(html, /name="notes"/u);
   assert.match(html, /name="channels"/u);
@@ -13373,8 +14143,15 @@ try {
           await verifyFieldFamilyPresentation(page, layout.id);
           const lightSelect = await selectFieldIndicatorEvidence(page);
           verifySelectFieldIndicator(lightSelect, layout.id);
+          const lightNavigation = await navigationEvidence(page);
+          verifyNavigationEvidence(lightNavigation, layout.id);
+          const lightNativeProgress = await nativeProgressEvidence(page);
+          verifyNativeProgressEvidence(lightNativeProgress, layout.id);
+          const lightCollections = await collectionCoarseEvidence(page);
+          verifyCollectionCoarseEvidence(lightCollections, layout.id);
           const lightSegmented = await segmentedControlEvidence(page);
           verifySegmentedControlRecipe(lightSegmented, layout.id);
+          await verifySharedMotionRoots(page, layout.id);
           invariant(light.heading === "Portable component behavior and presentation", `${layout.id}: heading changed`);
           invariant(light.hydrationStarted && light.rootHydrated, `${layout.id}: hydration did not settle`);
           invariant(light.recoverableErrors.length === 0, `${layout.id}: hydration recovered from ${light.recoverableErrors.join("; ")}`);
@@ -13729,6 +14506,7 @@ try {
             layout.id,
             linkNativeFallbackContract,
           );
+          await verifyToggleGroupInteraction(page, layout.id);
           await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
@@ -13745,6 +14523,19 @@ try {
           verifyIndicatorKnobEvidence(darkIndicators, `${layout.id} dark`);
           const darkSegmented = await segmentedControlEvidence(page);
           verifySegmentedControlRecipe(darkSegmented, `${layout.id} dark`);
+          verifyNavigationEvidence(
+            await navigationEvidence(page),
+            `${layout.id} dark`,
+          );
+          verifyNativeProgressEvidence(
+            await nativeProgressEvidence(page),
+            `${layout.id} dark`,
+          );
+          verifyCollectionCoarseEvidence(
+            await collectionCoarseEvidence(page),
+            `${layout.id} dark`,
+          );
+          await verifySharedMotionRoots(page, `${layout.id} dark`);
           invariant(
             darkSegmented.selectedLabel === "shared"
             && darkSegmented.groupBackground !== lightSegmented.groupBackground
@@ -13911,6 +14702,19 @@ try {
         );
         await verifyFieldFamilyCoarsePointer(page);
         await verifyIndicatorKnobCoarsePointer(page);
+        verifyNavigationEvidence(
+          await navigationEvidence(page),
+          "real coarse pointer",
+        );
+        verifyCollectionCoarseEvidence(
+          await collectionCoarseEvidence(page),
+          "real coarse pointer",
+        );
+        verifyNativeProgressEvidence(
+          await nativeProgressEvidence(page),
+          "real coarse pointer",
+        );
+        await verifySharedMotionRoots(page, "real coarse pointer");
         await verifyListBoxCoarsePointer(page, true);
         await verifyMenuEnvironment(page, "real coarse pointer");
         await verifyDialogEnvironment(page, "real coarse pointer");
@@ -13995,7 +14799,13 @@ try {
         invariant(forced.selectedTabColor === forced.buttonText, "forced colors: selected tab does not use ButtonText");
         invariant(forced.selectedSegmentBackground === forced.buttonFace, "forced colors: selected segment does not use ButtonFace");
         invariant(forced.selectedSegmentColor === forced.buttonText, "forced colors: selected segment does not use ButtonText");
+        invariant(forced.selectedToggleBackground === forced.buttonFace, "forced colors: selected toggle does not use ButtonFace");
+        invariant(forced.selectedToggleColor === forced.buttonText, "forced colors: selected toggle does not use ButtonText");
         invariant(forced.spinnerAnimationName === "none", "forced colors: reduced-motion spinner still animates");
+        verifyNavigationEvidence(await navigationEvidence(page), "forced colors");
+        verifyCollectionCoarseEvidence(await collectionCoarseEvidence(page), "forced colors");
+        verifyNativeProgressEvidence(await nativeProgressEvidence(page), "forced colors");
+        await verifySharedMotionRoots(page, "forced colors");
         invariant(
           forced.statusFamilyContracts,
           `forced colors: status-family parity failed: ${forced.statusFamilyDiagnostics}`,

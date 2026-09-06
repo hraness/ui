@@ -17,6 +17,7 @@ import {
   Autocomplete,
   Avatar,
   Badge,
+  Breadcrumbs,
   Button,
   Card,
   CardContent,
@@ -30,6 +31,7 @@ import {
   type DataTableColumn,
   DialogContent,
   DialogTrigger,
+  Disclosure,
   EmptyState,
   FileField,
   Form,
@@ -53,6 +55,7 @@ import {
   NativeSelectField,
   NumberField,
   PageIntro,
+  Pagination,
   Popover,
   Progress,
   ProgressBar,
@@ -79,6 +82,7 @@ import {
   TextField,
   Toolbar,
   ToggleButton,
+  ToggleGroup,
   Tooltip,
   ToastProvider,
   useToast,
@@ -104,6 +108,43 @@ const gallerySegments = [
   { id: "projects", label: "projects" },
   { id: "shared", label: "shared" },
   { id: "dependencies", label: "dependencies" },
+] as const;
+
+const galleryBreadcrumbItems = [
+  { href: "/workspace", id: "workspace", label: "Workspace" },
+  { href: "/workspace/releases", id: "releases", label: "Releases" },
+  {
+    id: "current",
+    label: "StyleX current-main migration with deliberately constrained long content",
+  },
+] as const;
+
+const galleryToggleItems = [
+  { id: "primary", label: "Primary" },
+  { id: "secondary", label: "Secondary" },
+] as const;
+
+const gallerySyntheticTabs = [
+  {
+    id: "synthetic-overview",
+    label: "Synthetic overview",
+    panel: "Synthetic coarse Tabs retain their compact recipe and coarse target.",
+  },
+  {
+    id: "synthetic-details",
+    label: "Synthetic details",
+    panel: "Synthetic evidence stays isolated from ordinary interaction fixtures.",
+  },
+] as const;
+
+const gallerySyntheticToggleItems = [
+  { id: "synthetic-primary", label: "Synthetic primary" },
+  { id: "synthetic-secondary", label: "Synthetic secondary" },
+] as const;
+
+const gallerySyntheticSegments = [
+  { id: "synthetic-alpha", label: "Synthetic alpha" },
+  { id: "synthetic-beta", label: "Synthetic beta" },
 ] as const;
 
 const gallerySelectOptions = [
@@ -176,6 +217,7 @@ const galleryMeterTones = ["default", "success", "warning", "danger"] as const;
 
 type GalleryTheme = "dark" | "light";
 type GallerySegment = typeof gallerySegments[number]["id"];
+type GalleryToggle = typeof galleryToggleItems[number]["id"];
 
 const avatarImageSource =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%236366f1'/%3E%3Cpath d='M0 16 16 0v16Z' fill='%23f8fafc'/%3E%3C/svg%3E";
@@ -345,6 +387,16 @@ const galleryStyles = stylex.create({
     color: "var(--ui-primary)",
     gap: "var(--space-4)",
     width: "14rem",
+  },
+  navigationRootDynamicWidth: (width: string) => ({ width }),
+  navigationRootOverride: {
+    gap: "7px",
+    width: "24rem",
+  },
+  nativeProgressDynamicWidth: (width: string) => ({ width }),
+  nativeProgressOverride: {
+    gap: "17px",
+    width: "19rem",
   },
   menuRootOverride: { minWidth: "15rem" },
   menuPopoverOverride: { borderRadius: "17px" },
@@ -758,6 +810,9 @@ function ToastGallery() {
 
 export function PrimitiveGallery() {
   const [cardPressCount, setCardPressCount] = useState(0);
+  const [collectionToggle, setCollectionToggle] = useState<GalleryToggle | null>(
+    "primary",
+  );
   const [indicatorSubmission, setIndicatorSubmission] = useState("");
   const [pressCount, setPressCount] = useState(0);
   const [segment, setSegment] = useState<GallerySegment>("all");
@@ -1298,21 +1353,137 @@ export function PrimitiveGallery() {
               <p>Arrow keys move selection while labels and panels share one source.</p>
             </div>
           </div>
-          <Tabs
-            aria-label="Primitive gallery evidence"
-            data-gallery-tabs="true"
-            defaultValue="semantics"
-            items={galleryTabs}
-            size="compact"
-          />
-          <SegmentedControl
-            aria-label="Systems shown"
-            className="gallery-segmented-control"
-            items={gallerySegments}
-            onChange={setSegment}
-            size="compact"
-            value={segment}
-          />
+          <div data-gallery-collection-matrix="ordinary">
+            <Tabs
+              aria-label="Primitive gallery evidence"
+              className="gallery-collection-tabs"
+              data-gallery-tabs="true"
+              defaultValue="semantics"
+              items={galleryTabs}
+              size="compact"
+            />
+            <Disclosure
+              className="gallery-collection-disclosure"
+              size="compact"
+              title="Compiled collection details"
+            >
+              Collection disclosure content.
+            </Disclosure>
+            <ToggleGroup
+              aria-label="Collection density"
+              className="gallery-toggle-group"
+              items={galleryToggleItems}
+              onChange={(value) => {
+                setCollectionToggle(
+                  typeof value === "string" ? value : value?.[0] ?? null,
+                );
+              }}
+              value={collectionToggle}
+            />
+            <SegmentedControl
+              aria-label="Systems shown"
+              className="gallery-segmented-control"
+              items={gallerySegments}
+              onChange={setSegment}
+              size="compact"
+              value={segment}
+            />
+          </div>
+          <div
+            data-gallery-collection-matrix="synthetic-coarse"
+            style={{ "--hraness-collection-coarse-min": "3rem" } as CSSProperties}
+          >
+            <Tabs
+              aria-label="Synthetic coarse tabs"
+              className="gallery-collection-tabs-synthetic"
+              defaultValue="synthetic-overview"
+              items={gallerySyntheticTabs}
+              size="compact"
+            />
+            <Disclosure
+              className="gallery-collection-disclosure-synthetic"
+              size="compact"
+              title="Synthetic coarse disclosure"
+            >
+              Synthetic coarse disclosure content.
+            </Disclosure>
+            <ToggleGroup
+              aria-label="Synthetic coarse collection density"
+              className="gallery-toggle-group-synthetic"
+              items={gallerySyntheticToggleItems}
+              onChange={() => undefined}
+              value="synthetic-primary"
+            />
+            <SegmentedControl
+              aria-label="Synthetic coarse systems"
+              className="gallery-segmented-control-synthetic"
+              items={gallerySyntheticSegments}
+              onChange={() => undefined}
+              size="compact"
+              value="synthetic-alpha"
+            />
+          </div>
+        </section>
+
+        <section aria-labelledby="gallery-navigation-heading" data-gallery-section="navigation">
+          <div data-gallery-section-heading="true">
+            <div>
+              <h2 id="gallery-navigation-heading">Navigation</h2>
+              <p>Long ancestry, finite ranges, and coarse targets keep their native semantics.</p>
+            </div>
+          </div>
+          <div data-gallery-navigation-grid="true">
+            <Breadcrumbs
+              aria-label="Current migration ancestry"
+              className="gallery-breadcrumbs gallery-breadcrumbs--constrained"
+              data-gallery-breadcrumbs="constrained"
+              items={galleryBreadcrumbItems}
+              style={{ width: "17rem" }}
+              xstyle={[
+                galleryStyles.navigationRootOverride,
+                galleryStyles.navigationRootDynamicWidth("23rem"),
+              ]}
+            />
+            <Pagination
+              aria-label="Middle release pages"
+              className="gallery-pagination gallery-pagination--middle"
+              currentPage={6}
+              data-gallery-pagination="middle"
+              hrefForPage={(page) => `/releases?page=${String(page)}`}
+              style={{ width: "19rem" }}
+              totalPages={12}
+              xstyle={[
+                galleryStyles.navigationRootOverride,
+                galleryStyles.navigationRootDynamicWidth("27rem"),
+              ]}
+            />
+            <Pagination
+              aria-label="First release page"
+              currentPage={1}
+              data-gallery-pagination="first"
+              hrefForPage={(page) => `/releases?page=${String(page)}`}
+              totalPages={12}
+            />
+            <Pagination
+              aria-label="Last release page"
+              currentPage={12}
+              data-gallery-pagination="last"
+              hrefForPage={(page) => `/releases?page=${String(page)}`}
+              totalPages={12}
+            />
+            <div
+              data-gallery-pagination-coarse="synthetic"
+              style={{ "--hraness-pagination-coarse-min": "3rem" } as CSSProperties}
+            >
+              <Pagination
+                aria-label="Synthetic coarse release pages"
+                currentPage={6}
+                data-gallery-pagination="synthetic-coarse"
+                hrefForPage={(page) => `/releases?page=${String(page)}`}
+                totalPages={12}
+              />
+            </div>
+          </div>
         </section>
 
         <section aria-labelledby="gallery-feedback-heading" data-gallery-section="feedback">
@@ -1335,7 +1506,28 @@ export function PrimitiveGallery() {
             Quiet-site landmarks now use package-compiled StyleX while later families
             remain on their legacy recipes.
           </InlineAlert>
-          <Progress label="Harness coverage" showValue value={78} />
+          <div data-gallery-native-progress-grid="true">
+            <Progress
+              data-gallery-native-progress="normalized"
+              label="Harness coverage"
+              max={Number.NaN}
+              showValue
+              value={Number.POSITIVE_INFINITY}
+            />
+            <Progress
+              className="gallery-native-progress gallery-native-progress--override"
+              data-gallery-native-progress="override"
+              label="Caller progress"
+              max={80}
+              showValue
+              style={{ width: "13rem" }}
+              value={120}
+              xstyle={[
+                galleryStyles.nativeProgressOverride,
+                galleryStyles.nativeProgressDynamicWidth("17rem"),
+              ]}
+            />
+          </div>
           <Skeleton height="1rem" isText width="68%" />
         </section>
 

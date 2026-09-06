@@ -42,15 +42,21 @@ import {
 import { markReactClientPackage } from "./mark-react-client-package.js";
 
 const COMPILER_STYLESHEET_PATHS = [
-  "src/compiler-foundation-tailwind.css",
   "src/compiler-foundation.css",
   "src/compiler-reset.css",
   "src/components.css",
   "src/reset.css",
   "src/styles.css",
-  "src/tailwind.css",
   "src/tokens.css",
 ] as const;
+const PUBLIC_CSS_EXPORTS = {
+  "./compiler-foundation.css": "./src/compiler-foundation.css",
+  "./components.css": "./src/components.css",
+  "./reset.css": "./src/reset.css",
+  "./styles.css": "./src/styles.css",
+  "./stylex.css": "./dist/stylex.css",
+  "./tokens.css": "./src/tokens.css",
+} as const;
 
 function relativeBelow(root: string, path: string, description: string): string {
   const logical = relative(root, path).split(sep).join("/");
@@ -273,6 +279,19 @@ async function writePackageManifest(
   assert.ok(typeof rawPackage === "object" && rawPackage !== null && !Array.isArray(rawPackage));
   const packageRecord = rawPackage as Record<string, unknown>;
   assert.ok(typeof packageRecord.name === "string" && typeof packageRecord.version === "string");
+  assert.ok(
+    typeof packageRecord.exports === "object"
+      && packageRecord.exports !== null
+      && !Array.isArray(packageRecord.exports),
+    "Package exports must be an object",
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(packageRecord.exports).filter(([key]) => key.endsWith(".css")),
+    ),
+    PUBLIC_CSS_EXPORTS,
+    "Build must publish exactly the six standards-based CSS entrypoints",
+  );
   const manifest = validateStylexPackageManifest({
     buildTools: await distArtifacts(stage, buildToolPaths),
     compiler: compilerContract,

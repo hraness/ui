@@ -55,15 +55,21 @@ function optionalPeer(manifest: PackageJson, name: string, version: string): voi
 
 const repository = process.cwd();
 const compilerStylesheetPaths = [
-  "src/compiler-foundation-tailwind.css",
   "src/compiler-foundation.css",
   "src/compiler-reset.css",
   "src/components.css",
   "src/reset.css",
   "src/styles.css",
-  "src/tailwind.css",
   "src/tokens.css",
 ] as const;
+const publicCssExports = {
+  "./compiler-foundation.css": "./src/compiler-foundation.css",
+  "./components.css": "./src/components.css",
+  "./reset.css": "./src/reset.css",
+  "./styles.css": "./src/styles.css",
+  "./stylex.css": "./dist/stylex.css",
+  "./tokens.css": "./src/tokens.css",
+} as const;
 assert.equal(Bun.version, "1.3.14", "Compiler artifact checks require Bun 1.3.14");
 const dist = resolve(repository, "dist");
 const manifestPath = resolve(dist, "stylex-manifest.json");
@@ -89,9 +95,13 @@ optionalPeer(packageJson, "vite", ">=7 <8");
 
 const exportsRecord = packageJson.exports;
 assert.ok(exportsRecord !== undefined, "package exports are missing");
+assert.deepEqual(
+  Object.fromEntries(Object.entries(exportsRecord).filter(([key]) => key.endsWith(".css"))),
+  publicCssExports,
+  "Package must expose exactly the six standards-based CSS entrypoints",
+);
 assert.equal(exportsRecord["./stylex-manifest.json"], "./dist/stylex-manifest.json");
 assert.equal(exportsRecord["./compiler-foundation.css"], "./src/compiler-foundation.css");
-assert.equal(exportsRecord["./compiler-foundation-tailwind.css"], "./src/compiler-foundation-tailwind.css");
 assert.equal(exportsRecord["./compiler-reset.css"], undefined, "Compiler reset must remain package-internal");
 const exportedBuildTools = [
   importTarget(exportsRecord["./stylex-build"], "stylex-build export"),
@@ -138,15 +148,14 @@ for (const path of buildTools) {
   assert.ok(!source.startsWith('"use client";\n'), `Build tool was client-marked: ${path}`);
 }
 
-const [foundation, compilerReset, tailwindFoundation, publicReset] = await Promise.all([
+const [foundation, compilerReset, publicReset] = await Promise.all([
   readFile(resolve(repository, "src/compiler-foundation.css"), "utf8"),
   readFile(resolve(repository, "src/compiler-reset.css"), "utf8"),
-  readFile(resolve(repository, "src/compiler-foundation-tailwind.css"), "utf8"),
   readFile(resolve(repository, "src/reset.css"), "utf8"),
 ]);
 const fixedPriorityPrelude = "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;\n";
-assert.ok([foundation, compilerReset, tailwindFoundation].every((source) => !source.includes("stylex.css")), "Compiler foundation imports standalone StyleX recipes");
-assert.ok(!foundation.includes("tailwind.css"), "Standards compiler foundation imports the Tailwind bridge");
+assert.ok([foundation, compilerReset].every((source) => !source.includes("stylex.css")), "Compiler foundation imports standalone StyleX recipes");
+assert.doesNotMatch(packageSource, /tailwind/iu, "Package manifest retains a first-party Tailwind contract");
 assert.equal(
   foundation,
   '@layer base, components;\n@layer components.hraness-ui.legacy;\n\n@import "./tokens.css";\n@import "./compiler-reset.css";\n@import "./components.css";\n',
@@ -162,6 +171,4 @@ assert.doesNotMatch(
   /components\.hraness-ui\.priority\d+/u,
   "Compiler foundation must not hide a fixed StyleX priority declaration",
 );
-assert.equal(tailwindFoundation, '@import "./compiler-foundation.css";\n@import "./tailwind.css";\n');
-
 console.log(`Verified ${String(runtime.length)} marked runtime files, ${String(buildTools.length)} unmarked build-tool files, ${String(manifest.rules.length)} canonical StyleX rules, one bound standalone stylesheet, and ${String(manifest.stylesheets.length)} exact compiler-adopter stylesheets`);

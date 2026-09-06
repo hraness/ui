@@ -300,6 +300,106 @@ const LIST_BOX_STYLE_KEYS = [
   "header", "horizontalChild", "horizontalRoot", "item", "itemDisabled",
   "itemHighlighted", "itemSelected", "root", "section",
 ] as const;
+const NAVIGATION_STYLE_KEYS = [
+  "breadcrumbCurrent",
+  "breadcrumbCurrentItem",
+  "breadcrumbItem",
+  "breadcrumbList",
+  "breadcrumbRoot",
+  "breadcrumbSeparator",
+  "paginationBoundary",
+  "paginationCurrent",
+  "paginationDisabled",
+  "paginationEllipsis",
+  "paginationLink",
+  "paginationList",
+  "paginationRoot",
+] as const;
+const FEEDBACK_STYLE_KEYS = [
+  "progressControl",
+  "progressLabelRow",
+  "progressRoot",
+  "skeletonRoot",
+  "skeletonText",
+  "spinnerLarge",
+  "spinnerRoot",
+  "spinnerSmall",
+] as const;
+const MOTION_STYLE_KEYS = [
+  "fadeIn",
+  "fadeOut",
+  "overlayEnter",
+  "overlayExit",
+  "progressIndeterminate",
+  "skeleton",
+  "spin",
+  "toastEnter",
+  "toastExit",
+] as const;
+const MOTION_RUNTIME_STYLE_KEYS = [
+  "fadeIn",
+  "fadeOut",
+  "overlayEnter",
+  "overlayExit",
+  "progressIndeterminate",
+  "skeleton",
+  "spin",
+  "toastEnter",
+] as const;
+const COLLECTION_STYLE_KEYS = [
+  "accordionRoot",
+  "disclosureHeading",
+  "disclosureIndicator",
+  "disclosureIndicatorExpanded",
+  "disclosurePanel",
+  "disclosurePanelHidden",
+  "disclosureRoot",
+  "disclosureTitle",
+  "disclosureTrigger",
+  "disclosureTriggerCompact",
+  "disclosureTriggerFocusVisible",
+  "disclosureTriggerLarge",
+  "disclosureTriggerNativeFocusFallback",
+  "segmentedControlRoot",
+  "segmentedControlRootCompact",
+  "segmentedIndicator",
+  "segmentedItem",
+  "segmentedItemCompact",
+  "segmentedItemDisabled",
+  "segmentedItemFocusVisible",
+  "segmentedItemHovered",
+  "segmentedItemNativeInteractionFallbacks",
+  "segmentedItemSelected",
+  "segmentedLabel",
+  "tab",
+  "tabCompact",
+  "tabFocusVisible",
+  "tabNativeFocusFallback",
+  "tabSelected",
+  "tabVertical",
+  "tabBar",
+  "tabBarVertical",
+  "tabEnd",
+  "tabLabel",
+  "tabLeading",
+  "tabList",
+  "tabListVertical",
+  "tabPanel",
+  "tabPanelFocusVisible",
+  "tabPanelNativeFocusFallback",
+  "tabPanels",
+  "tabsRoot",
+  "toggleGroupRoot",
+  "toggleGroupRootVertical",
+  "toggleItem",
+  "toggleItemDisabled",
+  "toggleItemFocusVisible",
+  "toggleItemNativeFocusFallback",
+  "toggleItemSelected",
+  "toggleItemVertical",
+  "toggleLabel",
+  "toggleLeading",
+] as const;
 type ListBoxStyleKey = (typeof LIST_BOX_STYLE_KEYS)[number];
 const LIST_BOX_DECLARATIONS: Readonly<Record<ListBoxStyleKey, readonly RegExp[]>> = {
   header: [
@@ -1757,7 +1857,6 @@ function requirePublicLayerContract(
     '@import "./reset.css";',
     COMPONENTS_IMPORT,
     STYLEX_IMPORT,
-    '@import "./tailwind.css";',
   ];
   if (
     lines.length !== expectedLines.length
@@ -1767,6 +1866,11 @@ function requirePublicLayerContract(
       "src/styles.css must contain the exact base < components and legacy < priority1 < priority2 < priority3 < priority4 preludes and ordered public imports",
     );
   }
+  forbid(
+    orderedStylesheet,
+    /tailwind/iu,
+    "a first-party Tailwind import in the standards-based complete stylesheet",
+  );
 }
 
 function requireResetLayerContracts(
@@ -2974,13 +3078,13 @@ const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
     /color:\s*var\(--ui-popover-foreground\);/u, /box-shadow:\s*var\(--elevation-overlay\);/u,
   ],
   popoverEntering: [
-    /animation-name:\s*hraness-overlay-enter;/u, /animation-duration:\s*var\(--motion-duration-standard\);/u,
+    /animation-duration:\s*var\(--motion-duration-standard\);/u,
     /animation-timing-function:\s*var\(--motion-easing-emphasized\);/u, /animation-delay:\s*0s;/u,
     /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
     /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
   ],
   popoverExiting: [
-    /animation-name:\s*hraness-overlay-exit;/u, /animation-duration:\s*var\(--motion-duration-fast\);/u,
+    /animation-duration:\s*var\(--motion-duration-fast\);/u,
     /animation-timing-function:\s*var\(--motion-easing-standard\);/u, /animation-delay:\s*0s;/u,
     /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
     /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
@@ -3009,8 +3113,6 @@ const MENU_CONDITIONAL_DECLARATIONS: Partial<Record<MenuStyleKey, readonly Reado
     { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
     { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
   ],
-  popoverEntering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
-  popoverExiting: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
 };
 
 function menuDeclarationMatches(body: string, declaration: RegExp): boolean {
@@ -3155,7 +3257,6 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /overscroll-behavior-y:\s*contain;/u
   ],
   overlayEntering: [
-    /animation-name:\s*hraness-fade-in;/u,
     /animation-duration:\s*var\(--motion-duration-standard\);/u,
     /animation-timing-function:\s*var\(--motion-easing-standard\);/u,
     /animation-delay:\s*0s;/u,
@@ -3165,7 +3266,6 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /animation-play-state:\s*running;/u
   ],
   overlayExiting: [
-    /animation-name:\s*hraness-fade-out;/u,
     /animation-duration:\s*var\(--motion-duration-fast\);/u,
     /animation-timing-function:\s*var\(--motion-easing-standard\);/u,
     /animation-delay:\s*0s;/u,
@@ -3223,8 +3323,6 @@ const DIALOG_CONDITIONAL_DECLARATIONS: Partial<Record<DialogStyleKey, readonly R
     { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
     { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
   ],
-  overlayEntering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
-  overlayExiting: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
 };
 const DIALOG_NATIVE_DECLARATIONS = [
   ...DIALOG_DECLARATIONS.closeHovered.map((declaration) => ({ pseudo: "hover" as const, declaration })),
@@ -3251,8 +3349,6 @@ const OVERLAY_DECLARATIONS: Readonly<Record<OverlayStyleKey, readonly RegExp[]>>
 };
 const OVERLAY_CONDITIONAL_DECLARATIONS: Partial<Record<OverlayStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
   surface: MENU_CONDITIONAL_DECLARATIONS.popover!,
-  popoverEntering: MENU_CONDITIONAL_DECLARATIONS.popoverEntering!,
-  popoverExiting: MENU_CONDITIONAL_DECLARATIONS.popoverExiting!,
 };
 function requireOverlayContract(legacy: string, css: string, js: string, source: string, recipe: string): void {
   assert.deepEqual(sourceStyleKeys(recipe, "overlayStyles"), OVERLAY_STYLE_KEYS);
@@ -3277,7 +3373,7 @@ function requireOverlayContract(legacy: string, css: string, js: string, source:
     }
     requireMatch(js, new RegExp(map.identifier + "\\." + key + "(?![A-Za-z0-9_$])", "u"), "compiled overlayStyles." + key + " composition binding");
   }
-  requireExactSourceMatches(source, /overlayStyles\.surface,\s*overlayStyles\.popover,\s*state\.isEntering && overlayStyles\.popoverEntering,\s*state\.isExiting && overlayStyles\.popoverExiting,\s*xstyle,/gu, 1, "Popover surface, state, and caller order");
+  requireExactSourceMatches(source, /overlayStyles\.surface,\s*overlayStyles\.popover,\s*state\.isEntering && motionStyles\.overlayEnter,\s*state\.isEntering && overlayStyles\.popoverEntering,\s*state\.isExiting && motionStyles\.overlayExit,\s*state\.isExiting && overlayStyles\.popoverExiting,\s*xstyle,/gu, 1, "Popover surface, shared motion, state, and caller order");
   requireExactSourceMatches(source, /stylex\.props\(overlayStyles\.surface, overlayStyles\.tooltip, xstyle\)/gu, 1, "Tooltip surface and caller order");
   const popoverSource = source.slice(source.indexOf("export function Popover("), source.indexOf("export type TooltipProps"));
   const tooltipSource = source.slice(source.indexOf("export function Tooltip("));
@@ -3336,7 +3432,7 @@ const TOAST_DECLARATIONS: Readonly<Record<ToastStyleKey, readonly RegExp[]>> = {
     /pointer-events:\s*auto;/u,
   ],
   entering: [
-    /animation-name:\s*hraness-toast-enter;/u, /animation-duration:\s*var\(--motion-duration-standard\);/u,
+    /animation-duration:\s*var\(--motion-duration-standard\);/u,
     /animation-timing-function:\s*var\(--motion-easing-emphasized\);/u, /animation-delay:\s*0s;/u,
     /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
     /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
@@ -3377,7 +3473,6 @@ const TOAST_CONDITIONAL_DECLARATIONS: Partial<Record<ToastStyleKey, readonly Rea
     { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
     { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
   ],
-  entering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
   toneDanger: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
   toneInfo: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
   toneSuccess: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
@@ -3394,8 +3489,7 @@ function requireToastContract(legacy: string, css: string, js: string, source: s
   forbid(css, /\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u, "a semantic Toast selector");
   forbid(css, /--gallery-toast-collision/u, "a gallery Toast marker");
   requireMatch(legacy, /--hraness-toast-coarse-min:\s*var\(--interactive-target-min\);/u, "Toast synthetic coarse minimum");
-  requireMatch(legacy, /@keyframes\s+hraness-toast-enter/u, "retained Toast enter keyframes");
-  requireMatch(legacy, /@keyframes\s+hraness-toast-exit/u, "retained Toast exit keyframes");
+  forbid(legacy, /@keyframes\b/u, "legacy Toast or component keyframes");
   const map = namedCompiledStyleMap(js, TOAST_STYLE_KEYS, "toastStyles class map");
   assert.deepEqual([...map.properties.keys()], TOAST_STYLE_KEYS);
   for (const key of TOAST_STYLE_KEYS) {
@@ -3423,7 +3517,7 @@ function requireToastContract(legacy: string, css: string, js: string, source: s
     requireMatch(js, new RegExp(map.identifier + "\\." + key + "(?![A-Za-z0-9_$])", "u"), "compiled toastStyles." + key + " composition binding");
   }
   requireExactSourceMatches(source, /stylex\.props\(toastStyles\.region,\s*regionXstyle\)/gu, 1, "Toast region caller order");
-  requireExactSourceMatches(source, /toastStyles\.root,\s*toastStyles\.entering,\s*toastToneStyles\[tone\],\s*toastXstyle,/gu, 1, "Toast arrival, tone, and caller order");
+  requireExactSourceMatches(source, /toastStyles\.root,\s*motionStyles\.toastEnter,\s*toastStyles\.entering,\s*toastToneStyles\[tone\],\s*toastXstyle,/gu, 1, "Toast shared motion, arrival, tone, and caller order");
   requireExactSourceMatches(source, /toastStyles\.close,\s*!hasClosePresentation && toastStyles\.closeNativeInteractionFallbacks,\s*state\.isHovered && toastStyles\.closeHovered,\s*state\.isFocusVisible && toastStyles\.closeFocusVisible,\s*closeXstyle,/gu, 1, "Toast close fallback, state, and caller order");
   requireExactSourceMatches(source, /style=\{regionPresentation\.style\}/gu, 1, "Toast region dynamic StyleX binding");
   requireExactSourceMatches(source, /style=\{toastPresentation\.style\}/gu, 1, "Toast root dynamic StyleX binding");
@@ -3491,7 +3585,7 @@ function requireDialogContract(legacy: string, css: string, js: string, source: 
     requireMatch(js, new RegExp(map.identifier + "\\." + key + "(?![A-Za-z0-9_$])", "u"), "compiled dialogStyles." + key + " composition binding");
   }
   requireMatch(legacy, /--hraness-dialog-coarse-min:\s*var\(--interactive-target-min\);/u, "Dialog synthetic coarse minimum");
-  requireExactSourceMatches(source, /dialogStyles\.overlay,\s*state\.isEntering && dialogStyles\.overlayEntering,\s*state\.isExiting && dialogStyles\.overlayExiting,\s*overlayXstyle,/gu, 1, "Dialog overlay state and caller order");
+  requireExactSourceMatches(source, /dialogStyles\.overlay,\s*state\.isEntering && motionStyles\.fadeIn,\s*state\.isEntering && dialogStyles\.overlayEntering,\s*state\.isExiting && motionStyles\.fadeOut,\s*state\.isExiting && dialogStyles\.overlayExiting,\s*overlayXstyle,/gu, 1, "Dialog shared motion, overlay state, and caller order");
   requireExactSourceMatches(source, /dialogStyles\.root, size === "small" && dialogStyles\.rootSmall, size === "large" && dialogStyles\.rootLarge, xstyle/gu, 1, "Dialog size and caller order");
   requireExactSourceMatches(source, /dialogStyles\.close,\s*dialogStyles\.closeNativeInteraction,\s*state\.isHovered && dialogStyles\.closeHovered,\s*state\.isFocusVisible && dialogStyles\.closeFocusVisible,/gu, 1, "Dialog close state order");
   requireMatch(source, /mergeStylexInlineStyles\(overlayPresentation\(state\)\.style, typeof style === "function" \? style\(state\) : style\)/u, "Dialog final native overlay style");
@@ -3565,8 +3659,8 @@ function requireMenuContract(legacy: string, css: string, js: string, source: st
   requireCompiledConditionalDeclaration(compiledStyleRules(css, map, "item"), "@media(pointer:coarse)", /min-height:\s*var\(--interactive-target-min\);/u, "Menu coarse minimum");
   requireCompiledConditionalDeclaration(compiledStyleRules(css, map, "popover"), "@media(forced-colors:active)", /border-color:\s*canvastext;/u, "Menu forced-color border");
   forbid(css, /--gallery-menu-collision/u, "a gallery Menu collision marker in package output");
-  for (const key of ["popoverEntering", "popoverExiting"] as const) requireCompiledConditionalDeclaration(compiledStyleRules(css, map, key), "@media(prefers-reduced-motion:reduce)", /animation-name:\s*none;/u, "Menu reduced motion");
   requireMatch(legacy, /--hraness-menu-coarse-min:\s*var\(--interactive-target-min\);/u, "Menu synthetic coarse minimum");
+  requireExactSourceMatches(source, /menuStyles\.popover,\s*state\.isEntering && motionStyles\.overlayEnter,\s*state\.isEntering && menuStyles\.popoverEntering,\s*state\.isExiting && motionStyles\.overlayExit,\s*state\.isExiting && menuStyles\.popoverExiting,\s*popoverXstyle,/gu, 1, "Menu shared motion, state, and caller order");
   requireExactSourceMatches(source, /menuStyles\.item,\s*\(state\.isFocused \|\| state\.isHovered\) && menuStyles\.itemHighlighted,\s*state\.isSelected && menuStyles\.itemSelected,\s*state\.isDisabled && menuStyles\.itemDisabled,\s*variant === "danger" && menuStyles\.itemDanger,\s*variant === "danger" && \(state\.isFocused \|\| state\.isHovered\) && menuStyles\.itemDangerHighlighted,\s*xstyle,/gu, 2, "Menu state and caller order");
 }
 
@@ -3913,6 +4007,11 @@ function requireActionFamilyContract(
     }
     return rules;
   };
+  forbid(
+    rulesForRecipe("spinner").map((rule) => rule.body).join("\n"),
+    /animation-name\s*:/u,
+    "a component-owned action spinner animation name",
+  );
   for (const [key, pattern, description] of [
     ["danger", /background-color:\s*var\(--ui-destructive\);/u, "the danger action surface"],
     ["hoveredQuiet", /background-color:\s*var\(--ui-accent\);/u, "the quiet hover surface"],
@@ -3924,7 +4023,6 @@ function requireActionFamilyContract(
     ["inlineControl", /min-height:\s*1\.5rem;/u, "the inline IconLink minimum height"],
     ["inlineControl", /min-width:\s*1\.5rem;/u, "the inline IconLink minimum width"],
     ["inlineControl", /(?:^|;)\s*width:\s*1\.5rem;/u, "the inline IconLink width"],
-    ["spinner", /animation-name:\s*hraness-spin;/u, "the action spinner animation"],
   ] as const) {
     requireActionUnconditionalDeclaration(
       rulesForRecipe(key),
@@ -4024,12 +4122,6 @@ function requireActionFamilyContract(
       description,
     );
   }
-  requireActionConditionalDeclaration(
-    rulesForRecipe("spinner"),
-    "@media(prefers-reduced-motion:reduce)",
-    /animation-name:\s*none;/u,
-    "the reduced-motion action spinner",
-  );
   requireMatch(
     legacyComponents,
     /:root\[data-verification-pointer=["']coarse["']\]\s*\{\s*--hraness-action-coarse-min:\s*var\(--interactive-target-min\);\s*(?:--hraness-field-coarse-min:\s*var\(--interactive-target-min\);\s*)?(?:--hraness-slider-coarse-min:\s*var\(--interactive-target-min\);\s*)?(?:--hraness-list-box-coarse-min:\s*var\(--interactive-target-min\);\s*)?\}/u,
@@ -4065,11 +4157,16 @@ function requireActionFamilyContract(
     "function PendingIndicator(",
     inlineControlStart,
   );
+  const buttonStart = actionsSource.indexOf(
+    "export const Button",
+    pendingIndicatorStart,
+  );
   if (
     actionRootStart < 0
     || actionControlStart < 0
     || inlineControlStart < 0
     || pendingIndicatorStart < 0
+    || buttonStart < 0
   ) {
     throw new Error("src/actions.tsx must retain the bounded action presentation helpers");
   }
@@ -4084,6 +4181,10 @@ function requireActionFamilyContract(
   const inlineControlSource = actionsSource.slice(
     inlineControlStart,
     pendingIndicatorStart,
+  );
+  const pendingIndicatorSource = actionsSource.slice(
+    pendingIndicatorStart,
+    buttonStart,
   );
   requireMatch(
     actionRootSource,
@@ -4114,6 +4215,16 @@ function requireActionFamilyContract(
     inlineControlSource,
     /stylex\.props\(\s*actionStyles\.inlineControl,\s*!hasStylexPresentation\(controlXstyle\)\s*&&\s*actionStyles\.nativeInlineInteractionFallbacks,\s*state\.isHovered\s*&&\s*actionStyles\.hoveredQuiet,\s*state\.isFocusVisible\s*&&\s*actionStyles\.focusVisible,\s*state\.isDisabled\s*&&\s*actionStyles\.disabled,\s*controlXstyle,?\s*\);/u,
     "the inline IconLink state and caller precedence",
+  );
+  requireMatch(
+    actionsSource,
+    /import\s*\{\s*motionStyles\s*\}\s*from\s*["']\.\/motion\.stylex\.js["'];/u,
+    "the shared action motion import",
+  );
+  requireMatch(
+    pendingIndicatorSource,
+    /stylex\.props\(motionStyles\.spin,\s*actionStyles\.spinner\)/u,
+    "the shared spin motion before action spinner timing and geometry",
   );
   for (const {
     component,
@@ -5038,6 +5149,16 @@ function requireFieldAndSelectContract(
       "Select trigger invalid-state bindings",
     ],
     [
+      /popoverState\.isEntering\s*&&\s*motionStyles\.overlayEnter,\s*popoverState\.isEntering\s*&&\s*selectFieldStyles\.popoverEntering/gu,
+      2,
+      "Select shared enter motion before component timing",
+    ],
+    [
+      /popoverState\.isExiting\s*&&\s*motionStyles\.overlayExit,\s*popoverState\.isExiting\s*&&\s*selectFieldStyles\.popoverExiting/gu,
+      2,
+      "Select shared exit motion before component timing",
+    ],
+    [
       /popoverState\.isEntering\s*&&\s*selectFieldStyles\.popoverEntering/gu,
       2,
       "Select popover entering bindings",
@@ -5492,17 +5613,16 @@ function requireFieldAndSelectContract(
   );
   for (const key of ["popoverEntering", "popoverExiting"] as const) {
     const rules = compiledStyleRules(compiledCss, selectMap, key);
+    forbid(
+      rules.map((rule) => rule.body).join("\n"),
+      /animation-name\s*:/u,
+      `a component-owned Select animation name for ${key}`,
+    );
     requireCompiledConditionalDeclaration(
       rules,
       "@media(prefers-reduced-motion:reduce)",
       /animation-duration:\s*0s;/u,
       `the reduced-motion duration for ${key}`,
-    );
-    requireCompiledConditionalDeclaration(
-      rules,
-      "@media(prefers-reduced-motion:reduce)",
-      /animation-name:\s*none;/u,
-      `the reduced-motion animation reset for ${key}`,
     );
   }
 }
@@ -5643,6 +5763,11 @@ function requireIndicatorAndKnobContract(
       "the indicatorStyles source import",
     ],
     [
+      indicatorsSource,
+      /from ["']\.\/motion\.stylex\.js["']/u,
+      "the shared motionStyles source import",
+    ],
+    [
       knobSource,
       /from ["']\.\/knob\.stylex\.js["']/u,
       "the knobStyles source import",
@@ -5671,6 +5796,11 @@ function requireIndicatorAndKnobContract(
       indicatorsSource,
       /["']hraness-slider__thumb-indicator["'],\s*indicatorPresentation\.className/u,
       "the Slider visible-thumb semantic and generated class order",
+    ],
+    [
+      indicatorsSource,
+      /percentage === undefined && motionStyles\.progressIndeterminate,\s*percentage === undefined && indicatorStyles\.indeterminateFill/u,
+      "the shared indeterminate motion before its component-owned timing recipe",
     ],
     [
       indicatorsSource,
@@ -5868,8 +5998,12 @@ function requireIndicatorAndKnobContract(
     requireCompiledUnconditionalDeclaration(indicatorRules(key), declaration, description);
   }
   const indeterminateRules = indicatorRules("indeterminateFill");
+  forbid(
+    indeterminateRules.map((rule) => rule.body).join("\n"),
+    /animation-name\s*:/u,
+    "a component-owned indeterminate ProgressBar animation name",
+  );
   for (const [declaration, description] of [
-    [/animation-name:\s*hraness-progress-indeterminate;/u, "indeterminate animation name"],
     [/animation-duration:\s*1\.25s;/u, "indeterminate duration"],
     [/animation-iteration-count:\s*infinite;/u, "indeterminate repetition"],
     [/animation-timing-function:\s*ease-in-out;/u, "indeterminate easing"],
@@ -5880,7 +6014,6 @@ function requireIndicatorAndKnobContract(
   for (const declaration of [
     /animation-duration:\s*0s;/u,
     /animation-iteration-count:\s*1;/u,
-    /animation-name:\s*none;/u,
   ]) {
     requireCompiledConditionalDeclaration(
       indeterminateRules,
@@ -5895,15 +6028,10 @@ function requireIndicatorAndKnobContract(
   )) {
     throw new Error("StyleX artifact is missing the RTL indeterminate direction rule");
   }
-  requireMatch(
+  forbid(
     indicatorStyleSource,
-    /animationName:\s*\{\s*default:\s*["']hraness-progress-indeterminate["'],\s*\[reducedMotion\]:\s*["']none["'],?\s*\}/u,
-    "the finite indeterminate animation-name and reduced-motion source contract",
-  );
-  requireMatch(
-    legacyComponents,
-    /@keyframes\s+hraness-progress-indeterminate\s*\{\s*from\s*\{\s*transform:\s*translateX\(-125%\);\s*\}\s*to\s*\{\s*transform:\s*translateX\(250%\);\s*\}\s*\}/u,
-    "the exact selector-free indeterminate progress keyframes",
+    /animationName\s*:/u,
+    "a component-local indeterminate keyframe binding",
   );
   forbid(
     compiledCss,
@@ -6025,6 +6153,403 @@ function requireIndicatorAndKnobContract(
   }
 }
 
+function exactCompiledStyleMap(
+  compiledJavaScript: string,
+  compiledCss: string,
+  source: string,
+  exportName: string,
+  expectedKeys: readonly string[],
+): NamedCompiledStyleMap {
+  assert.deepEqual(
+    sourceStyleKeys(source, exportName),
+    expectedKeys,
+    `${exportName} must retain its exact finite recipe keys and order`,
+  );
+  const map = namedCompiledStyleMap(
+    compiledJavaScript,
+    expectedKeys,
+    `${exportName} class map`,
+  );
+  assert.deepEqual(
+    [...map.properties.keys()],
+    expectedKeys,
+    `compiled ${exportName} must retain its exact finite recipe keys and order`,
+  );
+  const allRules = cssRules(compiledCss, "dist/stylex.css");
+  for (const key of expectedKeys) {
+    const entry = map.properties.get(key)?.value ?? "";
+    const classNames = generatedClassNames(entry, `compiled ${exportName}.${key}`);
+    for (const className of classNames) {
+      assert.ok(
+        allRules.some((rule) =>
+          new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)
+        ),
+        `dist/stylex.css must retain a rule for every ${exportName}.${key} atom: ${className}`,
+      );
+    }
+  }
+  return map;
+}
+
+function requireNavigationContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+  navigationSource: string,
+  navigationStyleSource: string,
+): void {
+  const map = exactCompiledStyleMap(
+    compiledJavaScript,
+    compiledCss,
+    navigationStyleSource,
+    "navigationStyles",
+    NAVIGATION_STYLE_KEYS,
+  );
+  forbid(
+    legacyComponents,
+    /\.hraness-(?:breadcrumbs|pagination)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
+    "a legacy Breadcrumbs or Pagination recipe",
+  );
+  requireMatch(
+    legacyComponents,
+    /--hraness-pagination-coarse-min:\s*var\(--interactive-target-min\);/u,
+    "the synthetic coarse-pointer Pagination variable",
+  );
+
+  const rules = (key: (typeof NAVIGATION_STYLE_KEYS)[number]) =>
+    compiledStyleRules(compiledCss, map, key);
+  for (const [key, declaration, description] of [
+    ["breadcrumbCurrent", /min-width:\s*0;/u, "current breadcrumb shrink boundary"],
+    ["breadcrumbCurrent", /overflow:\s*hidden;/u, "current breadcrumb clipping"],
+    ["breadcrumbCurrent", /text-overflow:\s*ellipsis;/u, "current breadcrumb ellipsis"],
+    ["breadcrumbCurrentItem", /flex:\s*1 1 auto;/u, "current breadcrumb flexible item"],
+    ["breadcrumbItem", /min-width:\s*0;/u, "breadcrumb item shrink boundary"],
+    ["breadcrumbList", /min-width:\s*0;/u, "breadcrumb list shrink boundary"],
+    ["breadcrumbList", /overflow:\s*hidden;/u, "breadcrumb list clipping"],
+    ["breadcrumbRoot", /min-width:\s*0;/u, "breadcrumb root shrink boundary"],
+    ["paginationBoundary", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-pagination-coarse-min,\s*0px\)\);/u, "synthetic coarse Pagination boundary"],
+    ["paginationLink", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-pagination-coarse-min,\s*0px\)\);/u, "synthetic coarse Pagination link"],
+    ["paginationRoot", /justify-content:\s*space-between;/u, "wide Pagination distribution"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(rules(key), declaration, description);
+  }
+  for (const key of ["paginationBoundary", "paginationLink"] as const) {
+    requireCompiledConditionalDeclaration(
+      rules(key),
+      "@media(pointer:coarse)",
+      /min-height:\s*var\(--interactive-target-min\);/u,
+      `real coarse-pointer ${key}`,
+    );
+  }
+  if (!rules("paginationRoot").some((rule) =>
+    /justify-content:\s*center;/u.test(rule.body)
+    && ["@media(max-width:40rem)", "@media(width<=40rem)"].includes(
+      normalizedHeader(rule.ancestors.at(-1)?.header ?? ""),
+    )
+  )) {
+    throw new Error("StyleX artifact is missing the compact Pagination centering rule");
+  }
+  const ellipsisRules = rules("paginationEllipsis");
+  forbid(
+    ellipsisRules.map((rule) => rule.source).join("\n"),
+    /hraness-pagination-coarse-min|@media\s*\(pointer:\s*coarse\)/u,
+    "the Pagination-specific coarse minimum on an ellipsis",
+  );
+  const separatorRules = rules("breadcrumbSeparator");
+  if (!separatorRules.some((rule) =>
+    rule.header.endsWith("::before") && /content:\s*["']\/["'];/u.test(rule.body)
+  )) {
+    throw new Error("StyleX artifact is missing the Breadcrumbs slash pseudo-element separator");
+  }
+  for (const [pattern, description] of [
+    [/readonly items:\s*readonly \[BreadcrumbItem,\s*\.\.\.BreadcrumbItem\[\]\];/u, "the nonempty Breadcrumbs item tuple"],
+    [/stylex\.props\(\s*navigationStyles\.breadcrumbRoot,\s*xstyle,?\s*\)/u, "the caller-last Breadcrumbs root recipe"],
+    [/stylex\.props\(\s*navigationStyles\.paginationRoot,\s*xstyle,?\s*\)/u, "the caller-last Pagination root recipe"],
+    [/mergeStylexInlineStyles\(rootPresentation\.style,\s*style\)/u, "native navigation root style precedence"],
+  ] as const) {
+    requireMatch(navigationSource, pattern, description);
+  }
+}
+
+function requireNativeProgressContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+  feedbackSource: string,
+  feedbackStyleSource: string,
+): void {
+  const map = exactCompiledStyleMap(
+    compiledJavaScript,
+    compiledCss,
+    feedbackStyleSource,
+    "feedbackStyles",
+    FEEDBACK_STYLE_KEYS,
+  );
+  const rules = (key: (typeof FEEDBACK_STYLE_KEYS)[number]) =>
+    compiledStyleRules(compiledCss, map, key);
+  for (const key of ["skeletonRoot", "spinnerRoot"] as const) {
+    forbid(
+      rules(key).map((rule) => rule.body).join("\n"),
+      /animation-name\s*:/u,
+      `a component-owned Feedback animation name for ${key}`,
+    );
+  }
+  for (const [key, declaration, description] of [
+    ["progressRoot", /display:\s*grid;/u, "native Progress root grid"],
+    ["progressRoot", /gap:\s*var\(--space-2\);/u, "native Progress root gap"],
+    ["progressRoot", /min-width:\s*0;/u, "native Progress shrink boundary"],
+    ["progressLabelRow", /justify-content:\s*space-between;/u, "native Progress label distribution"],
+    ["progressControl", /appearance:\s*none;/u, "native Progress appearance reset"],
+    ["progressControl", /height:\s*0?\.5rem;/u, "native Progress track height"],
+    ["progressControl", /width:\s*100%;/u, "native Progress track width"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(rules(key), declaration, description);
+  }
+  for (const [declaration, description] of [
+    [/color:\s*highlight;/u, "native Progress system fill color"],
+    [/forced-color-adjust:\s*none;/u, "native Progress forced-color ownership"],
+  ] as const) {
+    requireCompiledConditionalDeclaration(
+      rules("progressControl"),
+      "@media(forced-colors:active)",
+      declaration,
+      description,
+    );
+  }
+
+  const legacyProgressRules = cssRules(legacyComponents, "src/components.css")
+    .filter((rule) => /\.hraness-progress(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u.test(rule.header));
+  const progressSeams = [
+    [".hraness-progress__control::-webkit-progress-bar", /background:\s*var\(--ui-muted\);/u, "native Progress WebKit track"],
+    [".hraness-progress__control::-webkit-progress-value", /background:\s*var\(--ui-primary\);/u, "native Progress WebKit value"],
+    [".hraness-progress__control::-moz-progress-bar", /background:\s*var\(--ui-primary\);/u, "native Progress Gecko value"],
+  ] as const;
+  assert.deepEqual(
+    legacyProgressRules.map((rule) => rule.header),
+    progressSeams.map(([header]) => header),
+    "src/components.css must retain only the three native Progress pseudo-element seams",
+  );
+  for (const [header, declaration, description] of progressSeams) {
+    requireMatch(
+      legacyProgressRules.find((rule) => rule.header === header)?.body ?? "",
+      declaration,
+      description,
+    );
+  }
+  for (const [pattern, description] of [
+    [/import\s*\{\s*motionStyles\s*\}\s*from\s*["']\.\/motion\.stylex\.js["'];/u, "the shared Feedback motion import"],
+    [/stylex\.props\(\s*motionStyles\.spin,\s*feedbackStyles\.spinnerRoot,/u, "the shared Spinner motion before component geometry"],
+    [/stylex\.props\(\s*motionStyles\.skeleton,\s*feedbackStyles\.skeletonRoot,/u, "the shared Skeleton motion before component geometry"],
+    [/stylex\.props\(feedbackStyles\.progressRoot,\s*xstyle\)/u, "the caller-last native Progress root recipe"],
+    [/mergeStylexInlineStyles\(rootPresentation\.style,\s*style\)/u, "native Progress root style precedence"],
+    [/<progress[\s\S]*aria-labelledby=\{labelId\}[\s\S]*max=\{normalized\.maximum\}[\s\S]*value=\{normalized\.value\}/u, "the labelled normalized native progress element"],
+  ] as const) {
+    requireMatch(feedbackSource, pattern, description);
+  }
+}
+
+function requireSharedMotionContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+  motionStyleSource: string,
+): void {
+  assert.deepEqual(
+    [...MOTION_RUNTIME_STYLE_KEYS, "toastExit"],
+    MOTION_STYLE_KEYS,
+    "shared motion inventory must contain eight runtime recipes and one registered-but-unattached Toast exit recipe",
+  );
+  const map = exactCompiledStyleMap(
+    compiledJavaScript,
+    compiledCss,
+    motionStyleSource,
+    "motionStyles",
+    MOTION_STYLE_KEYS,
+  );
+  const runtimeWithoutMotionMap = compiledJavaScript.replace(map.object, "");
+  assert.equal(
+    compiledJavaScript.split(map.object).length - 1,
+    1,
+    "compiled motionStyles map must have exactly one removable definition",
+  );
+  const escapedIdentifier = map.identifier.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const runtimeReferenceCount = (key: string) => {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    return runtimeWithoutMotionMap.match(
+      new RegExp(`${escapedIdentifier}(?:\\.${escapedKey}(?![A-Za-z0-9_$])|\\[["']${escapedKey}["']\\])`, "gu"),
+    )?.length ?? 0;
+  };
+  for (const key of MOTION_RUNTIME_STYLE_KEYS) {
+    assert.notEqual(
+      runtimeReferenceCount(key),
+      0,
+      `dist/index.js must retain a generated runtime consumer for motionStyles.${key}`,
+    );
+  }
+  assert.equal(
+    runtimeReferenceCount("toastExit"),
+    0,
+    "dist/index.js must keep motionStyles.toastExit registered but unattached while React Aria exposes no Toast exit render state",
+  );
+  forbid(legacyComponents, /@keyframes\b/u, "a legacy named keyframe");
+  forbid(compiledCss, /@keyframes\s+hraness-/u, "a restored legacy named keyframe");
+  forbid(
+    motionStyleSource,
+    /animation(?:Composition|Delay|Direction|Duration|FillMode|IterationCount|PlayState|RangeEnd|RangeStart|Timeline|TimingFunction)\s*:/u,
+    "timing or playback policy inside the shared motion-name module",
+  );
+
+  const keyframeBlocks = new Map<string, string>();
+  for (const rule of cssRules(compiledCss, "dist/stylex.css")) {
+    for (const ancestor of rule.ancestors) {
+      const match = /^@keyframes\s+([^\s{]+)/u.exec(ancestor.header);
+      if (match !== null) keyframeBlocks.set(match[1]!, ancestor.source);
+    }
+  }
+  assert.equal(
+    keyframeBlocks.size,
+    MOTION_STYLE_KEYS.length,
+    "dist/stylex.css must retain exactly the nine shared motion keyframes",
+  );
+  const geometries = [
+    ["fadeIn", /from\s*\{[^{}]*opacity:\s*0;/u],
+    ["fadeOut", /to\s*\{[^{}]*opacity:\s*0;/u],
+    ["overlayEnter", /from\s*\{[^{}]*opacity:\s*0;[^{}]*transform:\s*translateY\(-0?\.25rem\)\s*scale\(0?\.98\);/u],
+    ["overlayExit", /to\s*\{[^{}]*opacity:\s*0;[^{}]*transform:\s*translateY\(-0?\.125rem\)\s*scale\(0?\.99\);/u],
+    ["progressIndeterminate", /from\s*\{[^{}]*transform:\s*translateX\(-125%\);[^{}]*\}[\s\S]*to\s*\{[^{}]*transform:\s*translateX\(250%\);/u],
+    ["skeleton", /to\s*\{[^{}]*background-position:\s*-200% 0(?:%|px)?;/u],
+    ["spin", /to\s*\{[^{}]*transform:\s*rotate\(1turn\);/u],
+    ["toastEnter", /from\s*\{[^{}]*opacity:\s*0;[^{}]*transform:\s*translateX\(1rem\);/u],
+    ["toastExit", /to\s*\{[^{}]*opacity:\s*0;[^{}]*transform:\s*translateX\(1rem\);/u],
+  ] as const;
+  for (const [key, geometry] of geometries) {
+    const rules = compiledStyleRules(compiledCss, map, key);
+    assert.equal(rules.length, 2, `compiled motionStyles.${key} must own only a base and reduced-motion name`);
+    for (const rule of rules) {
+      assert.match(
+        rule.body.trim(),
+        /^animation-name:\s*(?:none|[A-Za-z0-9_-]+);$/u,
+        `compiled motionStyles.${key} must own only animation-name`,
+      );
+      const conditions = rule.ancestors
+        .map((ancestor) => normalizedHeader(ancestor.header))
+        .filter((header) => /^@(?:container|media|supports)/u.test(header));
+      assert.ok(
+        conditions.length === 0
+          || (conditions.length === 1 && conditions[0] === "@media(prefers-reduced-motion:reduce)"),
+        `compiled motionStyles.${key} must own only its reduced-motion condition`,
+      );
+    }
+    const names = rules.flatMap((rule) => {
+      if (rule.ancestors.some((ancestor) => /^@(?:container|media|supports)/u.test(normalizedHeader(ancestor.header)))) return [];
+      return [...rule.body.matchAll(/animation-name:\s*([A-Za-z0-9_-]+);/gu)]
+        .map((match) => match[1]!)
+        .filter((name) => name !== "none");
+    });
+    assert.equal(names.length, 1, `compiled motionStyles.${key} must bind one shared keyframe`);
+    const keyframes = keyframeBlocks.get(names[0]!);
+    assert.ok(keyframes !== undefined, `compiled motionStyles.${key} references an unregistered keyframe`);
+    requireMatch(keyframes, geometry, `the shared ${key} keyframe geometry`);
+    requireCompiledConditionalDeclaration(
+      rules,
+      "@media(prefers-reduced-motion:reduce)",
+      /animation-name:\s*none;/u,
+      `the reduced-motion ${key} name reset`,
+    );
+  }
+  for (const [name] of geometries) {
+    requireMatch(
+      motionStyleSource,
+      new RegExp(`export\\s+const\\s+${name}Keyframes\\s*=\\s*stylex\\.keyframes\\(`, "u"),
+      `the shared ${name} keyframe source export`,
+    );
+  }
+}
+
+function requireCollectionContract(
+  legacyComponents: string,
+  compiledCss: string,
+  compiledJavaScript: string,
+  collectionStyleSource: string,
+): void {
+  const map = exactCompiledStyleMap(
+    compiledJavaScript,
+    compiledCss,
+    collectionStyleSource,
+    "collectionStyles",
+    COLLECTION_STYLE_KEYS,
+  );
+  forbid(
+    legacyComponents,
+    /\.hraness-(?:tabs__tab|disclosure__trigger|toggle-group__item|segmented-control__item)(?![A-Za-z0-9_-])/u,
+    "a migrated collection coarse-pointer or selected-state recipe",
+  );
+  requireMatch(
+    legacyComponents,
+    /--hraness-collection-coarse-min:\s*var\(--interactive-target-min\);/u,
+    "the synthetic coarse-pointer collection variable",
+  );
+  const rules = (key: (typeof COLLECTION_STYLE_KEYS)[number]) =>
+    compiledStyleRules(compiledCss, map, key);
+  for (const [key, declaration, description] of [
+    ["disclosureTrigger", /min-height:\s*max\(var\(--interactive-target-min\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\);/u, "synthetic coarse Disclosure trigger"],
+    ["disclosureTriggerCompact", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\);/u, "synthetic coarse compact Disclosure trigger"],
+    ["disclosureTriggerLarge", /min-height:\s*max\(var\(--control-height-primary\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\);/u, "synthetic coarse large Disclosure trigger"],
+    ["segmentedItem", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\);/u, "synthetic coarse SegmentedControl item"],
+    ["segmentedItem", /min-width:\s*var\(--hraness-collection-coarse-min\);/u, "synthetic coarse SegmentedControl width"],
+    ["segmentedItemCompact", /min-height:\s*max\(2rem,\s*var\(--hraness-collection-coarse-min,\s*0px\)\);/u, "synthetic coarse compact SegmentedControl item"],
+    ["tab", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\);/u, "synthetic coarse Tab"],
+    ["tabCompact", /min-height:\s*max\(2rem,\s*var\(--hraness-collection-coarse-min,\s*0px\)\);/u, "synthetic coarse compact Tab"],
+    ["toggleItem", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-collection-coarse-min,\s*0px\)\);/u, "synthetic coarse ToggleGroup item"],
+  ] as const) {
+    requireCompiledUnconditionalDeclaration(rules(key), declaration, description);
+  }
+  for (const [key, declaration] of [
+    ["disclosureTrigger", /min-height:\s*var\(--interactive-target-min\);/u],
+    ["disclosureTriggerCompact", /min-height:\s*var\(--interactive-target-min\);/u],
+    ["disclosureTriggerLarge", /min-height:\s*max\(var\(--control-height-primary\),\s*var\(--interactive-target-min\)\);/u],
+    ["segmentedItem", /min-height:\s*var\(--interactive-target-min\);/u],
+    ["segmentedItemCompact", /min-height:\s*var\(--interactive-target-min\);/u],
+    ["tab", /min-height:\s*var\(--interactive-target-min\);/u],
+    ["tabCompact", /min-height:\s*var\(--interactive-target-min\);/u],
+    ["toggleItem", /min-height:\s*var\(--interactive-target-min\);/u],
+  ] as const) {
+    requireCompiledConditionalDeclaration(
+      rules(key),
+      "@media(pointer:coarse)",
+      declaration,
+      `real coarse-pointer collectionStyles.${key}`,
+    );
+  }
+  requireCompiledConditionalDeclaration(
+    rules("segmentedItem"),
+    "@media(pointer:coarse)",
+    /min-width:\s*var\(--interactive-target-min\);/u,
+    "real coarse-pointer SegmentedControl item width",
+  );
+  for (const [key, declaration, description] of [
+    ["segmentedControlRoot", /border-color:\s*canvastext;/u, "SegmentedControl system border"],
+    ["segmentedControlRoot", /forced-color-adjust:\s*auto;/u, "SegmentedControl forced-color adjustment"],
+    ["segmentedItemSelected", /background-color:\s*buttonface;/u, "selected SegmentedControl system surface"],
+    ["segmentedItemSelected", /color:\s*buttontext;/u, "selected SegmentedControl system text"],
+    ["tabList", /background-color:\s*canvas;/u, "TabList system surface"],
+    ["tabList", /border-color:\s*canvastext;/u, "TabList system border"],
+    ["tabSelected", /background-color:\s*buttonface;/u, "selected Tab system surface"],
+    ["tabSelected", /color:\s*buttontext;/u, "selected Tab system text"],
+    ["toggleGroupRoot", /background-color:\s*canvas;/u, "ToggleGroup system surface"],
+    ["toggleGroupRoot", /border-color:\s*canvastext;/u, "ToggleGroup system border"],
+    ["toggleItemSelected", /background-color:\s*buttonface;/u, "selected ToggleGroup system surface"],
+    ["toggleItemSelected", /color:\s*buttontext;/u, "selected ToggleGroup system text"],
+  ] as const) {
+    requireCompiledConditionalDeclaration(
+      rules(key),
+      "@media(forced-colors:active)",
+      declaration,
+      description,
+    );
+  }
+}
+
 function requireNoGallerySentinels(source: string): void {
   for (const sentinel of GALLERY_LAYER_CONFLICT_SENTINELS) {
     forbid(
@@ -6050,6 +6575,11 @@ const [
   checkboxGroupSource,
   visuallyHiddenSource,
   feedbackSource,
+  feedbackStyleSource,
+  motionStyleSource,
+  navigationSource,
+  navigationStyleSource,
+  collectionStyleSource,
   indicatorsSource,
   indicatorStyleSource,
   knobSource,
@@ -6087,6 +6617,11 @@ const [
     readFile(resolve(repository, "src/checkbox-group.tsx"), "utf8"),
     readFile(resolve(repository, "src/visually-hidden.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/feedback.tsx"), "utf8"),
+    readFile(resolve(repository, "src/feedback.stylex.ts"), "utf8"),
+    readFile(resolve(repository, "src/motion.stylex.ts"), "utf8"),
+    readFile(resolve(repository, "src/navigation.tsx"), "utf8"),
+    readFile(resolve(repository, "src/navigation.stylex.ts"), "utf8"),
+    readFile(resolve(repository, "src/collections.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/indicators.tsx"), "utf8"),
     readFile(resolve(repository, "src/indicators.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/knob.tsx"), "utf8"),
@@ -6365,6 +6900,32 @@ requireVisuallyHiddenContract(
 );
 requireCheckboxFieldContract(legacyComponents, compiledCss, compiledJavaScript);
 requireCheckboxFieldSourceContract(fieldsSource);
+requireNavigationContract(
+  legacyComponents,
+  compiledCss,
+  compiledJavaScript,
+  navigationSource,
+  navigationStyleSource,
+);
+requireNativeProgressContract(
+  legacyComponents,
+  compiledCss,
+  compiledJavaScript,
+  feedbackSource,
+  feedbackStyleSource,
+);
+requireSharedMotionContract(
+  legacyComponents,
+  compiledCss,
+  compiledJavaScript,
+  motionStyleSource,
+);
+requireCollectionContract(
+  legacyComponents,
+  compiledCss,
+  compiledJavaScript,
+  collectionStyleSource,
+);
 requireFieldAndSelectContract(
   legacyComponents,
   compiledCss,
@@ -6783,7 +7344,7 @@ for (const [declaration, description] of [
 }
 for (const [key, declaration, mode, description] of [
   ["popoverEntering", /animation-duration:\s*0s;/u, "remove", "a missing reduced-motion enter duration"],
-  ["popoverExiting", /animation-name:\s*none;/u, "relocate", "an exit animation reset relocated outside reduced-motion media"],
+  ["popoverExiting", /animation-duration:\s*0s;/u, "relocate", "an exit duration reset relocated outside reduced-motion media"],
 ] as const) {
   assertFieldSelectMutationRejected(
     selectGuardMap,
@@ -7881,14 +8442,6 @@ const relocatedActionCoarseTarget = relocateActionConditionalRule(
   /(?:^|;)\s*width:\s*var\(--interactive-target-min\);/u,
   "icon action coarse-pointer width",
 );
-const relocatedActionReducedMotion = relocateActionConditionalRule(
-  compiledJavaScript,
-  compiledCss,
-  "spinner",
-  "@media(prefers-reduced-motion:reduce)",
-  /animation-name:\s*none;/u,
-  "reduced-motion action spinner",
-);
 const relocatedActionForcedSurface = relocateActionConditionalRule(
   compiledJavaScript,
   compiledCss,
@@ -7897,13 +8450,13 @@ const relocatedActionForcedSurface = relocateActionConditionalRule(
   /border-color:\s*canvastext;/u,
   "forced-color action border",
 );
-const changedActionSpinner = replaceActionDeclaration(
-  compiledJavaScript,
-  compiledCss,
-  "spinner",
-  /animation-name:\s*hraness-spin;/u,
-  "animation-name: none;",
-  "default action spinner",
+const disconnectedActionMotionSource = replaceExactlyOnceInBoundedSource(
+  actionsSource,
+  "function PendingIndicator(",
+  "export const Button",
+  /motionStyles\.spin/u,
+  () => "actionStyles.root",
+  "shared action spinner motion",
 );
 const reorderedActionStyleMap = reverseActionRecipeOrder(
   compiledJavaScript,
@@ -8016,15 +8569,14 @@ assert.throws(
   "the action-family guard must reject a changed inherited font",
 );
 assert.throws(
-  () =>
-    requireActionFamilyContract(
-      legacyComponents,
-      changedActionSpinner,
-      compiledJavaScript,
-      actionsSource,
-    ),
-  /action spinner animation/u,
-  "the action-family guard must reject a changed default spinner animation",
+  () => requireActionFamilyContract(
+    legacyComponents,
+    compiledCss,
+    compiledJavaScript,
+    disconnectedActionMotionSource,
+  ),
+  /shared spin motion/u,
+  "the action-family guard must reject a disconnected shared spinner motion recipe",
 );
 assert.throws(
   () =>
@@ -8052,11 +8604,6 @@ for (const [mutatedCss, pattern, description] of [
     relocatedActionCoarseTarget,
     /icon action coarse-pointer width must remain directly inside/u,
     "a relocated coarse-pointer icon width",
-  ],
-  [
-    relocatedActionReducedMotion,
-    /reduced-motion action spinner must remain directly inside/u,
-    "a relocated reduced-motion spinner override",
   ],
   [
     relocatedActionForcedSurface,

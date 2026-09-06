@@ -37,6 +37,14 @@ const NODE_VERSION_PREFIX = "24.";
 const OVERLAP_MEDIA_VALUE = "rgb(44, 55, 66)";
 const OVERLAP_SUPPORTS_VALUE = "rgb(77, 88, 99)";
 const PSEUDO_COLOR_VALUE = "rgb(23, 45, 67)";
+const PUBLIC_CSS_EXPORTS = {
+  "./compiler-foundation.css": "./src/compiler-foundation.css",
+  "./components.css": "./src/components.css",
+  "./reset.css": "./src/reset.css",
+  "./styles.css": "./src/styles.css",
+  "./stylex.css": "./dist/stylex.css",
+  "./tokens.css": "./src/tokens.css",
+} as const;
 const REACT_VERSION = "19.2.3";
 const SSR_CSS_PROPERTY = "outline-offset";
 const SSR_SOURCE_PROPERTY = "outlineOffset";
@@ -299,7 +307,7 @@ const applicationCss = `@import "./nested/foundation.css";
 }
 `;
 
-const nestedFoundationCss = `@import "@hraness/ui/compiler-foundation-tailwind.css";
+const nestedFoundationCss = `@import "@hraness/ui/compiler-foundation.css";
 
 .vite-adopter-nested {
   isolation: isolate;
@@ -465,9 +473,7 @@ for (const path of [
   "src/secondary.ts",
   "src/styles/app.css",
   "src/styles/nested/foundation.css",
-  "node_modules/@hraness/ui/src/compiler-foundation-tailwind.css",
   "node_modules/@hraness/ui/src/compiler-foundation.css",
-  "node_modules/@hraness/ui/src/tailwind.css",
   "node_modules/@hraness/ui/src/tokens.css",
   "node_modules/@hraness/ui/src/compiler-reset.css",
   "node_modules/@hraness/ui/src/components.css",
@@ -476,7 +482,7 @@ for (const path of [
 }
 assert.ok(clientReceipt.edges.some((edge) => edge.from === "input:src/client.ts" && edge.kind === "dynamic-import" && edge.to === "input:src/lazy.ts"));
 assert.ok(clientReceipt.edges.some((edge) => edge.from === "input:src/styles/app.css" && edge.kind === "css-import" && edge.to === "input:src/styles/nested/foundation.css"));
-assert.ok(clientReceipt.edges.some((edge) => edge.from === "input:src/styles/nested/foundation.css" && edge.kind === "css-import" && edge.to === "input:node_modules/@hraness/ui/src/compiler-foundation-tailwind.css"));
+assert.ok(clientReceipt.edges.some((edge) => edge.from === "input:src/styles/nested/foundation.css" && edge.kind === "css-import" && edge.to === "input:node_modules/@hraness/ui/src/compiler-foundation.css"));
 assert.ok(clientReceipt.edges.some((edge) => edge.from === "input:node_modules/@hraness/ui/src/compiler-foundation.css" && edge.kind === "css-import" && edge.to === "input:node_modules/@hraness/ui/src/compiler-reset.css"));
 assert.ok(!clientReceipt.inputs.some((artifact) => artifact.path === "node_modules/@hraness/ui/src/reset.css"));
 assert.ok(hasRuleValue(clientReceipt, ${JSON.stringify(CLIENT_VALUE)}));
@@ -1201,13 +1207,32 @@ try {
     requireInstalledVersion(consumer, "typescript", TYPESCRIPT_VERSION),
     requireInstalledVersion(consumer, "vite", VITE_VERSION),
   ]);
+  const installedManifest = JSON.parse(
+    await readFile(resolve(consumer, "node_modules/@hraness/ui/package.json"), "utf8"),
+  ) as { exports?: Record<string, unknown> };
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(installedManifest.exports ?? {}).filter(([key]) => key.endsWith(".css")),
+    ),
+    PUBLIC_CSS_EXPORTS,
+    "packed Vite adopter must receive exactly the six standards-based CSS entrypoints",
+  );
+  assert.doesNotMatch(
+    JSON.stringify(installedManifest),
+    /tailwind/iu,
+    "packed Vite adopter must not receive a first-party Tailwind contract",
+  );
   for (const path of [
     "node_modules/@hraness/ui/dist/build/index.js",
     "node_modules/@hraness/ui/dist/build/vite.js",
+    "node_modules/@hraness/ui/dist/stylex.css",
     "node_modules/@hraness/ui/dist/stylex-manifest.json",
-    "node_modules/@hraness/ui/src/compiler-foundation-tailwind.css",
+    "node_modules/@hraness/ui/src/compiler-foundation.css",
     "node_modules/@hraness/ui/src/compiler-reset.css",
+    "node_modules/@hraness/ui/src/components.css",
     "node_modules/@hraness/ui/src/reset.css",
+    "node_modules/@hraness/ui/src/styles.css",
+    "node_modules/@hraness/ui/src/tokens.css",
   ]) {
     const stat = await lstat(resolve(consumer, path));
     assert.ok(stat.isFile() && !stat.isSymbolicLink(), `packed public file must be ordinary: ${path}`);
@@ -1366,7 +1391,7 @@ assert.equal(globalThis.Bun, undefined);
     assert.doesNotMatch(css, packageSelector);
     for (const value of [CLIENT_VALUE, LAZY_VALUE, MULTI_VALUE, SSR_VALUE]) assert.ok(!css.includes(value));
     assert.ok(css.includes("--ui-background"), "client graph CSS must contain the recipe-free compiler foundation");
-    assert.ok(css.includes("--color-background"), "client graph CSS must contain the Tailwind bridge");
+    assert.doesNotMatch(css, /@(?:source|custom-variant|theme)\b|--color-background\s*:/u, "client graph CSS must remain free of a first-party Tailwind bridge");
   }
 
   const javaScript = (
