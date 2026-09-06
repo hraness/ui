@@ -682,6 +682,15 @@ function packageEntryProbe(entry: string, description: string): Readonly<{
   };
 }
 
+function injectCompiledObjectBinding(
+  entry: string,
+  binding: string,
+  description: string,
+): string {
+  assert.equal(entry[0], "{", `${description} must start with an object opening`);
+  return `{${binding},${entry.slice(1)}`;
+}
+
 const PACKAGE_FIELD_STYLE_KEYS = [
   "control",
   "controlCompact",
@@ -1463,7 +1472,11 @@ function verifyPackageOverlayNegativeControls(javaScript: string, css: string, l
   for (const key of OVERLAY_STYLE_KEYS) for (const declaration of OVERLAY_DECLARATIONS[key]) rejects(remove(key, declaration));
   for (const key of OVERLAY_STYLE_KEYS) for (const { condition, declaration } of OVERLAY_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(remove(key, declaration, condition));
   const entry = packageNamedStyleEntry(map, "tooltip");
-  const extra = entry.replace("{", "{unexpectedOverlayBinding: " + JSON.stringify([...packageEntryClassNames(map, "tooltip")][0]) + ",");
+  const extra = injectCompiledObjectBinding(
+    entry,
+    "unexpectedOverlayBinding: " + JSON.stringify([...packageEntryClassNames(map, "tooltip")][0]),
+    "packed Tooltip negative-control entry",
+  );
   assert.throws(() => requirePackageOverlay(javaScript.replace(map.object, map.object.replace(entry, extra)), css, legacy), /Tooltip tooltip exact property bindings/u);
   assert.throws(() => requirePackageOverlay(javaScript, css, legacy + "\n.hraness-popover { color: red; }"), /Popover\/Tooltip legacy/u);
 }
@@ -1618,7 +1631,11 @@ function verifyPackageToastNegativeControls(javaScript: string, css: string, leg
   for (const key of TOAST_STYLE_KEYS) for (const { condition, declaration } of TOAST_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(remove(key, declaration, condition));
   for (const { declaration } of TOAST_NATIVE_DECLARATIONS) rejects(remove("closeNativeInteractionFallbacks", declaration));
   const entry = packageNamedStyleEntry(map, "title");
-  const extra = entry.replace("{", "{unexpectedToastBinding: " + JSON.stringify([...packageEntryClassNames(map, "title")][0]) + ",");
+  const extra = injectCompiledObjectBinding(
+    entry,
+    "unexpectedToastBinding: " + JSON.stringify([...packageEntryClassNames(map, "title")][0]),
+    "packed Toast negative-control entry",
+  );
   assert.throws(() => requirePackageToast(javaScript.replace(map.object, map.object.replace(entry, extra)), css, legacy), /Toast title exact property bindings/u);
   const identifier = javaScript.slice(0, javaScript.indexOf(map.object)).match(/([A-Za-z_$][\w$]*)\s*=\s*$/u)?.[1];
   assert.ok(identifier);
@@ -1685,7 +1702,11 @@ function verifyPackageDialogNegativeControls(javaScript: string, css: string, le
     ["heading", /padding-inline-end:\s*var\(--interactive-target-compact\);/u], ["overlay", /overscroll-behavior-x:\s*contain;/u],
   ] as const) rejects(removeDeclaration(key, declaration));
   const entry = packageNamedStyleEntry(map, "title");
-  const extra = entry.replace("{", "{unexpectedDialogBinding: " + JSON.stringify([...packageEntryClassNames(map, "title")][0]) + ",");
+  const extra = injectCompiledObjectBinding(
+    entry,
+    "unexpectedDialogBinding: " + JSON.stringify([...packageEntryClassNames(map, "title")][0]),
+    "packed Dialog negative-control entry",
+  );
   const extraJavaScript = javaScript.replace(map.object, map.object.replace(entry, extra));
   assert.notEqual(extraJavaScript, javaScript);
   assert.throws(() => requirePackageDialog(extraJavaScript, css, legacy), /packed Dialog title exact property bindings/u);
@@ -1748,7 +1769,11 @@ function verifyPackageMenuNegativeControls(javaScript: string, css: string, lega
     ["footer", /border-block-start-width:\s*1px;/u, "border-top-width: 1px;"],
   ] as const) assert.throws(() => requirePackageMenu(javaScript, replaceDeclaration(key, declaration, replacement), legacy), /Menu/u, `packed Menu ${key} rejects non-equivalent presentation`);
   const entry = packageNamedStyleEntry(map, "leading");
-  const alteredEntry = entry.replace("{", `{unexpectedMenuBinding: ${JSON.stringify([...packageEntryClassNames(map, "leading")][0])},`);
+  const alteredEntry = injectCompiledObjectBinding(
+    entry,
+    `unexpectedMenuBinding: ${JSON.stringify([...packageEntryClassNames(map, "leading")][0])}`,
+    "packed Menu negative-control entry",
+  );
   const alteredJavaScript = javaScript.replace(map.object, map.object.replace(entry, alteredEntry));
   assert.notEqual(alteredJavaScript, javaScript);
   assert.throws(() => requirePackageMenu(alteredJavaScript, css, legacy), /packed Menu leading exact property bindings/u, "packed Menu rejects an extra binding even when its CSS exists");

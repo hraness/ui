@@ -978,7 +978,10 @@ function capturedPackageSubpathExportTarget(
   if (target === undefined) return undefined;
   const targetStars = target.match(/\*/gu)?.length ?? 0;
   if (replacement === undefined ? targetStars !== 0 : targetStars !== 1) return undefined;
-  if (replacement !== undefined) target = target.replace("*", () => replacement);
+  if (replacement !== undefined) {
+    const star = target.indexOf("*");
+    target = `${target.slice(0, star)}${replacement}${target.slice(star + 1)}`;
+  }
   if (
     !target.startsWith("./")
     || target.includes("\\")

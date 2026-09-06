@@ -46,7 +46,14 @@ function compareStrings(left: string, right: string): number {
 }
 
 function cleanModuleId(id: string): string {
-  return id.replace(/[?#].*$/u, "");
+  const query = id.indexOf("?");
+  const fragment = id.indexOf("#");
+  const boundary = query === -1
+    ? fragment
+    : fragment === -1
+      ? query
+      : Math.min(query, fragment);
+  return boundary === -1 ? id : id.slice(0, boundary);
 }
 
 function hasUnsupportedAssetQuery(id: string): boolean {

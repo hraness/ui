@@ -5,6 +5,7 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   rename,
@@ -1546,9 +1547,22 @@ test("refuses foreign or replaced entries in a partially deleted discard tree", 
       name: "byte-identical-replacement",
       run: async (discardPath: string) => {
         const path = resolve(discardPath, "index.js");
-        const source = await readFile(path);
-        await unlink(path);
-        await writeFile(path, source);
+        const original = await open(path, "r");
+        try {
+          const [source, before] = await Promise.all([
+            original.readFile(),
+            original.stat({ bigint: true }),
+          ]);
+          await unlink(path);
+          await writeFile(path, source, { flag: "wx" });
+          const replacement = await lstat(path, { bigint: true });
+          expect({ device: replacement.dev, inode: replacement.ino }).not.toEqual({
+            device: before.dev,
+            inode: before.ino,
+          });
+        } finally {
+          await original.close();
+        }
       },
     },
     {
