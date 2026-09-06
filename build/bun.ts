@@ -1462,12 +1462,15 @@ async function revalidateRawBareInputFallbackUses(
   rootDirectory: string,
   rootResolutionSnapshots: readonly ResolutionFileSnapshot[],
   uses: readonly RawBareInputFallbackUse[],
+  boundary: "after edge settlement" | "before graph receipt commit",
 ): Promise<void> {
   if (uses.length === 0) return;
   assert.deepEqual(
     await rootResolutionFileSnapshots(rootDirectory),
     rootResolutionSnapshots,
-    "Bun root resolution configuration changed after raw fallback edge settlement",
+    boundary === "after edge settlement"
+      ? "Bun root resolution configuration changed after raw fallback edge settlement"
+      : "Bun root resolution configuration changed before graph receipt commit",
   );
   for (const use of uses) {
     assert.equal(
@@ -1484,7 +1487,7 @@ async function revalidateRawBareInputFallbackUses(
       assert.deepEqual(
         await resolutionFileSnapshot(rootDirectory, snapshot.path),
         snapshot,
-        `Bun raw fallback package scope changed after edge settlement: ${snapshot.path}`,
+        `Bun raw fallback package scope changed ${boundary}: ${snapshot.path}`,
       );
     }
     for (const snapshot of use.fileSnapshots) {
@@ -1492,12 +1495,12 @@ async function revalidateRawBareInputFallbackUses(
       assert.equal(
         await realpath(absolute),
         snapshot.resolvedPath,
-        `Bun raw fallback source realpath changed after edge settlement: ${snapshot.snapshot.path}`,
+        `Bun raw fallback source realpath changed ${boundary}: ${snapshot.snapshot.path}`,
       );
       assert.deepEqual(
         await resolutionFileSnapshot(rootDirectory, snapshot.snapshot.path),
         snapshot.snapshot,
-        `Bun raw fallback source changed after edge settlement: ${snapshot.snapshot.path}`,
+        `Bun raw fallback source changed ${boundary}: ${snapshot.snapshot.path}`,
       );
     }
   }
@@ -1644,7 +1647,6 @@ async function promoteObservedNativeCssUrlInputs(
   inputSnapshots: ReadonlyMap<string, Readonly<{ bytes: number; sha256: string }>>,
   packageScopes: ReadonlyMap<string, PackageScope>,
   knownOutputs: ReadonlySet<string>,
-  buildTarget: "browser" | "bun",
 ): Promise<PromotedNativeCssUrlInputs> {
   const authoritativeInputs = [...inputMetadata.entries()];
   const observedNativePaths = [...inputSnapshots.keys()]
@@ -1652,7 +1654,6 @@ async function promoteObservedNativeCssUrlInputs(
     .filter((path) => !javascriptFilter.test(path) && !path.endsWith(".css"))
     .filter((path) => nativeLoaderFor(path) === "file")
     .sort();
-  const observedInputs = new Set([...inputMetadata.keys(), ...observedNativePaths]);
   const observedAliases = new Map(inputAliases);
   for (const path of observedNativePaths) {
     const absolute = resolve(rootDirectory, ...path.split("/"));
@@ -1678,13 +1679,7 @@ async function promoteObservedNativeCssUrlInputs(
       ) continue;
       const original = imported.original;
       if (original === undefined) continue;
-      const path = observedPathLikeInputTarget(
-        imported,
-        from,
-        observedInputs,
-        observedAliases,
-        buildTarget,
-      );
+      const path = observedAliases.get(imported.path);
       if (
         path === undefined
         || !isExactNativeCssUrlInputWitness(rootDirectory, imported, from, metadata.format, path)
@@ -1696,10 +1691,20 @@ async function promoteObservedNativeCssUrlInputs(
       const snapshot = inputSnapshots.get(path);
       const scope = packageScopes.get(path);
       const dependencyPackage = packageBelowNodeModules(path);
+      const installationRoot = packageInstallationRoot(path);
+      const terminalScopeSnapshot = scope?.files.at(-1);
       if (
         snapshot === undefined
         || scope?.valid !== true
-        || (dependencyPackage !== undefined && scope.name !== dependencyPackage)
+        || (
+          dependencyPackage !== undefined
+          && (
+            installationRoot === undefined
+            || scope.name !== dependencyPackage
+            || terminalScopeSnapshot?.kind !== "file"
+            || terminalScopeSnapshot.path !== posix.join(installationRoot, "package.json")
+          )
+        )
       ) continue;
       const current = await exactOrdinaryFileSnapshot(rootDirectory, path);
       if (current === undefined) continue;
@@ -2499,7 +2504,6 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     inputSnapshots,
     settledPackageScopes,
     outputSet,
-    target,
   );
   for (const entrypoint of logicalEntrypoints) {
     assert.ok(inputMetadata.has(entrypoint), `Bun metafile omitted registered entrypoint ${entrypoint}`);
@@ -2848,98 +2852,114 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     }
   }
 
-  await revalidateRawBareInputFallbackUses(
-    rootDirectory,
-    rootResolutionBefore,
-    rawFallbackUses,
-  );
+  const revalidateEdgeSettlement = async (
+    boundary: "during edge settlement" | "before graph receipt commit",
+  ): Promise<void> => {
+    await revalidateRawBareInputFallbackUses(
+      rootDirectory,
+      rootResolutionBefore,
+      rawFallbackUses,
+      boundary === "during edge settlement" ? "after edge settlement" : boundary,
+    );
 
-  for (const [path, snapshot] of observedElidedPackageInputs) {
-    assert.equal(
-      inputMetadata.has(path),
-      false,
-      `Bun observed elided package input became authoritative during edge settlement: ${path}`,
-    );
-    assert.deepEqual(
-      inputSnapshots.get(path),
-      { bytes: snapshot.bytes, sha256: snapshot.sha256 },
-      `Bun observed elided package input lost its completed load snapshot: ${path}`,
-    );
-    assert.equal(
-      inputs.some((input) => input.path === path)
-        || edges.some((edge) => edge.to === `input:${path}`),
-      false,
-      `Bun observed elided package input entered the published graph: ${path}`,
-    );
-  }
+    for (const [path, snapshot] of observedElidedPackageInputs) {
+      assert.equal(
+        inputMetadata.has(path),
+        false,
+        `Bun observed elided package input became authoritative ${boundary}: ${path}`,
+      );
+      assert.deepEqual(
+        inputSnapshots.get(path),
+        { bytes: snapshot.bytes, sha256: snapshot.sha256 },
+        `Bun observed elided package input lost its completed load snapshot: ${path}`,
+      );
+      assert.equal(
+        inputs.some((input) => input.path === path)
+          || edges.some((edge) => edge.to === `input:${path}`),
+        false,
+        `Bun observed elided package input entered the published graph: ${path}`,
+      );
+    }
 
-  for (const installationRoot of [...relativeElidedPackageInstallationRoots].sort()) {
-    assert.ok(
-      await exactOrdinaryDirectory(rootDirectory, installationRoot),
-      `Bun relative elided package installation changed during edge settlement: ${installationRoot}`,
+    for (const installationRoot of [...relativeElidedPackageInstallationRoots].sort()) {
+      assert.ok(
+        await exactOrdinaryDirectory(rootDirectory, installationRoot),
+        `Bun relative elided package installation changed ${boundary}: ${installationRoot}`,
+      );
+    }
+    for (const [path, before] of [...relativeElidedPackageScopeSnapshots].sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0
+    )) {
+      assert.deepEqual(
+        await resolutionFileSnapshot(rootDirectory, path),
+        before,
+        `Bun relative elided package scope changed ${boundary}: ${path}`,
+      );
+    }
+    for (const [path, before] of [...relativeElidedPackageInputs].sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0
+    )) {
+      assert.deepEqual(
+        await exactOrdinaryFileSnapshot(rootDirectory, path),
+        before,
+        `Bun relative elided package input changed ${boundary}: ${path}`,
+      );
+    }
+    for (const installationRoot of [...observedElidedPackageInstallationRoots].sort()) {
+      assert.ok(
+        await exactOrdinaryDirectory(rootDirectory, installationRoot),
+        `Bun observed elided package installation changed ${boundary}: ${installationRoot}`,
+      );
+    }
+    for (const [path, before] of [...observedElidedPackageScopeSnapshots].sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0
+    )) {
+      assert.deepEqual(
+        await resolutionFileSnapshot(rootDirectory, path),
+        before,
+        `Bun observed elided package scope changed ${boundary}: ${path}`,
+      );
+    }
+    for (const [path, before] of [...observedElidedPackageInputs].sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0
+    )) {
+      assert.deepEqual(
+        await exactOrdinaryFileSnapshot(rootDirectory, path),
+        before,
+        `Bun observed elided package input changed ${boundary}: ${path}`,
+      );
+    }
+    for (const [path, before] of [...promotedNativeCssUrlInputs.packageScopeSnapshots].sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0
+    )) {
+      assert.deepEqual(
+        await resolutionFileSnapshot(rootDirectory, path),
+        before,
+        `Bun promoted native CSS URL input package scope changed ${boundary}: ${path}`,
+      );
+    }
+    for (const [path, before] of promotedNativeCssUrlInputs.inputs) {
+      assert.deepEqual(
+        await exactOrdinaryFileSnapshot(rootDirectory, path),
+        before,
+        `Bun promoted native CSS URL input changed ${boundary}: ${path}`,
+      );
+    }
+    const packageScopeCurrent = await Promise.all(
+      packageScopeBefore.map(({ path }) => resolutionFileSnapshot(rootDirectory, path)),
     );
-  }
-  for (const [path, before] of [...relativeElidedPackageScopeSnapshots].sort(([left], [right]) =>
-    left < right ? -1 : left > right ? 1 : 0
-  )) {
     assert.deepEqual(
-      await resolutionFileSnapshot(rootDirectory, path),
-      before,
-      `Bun relative elided package scope changed during edge settlement: ${path}`,
+      packageScopeCurrent,
+      packageScopeBefore,
+      `Bun package scope configuration changed ${boundary}`,
     );
-  }
-  for (const [path, before] of [...relativeElidedPackageInputs].sort(([left], [right]) =>
-    left < right ? -1 : left > right ? 1 : 0
-  )) {
-    assert.deepEqual(
-      await exactOrdinaryFileSnapshot(rootDirectory, path),
-      before,
-      `Bun relative elided package input changed during edge settlement: ${path}`,
-    );
-  }
-  for (const installationRoot of [...observedElidedPackageInstallationRoots].sort()) {
-    assert.ok(
-      await exactOrdinaryDirectory(rootDirectory, installationRoot),
-      `Bun observed elided package installation changed during edge settlement: ${installationRoot}`,
-    );
-  }
-  for (const [path, before] of [...observedElidedPackageScopeSnapshots].sort(([left], [right]) =>
-    left < right ? -1 : left > right ? 1 : 0
-  )) {
-    assert.deepEqual(
-      await resolutionFileSnapshot(rootDirectory, path),
-      before,
-      `Bun observed elided package scope changed during edge settlement: ${path}`,
-    );
-  }
-  for (const [path, before] of [...observedElidedPackageInputs].sort(([left], [right]) =>
-    left < right ? -1 : left > right ? 1 : 0
-  )) {
-    assert.deepEqual(
-      await exactOrdinaryFileSnapshot(rootDirectory, path),
-      before,
-      `Bun observed elided package input changed during edge settlement: ${path}`,
-    );
-  }
-  for (const [path, before] of [...promotedNativeCssUrlInputs.packageScopeSnapshots].sort(([left], [right]) =>
-    left < right ? -1 : left > right ? 1 : 0
-  )) {
-    assert.deepEqual(
-      await resolutionFileSnapshot(rootDirectory, path),
-      before,
-      `Bun promoted native CSS URL input package scope changed during edge settlement: ${path}`,
-    );
-  }
-  for (const [path, before] of promotedNativeCssUrlInputs.inputs) {
-    assert.deepEqual(
-      await exactOrdinaryFileSnapshot(rootDirectory, path),
-      before,
-      `Bun promoted native CSS URL input changed during edge settlement: ${path}`,
-    );
-  }
+  };
+
+  await revalidateEdgeSettlement("during edge settlement");
 
   return writeStylexGraphReceipt({
     generation,
+    revalidateBeforeCommit: () => revalidateEdgeSettlement("before graph receipt commit"),
     rootDirectory,
     receipt: {
       adapter: "bun",

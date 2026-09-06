@@ -375,6 +375,77 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
+  test("promotes an exact native CSS URL witness despite an unrelated global raw alias", async () => {
+    const context = await fixture();
+    const source = await makeNativeCssUrlGraph(context);
+    const aliasCss = join(context.root, "alias.css");
+    const aliasFont = join(context.root, "fonts/Fixture.woff2");
+    await write(aliasCss, '@font-face { font-family: "Alias Font"; src: url("./fonts/Fixture.woff2"); }\n');
+    await write(aliasFont, "unrelated-local-font\n");
+    await writeFile(
+      source.entry,
+      'import "@fixture/ui/compiler-foundation.css"; import "../alias.css"; export const value = true;\n',
+    );
+    const handle = await generation(context, "observed-native-css-url-alias-collision", [
+      expectation(context.root, "client", "client", source.entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const dependencyFontKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/node_modules/@fixture/ui/src/fonts/Fixture.woff2")
+        || path === "node_modules/@fixture/ui/src/fonts/Fixture.woff2"
+      );
+      const aliasFontKey = Object.keys(result.metafile.inputs).find((path) =>
+        !path.includes("node_modules")
+        && (path.endsWith("/fonts/Fixture.woff2") || path === "fonts/Fixture.woff2")
+      );
+      assert.ok(dependencyFontKey !== undefined && aliasFontKey !== undefined);
+      const aliasMetadata = result.metafile.inputs[aliasFontKey];
+      assert.ok(aliasMetadata !== undefined);
+      delete result.metafile.inputs[dependencyFontKey];
+      delete result.metafile.inputs[aliasFontKey];
+      result.metafile.inputs["./fonts/Fixture.woff2"] = aliasMetadata;
+      for (const output of Object.values(result.metafile.outputs)) {
+        const rawAlias = Object.keys(output.inputs).find((path) =>
+          !path.includes("node_modules")
+          && (path.endsWith("/fonts/Fixture.woff2") || path === "fonts/Fixture.woff2")
+        );
+        if (rawAlias === undefined) continue;
+        const contribution = output.inputs[rawAlias];
+        assert.ok(contribution !== undefined);
+        delete output.inputs[rawAlias];
+        output.inputs["./fonts/Fixture.woff2"] = contribution;
+      }
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({
+        build: { minify: true },
+        generation: handle,
+        graphId: "client",
+        rootDirectory: context.root,
+      });
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(receipt.inputs).toContainEqual({
+        bytes: source.font.byteLength,
+        path: source.logicalFont,
+        sha256: sha256(source.font),
+      });
+      expect(receipt.edges).toContainEqual({
+        external: false,
+        from: `input:${source.logicalFontsCss}`,
+        kind: "url-token",
+        to: `input:${source.logicalFont}`,
+      });
+      expect(await receiptExists(handle, "client")).toBe(true);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
   test("rejects near-miss observed native CSS URL inputs", async () => {
     for (const variant of [
       "context-free-original",
@@ -383,10 +454,17 @@ describe("collectBunStylexGraph", () => {
       "mismatched-original",
       "mismatched-package-scope",
       "mixed-context-free-original",
+      "outer-same-name-package-scope",
       "same-length-drift",
     ] as const) {
       const context = await fixture();
       const source = await makeNativeCssUrlGraph(context);
+      if (variant === "outer-same-name-package-scope") {
+        await writeFile(
+          source.entry,
+          'import "../node_modules/@fixture/ui/src/compiler-foundation.css"; export const value = true;\n',
+        );
+      }
       if (variant === "mismatched-package-scope") {
         await write(
           join(resolve(source.fontPath, ".."), "package.json"),
@@ -396,6 +474,13 @@ describe("collectBunStylexGraph", () => {
       const handle = await generation(context, `observed-native-css-url-${variant}`, [
         expectation(context.root, "client", "client", source.entry),
       ]);
+      if (variant === "outer-same-name-package-scope") {
+        await rm(join(context.root, "node_modules/@fixture/ui/package.json"));
+        await write(
+          join(context.root, "package.json"),
+          `${JSON.stringify({ name: "@fixture/ui", type: "module", version: "1.0.0" })}\n`,
+        );
+      }
       const buildOriginal = Bun.build.bind(Bun);
       const build = spyOn(Bun, "build").mockImplementation(async (options) => {
         const result = await buildOriginal(options);

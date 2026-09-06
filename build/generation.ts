@@ -336,7 +336,11 @@ function objectErrorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : undefined;
 }
 
-async function writeCanonicalExclusive(path: string, value: unknown): Promise<void> {
+async function writeCanonicalExclusive(
+  path: string,
+  value: unknown,
+  revalidateBeforeCommit?: () => Promise<void>,
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
   let committed = false;
@@ -362,6 +366,7 @@ async function writeCanonicalExclusive(path: string, value: unknown): Promise<vo
         );
     }
     if (operationError !== undefined) throw operationError;
+    await revalidateBeforeCommit?.();
     await link(temporary, path);
     committed = true;
   } catch (error) {
@@ -918,12 +923,23 @@ async function auditCssInputs(
 export type WriteStylexGraphReceiptOptions = Readonly<{
   generation: StylexGenerationHandleV1;
   receipt: unknown;
+  revalidateBeforeCommit?: () => Promise<void>;
   rootDirectory: string;
 }>;
 
 export async function writeStylexGraphReceipt(options: WriteStylexGraphReceiptOptions): Promise<StylexGraphReceiptV1> {
   const rawOptions = object(options, "writeStylexGraphReceipt options");
-  keys(rawOptions, ["generation", "receipt", "rootDirectory"], "writeStylexGraphReceipt options");
+  keys(
+    rawOptions,
+    ["generation", "receipt", "rootDirectory"],
+    "writeStylexGraphReceipt options",
+    ["revalidateBeforeCommit"],
+  );
+  assert.ok(
+    rawOptions.revalidateBeforeCommit === undefined || typeof rawOptions.revalidateBeforeCommit === "function",
+    "writeStylexGraphReceipt options.revalidateBeforeCommit must be a function",
+  );
+  const revalidateBeforeCommit = rawOptions.revalidateBeforeCommit as (() => Promise<void>) | undefined;
   const generation = rawOptions.generation as StylexGenerationHandleV1;
   const loaded = await loadStylexGeneration(generation);
   const receipt = parseReceipt(rawOptions.receipt);
@@ -973,7 +989,15 @@ export async function writeStylexGraphReceipt(options: WriteStylexGraphReceiptOp
   }
   await withMutationLock(generation.directory, async () => {
     assert.equal(await exists(join(generation.directory, FINALIZE_LOCK)), false, "Generation finalization already started; graph receipt is late");
-    await writeCanonicalExclusive(join(generation.directory, RECEIPTS, `${receipt.graphId}.json`), receipt);
+    await writeCanonicalExclusive(
+      join(generation.directory, RECEIPTS, `${receipt.graphId}.json`),
+      receipt,
+      async () => {
+        await Promise.all(receipt.inputs.map((item) => verifyArtifact(rootDirectory, item)));
+        await Promise.all(receipt.outputs.map((item) => verifyArtifact(graphRoot, item)));
+        await revalidateBeforeCommit?.();
+      },
+    );
   });
   return receipt;
 }
