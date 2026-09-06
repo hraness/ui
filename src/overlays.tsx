@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactElement, ReactNode, Ref } from "react";
+import { useId, type ReactElement, type ReactNode, type Ref } from "react";
 import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
 import {
@@ -36,6 +36,7 @@ import { menuStyles } from "./menu.stylex.js";
 import { motionStyles } from "./motion.stylex.js";
 import { dialogStyles } from "./dialog.stylex.js";
 import { overlayStyles } from "./overlays.stylex.js";
+import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
 
 export { DialogTrigger, MenuTrigger };
 export type { Placement };
@@ -87,6 +88,7 @@ export function Menu({
   popoverXstyle,
   footerXstyle,
 }: MenuProps) {
+  const menuLabelId = useId();
   const presentation = stylex.props(menuStyles.root, xstyle);
   const footerPresentation = stylex.props(menuStyles.footer, footerXstyle);
   const popoverPresentation = (state: { isEntering: boolean; isExiting: boolean }) => stylex.props(
@@ -106,8 +108,10 @@ export function Menu({
       placement={placement}
       style={(state) => mergeStylexInlineStyles(popoverPresentation(state).style, matchTriggerWidth ? { minWidth: "var(--trigger-width)" } : undefined)}
     >
+      <span className={cn("hraness-visually-hidden", visuallyHiddenClassName())} data-slot="menu-label" id={menuLabelId}>{ariaLabel}</span>
       <AriaMenu
         aria-label={ariaLabel}
+        aria-labelledby={menuLabelId}
         className={cn("hraness-menu", presentation.className, className)}
         {...(presentation.style === undefined ? {} : { style: presentation.style })}
         data-slot="menu"
@@ -301,6 +305,7 @@ export function DialogContent({
   title,
   ...overlayProps
 }: DialogContentProps) {
+  const descriptionId = useId();
   const presentation = stylex.props(dialogStyles.root, size === "small" && dialogStyles.rootSmall, size === "large" && dialogStyles.rootLarge, xstyle);
   const overlayPresentation = (state: { isEntering: boolean; isExiting: boolean }) => stylex.props(
     dialogStyles.overlay,
@@ -332,6 +337,7 @@ export function DialogContent({
       >
         <AriaDialog
           {...stylex.props(dialogStyles.content)}
+          {...(description === undefined ? {} : { "aria-describedby": descriptionId })}
           className={cn("hraness-dialog__content", stylex.props(dialogStyles.content).className)}
           data-slot="dialog-content"
           ref={dialogRef}
@@ -353,6 +359,7 @@ export function DialogContent({
                       {...stylex.props(dialogStyles.description)}
                       className={cn("hraness-dialog__description", stylex.props(dialogStyles.description).className)}
                       data-slot="dialog-description"
+                      id={descriptionId}
                       slot="description"
                     >
                       {description}

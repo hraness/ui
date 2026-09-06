@@ -5513,8 +5513,12 @@ function verifyNavigationEvidence(
       && pagination.targetMinHeights.every((height) =>
         nearlyEqual(height, expectedTargetMinimum)
       )
-      && pagination.ellipsisMinHeights.every((height) => nearlyEqual(height, 40))
-      && pagination.ellipsisMinWidths.every((width) => nearlyEqual(width, 40)),
+      && pagination.ellipsisMinHeights.every((height) =>
+        nearlyEqual(height, expectedTargetMinimum)
+      )
+      && pagination.ellipsisMinWidths.every((width) =>
+        nearlyEqual(width, expectedTargetMinimum)
+      ),
       `${id}: Pagination recipe or target geometry changed: ${JSON.stringify(pagination)}`,
     );
   }
@@ -5551,8 +5555,12 @@ function verifyNavigationEvidence(
   invariant(
     evidence.synthetic.targetMinHeights.every((height) => nearlyEqual(height, 48))
     && evidence.synthetic.ellipsisCount === 2
-    && evidence.synthetic.ellipsisMinHeights.every((height) => nearlyEqual(height, 40))
-    && evidence.synthetic.ellipsisMinWidths.every((width) => nearlyEqual(width, 40)),
+    && evidence.synthetic.ellipsisMinHeights.every((height) =>
+      nearlyEqual(height, expectedTargetMinimum)
+    )
+    && evidence.synthetic.ellipsisMinWidths.every((width) =>
+      nearlyEqual(width, expectedTargetMinimum)
+    ),
     `${id}: synthetic coarse Pagination targets or ellipsis isolation changed: ${JSON.stringify(evidence.synthetic)}`,
   );
 }
@@ -5982,6 +5990,11 @@ async function verifySegmentedControlInteraction(page: Page, id: string): Promis
     .filter({ hasText: "dependencies" });
 
   await dependenciesItem.hover();
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll<HTMLElement>(".gallery-segmented-control .hraness-segmented-control__item")]
+      .some((element) => element.textContent?.includes("dependencies") === true && element.hasAttribute("data-hovered"))
+  );
+  await settleAnimationFrame(page);
   const hoveredBackground = await dependenciesItem.evaluate(
     (element) => getComputedStyle(element).backgroundColor,
   );
@@ -6013,29 +6026,70 @@ async function verifySegmentedControlInteraction(page: Page, id: string): Promis
 }
 
 async function verifyToggleGroupInteraction(page: Page, id: string): Promise<void> {
-  const primary = page.getByRole("button", { exact: true, name: "Primary" });
-  const secondary = page.getByRole("button", { exact: true, name: "Secondary" });
+  const groupEvidence = await page.evaluate(() => {
+    const group = document.querySelector<HTMLElement>(".gallery-toggle-group");
+    const item = (label: "Primary" | "Secondary") => {
+      const element = [...(group?.querySelectorAll<HTMLElement>('[role="radio"]') ?? [])]
+        .find((candidate) => candidate.textContent?.trim() === label);
+      return element === undefined ? null : {
+        ariaChecked: element.getAttribute("aria-checked"),
+        ariaPressed: element.getAttribute("aria-pressed"),
+        hiddenAncestor: element.closest('[aria-hidden="true"], [inert]') !== null,
+        role: element.getAttribute("role"),
+        label: element.textContent?.trim() ?? "",
+        tagName: element.tagName,
+      };
+    };
+    return {
+      ariaLabel: group?.getAttribute("aria-label") ?? null,
+      dialogOverlays: document.querySelectorAll('[data-slot="dialog-overlay"]').length,
+      menuPopovers: document.querySelectorAll('[data-slot="menu-popover"]').length,
+      popovers: document.querySelectorAll('[data-slot="popover"]').length,
+      primary: item("Primary"),
+      role: group?.getAttribute("role") ?? null,
+      secondary: item("Secondary"),
+      toasts: document.querySelectorAll('[data-slot="toast"]').length,
+      tooltips: document.querySelectorAll('[data-slot="tooltip"]').length,
+    };
+  });
+  invariant(
+    groupEvidence.role === "radiogroup" && groupEvidence.ariaLabel === "Collection density"
+      && groupEvidence.primary?.tagName === "BUTTON" && groupEvidence.primary.role === "radio"
+      && groupEvidence.primary.label === "Primary" && groupEvidence.primary.ariaChecked === "true"
+      && groupEvidence.primary.ariaPressed === null
+      && !groupEvidence.primary.hiddenAncestor
+      && groupEvidence.secondary?.tagName === "BUTTON" && groupEvidence.secondary.role === "radio"
+      && groupEvidence.secondary.label === "Secondary" && groupEvidence.secondary.ariaChecked === "false"
+      && groupEvidence.secondary.ariaPressed === null
+      && !groupEvidence.secondary.hiddenAncestor
+      && groupEvidence.dialogOverlays === 0 && groupEvidence.menuPopovers === 0
+      && groupEvidence.popovers === 0 && groupEvidence.toasts === 0 && groupEvidence.tooltips === 0,
+    `${id}: ToggleGroup was not exposed after overlay cleanup: ${JSON.stringify(groupEvidence)}`,
+  );
+  const group = page.getByRole("radiogroup", { exact: true, name: "Collection density" });
+  const primary = group.getByRole("radio", { exact: true, name: "Primary" });
+  const secondary = group.getByRole("radio", { exact: true, name: "Secondary" });
 
   await secondary.click();
   await page.waitForFunction(() =>
-    document.querySelector('.gallery-toggle-group [id="secondary"]')
-      ?.getAttribute("aria-pressed") === "true"
+    [...document.querySelectorAll<HTMLElement>('.gallery-toggle-group [role="radio"]')]
+      .some((element) => element.textContent?.trim() === "Secondary" && element.getAttribute("aria-checked") === "true")
   );
   invariant(
-    await secondary.getAttribute("aria-pressed") === "true"
-    && await primary.getAttribute("aria-pressed") === "false",
+    await secondary.getAttribute("aria-checked") === "true"
+    && await primary.getAttribute("aria-checked") === "false",
     `${id}: pointer input did not update controlled ToggleGroup selection`,
   );
 
   await primary.focus();
   await page.keyboard.press("Space");
   await page.waitForFunction(() =>
-    document.querySelector('.gallery-toggle-group [id="primary"]')
-      ?.getAttribute("aria-pressed") === "true"
+    [...document.querySelectorAll<HTMLElement>('.gallery-toggle-group [role="radio"]')]
+      .some((element) => element.textContent?.trim() === "Primary" && element.getAttribute("aria-checked") === "true")
   );
   invariant(
-    await primary.getAttribute("aria-pressed") === "true"
-    && await secondary.getAttribute("aria-pressed") === "false",
+    await primary.getAttribute("aria-checked") === "true"
+    && await secondary.getAttribute("aria-checked") === "false",
     `${id}: keyboard input did not update controlled ToggleGroup selection`,
   );
 }
@@ -6140,13 +6194,16 @@ async function armFiniteMotionProbe(page: Page, selector: string): Promise<void>
     motionWindow.__galleryMotionProbeAbort = controller;
     const root = document.documentElement;
     delete root.dataset.galleryMotionStartCount;
+    delete root.dataset.galleryMotionStartDirect;
+    delete root.dataset.galleryMotionStartDurations;
     delete root.dataset.galleryMotionStartNames;
     document.addEventListener("animationstart", (event) => {
       if (!(event instanceof AnimationEvent) || !(event.target instanceof Element)) {
         return;
       }
+      const direct = event.target.matches(targetSelector);
       if (
-        !event.target.matches(targetSelector)
+        !direct
         && event.target.closest(targetSelector) === null
       ) {
         return;
@@ -6154,8 +6211,26 @@ async function armFiniteMotionProbe(page: Page, selector: string): Promise<void>
       const names = (root.dataset.galleryMotionStartNames ?? "")
         .split(",")
         .filter(Boolean);
+      const durations = (root.dataset.galleryMotionStartDurations ?? "")
+        .split(",")
+        .filter(Boolean);
+      const directFlags = (root.dataset.galleryMotionStartDirect ?? "")
+        .split(",")
+        .filter(Boolean);
+      const style = getComputedStyle(event.target);
+      const computedNames = style.animationName.split(",").map((name) => name.trim());
+      const computedDurations = style.animationDuration.split(",").map((duration) => duration.trim());
+      const animationIndex = Math.max(0, computedNames.indexOf(event.animationName));
+      const rawDuration = computedDurations[animationIndex % computedDurations.length] ?? "0s";
+      const durationSeconds = rawDuration.endsWith("ms")
+        ? Number.parseFloat(rawDuration) / 1_000
+        : Number.parseFloat(rawDuration);
       names.push(event.animationName);
+      durations.push(Number.isFinite(durationSeconds) ? String(durationSeconds) : "0");
+      directFlags.push(direct ? "1" : "0");
       root.dataset.galleryMotionStartNames = names.join(",");
+      root.dataset.galleryMotionStartDurations = durations.join(",");
+      root.dataset.galleryMotionStartDirect = directFlags.join(",");
       root.dataset.galleryMotionStartCount = String(
         Number.parseInt(root.dataset.galleryMotionStartCount ?? "0", 10) + 1,
       );
@@ -6174,11 +6249,21 @@ async function readFiniteMotionProbe(page: Page) {
     const root = document.documentElement;
     const evidence = {
       count: Number.parseInt(root.dataset.galleryMotionStartCount ?? "0", 10),
+      direct: (root.dataset.galleryMotionStartDirect ?? "")
+        .split(",")
+        .filter(Boolean)
+        .map((value) => value === "1"),
+      durations: (root.dataset.galleryMotionStartDurations ?? "")
+        .split(",")
+        .filter(Boolean)
+        .map(Number),
       names: (root.dataset.galleryMotionStartNames ?? "")
         .split(",")
         .filter(Boolean),
     };
     delete root.dataset.galleryMotionStartCount;
+    delete root.dataset.galleryMotionStartDirect;
+    delete root.dataset.galleryMotionStartDurations;
     delete root.dataset.galleryMotionStartNames;
     return evidence;
   });
@@ -6198,15 +6283,24 @@ function finiteMotionContract(
       && seconds(evidence.animationDuration).every((duration) => duration <= 0.000_01)
       && evidence.running === 0
       && starts.count === 0
+      && starts.direct.length === 0
+      && starts.durations.length === 0
       && starts.names.length === 0;
   }
-  const computedNames = activeAnimationNames(evidence.animationName);
-  return compilerGeneratedAnimationName(evidence.animationName)
+  const liveFiniteAnimation = compilerGeneratedAnimationName(evidence.animationName)
     && positiveAnimationDuration(evidence.animationDuration)
-    && starts.count > 0
-    && starts.names.some((name) =>
-      /^x[A-Za-z0-9_-]+$/u.test(name) && computedNames.includes(name)
+    && evidence.running > 0;
+  const recordedFiniteStart = starts.count > 0
+    && starts.names.length === starts.count
+    && starts.durations.length === starts.count
+    && starts.direct.length === starts.count
+    && starts.names.some((name, index) =>
+      starts.direct[index] === true
+        && /^x[A-Za-z0-9_-]+$/u.test(name)
+        && Number.isFinite(starts.durations[index])
+        && (starts.durations[index] ?? 0) > 0.000_01
     );
+  return liveFiniteAnimation || recordedFiniteStart;
 }
 
 async function settleAnimationFrame(page: Page): Promise<void> {
@@ -7167,6 +7261,26 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     await callerPopover.count() === 1,
     `${id}: the caller Select must own exactly one open portal`,
   );
+  await settleAnimationFrame(page);
+  const selectMotionEvidence = await callerPopover.evaluate((popover) => {
+    const style = getComputedStyle(popover);
+    return {
+      animationDuration: style.animationDuration,
+      animationName: style.animationName,
+      reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      running: popover.getAnimations().filter((animation) =>
+        animation.playState !== "finished" && animation.playState !== "idle"
+      ).length,
+    };
+  });
+  const selectMotionStarts = await readFiniteMotionProbe(page);
+  invariant(
+    finiteMotionContract(selectMotionEvidence, selectMotionStarts),
+    `${id}: Select shared-motion contract changed: ${JSON.stringify({
+      ...selectMotionEvidence,
+      starts: selectMotionStarts,
+    })}`,
+  );
   const disabledOption = callerPopover.getByRole("option", {
     exact: true,
     name: "archived",
@@ -7211,26 +7325,6 @@ async function verifyFieldFamilyPresentation(page: Page, id: string): Promise<vo
     && disabledEvidence.paddingTop < 40
     && disabledEvidence.sentinel === "legacy",
     `${id}: disabled Select option accepted native hover or legacy geometry: ${JSON.stringify(disabledEvidence)}`,
-  );
-  await settleAnimationFrame(page);
-  const selectMotionEvidence = await callerPopover.evaluate((popover) => {
-    const style = getComputedStyle(popover);
-    return {
-      animationDuration: style.animationDuration,
-      animationName: style.animationName,
-      reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
-      running: popover.getAnimations({ subtree: true }).filter((animation) =>
-        animation.playState !== "finished" && animation.playState !== "idle"
-      ).length,
-    };
-  });
-  const selectMotionStarts = await readFiniteMotionProbe(page);
-  invariant(
-    finiteMotionContract(selectMotionEvidence, selectMotionStarts),
-    `${id}: Select shared-motion contract changed: ${JSON.stringify({
-      ...selectMotionEvidence,
-      starts: selectMotionStarts,
-    })}`,
   );
   await callerPopover.getByRole("option", { exact: true, name: "following" }).click();
   await callerPopover.waitFor({ state: "detached" });
@@ -10180,7 +10274,7 @@ async function verifyPopoverTooltipEnvironment(page: Page, id: string): Promise<
     const style = getComputedStyle(element); const probe = document.createElement("span");
     probe.style.backgroundColor = "var(--ui-popover)"; probe.style.color = "CanvasText"; element.append(probe);
     const expected = getComputedStyle(probe);
-    const snapshot = { background: style.backgroundColor, expectedBackground: expected.backgroundColor, border: style.borderTopColor, canvas: expected.color, adjust: style.forcedColorAdjust, forced: matchMedia("(forced-colors: active)").matches, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches, animation: style.animationName, animationDuration: style.animationDuration, running: element.getAnimations({ subtree: true }).filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length };
+    const snapshot = { background: style.backgroundColor, expectedBackground: expected.backgroundColor, border: style.borderTopColor, canvas: expected.color, adjust: style.forcedColorAdjust, forced: matchMedia("(forced-colors: active)").matches, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches, animation: style.animationName, animationDuration: style.animationDuration, running: element.getAnimations().filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length };
     probe.remove(); return snapshot;
   });
   const popoverMotionStarts = await readFiniteMotionProbe(page);
@@ -10205,8 +10299,17 @@ async function verifyPopoverTooltipEnvironment(page: Page, id: string): Promise<
 
 async function verifyToastInteractions(page: Page, id: string): Promise<void> {
   const clear = async (kind: "compiled" | "customized") => {
-    await page.getByRole("button", { name: `Clear ${kind} Toasts`, exact: true }).click();
-    await page.locator(`[data-slot="toast-region"][aria-label="${kind === "compiled" ? "Compiled" : "Customized"} notifications"] [data-slot="toast"]`).waitFor({ state: "detached" });
+    const clearButton = page.getByRole("button", { name: `Clear ${kind} Toasts`, exact: true });
+    const regionLabel = kind === "compiled" ? "Compiled notifications" : "Customized notifications";
+    await clearButton.focus();
+    invariant(
+      await clearButton.evaluate((element) => element === document.activeElement),
+      `${id}: ${kind} Toast clear control could not receive keyboard focus`,
+    );
+    await page.keyboard.press("Enter");
+    await page.waitForFunction((label) =>
+      document.querySelectorAll(`[data-slot="toast-region"][aria-label="${label}"] [data-slot="toast"]`).length === 0,
+    regionLabel);
   };
   await clear("compiled");
   for (const tone of ["danger", "info", "success", "warning"] as const) {
@@ -10246,18 +10349,55 @@ async function verifyToastInteractions(page: Page, id: string): Promise<void> {
       const close = toast.getByRole("button", { name: "Dismiss compiled notification", exact: true });
       const closedBefore = Number(await page.locator('[data-gallery-toast-closed="compiled"]').textContent());
       await close.hover();
-      invariant(await close.evaluate((element) => {
+      await page.waitForFunction(() =>
+        document.querySelector('[data-slot="toast-region"][aria-label="Compiled notifications"] [data-slot="toast-close"]')?.hasAttribute("data-hovered") === true
+      );
+      await settleAnimationFrame(page);
+      const hoverEvidence = await close.evaluate((element) => {
         const probe = document.createElement("span"); probe.style.backgroundColor = "var(--ui-accent)"; probe.style.color = "var(--ui-accent-foreground)"; element.append(probe);
         const actual = getComputedStyle(element); const expected = getComputedStyle(probe);
-        const pass = actual.backgroundColor === expected.backgroundColor && actual.color === expected.color; probe.remove(); return pass;
-      }), `${id}: Toast native or React Aria hover fallback changed`);
+        const evidence = {
+          actualBackground: actual.backgroundColor,
+          actualColor: actual.color,
+          classNames: [...element.classList],
+          expectedBackground: expected.backgroundColor,
+          expectedColor: expected.color,
+          hovered: element.hasAttribute("data-hovered"),
+        };
+        probe.remove();
+        return evidence;
+      });
+      invariant(
+        hoverEvidence.hovered && hoverEvidence.actualBackground === hoverEvidence.expectedBackground
+          && hoverEvidence.actualColor === hoverEvidence.expectedColor,
+        `${id}: Toast native or React Aria hover fallback changed: ${JSON.stringify(hoverEvidence)}`,
+      );
       await page.keyboard.press("Tab");
       await close.focus();
-      invariant(await close.evaluate((element) => {
+      await page.waitForFunction(() => {
+        const element = document.querySelector<HTMLElement>('[data-slot="toast-region"][aria-label="Compiled notifications"] [data-slot="toast-close"]');
+        return element !== null && element === document.activeElement && element.hasAttribute("data-focus-visible");
+      });
+      await settleAnimationFrame(page);
+      const focusEvidence = await close.evaluate((element) => {
         const probe = document.createElement("span"); probe.style.color = "var(--ui-ring)"; element.append(probe);
         const expected = getComputedStyle(probe).color; const style = getComputedStyle(element); probe.remove();
-        return element.hasAttribute("data-focus-visible") && style.outlineColor === expected && style.outlineStyle === "solid" && style.outlineWidth === "2px" && style.outlineOffset === "2px";
-      }), `${id}: Toast default keyboard focus recipe or collision precedence changed`);
+        return {
+          active: element === document.activeElement,
+          classNames: [...element.classList],
+          expectedColor: expected,
+          focusVisible: element.hasAttribute("data-focus-visible"),
+          outlineColor: style.outlineColor,
+          outlineOffset: style.outlineOffset,
+          outlineStyle: style.outlineStyle,
+          outlineWidth: style.outlineWidth,
+        };
+      });
+      invariant(
+        focusEvidence.active && focusEvidence.focusVisible && focusEvidence.outlineColor === focusEvidence.expectedColor
+          && focusEvidence.outlineStyle === "solid" && focusEvidence.outlineWidth === "2px" && focusEvidence.outlineOffset === "2px",
+        `${id}: Toast default keyboard focus recipe or collision precedence changed: ${JSON.stringify(focusEvidence)}`,
+      );
       await close.click();
       await toast.waitFor({ state: "detached" });
       await page.waitForFunction((before) => Number(document.querySelector('[data-gallery-toast-closed="compiled"]')?.textContent) === before + 1, closedBefore);
@@ -10293,15 +10433,52 @@ async function verifyToastInteractions(page: Page, id: string): Promise<void> {
   invariant(customEvidence.gap === "19px" && customEvidence.paddingTop === "21px" && customEvidence.radius === "19px" && customEvidence.width === "336px" && customEvidence.closeWidth === 48 && customEvidence.regionDynamicInlineValue && customEvidence.rootDynamicInlineValue && customEvidence.closeDynamicInlineValue && customEvidence.closeBackground === customEvidence.expectedCloseBackground, `${id}: Toast caller recipes or dynamic inline bindings changed: ${JSON.stringify(customEvidence)}`);
   const customClose = custom.getByRole("button", { name: "Dismiss customized notification", exact: true });
   await customClose.hover();
-  invariant(await customClose.evaluate((element) => {
+  await page.waitForFunction(() =>
+    document.querySelector('[data-slot="toast-region"][aria-label="Customized notifications"] [data-slot="toast-close"]')?.hasAttribute("data-hovered") === true
+  );
+  await settleAnimationFrame(page);
+  const customHoverEvidence = await customClose.evaluate((element) => {
     const probe = document.createElement("span"); probe.style.backgroundColor = "var(--ui-primary)"; probe.style.color = "var(--ui-primary-foreground)"; element.append(probe);
-    const actual = getComputedStyle(element); const expected = getComputedStyle(probe); const pass = actual.backgroundColor === expected.backgroundColor && actual.color === expected.color; probe.remove(); return pass;
-  }), `${id}: Toast caller hover recipe did not remain final`);
+    const actual = getComputedStyle(element); const expected = getComputedStyle(probe);
+    const evidence = {
+      actualBackground: actual.backgroundColor,
+      actualColor: actual.color,
+      classNames: [...element.classList],
+      expectedBackground: expected.backgroundColor,
+      expectedColor: expected.color,
+      hovered: element.hasAttribute("data-hovered"),
+    };
+    probe.remove();
+    return evidence;
+  });
+  invariant(
+    customHoverEvidence.hovered && customHoverEvidence.actualBackground === customHoverEvidence.expectedBackground
+      && customHoverEvidence.actualColor === customHoverEvidence.expectedColor,
+    `${id}: Toast caller hover recipe did not remain final: ${JSON.stringify(customHoverEvidence)}`,
+  );
   await page.keyboard.press("Tab");
   await customClose.focus();
-  invariant(await customClose.evaluate((element) => {
-    const style = getComputedStyle(element); return element.hasAttribute("data-focus-visible") && style.outlineStyle === "dashed" && style.outlineWidth === "3px" && style.outlineOffset === "5px";
-  }), `${id}: Toast caller focus recipe did not remain final`);
+  await page.waitForFunction(() => {
+    const element = document.querySelector<HTMLElement>('[data-slot="toast-region"][aria-label="Customized notifications"] [data-slot="toast-close"]');
+    return element !== null && element === document.activeElement && element.hasAttribute("data-focus-visible");
+  });
+  await settleAnimationFrame(page);
+  const customFocusEvidence = await customClose.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      active: element === document.activeElement,
+      classNames: [...element.classList],
+      focusVisible: element.hasAttribute("data-focus-visible"),
+      outlineOffset: style.outlineOffset,
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+    };
+  });
+  invariant(
+    customFocusEvidence.active && customFocusEvidence.focusVisible && customFocusEvidence.outlineStyle === "dashed"
+      && customFocusEvidence.outlineWidth === "3px" && customFocusEvidence.outlineOffset === "5px",
+    `${id}: Toast caller focus recipe did not remain final: ${JSON.stringify(customFocusEvidence)}`,
+  );
   await customClose.click();
   await custom.waitFor({ state: "detached" });
 
@@ -10330,7 +10507,9 @@ async function verifyToastInteractions(page: Page, id: string): Promise<void> {
 }
 
 async function verifyToastEnvironment(page: Page, id: string): Promise<void> {
-  await page.getByRole("button", { name: "Clear compiled Toasts", exact: true }).click();
+  const clearButton = page.getByRole("button", { name: "Clear compiled Toasts", exact: true });
+  await clearButton.focus();
+  await page.keyboard.press("Enter");
   await armFiniteMotionProbe(page, '[data-slot="toast"]');
   await page.getByRole("button", { name: "Show info compiled Toast", exact: true }).click();
   const region = page.locator('[data-slot="toast-region"][aria-label="Compiled notifications"]');
@@ -10363,7 +10542,7 @@ async function verifyToastEnvironment(page: Page, id: string): Promise<void> {
       compactGeometry: Math.abs(regionRect.left - compactRect.left) < 1 && Math.abs(regionRect.right - compactRect.right) < 1 && Math.abs(regionRect.width - compactRect.width) < 1,
       left: regionRect.left,
       reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
-      running: element.getAnimations({ subtree: true }).filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length,
+      running: element.getAnimations().filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length,
       right: window.innerWidth - regionRect.right,
       border: style.borderTopColor,
       width: regionStyle.width,
@@ -10373,7 +10552,8 @@ async function verifyToastEnvironment(page: Page, id: string): Promise<void> {
   const toastMotionStarts = await readFiniteMotionProbe(page);
   invariant(evidence.background === evidence.expectedBackground && (!evidence.forced || (evidence.border === evidence.canvas && evidence.forcedAdjust === "auto")) && finiteMotionContract({ animationDuration: evidence.animationDuration, animationName: evidence.animation, reduced: evidence.reduced, running: evidence.running }, toastMotionStarts) && (!evidence.compact || (evidence.left >= 11 && evidence.right >= 11 && evidence.compactGeometry)) && evidence.closeMinHeight >= 40, `${id}: Toast environment contract changed: ${JSON.stringify({ ...evidence, starts: toastMotionStarts })}`);
   if (await page.evaluate(() => matchMedia("(pointer: coarse)").matches)) invariant(evidence.closeMinHeight >= 48, `${id}: real coarse Toast close target is ${String(evidence.closeMinHeight)}px`);
-  await page.getByRole("button", { name: "Clear compiled Toasts", exact: true }).click();
+  await clearButton.focus();
+  await page.keyboard.press("Enter");
   await toast.waitFor({ state: "detached" });
 }
 
@@ -10391,6 +10571,7 @@ async function verifyDialogInteractions(page: Page, id: string): Promise<void> {
       const hasAtoms = (node: Element) => Array.from(node.classList).some((name) => /^x[A-Za-z0-9_-]+$/u.test(name));
       const titleId = element.getAttribute("aria-labelledby");
       const descriptionId = element.getAttribute("aria-describedby");
+      const description = element.querySelector<HTMLElement>('[data-slot="dialog-description"]');
       const rootStyle = getComputedStyle(root);
       const overlayStyle = getComputedStyle(overlay);
       const body = element.querySelector<HTMLElement>('[data-slot="dialog-body"]')!;
@@ -10405,7 +10586,10 @@ async function verifyDialogInteractions(page: Page, id: string): Promise<void> {
         width: root.getBoundingClientRect().width,
         expectedWidth: Math.min(maxWidth, window.innerWidth - 32),
         named: titleId !== null && document.getElementById(titleId)?.textContent === "Compiled Dialog " + size,
-        described: descriptionId !== null && document.getElementById(descriptionId)?.textContent === "Review project settings",
+        described: description !== null
+          && description.id.length > 0
+          && descriptionId?.split(/\s+/u).includes(description.id) === true
+          && description.textContent === "Review project settings",
         overlay: overlayStyle.position === "fixed" && overlayStyle.display === "grid" && overlayStyle.overflowY === "auto" && overlayStyle.overscrollBehaviorX === "contain" && overlayStyle.overscrollBehaviorY === "contain",
         surface: rootStyle.display === "grid" && rootStyle.overflowX === "hidden" && rootStyle.overflowY === "hidden" && rootStyle.backgroundImage === "none",
         body: getComputedStyle(body).overflowY === "auto",
@@ -10419,19 +10603,57 @@ async function verifyDialogInteractions(page: Page, id: string): Promise<void> {
     await finish.focus();
     await page.keyboard.press("Tab");
     invariant(await close.evaluate((element) => element === document.activeElement), id + ": Dialog focus did not wrap inside the modal");
+    await page.waitForFunction(() => {
+      const element = document.querySelector<HTMLElement>('[data-slot="dialog-close"]');
+      return element !== null
+        && element === document.activeElement
+        && element.matches(":focus-visible")
+        && element.hasAttribute("data-focus-visible");
+    });
+    await settleAnimationFrame(page);
     const focus = await close.evaluate((element) => {
       const probe = document.createElement("span"); probe.style.color = "var(--ui-ring)"; element.append(probe);
       const expected = getComputedStyle(probe).color; const style = getComputedStyle(element); probe.remove();
-      return element.hasAttribute("data-focus-visible") && style.outlineStyle === "solid" && style.outlineWidth === "2px" && style.outlineOffset === "2px" && style.outlineColor === expected;
+      return {
+        active: element === document.activeElement,
+        classNames: [...element.classList],
+        expectedColor: expected,
+        focusVisible: element.hasAttribute("data-focus-visible"),
+        outlineColor: style.outlineColor,
+        outlineOffset: style.outlineOffset,
+        outlineStyle: style.outlineStyle,
+        outlineWidth: style.outlineWidth,
+      };
     });
-    invariant(focus, id + ": Dialog keyboard close focus recipe changed");
+    invariant(
+      focus.active && focus.focusVisible && focus.outlineStyle === "solid" && focus.outlineWidth === "2px"
+        && focus.outlineOffset === "2px" && focus.outlineColor === focus.expectedColor,
+      id + ": Dialog keyboard close focus recipe changed: " + JSON.stringify(focus),
+    );
     await close.hover();
+    await page.waitForFunction(() =>
+      document.querySelector('[data-slot="dialog-close"]')?.hasAttribute("data-hovered") === true
+    );
+    await settleAnimationFrame(page);
     const hovered = await close.evaluate((element) => {
       const probe = document.createElement("span"); probe.style.backgroundColor = "var(--ui-accent)"; probe.style.color = "var(--ui-accent-foreground)"; element.append(probe);
       const actual = getComputedStyle(element); const expected = getComputedStyle(probe);
-      const pass = actual.backgroundColor === expected.backgroundColor && actual.color === expected.color; probe.remove(); return pass;
+      const evidence = {
+        actualBackground: actual.backgroundColor,
+        actualColor: actual.color,
+        classNames: [...element.classList],
+        expectedBackground: expected.backgroundColor,
+        expectedColor: expected.color,
+        hovered: element.hasAttribute("data-hovered"),
+      };
+      probe.remove();
+      return evidence;
     });
-    invariant(hovered, id + ": Dialog close hover recipe changed");
+    invariant(
+      hovered.hovered && hovered.actualBackground === hovered.expectedBackground
+        && hovered.actualColor === hovered.expectedColor,
+      id + ": Dialog close hover recipe changed: " + JSON.stringify(hovered),
+    );
     if (size === "small") await page.keyboard.press("Escape");
     else if (size === "medium") await dialog.getByRole("button", { name: "Close from body", exact: true }).click();
     else await finish.click();
@@ -10453,6 +10675,7 @@ async function verifyDialogInteractions(page: Page, id: string): Promise<void> {
       && rootStyle.getPropertyValue("--gallery-dialog-collision").trim() === "active"
       && getComputedStyle(overlay).paddingTop === "27px"
       && element.querySelector('[data-slot="dialog-description"]') === null
+      && !element.hasAttribute("aria-describedby")
       && element.querySelector('[data-slot="dialog-footer"]') === null
       && element.querySelector('[data-slot="dialog-close"]')?.textContent === "−"
       && !root.hasAttribute("xstyle") && !overlay.hasAttribute("overlayXstyle");
@@ -10510,7 +10733,7 @@ async function verifyDialogEnvironment(page: Page, id: string): Promise<void> {
       reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
       animation: getComputedStyle(overlay).animationName,
       animationDuration: getComputedStyle(overlay).animationDuration,
-      running: overlay.getAnimations({ subtree: true }).filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length,
+      running: overlay.getAnimations().filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length,
     };
     probe.remove(); return snapshot;
   });
@@ -10519,29 +10742,89 @@ async function verifyDialogEnvironment(page: Page, id: string): Promise<void> {
   invariant(!evidence.forced || (evidence.border === evidence.canvas && evidence.adjustment === "auto"), id + ": Dialog forced-color border changed");
   invariant(finiteMotionContract({ animationDuration: evidence.animationDuration, animationName: evidence.animation, reduced: evidence.reduced, running: evidence.running }, dialogMotionStarts), id + ": Dialog shared-motion contract changed: " + JSON.stringify({ ...evidence, starts: dialogMotionStarts }));
   invariant(evidence.background === evidence.expectedBackground, id + ": Dialog theme token changed");
-  const synthetic = await dialog.evaluate((element) => {
+  const syntheticBaseline = await dialog.evaluate((element) => {
     const close = element.querySelector<HTMLElement>('[data-slot="dialog-close"]')!;
-    const previous = document.documentElement.getAttribute("data-verification-pointer");
-    const previousCompact = close.style.getPropertyValue("--interactive-target-compact");
-    close.style.setProperty("--interactive-target-compact", "16px");
-    document.documentElement.setAttribute("data-verification-pointer", "coarse");
-    const minimum = parseFloat(getComputedStyle(close).minHeight);
-    if (previous === null) document.documentElement.removeAttribute("data-verification-pointer");
-    else document.documentElement.setAttribute("data-verification-pointer", previous);
-    if (previousCompact === "") close.style.removeProperty("--interactive-target-compact");
-    else close.style.setProperty("--interactive-target-compact", previousCompact);
-    return minimum >= 48;
+    return {
+      compact: close.style.getPropertyValue("--interactive-target-compact"),
+      minimum: parseFloat(getComputedStyle(close).minHeight),
+      pointer: document.documentElement.getAttribute("data-verification-pointer"),
+    };
   });
-  invariant(synthetic, id + ": Dialog synthetic coarse target changed under a compact token override");
+  try {
+    await dialog.evaluate((element) => {
+      const close = element.querySelector<HTMLElement>('[data-slot="dialog-close"]')!;
+      close.style.setProperty("--interactive-target-compact", "16px");
+      document.documentElement.setAttribute("data-verification-pointer", "coarse");
+    });
+    await page.waitForFunction(() => {
+      const close = document.querySelector<HTMLElement>('[data-slot="dialog-close"]');
+      if (close === null) return false;
+      const sizeTransitionActive = close.getAnimations().some((animation) =>
+        animation instanceof CSSTransition
+          && ["height", "min-height"].includes(animation.transitionProperty)
+          && (animation.pending || animation.playState === "running")
+      );
+      return !sizeTransitionActive && parseFloat(getComputedStyle(close).minHeight) >= 48;
+    }, undefined, { polling: "raf" });
+    const synthetic = await dialog.evaluate((element) => {
+      const close = element.querySelector<HTMLElement>('[data-slot="dialog-close"]')!;
+      return {
+        compact: getComputedStyle(close).getPropertyValue("--interactive-target-compact").trim(),
+        minimum: parseFloat(getComputedStyle(close).minHeight),
+        pointer: document.documentElement.getAttribute("data-verification-pointer"),
+      };
+    });
+    invariant(
+      synthetic.compact === "16px" && synthetic.minimum >= 48 && synthetic.pointer === "coarse",
+      id + ": Dialog synthetic coarse target changed under a compact token override: " + JSON.stringify(synthetic),
+    );
+  } finally {
+    await dialog.evaluate((element, baseline) => {
+      const close = element.querySelector<HTMLElement>('[data-slot="dialog-close"]')!;
+      if (baseline.pointer === null) document.documentElement.removeAttribute("data-verification-pointer");
+      else document.documentElement.setAttribute("data-verification-pointer", baseline.pointer);
+      if (baseline.compact === "") close.style.removeProperty("--interactive-target-compact");
+      else close.style.setProperty("--interactive-target-compact", baseline.compact);
+    }, syntheticBaseline);
+    await page.waitForFunction((baseline) => {
+      const close = document.querySelector<HTMLElement>('[data-slot="dialog-close"]');
+      if (close === null) return false;
+      const sizeTransitionActive = close.getAnimations().some((animation) =>
+        animation instanceof CSSTransition
+          && ["height", "min-height"].includes(animation.transitionProperty)
+          && (animation.pending || animation.playState === "running")
+      );
+      return !sizeTransitionActive
+        && document.documentElement.getAttribute("data-verification-pointer") === baseline.pointer
+        && close.style.getPropertyValue("--interactive-target-compact") === baseline.compact
+        && Math.abs(parseFloat(getComputedStyle(close).minHeight) - baseline.minimum) < 0.1;
+    }, syntheticBaseline, { polling: "raf" });
+  }
   await page.keyboard.press("Escape");
   await dialog.waitFor({ state: "hidden" });
 }
 
 async function verifyMenuInteractions(page: Page, id: string): Promise<void> {
   const trigger = page.getByRole("button", { name: "Open compiled Menu", exact: true });
+  await page.mouse.move(0, 0);
+  await page.waitForFunction(() =>
+    !document.querySelector(".gallery-list-box-item-override")?.hasAttribute("data-hovered")
+  );
+  await settleAnimationFrame(page);
   await trigger.click();
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll("button")].some((element) =>
+      element.textContent === "Open compiled Menu"
+      && element.getAttribute("aria-expanded") === "true"
+    )
+  );
   const menu = page.getByRole("menu", { name: "Compiled Menu", exact: true });
   await menu.waitFor({ state: "visible" });
+  invariant(await menu.evaluate((element) => {
+    const labelledBy = element.getAttribute("aria-labelledby")?.split(/\s+/u) ?? [];
+    return element.getAttribute("aria-label") === "Compiled Menu"
+      && labelledBy.some((labelId) => document.getElementById(labelId)?.textContent === "Compiled Menu");
+  }), `${id}: compiled Menu explicit label changed`);
   const compiledMenu = await menu.evaluate((element) => {
     const section = element.querySelector<HTMLElement>(".hraness-menu__section");
     const header = element.querySelector<HTMLElement>(".hraness-menu__header");
@@ -10565,6 +10848,7 @@ async function verifyMenuInteractions(page: Page, id: string): Promise<void> {
   invariant(await menu.getByRole("menuitemradio", { name: "Disabled action", exact: true }).getAttribute("aria-disabled") === "true", `${id}: Menu disabled semantics lost`);
   await danger.hover();
   await page.waitForFunction(() => document.querySelector('[aria-label="Compiled Menu"] [data-key="delete"]')?.hasAttribute("data-hovered"));
+  await settleAnimationFrame(page);
   const dangerStyle = await danger.evaluate((element) => {
     const probe = document.createElement("span");
     probe.style.color = "var(--ui-destructive)";
@@ -10572,19 +10856,45 @@ async function verifyMenuInteractions(page: Page, id: string): Promise<void> {
     element.append(probe);
     const actual = getComputedStyle(element);
     const expected = getComputedStyle(probe);
-    const matches = actual.color === expected.color && actual.backgroundColor === expected.backgroundColor && actual.backgroundImage === "none";
+    const evidence = {
+      actualBackground: actual.backgroundColor,
+      actualColor: actual.color,
+      backgroundImage: actual.backgroundImage,
+      classNames: [...element.classList],
+      expectedBackground: expected.backgroundColor,
+      expectedColor: expected.color,
+    };
     probe.remove();
-    return matches;
+    return evidence;
   });
-  invariant(dangerStyle, `${id}: Menu danger highlight changed`);
+  invariant(
+    dangerStyle.actualColor === dangerStyle.expectedColor
+      && dangerStyle.actualBackground === dangerStyle.expectedBackground
+      && dangerStyle.backgroundImage === "none",
+    `${id}: Menu danger highlight changed: ${JSON.stringify(dangerStyle)}`,
+  );
   await save.focus();
   await page.keyboard.press("d");
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-key") === "delete");
   await page.keyboard.press("End");
   invariant(await danger.evaluate((element) => element === document.activeElement), `${id}: disabled Menu item interrupted keyboard focus`);
-  await page.keyboard.press("Space");
-  await page.waitForFunction(() => document.querySelector('[aria-label="Compiled Menu"] [data-key="delete"]')?.getAttribute("aria-checked") === "true");
-  await page.waitForFunction(() => document.querySelector('[data-gallery-menu-action="true"]')?.textContent === "delete");
+  // React Aria reserves Space while its one-second typeahead buffer is active.
+  await page.keyboard.press("Enter");
+  await settleAnimationFrame(page);
+  const activation = await page.evaluate(() => ({
+    action: document.querySelector('[data-gallery-menu-action="true"]')?.textContent ?? null,
+    activeKey: document.activeElement?.getAttribute("data-key") ?? null,
+    checked: document.querySelector('[aria-label="Compiled Menu"] [data-key="delete"]')?.getAttribute("aria-checked") ?? null,
+    expanded: [...document.querySelectorAll("button")].find((element) =>
+      element.textContent === "Open compiled Menu"
+    )?.getAttribute("aria-expanded") ?? null,
+    menuCount: document.querySelectorAll('[aria-label="Compiled Menu"][role="menu"]').length,
+  }));
+  invariant(
+    activation.checked === "true" && activation.action === "delete"
+      && activation.activeKey === "delete" && activation.expanded === "true" && activation.menuCount === 1,
+    `${id}: Menu keyboard activation changed: ${JSON.stringify(activation)}`,
+  );
   const previousPointer = await page.evaluate(() => document.documentElement.dataset.verificationPointer);
   try {
     await page.evaluate(() => { document.documentElement.dataset.verificationPointer = "coarse"; });
@@ -10605,8 +10915,14 @@ async function verifyMenuInteractions(page: Page, id: string): Promise<void> {
   await customTrigger.click();
   const customized = page.getByRole("menu", { name: "Customized Menu", exact: true });
   await customized.waitFor({ state: "visible" });
+  invariant(await customized.evaluate((element) => {
+    const labelledBy = element.getAttribute("aria-labelledby")?.split(/\s+/u) ?? [];
+    return element.getAttribute("aria-label") === "Customized Menu"
+      && labelledBy.some((labelId) => document.getElementById(labelId)?.textContent === "Customized Menu");
+  }), `${id}: customized Menu explicit label changed`);
   await customized.getByRole("menuitem", { name: "Custom action", exact: true }).hover();
   await page.waitForFunction(() => document.querySelector('[aria-label="Customized Menu"] [data-key="custom"]')?.hasAttribute("data-hovered"));
+  await settleAnimationFrame(page);
   const callerEvidence = await customized.evaluate((element) => {
     const popover = element.closest<HTMLElement>('[data-slot="menu-popover"]');
     const item = element.querySelector<HTMLElement>('[data-slot="menu-item"]');
@@ -10656,6 +10972,11 @@ async function verifyMenuEnvironment(page: Page, id: string): Promise<void> {
   await page.getByRole("button", { name: "Open compiled Menu", exact: true }).click();
   const menu = page.getByRole("menu", { name: "Compiled Menu", exact: true });
   await menu.waitFor({ state: "visible" });
+  invariant(await menu.evaluate((element) => {
+    const labelledBy = element.getAttribute("aria-labelledby")?.split(/\s+/u) ?? [];
+    return element.getAttribute("aria-label") === "Compiled Menu"
+      && labelledBy.some((labelId) => document.getElementById(labelId)?.textContent === "Compiled Menu");
+  }), `${id}: Menu explicit label changed`);
   await settleAnimationFrame(page);
   const evidence = await menu.evaluate((element) => {
     const popover = element.closest<HTMLElement>('[data-slot="menu-popover"]');
@@ -10679,7 +11000,7 @@ async function verifyMenuEnvironment(page: Page, id: string): Promise<void> {
       expectedBackground: expected.backgroundColor,
       animation: style.animationName,
       animationDuration: style.animationDuration,
-      running: popover.getAnimations({ subtree: true }).filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length,
+      running: popover.getAnimations().filter((animation) => animation.playState !== "finished" && animation.playState !== "idle").length,
     };
     probe.remove();
     return result;
@@ -13760,7 +14081,10 @@ try {
     /class="hraness-pagination(?: x[A-Za-z0-9_-]+)+ gallery-pagination gallery-pagination--middle"/u,
     "SSR must preserve Pagination semantic, generated, then caller class order",
   );
-  assert.match(html, /data-slot="breadcrumbs-current"[^>]*aria-current="page"/u);
+  assert.match(
+    html,
+    /<span\b(?=[^>]*\bdata-slot="breadcrumbs-current")(?=[^>]*\baria-current="page")[^>]*>/u,
+  );
   assert.match(html, /data-slot="pagination-ellipsis"/u);
   assert.match(html, /data-gallery-pagination-coarse="synthetic"/u);
   assert.equal(
@@ -13787,8 +14111,8 @@ try {
     "SSR must preserve native Progress semantic, generated, then caller class order",
   );
   assert.match(html, /<progress[^>]*data-slot="progress-control"[^>]*max="100"[^>]*value="0"/u);
-  assert.match(html, /data-slot="progress-value">0%<\/span>/u);
-  assert.match(html, /data-slot="progress-value">100%<\/span>/u);
+  assert.match(html, /data-slot="progress-value">0(?:<!-- -->)?%<\/span>/u);
+  assert.match(html, /data-slot="progress-value">100(?:<!-- -->)?%<\/span>/u);
   assert.match(html, /name="project"/u);
   assert.match(html, /name="notes"/u);
   assert.match(html, /name="channels"/u);
@@ -14840,6 +15164,15 @@ try {
         await page.keyboard.press("Enter");
         await page.keyboard.press("Tab");
         const focusedThemeButton = page.getByRole("button", { name: "Use dark theme" });
+        await page.waitForFunction(() => {
+          const element = [...document.querySelectorAll<HTMLElement>("button")]
+            .find((button) => button.textContent?.includes("Use dark theme") === true);
+          return element !== undefined
+            && element === document.activeElement
+            && element.matches(":focus-visible")
+            && element.hasAttribute("data-focus-visible");
+        });
+        await settleAnimationFrame(page);
         const forcedOutline = await focusedThemeButton.evaluate((element) => {
           const probe = document.createElement("span");
           probe.style.color = "Highlight";
