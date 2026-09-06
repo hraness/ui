@@ -98,6 +98,15 @@ type BareInputFallbackPolicy = Readonly<{
   pathPatterns: readonly string[];
 }>;
 
+type RawBareInputFallbackUse = Readonly<{
+  from: string;
+  installationRoot: string;
+  packageName: string;
+  scopeSnapshots: readonly ResolutionFileSnapshot[];
+  specifier: string;
+  target: string;
+}>;
+
 type PackageScope = Readonly<{
   files: readonly ResolutionFileSnapshot[];
   name: string | undefined;
@@ -961,7 +970,7 @@ function capturedPackageSubpathExportTarget(
   if (target === undefined) return undefined;
   const targetStars = target.match(/\*/gu)?.length ?? 0;
   if (replacement === undefined ? targetStars !== 0 : targetStars !== 1) return undefined;
-  if (replacement !== undefined) target = target.replace("*", replacement);
+  if (replacement !== undefined) target = target.replace("*", () => replacement);
   if (
     !target.startsWith("./")
     || target.includes("\\")
@@ -983,6 +992,118 @@ function capturedPackageSubpathExportTarget(
     : undefined;
 }
 
+function capturedAuthoritativePackageSubpathExportTarget(
+  packageName: string,
+  installationRoot: string,
+  specifier: string,
+  known: ReadonlySet<string>,
+  packageScopes: ReadonlyMap<string, PackageScope>,
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  buildConditions: readonly string[],
+  buildTarget: "browser" | "bun",
+): string | undefined {
+  const manifestPath = posix.join(installationRoot, "package.json");
+  const capturedManifest = packageScopeSnapshots.get(manifestPath);
+  if (capturedManifest === undefined) return undefined;
+  const parsedManifest = strictJsonObjectFromSnapshot(capturedManifest);
+  if (
+    !parsedManifest.valid
+    || parsedManifest.record === undefined
+    || parsedManifest.record.name !== packageName
+    || Object.hasOwn(parsedManifest.record, "browser")
+  ) return undefined;
+  const candidate = capturedPackageSubpathExportTarget(
+    packageName,
+    installationRoot,
+    specifier,
+    packageScopeSnapshots,
+    buildConditions,
+    buildTarget,
+  );
+  if (candidate === undefined || !known.has(candidate)) return undefined;
+  const targetScope = packageScopes.get(candidate);
+  const targetManifest = targetScope?.files.at(-1);
+  if (
+    targetScope === undefined
+    || !targetScope.valid
+    || targetScope.name !== packageName
+    || targetManifest === undefined
+    || targetManifest.kind !== "file"
+    || targetManifest.path !== manifestPath
+  ) return undefined;
+  assert.deepEqual(
+    targetManifest,
+    capturedManifest,
+    `Bun authoritative package scope differs for ${candidate}`,
+  );
+  return candidate;
+}
+
+function matchingCapturedPackageScopeSnapshots(
+  scope: PackageScope,
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  description: string,
+): readonly ResolutionFileSnapshot[] | undefined {
+  if (!scope.valid || scope.files.length === 0) return undefined;
+  const captured: ResolutionFileSnapshot[] = [];
+  for (const snapshot of scope.files) {
+    const matching = packageScopeSnapshots.get(snapshot.path);
+    if (matching === undefined) return undefined;
+    assert.deepEqual(snapshot, matching, `${description} differs from its captured package scope`);
+    captured.push(matching);
+  }
+  return captured;
+}
+
+function packageScopeHasBrowserRemap(
+  snapshots: readonly ResolutionFileSnapshot[],
+): boolean {
+  const manifest = snapshots.at(-1);
+  if (manifest === undefined) return true;
+  const parsed = strictJsonObjectFromSnapshot(manifest);
+  return !parsed.valid
+    || (parsed.record !== undefined && Object.hasOwn(parsed.record, "browser"));
+}
+
+function retainRawBareInputFallbackUse(
+  uses: RawBareInputFallbackUse[],
+  imported: ParsedImport,
+  from: string,
+  target: string | undefined,
+  packageName: string,
+  installationRoot: string,
+  importerScopeSnapshots: readonly ResolutionFileSnapshot[],
+  packageScopes: ReadonlyMap<string, PackageScope>,
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+): string | undefined {
+  if (target === undefined) return undefined;
+  const targetScope = packageScopes.get(target);
+  if (targetScope === undefined) return undefined;
+  const targetScopeSnapshots = matchingCapturedPackageScopeSnapshots(
+    targetScope,
+    packageScopeSnapshots,
+    `Bun raw fallback target ${target}`,
+  );
+  if (targetScopeSnapshots === undefined) return undefined;
+  const byPath = new Map<string, ResolutionFileSnapshot>();
+  for (const snapshot of [...importerScopeSnapshots, ...targetScopeSnapshots]) {
+    const previous = byPath.get(snapshot.path);
+    if (previous === undefined) byPath.set(snapshot.path, snapshot);
+    else assert.deepEqual(snapshot, previous, `Bun raw fallback package scope ${snapshot.path} is inconsistent`);
+  }
+  uses.push({
+    from,
+    installationRoot,
+    packageName,
+    scopeSnapshots: [...byPath.values()].sort(({ path: left }, { path: right }) =>
+      left < right ? -1 : left > right ? 1 : 0
+    ),
+    specifier: imported.path,
+    target,
+  });
+  return target;
+}
+
 async function resolvedInputTarget(
   imported: ParsedImport,
   from: string,
@@ -993,6 +1114,7 @@ async function resolvedInputTarget(
   rootDirectory: string,
   fallbackPolicy: BareInputFallbackPolicy,
   resolverCache: Map<string, Promise<string | undefined>>,
+  rawFallbackUses: RawBareInputFallbackUse[],
   packageScopes: ReadonlyMap<string, PackageScope>,
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
   buildConditions: readonly string[],
@@ -1039,19 +1161,28 @@ async function resolvedInputTarget(
   }
   if (
     imported.original !== undefined
+    || imported.hasAttributes
     || witnesses.specifiers.has(imported.path)
-    || strictBarePackageRoot(imported.path) !== packageName
     || imported.path === "bun"
     || isBuiltin(imported.path)
     || imported.kind !== "import-statement"
     || installationRoots.length !== 1
     || !fallbackPolicy.enabled
-    || fallbackPolicy.packageName === imported.path
+    || fallbackPolicy.packageName === packageName
     || fallbackPolicy.pathPatterns.some((pattern) => pathPatternMatches(pattern, imported.path))
   ) return undefined;
   const scope = packageScopes.get(from);
   assert.ok(scope !== undefined, `Bun input has no settled package scope: ${from}`);
-  if (!scope.valid || scope.name === imported.path) return undefined;
+  if (!scope.valid || scope.name === packageName) return undefined;
+  const importerScopeSnapshots = matchingCapturedPackageScopeSnapshots(
+    scope,
+    packageScopeSnapshots,
+    `Bun raw fallback importer ${from}`,
+  );
+  if (
+    importerScopeSnapshots === undefined
+    || packageScopeHasBrowserRemap(importerScopeSnapshots)
+  ) return undefined;
   const installationRoot = installationRoots[0]!;
   const resolverVisible = await resolverVisibleInstallation(
     rootDirectory,
@@ -1060,18 +1191,84 @@ async function resolvedInputTarget(
     resolverCache,
   );
   if (resolverVisible !== installationRoot) return undefined;
+  if (strictBarePackageRoot(imported.path) !== packageName) {
+    return retainRawBareInputFallbackUse(
+      rawFallbackUses,
+      imported,
+      from,
+      capturedAuthoritativePackageSubpathExportTarget(
+        packageName,
+        installationRoot,
+        imported.path,
+        known,
+        packageScopes,
+        packageScopeSnapshots,
+        buildConditions,
+        buildTarget,
+      ),
+      packageName,
+      installationRoot,
+      importerScopeSnapshots,
+      packageScopes,
+      packageScopeSnapshots,
+    );
+  }
   const installationInputs = [...known]
     .filter((path) => packageInstallationRoot(path) === installationRoot)
     .sort();
-  if (installationInputs.length <= 1) return installationInputs[0];
-  return capturedPackageRootExportTarget(
+  const rawTarget = installationInputs.length <= 1
+    ? installationInputs[0]
+    : capturedPackageRootExportTarget(
+      packageName,
+      installationRoot,
+      known,
+      packageScopeSnapshots,
+      buildConditions,
+      buildTarget,
+    );
+  return retainRawBareInputFallbackUse(
+    rawFallbackUses,
+    imported,
+    from,
+    rawTarget,
     packageName,
     installationRoot,
-    known,
+    importerScopeSnapshots,
+    packageScopes,
     packageScopeSnapshots,
-    buildConditions,
-    buildTarget,
   );
+}
+
+async function revalidateRawBareInputFallbackUses(
+  rootDirectory: string,
+  rootResolutionSnapshots: readonly ResolutionFileSnapshot[],
+  uses: readonly RawBareInputFallbackUse[],
+): Promise<void> {
+  if (uses.length === 0) return;
+  assert.deepEqual(
+    await rootResolutionFileSnapshots(rootDirectory),
+    rootResolutionSnapshots,
+    "Bun root resolution configuration changed after raw fallback edge settlement",
+  );
+  for (const use of uses) {
+    assert.equal(
+      await nearestPhysicalPackageInstallation(rootDirectory, use.from, use.packageName),
+      use.installationRoot,
+      `Bun raw fallback resolver-visible installation changed for ${use.specifier} from ${use.from}`,
+    );
+    assert.equal(
+      packageInstallationRoot(use.target),
+      use.installationRoot,
+      `Bun raw fallback target left its captured installation: ${use.target}`,
+    );
+    for (const snapshot of use.scopeSnapshots) {
+      assert.deepEqual(
+        await resolutionFileSnapshot(rootDirectory, snapshot.path),
+        snapshot,
+        `Bun raw fallback package scope changed after edge settlement: ${snapshot.path}`,
+      );
+    }
+  }
 }
 
 function outputTarget(raw: string, from: string, known: ReadonlySet<string>): string | undefined {
@@ -1702,6 +1899,7 @@ async function importTargetsStylexRuntime(
   rootDirectory: string,
   fallbackPolicy: BareInputFallbackPolicy,
   resolverCache: Map<string, Promise<string | undefined>>,
+  rawFallbackUses: RawBareInputFallbackUse[],
   packageScopes: ReadonlyMap<string, PackageScope>,
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
   buildConditions: readonly string[],
@@ -1722,6 +1920,7 @@ async function importTargetsStylexRuntime(
     rootDirectory,
     fallbackPolicy,
     resolverCache,
+    rawFallbackUses,
     packageScopes,
     packageScopeSnapshots,
     buildConditions,
@@ -1955,6 +2154,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const inputPackageInstallations = packageInstallations(knownInputs);
   const inputWitnesses = witnessedBareInputTargets(inputMetadata, inputAliases);
   const resolverCache = new Map<string, Promise<string | undefined>>();
+  const rawFallbackUses: RawBareInputFallbackUse[] = [];
   assert.deepEqual(
     [...knownInputs].filter((path) => !settledPackageScopes.has(path)).sort(),
     [],
@@ -1975,6 +2175,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         rootDirectory,
         inputFallbackPolicy,
         resolverCache,
+        rawFallbackUses,
         settledPackageScopes,
         packageScopeSnapshots,
         buildConditions,
@@ -2201,6 +2402,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
             rootDirectory,
             inputFallbackPolicy,
             resolverCache,
+            rawFallbackUses,
             settledPackageScopes,
             packageScopeSnapshots,
             buildConditions,
@@ -2303,6 +2505,12 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
       });
     }
   }
+
+  await revalidateRawBareInputFallbackUses(
+    rootDirectory,
+    rootResolutionBefore,
+    rawFallbackUses,
+  );
 
   for (const [path, snapshot] of observedElidedPackageInputs) {
     assert.equal(

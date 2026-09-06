@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
@@ -2191,36 +2192,361 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
-  test("rejects a zero-witness package subpath without publishing a receipt", async () => {
-    const context = await fixture();
-    await write(
-      join(context.root, "node_modules/@fixture/runtime/package.json"),
-      `${JSON.stringify({ exports: { "./feature": "./feature.js" }, name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
-    );
-    await write(join(context.root, "node_modules/@fixture/runtime/feature.js"), "export const marker = 'runtime';\n");
-    const entry = join(context.root, "src/entry.ts");
-    await write(entry, "import { marker } from '@fixture/runtime/feature'; export const value = marker;\n");
-    const handle = await generation(context, "bare-input-subpath", [
-      expectation(context.root, "client", "client", entry),
-    ]);
-    const buildOriginal = Bun.build.bind(Bun);
-    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
-      const result = await buildOriginal(options);
-      assert.ok(result.metafile !== undefined);
-      const inputs = result.metafile.inputs;
-      const entryKey = Object.keys(inputs).find((path) => path.endsWith("/src/entry.ts") || path === "src/entry.ts");
-      assert.ok(entryKey !== undefined);
-      inputs[entryKey]!.imports = [{ kind: "import-statement", path: "@fixture/runtime/feature" }] as never;
-      return result;
-    });
+  test("repairs zero-witness package subpaths from exact and unique wildcard exports", async () => {
+    for (const mapping of ["exact", "wildcard"] as const) {
+      const context = await fixture();
+      const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");
+      await write(
+        join(runtimeDirectory, "package.json"),
+        `${JSON.stringify({
+          exports: mapping === "exact"
+            ? { "./feature": { import: "./dist/feature.mjs" } }
+            : { "./*": { import: "./dist/*.mjs" } },
+          name: "@fixture/runtime",
+          type: "module",
+          version: "1.0.0",
+        })}\n`,
+      );
+      await write(
+        join(runtimeDirectory, "dist/feature.mjs"),
+        "export { marker } from './private.mjs';\n",
+      );
+      await write(join(runtimeDirectory, "dist/private.mjs"), "export const marker = 'runtime';\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "import { marker } from '@fixture/runtime/feature'; export const value = marker;\n");
+      const handle = await generation(context, `bare-input-subpath-${mapping}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) =>
+          path.endsWith("/src/entry.ts") || path === "src/entry.ts"
+        );
+        assert.ok(entryKey !== undefined);
+        expect(Object.keys(inputs).filter((path) => path.includes("node_modules/@fixture/runtime/"))).toHaveLength(2);
+        inputs[entryKey]!.imports = [{
+          kind: "import-statement",
+          path: "@fixture/runtime/feature",
+        }] as never;
+        return result;
+      });
 
-    try {
-      await expect(
-        collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
-      ).rejects.toThrow(/import.*unresolved.*@fixture\/runtime\/feature/u);
-      expect(await receiptExists(handle, "client")).toBe(false);
-    } finally {
-      build.mockRestore();
+      try {
+        const receipt = await collectBunStylexGraph({
+          generation: handle,
+          graphId: "client",
+          rootDirectory: context.root,
+        });
+        expect(receipt.edges).toContainEqual({
+          external: false,
+          from: "input:src/entry.ts",
+          kind: "import-statement",
+          to: "input:node_modules/@fixture/runtime/dist/feature.mjs",
+        });
+        expect(receipt.edges).not.toContainEqual({
+          external: false,
+          from: "input:src/entry.ts",
+          kind: "import-statement",
+          to: "input:node_modules/@fixture/runtime/dist/private.mjs",
+        });
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("substitutes package export wildcard captures as literal path text", async () => {
+    const replacements = [
+      { id: "dollar", value: "cash$$" },
+      { id: "match", value: "match$&" },
+      { id: "prefix", value: "prefix$`" },
+      { id: "suffix", value: "suffix$'" },
+    ] as const;
+    for (const replacement of replacements) {
+      const context = await fixture();
+      const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");
+      await write(
+        join(runtimeDirectory, "package.json"),
+        `${JSON.stringify({
+          exports: { "./tokens/*": { import: "./dist/tokens/*.mjs" } },
+          name: "@fixture/runtime",
+          type: "module",
+          version: "1.0.0",
+        })}\n`,
+      );
+      await write(
+        join(runtimeDirectory, "dist/tokens", `${replacement.value}.mjs`),
+        "export const marker = 'runtime';\n",
+      );
+      const specifier = `@fixture/runtime/tokens/${replacement.value}`;
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, `import { marker } from ${JSON.stringify(specifier)}; export const value = marker;\n`);
+      const handle = await generation(context, `bare-input-subpath-token-${replacement.id}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) =>
+          path.endsWith("/src/entry.ts") || path === "src/entry.ts"
+        );
+        assert.ok(entryKey !== undefined);
+        inputs[entryKey]!.imports = [{ kind: "import-statement", path: specifier }] as never;
+        return result;
+      });
+
+      try {
+        const receipt = await collectBunStylexGraph({
+          generation: handle,
+          graphId: "client",
+          rootDirectory: context.root,
+        });
+        expect(receipt.edges).toContainEqual({
+          external: false,
+          from: "input:src/entry.ts",
+          kind: "import-statement",
+          to: `input:node_modules/@fixture/runtime/dist/tokens/${replacement.value}.mjs`,
+        });
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("rejects unsafe zero-witness package subpath fallbacks", async () => {
+    const variants: readonly Readonly<{
+      browser?: boolean;
+      edge?: "attributes" | "dynamic" | "external" | "require";
+      exportMode?: "missing" | "overlapping" | "unreferenced" | "wrong-subpath";
+      hiddenInstallation?: "ordinary" | "symlink";
+      id: string;
+      importerBrowser?: boolean;
+      lateConfigMutation?: boolean;
+      lateManifestMutation?: boolean;
+      multipleInstallations?: boolean;
+      pathsAlias?: boolean;
+      selfReference?: boolean;
+      wrongManifest?: boolean;
+    }>[] = [
+      { edge: "external", id: "external-edge" },
+      { edge: "attributes", id: "import-attributes" },
+      { edge: "dynamic", id: "dynamic-import" },
+      { edge: "require", id: "require-call" },
+      { exportMode: "missing", id: "absent-export-target" },
+      { exportMode: "unreferenced", id: "non-authoritative-export-target" },
+      { exportMode: "wrong-subpath", id: "wrong-export-subpath" },
+      { exportMode: "overlapping", id: "overlapping-wildcard-exports" },
+      { browser: true, id: "target-package-browser-remap" },
+      { id: "importer-package-browser-remap", importerBrowser: true },
+      { id: "wrong-package-manifest", wrongManifest: true },
+      { hiddenInstallation: "ordinary", id: "hidden-closer-installation" },
+      { hiddenInstallation: "symlink", id: "symlinked-closer-installation" },
+      { id: "multiple-in-graph-installations", multipleInstallations: true },
+      { id: "root-package-self-reference", selfReference: true },
+      { id: "root-paths-alias", pathsAlias: true },
+      { id: "late-root-config-mutation", lateConfigMutation: true },
+      { id: "late-captured-manifest-mutation", lateManifestMutation: true },
+    ];
+
+    for (const variant of variants) {
+      const context = await fixture();
+      const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");
+      const manifestPath = join(runtimeDirectory, "package.json");
+      const exports = variant.exportMode === "missing"
+        ? { "./feature": "./dist/missing.mjs" }
+        : variant.exportMode === "unreferenced"
+          ? { "./feature": "./dist/unreferenced.mjs" }
+          : variant.exportMode === "wrong-subpath"
+            ? { "./other": "./dist/feature.mjs" }
+            : variant.exportMode === "overlapping"
+              ? { "./*": "./dist/*.mjs", "./f*": "./dist/*.mjs" }
+              : { "./feature": "./dist/feature.mjs" };
+      const manifest: Record<string, unknown> = {
+        exports,
+        name: variant.wrongManifest ? "@fixture/other" : "@fixture/runtime",
+        type: "module",
+        version: "1.0.0",
+      };
+      if (variant.browser) manifest.browser = { "./server.mjs": "./browser.mjs" };
+      await write(manifestPath, `${JSON.stringify(manifest)}\n`);
+      await write(
+        join(runtimeDirectory, "dist/feature.mjs"),
+        "export { marker } from './private.mjs';\n",
+      );
+      await write(join(runtimeDirectory, "dist/private.mjs"), "export const marker = 'runtime';\n");
+      if (variant.exportMode === "unreferenced") {
+        await write(
+          join(runtimeDirectory, "dist/unreferenced.mjs"),
+          "export const marker = 'unreferenced';\n",
+        );
+      }
+      if (variant.selfReference) {
+        await write(
+          join(context.root, "package.json"),
+          `${JSON.stringify({ name: "@fixture/runtime", type: "module", version: "1.0.0" })}\n`,
+        );
+      }
+      if (variant.importerBrowser) {
+        await write(
+          join(context.root, "package.json"),
+          `${JSON.stringify({
+            browser: { "./src/server.ts": "./src/browser.ts" },
+            name: "@fixture/app",
+            type: "module",
+            version: "1.0.0",
+          })}\n`,
+        );
+      }
+      if (variant.pathsAlias) {
+        await write(
+          join(context.root, "tsconfig.json"),
+          `${JSON.stringify({ compilerOptions: { paths: { "@fixture/runtime/*": ["./src/*"] } } })}\n`,
+        );
+      }
+      if (variant.lateConfigMutation) {
+        await write(
+          join(context.root, "tsconfig.json"),
+          `${JSON.stringify({ compilerOptions: { strict: true } })}\n`,
+        );
+      }
+
+      const entry = join(context.root, "src/nested/entry.ts");
+      let entrySource = "import { marker } from '../../node_modules/@fixture/runtime/dist/feature.mjs'; export const value = marker;\n";
+      if (variant.multipleInstallations) {
+        const secondRuntime = join(context.root, "vendor/node_modules/@fixture/runtime");
+        await write(
+          join(secondRuntime, "package.json"),
+          `${JSON.stringify({
+            exports: { "./second": "./dist/second.mjs" },
+            name: "@fixture/runtime",
+            type: "module",
+            version: "2.0.0",
+          })}\n`,
+        );
+        await write(join(secondRuntime, "dist/second.mjs"), "export const second = 'second';\n");
+        entrySource = "import { marker } from '../../node_modules/@fixture/runtime/dist/feature.mjs'; import { second } from '../../vendor/node_modules/@fixture/runtime/dist/second.mjs'; export const value = marker + second;\n";
+      }
+      await write(entry, entrySource);
+      const handle = await generation(context, `bare-input-subpath-near-miss-${variant.id}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) =>
+          path.endsWith("/src/nested/entry.ts") || path === "src/nested/entry.ts"
+        );
+        assert.ok(entryKey !== undefined);
+        const rawEdge: Record<string, unknown> = {
+          ...(variant.edge === "external" ? { external: true } : {}),
+          ...(variant.edge === "attributes" ? { with: { type: "javascript" } } : {}),
+          kind: variant.edge === "dynamic"
+            ? "dynamic-import"
+            : variant.edge === "require"
+              ? "require-call"
+              : "import-statement",
+        };
+        if (
+          variant.hiddenInstallation !== undefined
+          || variant.lateConfigMutation
+          || variant.lateManifestMutation
+        ) {
+          let mutated = false;
+          Object.defineProperty(rawEdge, "path", {
+            enumerable: true,
+            get() {
+              if (!mutated) {
+                mutated = true;
+                if (variant.hiddenInstallation !== undefined) {
+                  const closerRuntime = join(context.root, "src/nested/node_modules/@fixture/runtime");
+                  mkdirSync(resolve(closerRuntime, ".."), { recursive: true });
+                  if (variant.hiddenInstallation === "ordinary") {
+                    mkdirSync(join(closerRuntime, "dist"), { recursive: true });
+                    writeFileSync(
+                      join(closerRuntime, "package.json"),
+                      `${JSON.stringify({
+                        exports: { "./feature": "./dist/feature.mjs" },
+                        name: "@fixture/runtime",
+                        type: "module",
+                        version: "2.0.0",
+                      })}\n`,
+                    );
+                    writeFileSync(
+                      join(closerRuntime, "dist/feature.mjs"),
+                      "export const marker = 'closer';\n",
+                    );
+                  } else {
+                    symlinkSync(runtimeDirectory, closerRuntime);
+                  }
+                }
+                if (variant.lateConfigMutation) {
+                  writeFileSync(
+                    join(context.root, "tsconfig.json"),
+                    `${JSON.stringify({
+                      compilerOptions: {
+                        paths: { "@fixture/runtime/*": ["./src/*"] },
+                        strict: true,
+                      },
+                    })}\n`,
+                  );
+                }
+                if (variant.lateManifestMutation) {
+                  writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, version: "1.0.1" })}\n`);
+                }
+              }
+              return "@fixture/runtime/feature";
+            },
+          });
+        } else {
+          rawEdge.path = "@fixture/runtime/feature";
+        }
+        inputs[entryKey]!.imports = [rawEdge] as never;
+        return result;
+      });
+
+      try {
+        if (variant.edge === "external") {
+          const receipt = await collectBunStylexGraph({
+            generation: handle,
+            graphId: "client",
+            rootDirectory: context.root,
+          });
+          expect(receipt.edges).toContainEqual({
+            external: true,
+            from: "input:src/nested/entry.ts",
+            kind: "import-statement",
+            to: "external:@fixture/runtime/feature",
+          });
+          expect(receipt.edges).not.toContainEqual({
+            external: false,
+            from: "input:src/nested/entry.ts",
+            kind: "import-statement",
+            to: "input:node_modules/@fixture/runtime/dist/feature.mjs",
+          });
+        } else {
+          await expect(
+            collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+          ).rejects.toThrow(
+            variant.multipleInstallations
+              ? /Bun metafile bare import target is ambiguous/u
+              : variant.lateConfigMutation
+                ? /Bun root resolution configuration changed after raw fallback edge settlement/u
+                : variant.lateManifestMutation
+                  ? /Bun raw fallback package scope changed after edge settlement/u
+                : /Bun metafile import.*is unresolved.*@fixture\/runtime\/feature/u,
+          );
+          expect(await receiptExists(handle, "client")).toBe(false);
+        }
+      } finally {
+        build.mockRestore();
+      }
     }
   });
 
@@ -2659,7 +2985,7 @@ describe("collectBunStylexGraph", () => {
 
   test("rejects malformed and non-package-root zero-witness spellings without a receipt", async () => {
     const malformedSpecifiers = [
-      "@fixture/runtime/feature",
+      "@fixture/runtime/../feature",
       "@fixture/runtime/",
       "@fixture",
       "@fixture//runtime",
