@@ -22,10 +22,9 @@ Install it with Bun:
 bun install
 ```
 
-Import Tailwind once, then import the complete package stylesheet before product rules:
+Import the complete package stylesheet before product rules:
 
 ```css
-@import "tailwindcss";
 @import "@hraness/ui/styles.css";
 
 /* Optional product-level token overrides and styles follow. */
@@ -70,7 +69,7 @@ React 18 or 19 and React DOM 18 or 19 are peer dependencies.
 | Contract | Checked package fact | Public authority |
 | --- | --- | --- |
 | Runtime and types | ESM consumers load `dist/index.js`; TypeScript reads `src/index.ts` | `package.json` exports |
-| Style delivery | Eight public CSS entry points cover precompiled and compiler-adopter paths | `package.json` exports |
+| Style delivery | Six public CSS entry points cover precompiled and compiler-adopter paths | `package.json` exports |
 | Theme surface | 37 namespaced theme roles cover surfaces, text, actions, status, charts, typography, and radius | `src/tokens.css` |
 | Interaction states | Components expose semantic `data-slot` hooks and React Aria state attributes | Source types and server-rendered tests |
 | Compatibility | React and React DOM 18 through 19; StyleX 0.19 for caller-authored `xstyle` | Peer and package dependencies |
@@ -87,22 +86,20 @@ The package also exports portable spacing, typography, target-size, motion, elev
 | Show status or data | Tags, badges, status dots, alerts, spinners, skeletons, progress, meters, sliders, knobs, avatars, tables | The primitive renders state; the caller supplies the state and meaning |
 | Structure a surface | Cards, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, viewport frames, wrapping rows, quiet-site landmarks | The package supplies bounded structure; the product owns page layout and content |
 | Connect application seams | `RouterProvider`, `ToastProvider`, `AskAiAboutThis`, icons | The package stays framework-neutral and does not own application data |
-| Apply presentation | Tokens, reset, legacy CSS, compiled StyleX CSS, Tailwind bridge, typed `xstyle` | Product tokens, caller recipes, and native styles remain explicit override layers |
+| Apply presentation | Tokens, reset, bounded legacy CSS, compiled StyleX CSS, typed `xstyle` | Product tokens, caller recipes, and native styles remain explicit override layers |
 
 ## Style delivery
 
-`@hraness/ui` publishes one UI JavaScript entry point and eight public CSS entry points:
+`@hraness/ui` publishes one UI JavaScript entry point and six public CSS entry points:
 
-- `@hraness/ui/styles.css` provides the complete theme, reset, legacy recipes, compiled StyleX recipes, and Tailwind bridge.
+- `@hraness/ui/styles.css` provides the complete theme, reset, bounded legacy recipes, and compiled StyleX recipes.
 - `@hraness/ui/tokens.css` provides standards-only light and dark tokens.
 - `@hraness/ui/reset.css` provides the standards-only baseline and layer order.
 - `@hraness/ui/components.css` provides the remaining legacy component recipes.
 - `@hraness/ui/stylex.css` provides package-compiled StyleX recipes.
-- `@hraness/ui/tailwind.css` provides Tailwind source detection, the dark variant, and semantic utility mappings.
 - `@hraness/ui/compiler-foundation.css` provides tokens, reset, and legacy recipes without precompiled StyleX recipes.
-- `@hraness/ui/compiler-foundation-tailwind.css` adds the Tailwind bridge to that recipe-free foundation.
 
-`styles.css` is the precompiled route. It keeps `base` below `components`, then fixes the reviewed standalone component sublayers from lowest to highest as `legacy`, `priority1`, `priority2`, `priority3`, and `priority4`. Migrated package declarations win over remaining package recipes without depending on generated class names or import timing. The complete stylesheet expects Tailwind CSS v4 processing during this transition, but it does not import Tailwind itself. This prevents duplicate Preflight and utility output.
+`styles.css` is the precompiled route. It keeps `base` below `components`, then fixes the reviewed standalone component sublayers from lowest to highest as `legacy`, `priority1`, `priority2`, `priority3`, and `priority4`. Migrated package declarations win over remaining package recipes without depending on generated class names or import timing. The complete stylesheet is standards-based CSS and does not require a utility-CSS processor.
 
 Set `data-theme="dark"` or the `dark` class on a root element to select the dark recipe. Set `data-theme="light"` for an explicit light island. Override namespaced roles after the imports to apply a product theme.
 
@@ -191,7 +188,7 @@ graph. Finalization rejects a missing, duplicate, or foreign graph stylesheet.
 
 The finalizer validates package and graph identities, rejects missing or stale graph receipts and mixed partial CSS, unions all raw rule metadata, and calls the pinned StyleX serializer once. It preserves the full finite priority inventory rather than mapping it to a fixed range. Build-tool modules remain outside the UI runtime entry, runtime CSS injection stays disabled, and the compiler contract pins property-specificity resolution and its Babel, StyleX, and Lightning CSS versions.
 
-Tailwind utilities and unlayered product CSS retain their existing override authority, except for the shared visually-hidden accessibility recipe. Its offscreen reset uses layered important declarations so conflicting unlayered important rules cannot accidentally expose accessible-only copy. Change the component visibility prop instead of overriding this helper.
+Unlayered product CSS retains its existing override authority, except for the shared visually-hidden accessibility recipe. Its offscreen reset uses layered important declarations so conflicting unlayered important rules cannot accidentally expose accessible-only copy. Change the component visibility prop instead of overriding this helper.
 
 ## Composition patterns
 
@@ -686,7 +683,7 @@ coexist. It delivers the generated StyleX stylesheet once alongside the legacy
 recipes. A release remains gated on downstream consumers proving this CSS
 delivery path; generated declarations are not duplicated into `components.css`.
 
-The package exports `cn` for Tailwind-era consumer class composition. Treat documented component classes and `data-slot` values as stable styling hooks; prefer token overrides for system-wide changes. Generated StyleX class names are implementation details.
+The package exports `cn` for conditional consumer class composition while preserving source order. Treat documented component classes and `data-slot` values as stable styling hooks; prefer token overrides for system-wide changes. Generated StyleX class names are implementation details.
 
 ## Evidence
 
@@ -707,7 +704,7 @@ These claims were reviewed on September 2, 2026 against the package manifest, pu
 
 ### Do I need Tailwind CSS?
 
-The complete `@hraness/ui/styles.css` entry expects Tailwind CSS v4 processing while the compatibility bridge exists. A standards-only consumer can import `tokens.css`, `reset.css`, `components.css`, and `stylex.css` directly.
+No. `@hraness/ui` has no first-party Tailwind bridge or dependency. Products may use their own utility-CSS tooling independently; the package's complete and narrower CSS entry points are standards-based inputs.
 
 ### Do I need a StyleX compiler?
 

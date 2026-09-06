@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { lstat, readFile, readdir, readlink, realpath, writeFile } from "node:fs/promises";
+import { lstat, readFile, readdir, readlink, realpath } from "node:fs/promises";
 import { isBuiltin } from "node:module";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { posix } from "node:path";
@@ -15,7 +15,6 @@ import {
 } from "./contracts.js";
 import {
   artifactForFile,
-  assertStylexCssAuditReceiptsEqual,
   auditCssWithoutStandaloneRecipes,
   auditCssWithoutStylexRules,
   canonicalJson,
@@ -25,10 +24,7 @@ import {
   normalizeLogicalPath,
   resolveRootRelativeInput,
   sha256,
-  stylexTailwindBridgeAuditSource,
   stylexRulesSha256,
-  mergeStylexCssAuditReceipts,
-  type StylexCssAuditReceipt,
 } from "./compiler.js";
 import {
   loadStylexGeneration,
@@ -141,13 +137,6 @@ const outputNaming = {
   chunk: "chunks/[name]-[hash].[ext]",
   entry: "entries/[name]-[hash].[ext]",
 } as const;
-const bunTailwindBridgeMarkerPrefix = "stylex-tailwind-bridge-";
-
-type BunTailwindBridgeRestoration = Readonly<{
-  logicalPath: string;
-  marker: string;
-  source: string;
-}>;
 
 function plainObject(value: unknown, description: string): Record<string, unknown> {
   assert.ok(typeof value === "object" && value !== null && !Array.isArray(value), `${description} must be an object`);
@@ -331,70 +320,6 @@ function relativeBelow(root: string, absolute: string, description: string): str
   const path = relative(root, absolute).split(sep).join("/");
   assert.ok(path !== ".." && !path.startsWith("../"), `${description} escapes its owned root`);
   return normalizeLogicalPath(path, description);
-}
-
-function bunTailwindBridgeRestoration(
-  logicalPath: string,
-  source: string,
-): BunTailwindBridgeRestoration {
-  const token = sha256(canonicalJson({ logicalPath, sourceSha256: sha256(source) }));
-  return {
-    logicalPath,
-    marker: `@layer ${bunTailwindBridgeMarkerPrefix}${token};`,
-    source,
-  };
-}
-
-async function restoreBunTailwindBridges(
-  result: Bun.BuildOutput,
-  outputDirectory: string,
-  restorations: ReadonlyMap<string, BunTailwindBridgeRestoration>,
-  sourcemap: false | "inline" | "none" | undefined,
-): Promise<void> {
-  if (!result.success || restorations.size === 0) return;
-  const counts = new Map([...restorations.keys()].map((marker) => [marker, 0]));
-  for (const artifact of result.outputs) {
-    if (artifact.loader !== "css" && !artifact.path.endsWith(".css")) continue;
-    const absolute = resolve(artifact.path);
-    relativeBelow(outputDirectory, absolute, "Bun Tailwind bridge output path");
-    const before = await lstat(absolute);
-    assert.ok(before.isFile() && !before.isSymbolicLink(), "Bun Tailwind bridge output must be an ordinary file");
-    const source = await readFile(absolute, "utf8");
-    let restored = source;
-    for (const [marker, restoration] of restorations) {
-      const pieces = restored.split(marker);
-      const occurrences = pieces.length - 1;
-      assert.ok(
-        occurrences <= 1,
-        `Bun duplicated the verified Tailwind bridge marker for ${restoration.logicalPath}`,
-      );
-      if (occurrences === 1) {
-        assert.notEqual(
-          sourcemap,
-          "inline",
-          "Bun cannot restore a verified Tailwind bridge into an inline-sourcemapped CSS output",
-        );
-        counts.set(marker, (counts.get(marker) ?? 0) + 1);
-        restored = pieces.join(restoration.source);
-      }
-    }
-    assert.ok(
-      !restored.includes(bunTailwindBridgeMarkerPrefix),
-      "Bun emitted an unknown or mutated Tailwind bridge marker",
-    );
-    if (restored === source) continue;
-    await writeFile(absolute, restored);
-    const after = await lstat(absolute);
-    assert.deepEqual(
-      { dev: after.dev, ino: after.ino, mode: after.mode },
-      { dev: before.dev, ino: before.ino, mode: before.mode },
-      "Bun Tailwind bridge output identity changed while restoring its verified source",
-    );
-  }
-  for (const [marker, count] of counts) {
-    const restoration = restorations.get(marker)!;
-    assert.ok(count <= 1, `Bun emitted the verified Tailwind bridge in multiple outputs: ${restoration.logicalPath}`);
-  }
 }
 
 async function canonicalInputKey(root: string, raw: string): Promise<string> {
@@ -2276,7 +2201,6 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const transformedInputs = new Set<string>();
   const transformedRules = new Map<string, readonly StylexRuleV1[]>();
   const packageScopeCaptures = new Map<string, Promise<PackageScope>>();
-  const tailwindBridgeRestorations = new Map<string, BunTailwindBridgeRestoration>();
   let activeTransforms = 0;
   const escapedRoot = rootDirectory.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const plugin: Bun.BunPlugin = {
@@ -2322,34 +2246,12 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         await captureImporterPackageScope(rootDirectory, logical, packageScopeCaptures);
         const ordinary = await resolveRootRelativeInput(rootDirectory, logical);
         const source = await readFile(ordinary, "utf8");
-        assert.ok(
-          !source.includes(bunTailwindBridgeMarkerPrefix),
-          `CSS input uses the reserved Bun Tailwind bridge marker: ${logical}`,
-        );
-        const auditReceipt = auditCssWithoutStandaloneRecipes(
-          source,
-          loaded.packageManifests,
-          stylexTailwindBridgeAuditSource(logical, loaded.packageManifests),
-        );
+        auditCssWithoutStandaloneRecipes(source, loaded.packageManifests, `Bun CSS input ${logical}`);
         const snapshot = { bytes: Buffer.byteLength(source), sha256: sha256(source) };
         const previous = inputSnapshots.get(logical);
         if (previous === undefined) inputSnapshots.set(logical, snapshot);
         else assert.deepEqual(snapshot, previous, `Bun input changed between loads: ${logical}`);
-        if (auditReceipt.tailwindBridgeSha256 === undefined) {
-          return { contents: source, loader: "css" };
-        }
-        const restoration = bunTailwindBridgeRestoration(logical, source);
-        const previousRestoration = tailwindBridgeRestorations.get(restoration.marker);
-        if (previousRestoration === undefined) {
-          tailwindBridgeRestorations.set(restoration.marker, restoration);
-        } else {
-          assert.deepEqual(
-            previousRestoration,
-            restoration,
-            "Bun Tailwind bridge marker collided across divergent verified inputs",
-          );
-        }
-        return { contents: restoration.marker, loader: "css" };
+        return { contents: source, loader: "css" };
       });
       build.onLoad({ filter: /.*/u }, async ({ path }) => {
         const logical = relativeBelow(rootDirectory, resolve(path), "Bun input path");
@@ -2361,14 +2263,6 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         if (previous === undefined) inputSnapshots.set(logical, snapshot);
         else assert.deepEqual(snapshot, previous, `Bun input changed between loads: ${logical}`);
         return { contents: bytes, loader: nativeLoaderFor(ordinary) };
-      });
-      build.onEnd(async (result) => {
-        await restoreBunTailwindBridges(
-          result,
-          prepared.outputDirectory,
-          tailwindBridgeRestorations,
-          buildOptions.sourcemap,
-        );
       });
     },
   };
@@ -2592,7 +2486,6 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   assert.deepEqual([...new Set(emittedEntrypoints)].sort(), logicalEntrypoints, "Bun output topology does not contain every registered entrypoint");
 
   const inputs: StylexArtifactV1[] = [];
-  const inputCssAuditReceipts: StylexCssAuditReceipt[] = [];
   for (const [path, metadata] of [...inputMetadata.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) {
     const artifact = await artifactForFile(rootDirectory, path);
     const snapshot = inputSnapshots.get(path);
@@ -2612,22 +2505,12 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         `Bun CSS input changed while reconstructing its audit receipt: ${path}`,
       );
       const css = cssBytes.toString("utf8");
-      const receipt = auditCssWithoutStandaloneRecipes(
-        css,
-        loaded.packageManifests,
-        stylexTailwindBridgeAuditSource(path, loaded.packageManifests),
-      );
-      auditCssWithoutStylexRules(css, rules, "Compiler graph", receipt);
-      inputCssAuditReceipts.push(receipt);
+      auditCssWithoutStandaloneRecipes(css, loaded.packageManifests, `Bun graph ${graphId} input ${path}`);
+      auditCssWithoutStylexRules(css, rules, "Compiler graph");
     }
   }
 
-  const expectedCssAuditReceipt = mergeStylexCssAuditReceipts(
-    inputCssAuditReceipts,
-    `Bun graph ${graphId} inputs`,
-  );
   const outputs: StylexArtifactV1[] = [];
-  const outputCssAuditReceipts: StylexCssAuditReceipt[] = [];
   for (const [path] of [...outputMetadata.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) {
     const artifact = await artifactForFile(prepared.outputDirectory, path);
     const emitted = emittedByResult.get(path)!;
@@ -2648,21 +2531,10 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         `Bun CSS output changed while reconstructing its audit receipt: ${path}`,
       );
       const css = cssBytes.toString("utf8");
-      const receipt = auditCssWithoutStandaloneRecipes(
-        css,
-        loaded.packageManifests,
-        undefined,
-        expectedCssAuditReceipt,
-      );
-      auditCssWithoutStylexRules(css, rules, "Bun graph output", receipt);
-      outputCssAuditReceipts.push(receipt);
+      auditCssWithoutStandaloneRecipes(css, loaded.packageManifests, `Bun graph ${graphId} output ${path}`);
+      auditCssWithoutStylexRules(css, rules, "Bun graph output");
     }
   }
-  assertStylexCssAuditReceiptsEqual(
-    mergeStylexCssAuditReceipts(outputCssAuditReceipts, `Bun graph ${graphId} outputs`),
-    expectedCssAuditReceipt,
-    `Bun graph ${graphId} outputs`,
-  );
 
   const inputSet = new Set(inputMetadata.keys());
   const observedInputSet = new Set([...inputSet, ...speculativeInputSet]);

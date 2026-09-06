@@ -74,7 +74,6 @@ test("the complete stylesheet composes its public layers in a stable order", asy
     '@import "./reset.css";',
     '@import "./components.css";',
     '@import "../dist/stylex.css";',
-    '@import "./tailwind.css";',
   ];
 
   let previous = -1;
@@ -83,6 +82,7 @@ test("the complete stylesheet composes its public layers in a stable order", asy
     expect(position).toBeGreaterThan(previous);
     previous = position;
   }
+  expect(styles).not.toMatch(/@(?:source|theme|custom-variant)\b/u);
 });
 
 test("public reset keeps its current-main bytes while the compiler reset omits only fixed priorities", async () => {
@@ -101,10 +101,7 @@ test("public reset keeps its current-main bytes while the compiler reset omits o
 });
 
 test("compiler adopters start from a recipe-free foundation", async () => {
-  const [foundation, tailwindFoundation] = await Promise.all([
-    stylesheet("./compiler-foundation.css"),
-    stylesheet("./compiler-foundation-tailwind.css"),
-  ]);
+  const foundation = await stylesheet("./compiler-foundation.css");
 
   expect(foundation).toBe([
     "@layer base, components;",
@@ -116,21 +113,15 @@ test("compiler adopters start from a recipe-free foundation", async () => {
     "",
   ].join("\n"));
   expect(foundation).not.toContain("stylex.css");
-  expect(foundation).not.toContain("tailwind.css");
+  expect(foundation).not.toMatch(/@(?:source|theme|custom-variant)\b/u);
   expect(foundation).not.toMatch(/components\.hraness-ui\.priority\d+/u);
-  expect(tailwindFoundation).toBe([
-    '@import "./compiler-foundation.css";',
-    '@import "./tailwind.css";',
-    "",
-  ].join("\n"));
 });
 
 test("portable layers expose namespaced roles and resilient interaction recipes", async () => {
-  const [components, motion, reset, tailwind, tokens] = await Promise.all([
+  const [components, motion, reset, tokens] = await Promise.all([
     stylesheet("./components.css"),
     stylesheet("./motion.stylex.ts"),
     stylesheet("./reset.css"),
-    stylesheet("./tailwind.css"),
     stylesheet("./tokens.css"),
   ]);
 
@@ -198,15 +189,13 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
     "",
   );
   expect(renderedComponents).not.toMatch(/\.hraness-(?:tabs|disclosure|accordion|toggle-group|segmented-control|separator)(?![A-Za-z0-9_-])/u);
+  expect(components).toContain("--hraness-collection-coarse-min: var(--interactive-target-min);");
   expect(components).not.toMatch(
     /\.hraness-(?:action__spinner|(?:button|copy-button|icon-button|icon-link|inline-icon-link|link-button|toggle-button)(?:__[A-Za-z0-9_-]+)?)(?![A-Za-z0-9_-])/u,
   );
-  expect(tailwind).toContain(
-    ':not(:where([data-theme="light"], [data-theme="light"] *))',
-  );
-  expect(tailwind).toContain("--font-heading: var(--ui-font-heading);");
-  expect(tokens).not.toContain("@theme");
-  expect(reset).not.toContain("@theme");
+  for (const source of [components, reset, tokens]) {
+    expect(source).not.toMatch(/@(?:source|theme|custom-variant)\b/u);
+  }
 });
 
 test("forced-colors field placeholders use unfaded system text", async () => {
@@ -729,6 +718,47 @@ test("collapsed disclosure panels do not retain their expanded inset", async () 
   expect(source).toContain('paddingBlockEnd: "var(--space-4)"');
   expect(source).toContain("disclosurePanelHidden");
   expect(source).toContain("paddingBlockEnd: 0");
+});
+
+test("collection coarse and forced-colors fallbacks live in StyleX recipes", async () => {
+  const [collections, components] = await Promise.all([
+    stylesheet("./collections.stylex.ts"),
+    stylesheet("./components.css"),
+  ]);
+
+  expect(collections).toContain(
+    'const syntheticCoarseMinimum = "var(--hraness-collection-coarse-min, 0px)"',
+  );
+  expect(collections.match(/\[coarsePointer\]: "var\(--interactive-target-min\)"/gu)).toHaveLength(8);
+  expect(collections).toContain(
+    '[coarsePointer]: "max(var(--control-height-primary), var(--interactive-target-min))"',
+  );
+  expect(collections).toContain(
+    'default: "var(--hraness-collection-coarse-min)"',
+  );
+  expect(collections.match(/\[forcedColors\]: "ButtonFace"/gu)).toHaveLength(3);
+  expect(collections.match(/\[forcedColors\]: "ButtonText"/gu)).toHaveLength(3);
+  expect(components).toContain(
+    "--hraness-collection-coarse-min: var(--interactive-target-min);",
+  );
+  expect(components).not.toMatch(
+    /@media \(pointer: coarse\)[^]*?\.hraness-(?:tabs__tab|disclosure__trigger|toggle-group__item|segmented-control__item)/u,
+  );
+  expect(components).not.toMatch(
+    /data-verification-pointer="coarse"[^}]*\}[\s\S]*?\.hraness-(?:tabs__tab|disclosure__trigger|toggle-group__item|segmented-control__item)/u,
+  );
+  expect(components).not.toMatch(
+    /\.hraness-(?:tabs__tab|toggle-group__item|segmented-control__item)\[data-selected\]/u,
+  );
+  expect(components.match(/\.hraness-segmented-control::-webkit-scrollbar/gu)).toHaveLength(1);
+  for (const retained of [
+    ".hraness-field__input::placeholder",
+    ".hraness-field__file::file-selector-button",
+    ".hraness-progress__control::-webkit-progress-bar",
+    ".hraness-progress__control::-webkit-progress-value",
+    ".hraness-progress__control::-moz-progress-bar",
+    ":where(.hraness-card, .hraness-pressable-card)",
+  ]) expect(components).toContain(retained);
 });
 
 test("transport actions and slider thumbs use their compiled shared geometry", async () => {

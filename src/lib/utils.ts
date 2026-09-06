@@ -1,7 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
 
-/** Combines conditional classes while letting later Tailwind utilities win. */
+/** Combines conditional classes while preserving caller source order. */
 export function cn(...inputs: ClassValue[]): string {
-  return twMerge(clsx(inputs));
+  return clsx(inputs);
 }

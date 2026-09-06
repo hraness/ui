@@ -64,24 +64,9 @@
 }
 
 @layer components.hraness-ui.legacy {
-@media (pointer: coarse) {
-  :where(
-    .hraness-tabs__tab,
-    .hraness-disclosure__trigger,
-    .hraness-toggle-group__item,
-    .hraness-segmented-control__item
-  ) {
-    min-height: var(--interactive-target-min);
-  }
-
-  .hraness-segmented-control__item {
-    min-width: var(--interactive-target-min);
-  }
-
-}
-
 :root[data-verification-pointer="coarse"] {
   --hraness-action-coarse-min: var(--interactive-target-min);
+  --hraness-collection-coarse-min: var(--interactive-target-min);
   --hraness-field-coarse-min: var(--interactive-target-min);
   --hraness-slider-coarse-min: var(--interactive-target-min);
   --hraness-list-box-coarse-min: var(--interactive-target-min);
@@ -91,19 +76,6 @@
   --hraness-pagination-coarse-min: var(--interactive-target-min);
 }
 
-:root[data-verification-pointer="coarse"] :where(
-  .hraness-tabs__tab,
-  .hraness-disclosure__trigger,
-  .hraness-toggle-group__item,
-  .hraness-segmented-control__item
-) {
-  min-height: var(--interactive-target-min);
-}
-
-:root[data-verification-pointer="coarse"] .hraness-segmented-control__item {
-  min-width: var(--interactive-target-min);
-}
-
 @media (forced-colors: active) {
   /* Forced-colors UAs may remap placeholder text to GrayText, which can fall
    * below 4.5:1 against Canvas. Preserve the muted token in ordinary themes,
@@ -111,12 +83,6 @@
   .hraness-field__input::placeholder {
     color: CanvasText;
     opacity: 1;
-  }
-
-  :where(.hraness-tabs__tab[data-selected], .hraness-toggle-group__item[data-selected],
-    .hraness-segmented-control__item[data-selected]) {
-    background: ButtonFace;
-    color: ButtonText;
   }
 
 }

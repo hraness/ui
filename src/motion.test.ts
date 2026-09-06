@@ -17,7 +17,7 @@ const motionKeys = [
 ] as const;
 
 test("shared motion exposes one compiled recipe for every retained animation", () => {
-  expect(Object.keys(motionStyles)).toEqual(motionKeys);
+  expect(Object.keys(motionStyles)).toEqual([...motionKeys]);
 
   for (const key of motionKeys) {
     const presentation = stylex.props(motionStyles[key]);

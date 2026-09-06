@@ -13,6 +13,7 @@ import {
   Tabs,
   ToggleGroup,
 } from "./collections.js";
+import { collectionStyles } from "./collections.stylex.js";
 import { Meter, ProgressBar, Slider } from "./indicators.js";
 import { DialogContent, DialogTrigger, MenuItem, MenuSection, MenuSeparator, Popover, Tooltip } from "./overlays.js";
 import {
@@ -32,6 +33,14 @@ const toastOverrides = stylex.create({
   root: { borderRadius: "19px" },
   rootDynamic: (paddingTop: string) => ({ paddingTop }),
 });
+
+function recipeBlock(source: string, recipe: string): string {
+  const start = source.indexOf(`  ${recipe}: {`);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = source.indexOf("\n  },", start);
+  expect(end).toBeGreaterThan(start);
+  return source.slice(start, end + 5);
+}
 
 test("Popover and Tooltip preserve portal-safe server rendering and typed caller seams", () => {
   const html = renderToStaticMarkup(<>
@@ -311,7 +320,8 @@ test("Toast owns exact recipes, caller order, and no legacy visual selectors", a
 });
 
 test("collections own no remaining legacy visual selector", async () => {
-  const [components, source] = await Promise.all([
+  const [component, components, source] = await Promise.all([
+    Bun.file(new URL("./collections.tsx", import.meta.url)).text(),
     Bun.file(new URL("./components.css", import.meta.url)).text(),
     Bun.file(new URL("./collections.stylex.ts", import.meta.url)).text(),
   ]);
@@ -335,4 +345,64 @@ test("collections own no remaining legacy visual selector", async () => {
   expect(source).toContain('backgroundColor: "var(--ui-muted)"');
   expect(source).toContain('outlineColor: "var(--ui-ring)"');
   expect(source).toContain('transitionProperty: "background-color, box-shadow, color"');
+  expect(components.match(/\.hraness-segmented-control::-webkit-scrollbar/gu)).toHaveLength(1);
+  expect(component).toMatch(
+    /collectionStyles\.tab,[\s\S]*?collectionStyles\.tabNativeFocusFallback,[\s\S]*?size === "compact" && collectionStyles\.tabCompact/u,
+  );
+  expect(component).toMatch(
+    /collectionStyles\.disclosureTrigger,[\s\S]*?collectionStyles\.disclosureTriggerNativeFocusFallback,[\s\S]*?size === "compact" && collectionStyles\.disclosureTriggerCompact,[\s\S]*?size === "large" && collectionStyles\.disclosureTriggerLarge/u,
+  );
+  expect(component).toMatch(
+    /collectionStyles\.segmentedItem,[\s\S]*?collectionStyles\.segmentedItemNativeInteractionFallbacks,[\s\S]*?size === "compact" && collectionStyles\.segmentedItemCompact/u,
+  );
+  expect(component).toContain("collectionStyles.toggleItem,");
+});
+
+test("collection density recipes retain real and synthetic coarse minimums", async () => {
+  const source = await Bun.file(
+    new URL("./collections.stylex.ts", import.meta.url),
+  ).text();
+
+  expect(source).toContain(
+    'const syntheticCoarseMinimum = "var(--hraness-collection-coarse-min, 0px)"',
+  );
+  for (const [recipe, ordinaryMinimum, coarseMinimum] of [
+    ["tab", "var(--interactive-target-compact)", "var(--interactive-target-min)"],
+    ["tabCompact", "2rem", "var(--interactive-target-min)"],
+    ["disclosureTrigger", "var(--interactive-target-min)", "var(--interactive-target-min)"],
+    ["disclosureTriggerCompact", "var(--interactive-target-compact)", "var(--interactive-target-min)"],
+    ["disclosureTriggerLarge", "var(--control-height-primary)", "max(var(--control-height-primary), var(--interactive-target-min))"],
+    ["toggleItem", "var(--interactive-target-compact)", "var(--interactive-target-min)"],
+    ["segmentedItem", "var(--interactive-target-compact)", "var(--interactive-target-min)"],
+    ["segmentedItemCompact", "2rem", "var(--interactive-target-min)"],
+  ] as const) {
+    const block = recipeBlock(source, recipe);
+    expect(block).toContain(
+      `default: \`max(${ordinaryMinimum}, \${syntheticCoarseMinimum})\``,
+    );
+    expect(block).toContain(
+      `[coarsePointer]: "${coarseMinimum}"`,
+    );
+  }
+
+  const segmentedItem = recipeBlock(source, "segmentedItem");
+  expect(segmentedItem).toContain(
+    'default: "var(--hraness-collection-coarse-min)"',
+  );
+  expect(segmentedItem.match(/\[coarsePointer\]: "var\(--interactive-target-min\)"/gu)).toHaveLength(2);
+});
+
+test("selected collection recipes own their forced-colors surfaces", async () => {
+  const source = await Bun.file(
+    new URL("./collections.stylex.ts", import.meta.url),
+  ).text();
+
+  for (const recipe of ["tabSelected", "toggleItemSelected", "segmentedItemSelected"]) {
+    const block = recipeBlock(source, recipe);
+    expect(block).toContain('[forcedColors]: "ButtonFace"');
+    expect(block).toContain('[forcedColors]: "ButtonText"');
+  }
+  expect(stylex.props(collectionStyles.tabSelected).className).toBeTruthy();
+  expect(stylex.props(collectionStyles.toggleItemSelected).className).toBeTruthy();
+  expect(stylex.props(collectionStyles.segmentedItemSelected).className).toBeTruthy();
 });
