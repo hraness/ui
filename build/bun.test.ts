@@ -381,10 +381,17 @@ describe("collectBunStylexGraph", () => {
     );
     await write(
       join(dependencyRoot, "dist/exports/index.mjs"),
-      "export { Button } from '../private/Button.mjs'; export { Breadcrumbs } from '../private/Breadcrumbs.mjs';\n",
+      [
+        "export { Button } from '../private/Button.mjs';",
+        "export { Breadcrumbs } from '../private/Breadcrumbs.mjs';",
+        "export { Collection } from '../private/Collection.mjs';",
+        "",
+      ].join("\n"),
     );
     await write(join(dependencyRoot, "dist/private/Button.mjs"), "export const Button = 'button';\n");
     await write(join(dependencyRoot, "dist/private/Breadcrumbs.mjs"), "export const Breadcrumbs = 'breadcrumbs';\n");
+    const observedCollection = join(dependencyRoot, "dist/private/Collection.mjs");
+    await write(observedCollection, "export const Collection = 'collection';\n");
     const entry = join(context.root, "src/entry.ts");
     await write(
       entry,
@@ -395,6 +402,18 @@ describe("collectBunStylexGraph", () => {
     ]);
     const buildOriginal = Bun.build.bind(Bun);
     const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const handlers: Array<(args: { path: string }) => unknown> = [];
+      const plugin = options.plugins?.[0];
+      assert.ok(plugin !== undefined);
+      plugin.setup({
+        onEnd() {},
+        onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
+          handlers.push(callback);
+        },
+      } as never);
+      const javascriptOnLoad = handlers[0];
+      assert.ok(javascriptOnLoad !== undefined);
+      await javascriptOnLoad({ path: observedCollection });
       const result = await buildOriginal(options);
       assert.ok(result.metafile !== undefined);
       const barrelKey = Object.keys(result.metafile.inputs).find((path) =>
@@ -408,9 +427,18 @@ describe("collectBunStylexGraph", () => {
         kind: "import-statement",
         path: "../private/Breadcrumbs.mjs",
       });
+      expect(result.metafile.inputs[barrelKey]!.imports).toContainEqual({
+        external: true,
+        kind: "import-statement",
+        path: "../private/Collection.mjs",
+      });
       expect(Object.keys(result.metafile.inputs).some((path) =>
         path.endsWith("/node_modules/@fixture/css-side-effects/dist/private/Breadcrumbs.mjs")
         || path === "node_modules/@fixture/css-side-effects/dist/private/Breadcrumbs.mjs"
+      )).toBe(false);
+      expect(Object.keys(result.metafile.inputs).some((path) =>
+        path.endsWith("/node_modules/@fixture/css-side-effects/dist/private/Collection.mjs")
+        || path === "node_modules/@fixture/css-side-effects/dist/private/Collection.mjs"
       )).toBe(false);
       return result;
     });
@@ -428,9 +456,12 @@ describe("collectBunStylexGraph", () => {
       expect(receipt.inputs.map(({ path }) => path)).not.toContain(
         "node_modules/@fixture/css-side-effects/dist/private/Breadcrumbs.mjs",
       );
+      expect(receipt.inputs.map(({ path }) => path)).not.toContain(
+        "node_modules/@fixture/css-side-effects/dist/private/Collection.mjs",
+      );
       expect(receipt.edges.some(({ from, to }) =>
         from === "input:node_modules/@fixture/css-side-effects/dist/exports/index.mjs"
-        && to.endsWith("/Breadcrumbs.mjs")
+        && (to.endsWith("/Breadcrumbs.mjs") || to.endsWith("/Collection.mjs"))
       )).toBe(false);
     } finally {
       build.mockRestore();
@@ -843,7 +874,7 @@ describe("collectBunStylexGraph", () => {
       importer?: "cjs" | "esm";
       name?: string;
       sideEffects?: unknown;
-      target: "closer-scope" | "cross-package" | "directory" | "file" | "known" | "missing" | "non-js" | "parent-symlink" | "symlink";
+      target: "changed" | "closer-scope" | "cross-package" | "directory" | "file" | "known" | "missing" | "non-js" | "parent-symlink" | "symlink";
     }>[] = [
       { id: "missing-side-effects", target: "file" },
       { id: "true-side-effects", sideEffects: true, target: "file" },
@@ -859,6 +890,7 @@ describe("collectBunStylexGraph", () => {
       { edge: { external: true, kind: "import-statement", path: "./dropped%2ejs" }, id: "encoded-path", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "import-statement", path: "./nested/../dropped.js" }, id: "noncanonical-path", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "import-statement", path: "../other/dropped.js" }, id: "cross-package", sideEffects: false, target: "cross-package" },
+      { id: "changed-after-observation", sideEffects: false, target: "changed" },
       { id: "missing-target", sideEffects: false, target: "missing" },
       { edge: { external: true, kind: "import-statement", path: "./dropped.json" }, id: "non-js-target", sideEffects: false, target: "non-js" },
       { id: "directory-target", sideEffects: false, target: "directory" },
@@ -891,6 +923,7 @@ describe("collectBunStylexGraph", () => {
             : "export const marker = 'runtime';\n",
       );
       switch (variant.target) {
+        case "changed":
         case "file":
           await write(join(dependencyRoot, "dropped.js"), "export const dropped = 'dropped';\n");
           break;
@@ -937,6 +970,20 @@ describe("collectBunStylexGraph", () => {
       ]);
       const buildOriginal = Bun.build.bind(Bun);
       const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        if (variant.target === "changed") {
+          const handlers: Array<(args: { path: string }) => unknown> = [];
+          const plugin = options.plugins?.[0];
+          assert.ok(plugin !== undefined);
+          plugin.setup({
+            onEnd() {},
+            onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
+              handlers.push(callback);
+            },
+          } as never);
+          const javascriptOnLoad = handlers[0];
+          assert.ok(javascriptOnLoad !== undefined);
+          await javascriptOnLoad({ path: join(dependencyRoot, "dropped.js") });
+        }
         const result = await buildOriginal(options);
         assert.ok(result.metafile !== undefined);
         const importerKey = Object.keys(result.metafile.inputs).find((path) =>
@@ -949,6 +996,9 @@ describe("collectBunStylexGraph", () => {
           kind: "import-statement",
           path: "./dropped.js",
         }] as never;
+        if (variant.target === "changed") {
+          await writeFile(join(dependencyRoot, "dropped.js"), "export const dropped = 'changed';\n");
+        }
         return result;
       });
 
@@ -960,7 +1010,13 @@ describe("collectBunStylexGraph", () => {
           rejection = error;
         }
         assert.ok(rejection !== undefined, `near-miss variant unexpectedly resolved: ${variant.id}`);
-        assert.match(String(rejection), /Bun metafile import.*is unresolved/u, `near-miss variant rejected differently: ${variant.id}`);
+        assert.match(
+          String(rejection),
+          variant.target === "changed"
+            ? /Bun observed external package input differs from its completed load/u
+            : /Bun metafile import.*is unresolved/u,
+          `near-miss variant rejected differently: ${variant.id}`,
+        );
         expect(await receiptExists(handle, "client")).toBe(false);
       } finally {
         build.mockRestore();

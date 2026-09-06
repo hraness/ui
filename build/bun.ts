@@ -1162,7 +1162,6 @@ async function captureElidedExternalPackageInput(
     || !/\.(?:c|m)?js$/u.test(candidate)
     || knownInputs.has(candidate)
     || speculativeInputs.has(candidate)
-    || observedSnapshots.has(candidate)
     || knownOutputs.has(candidate)
     || outputTarget(imported.path, from, knownOutputs) !== undefined
     || observedAliases.has(imported.path)
@@ -1172,6 +1171,8 @@ async function captureElidedExternalPackageInput(
 
   const manifestPath = posix.join(installationRoot, "package.json");
   const importerScope = packageScopes.get(from);
+  const observedSnapshot = observedSnapshots.get(candidate);
+  const observedTargetScope = observedSnapshot === undefined ? undefined : packageScopes.get(candidate);
   const importerManifest = importerScope?.files.at(-1);
   const capturedManifest = packageScopeSnapshots.get(manifestPath);
   if (
@@ -1182,6 +1183,7 @@ async function captureElidedExternalPackageInput(
     || importerManifest.path !== manifestPath
     || importerManifest.kind !== "file"
     || capturedManifest === undefined
+    || (observedSnapshot !== undefined && observedTargetScope === undefined)
   ) return false;
   assert.deepEqual(importerManifest, capturedManifest, `Bun importer package scope differs for ${from}`);
   const parsedManifest = strictJsonObjectFromSnapshot(capturedManifest);
@@ -1210,9 +1212,23 @@ async function captureElidedExternalPackageInput(
     || targetManifest.kind !== "file"
   ) return false;
   assert.deepEqual(targetManifest, capturedManifest, `Bun elided target package scope differs for ${candidate}`);
+  if (observedTargetScope !== undefined) {
+    assert.deepEqual(
+      observedTargetScope,
+      targetScope,
+      `Bun observed external target package scope changed after its completed load: ${candidate}`,
+    );
+  }
 
   const targetSnapshot = await exactOrdinaryFileSnapshot(rootDirectory, candidate);
   if (targetSnapshot === undefined) return false;
+  if (observedSnapshot !== undefined) {
+    assert.deepEqual(
+      { bytes: targetSnapshot.bytes, sha256: targetSnapshot.sha256 },
+      observedSnapshot,
+      `Bun observed external package input differs from its completed load: ${candidate}`,
+    );
+  }
   const previousTarget = capturedTargets.get(candidate);
   if (previousTarget === undefined) capturedTargets.set(candidate, targetSnapshot);
   else assert.deepEqual(targetSnapshot, previousTarget, `Bun elided external package input changed between edges: ${candidate}`);
