@@ -1433,26 +1433,37 @@ test("does not leak the advisory descriptor into an executed child", async () =>
       previousDist: true,
     } satisfies PromotionCrashScenario;
     const fixture = await createPromotionCrashFixture(repository, scenario);
+    const childReadyPath = resolve(repository, ".advisory-child-ready");
     const injectedFailure = new Error("stop after child spawn");
     let child: ReturnType<typeof Bun.spawn> | undefined;
-    await expect(recoverInterruptedDistPromotion(repository, fixture.token, {
-      afterAdvisoryLock: async () => {
-        child = Bun.spawn(["/bin/sleep", "5"], {
-          stdin: "ignore",
-          stdout: "ignore",
-          stderr: "ignore",
-        });
-        throw injectedFailure;
-      },
-    })).rejects.toBe(injectedFailure);
-    if (child === undefined) throw new Error("Expected the inheritance probe child");
     try {
+      await expect(recoverInterruptedDistPromotion(repository, fixture.token, {
+        afterAdvisoryLock: async () => {
+          child = Bun.spawn([
+            "/bin/sh",
+            "-c",
+            'printf "ready\\n" > "$1"; exec /bin/sleep 5',
+            "advisory-descriptor-inheritance",
+            childReadyPath,
+          ], {
+            stdin: "ignore",
+            stdout: "ignore",
+            stderr: "ignore",
+          });
+          await waitForPath(childReadyPath);
+          throw injectedFailure;
+        },
+      })).rejects.toBe(injectedFailure);
+      if (child === undefined) throw new Error("Expected the inheritance probe child");
       await expect(
         recoverInterruptedDistPromotion(repository, fixture.token),
       ).resolves.toBe("released-untouched");
     } finally {
-      child.kill();
-      await child.exited;
+      const spawnedChild = child;
+      if (spawnedChild !== undefined) {
+        spawnedChild.kill();
+        await spawnedChild.exited;
+      }
     }
     await expectTerminalPromotionState(repository, fixture, scenario);
   });

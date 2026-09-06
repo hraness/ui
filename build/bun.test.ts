@@ -163,6 +163,62 @@ async function makeGraphSources(root: string): Promise<{ entries: string[]; serv
   return { entries: [first, second], server };
 }
 
+async function makeNativeCssUrlGraph(
+  context: Awaited<ReturnType<typeof fixture>>,
+): Promise<{
+  entry: string;
+  font: Uint8Array;
+  fontPath: string;
+  logicalFont: string;
+  logicalFontsCss: string;
+}> {
+  const packageRoot = join(context.root, "node_modules/@fixture/ui");
+  await writeFile(
+    join(packageRoot, "src/compiler-foundation.css"),
+    '@import "./tokens.css";\n.foundation { color: rebeccapurple; }\n',
+  );
+  await write(
+    join(packageRoot, "src/tokens.css"),
+    '@import "./fonts.css";\n:root { --fixture-font: "Fixture Font"; }\n',
+  );
+  const fontsCss = join(packageRoot, "src/fonts.css");
+  await write(
+    fontsCss,
+    '@font-face { font-family: "Fixture Font"; src: url("./fonts/Fixture.woff2") format("woff2"); }\n',
+  );
+  const fontPath = join(packageRoot, "src/fonts/Fixture.woff2");
+  await mkdir(resolve(fontPath, ".."), { recursive: true });
+  const font = new Uint8Array(70_000);
+  font.set([0x77, 0x4f, 0x46, 0x32]);
+  for (let index = 4; index < font.length; index += 1) font[index] = index % 251;
+  await writeFile(fontPath, font, { flag: "wx" });
+  const manifest = JSON.parse(await readFile(context.manifestPath, "utf8")) as StylexPackageManifestV1;
+  const stylesheetPaths = [
+    "src/compiler-foundation.css",
+    "src/fonts.css",
+    "src/tokens.css",
+  ];
+  await writeFile(
+    context.manifestPath,
+    `${canonicalJson({
+      ...manifest,
+      stylesheets: await Promise.all(stylesheetPaths.map((path) => artifactForFile(packageRoot, path))),
+    })}\n`,
+  );
+  const entry = join(context.root, "src/font-entry.ts");
+  await write(
+    entry,
+    'import "@fixture/ui/compiler-foundation.css"; export const value = true;\n',
+  );
+  return {
+    entry,
+    font,
+    fontPath,
+    logicalFont: logical(context.root, fontPath),
+    logicalFontsCss: logical(context.root, fontsCss),
+  };
+}
+
 function stableGraph(receipt: StylexGraphReceiptV1): unknown {
   return {
     adapter: receipt.adapter,
@@ -255,6 +311,178 @@ describe("collectBunStylexGraph", () => {
     expect(receipt.target).toBe("ssr");
     expect(receipt.inputs.map(({ path }) => path)).toEqual(expect.arrayContaining(["src/server-only.ts", "src/server.ts"]));
     expect(receipt.edges.some(({ from, to }) => from === "input:src/server.ts" && to === "input:src/server-only.ts")).toBe(true);
+  });
+
+  test("promotes an exactly observed native CSS URL input omitted by Bun's metafile", async () => {
+    const context = await fixture();
+    const source = await makeNativeCssUrlGraph(context);
+    const handle = await generation(context, "observed-native-css-url", [
+      expectation(context.root, "client", "client", source.entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const fontsCssKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/node_modules/@fixture/ui/src/fonts.css")
+        || path === "node_modules/@fixture/ui/src/fonts.css"
+      );
+      const fontKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/node_modules/@fixture/ui/src/fonts/Fixture.woff2")
+        || path === "node_modules/@fixture/ui/src/fonts/Fixture.woff2"
+      );
+      assert.ok(fontsCssKey !== undefined && fontKey !== undefined);
+      expect(result.metafile.inputs[fontsCssKey]!.imports).toContainEqual({
+        kind: "url-token",
+        original: "./fonts/Fixture.woff2",
+        path: source.fontPath,
+      });
+      delete result.metafile.inputs[fontKey];
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({
+        build: { minify: true },
+        generation: handle,
+        graphId: "client",
+        rootDirectory: context.root,
+      });
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(receipt.inputs).toContainEqual({
+        bytes: source.font.byteLength,
+        path: source.logicalFont,
+        sha256: sha256(source.font),
+      });
+      expect(receipt.edges).toContainEqual({
+        external: false,
+        from: `input:${source.logicalFontsCss}`,
+        kind: "url-token",
+        to: `input:${source.logicalFont}`,
+      });
+      expect(receipt.outputs.some(({ path }) => /\.(?:woff2|otf)$/u.test(path))).toBe(false);
+      const cssOutput = receipt.outputs.find(({ path }) => path.endsWith(".css"));
+      assert.ok(cssOutput !== undefined);
+      const css = await readFile(join(
+        handle.directory,
+        ...receipt.outputRoot.split("/"),
+        ...cssOutput.path.split("/"),
+      ), "utf8");
+      expect(css).toContain("data:font/woff2;base64,");
+      expect(await receiptExists(handle, "client")).toBe(true);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("rejects near-miss observed native CSS URL inputs", async () => {
+    for (const variant of [
+      "context-free-original",
+      "invalid-original-syntax",
+      "late-package-scope-drift",
+      "mismatched-original",
+      "mismatched-package-scope",
+      "mixed-context-free-original",
+      "same-length-drift",
+    ] as const) {
+      const context = await fixture();
+      const source = await makeNativeCssUrlGraph(context);
+      if (variant === "mismatched-package-scope") {
+        await write(
+          join(resolve(source.fontPath, ".."), "package.json"),
+          `${JSON.stringify({ name: "@fixture/not-ui", version: "1.0.0" })}\n`,
+        );
+      }
+      const handle = await generation(context, `observed-native-css-url-${variant}`, [
+        expectation(context.root, "client", "client", source.entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const fontsCssKey = Object.keys(result.metafile.inputs).find((path) =>
+          path.endsWith("/node_modules/@fixture/ui/src/fonts.css")
+          || path === "node_modules/@fixture/ui/src/fonts.css"
+        );
+        const fontKey = Object.keys(result.metafile.inputs).find((path) =>
+          path.endsWith("/node_modules/@fixture/ui/src/fonts/Fixture.woff2")
+          || path === "node_modules/@fixture/ui/src/fonts/Fixture.woff2"
+        );
+        assert.ok(fontsCssKey !== undefined && fontKey !== undefined);
+        delete result.metafile.inputs[fontKey];
+        if (variant === "mixed-context-free-original") {
+          const canonical = result.metafile.inputs[fontsCssKey]!.imports.find(
+            (imported) => imported.path === source.fontPath,
+          );
+          assert.ok(canonical !== undefined);
+          result.metafile.inputs[fontsCssKey]!.imports.push({
+            ...canonical,
+            original: relative(process.cwd(), source.fontPath).split(sep).join("/"),
+          });
+        } else if (
+          variant === "context-free-original"
+          || variant === "invalid-original-syntax"
+          || variant === "mismatched-original"
+        ) {
+          const replacement = variant === "context-free-original"
+            ? relative(process.cwd(), source.fontPath).split(sep).join("/")
+            : variant === "invalid-original-syntax"
+              ? "./fonts/Fixture.woff2?raw"
+              : "./fonts/Different.woff2";
+          result.metafile.inputs[fontsCssKey]!.imports = result.metafile.inputs[fontsCssKey]!.imports.map(
+            (imported) => imported.path === source.fontPath
+              ? { ...imported, original: replacement }
+              : imported,
+          );
+        } else if (variant === "same-length-drift") {
+          const changed = new Uint8Array(source.font);
+          changed[changed.length - 1] = (changed[changed.length - 1]! + 1) % 255;
+          await writeFile(source.fontPath, changed);
+        } else if (variant === "late-package-scope-drift") {
+          const metafile = result.metafile;
+          let changed = false;
+          Object.defineProperty(result, "metafile", {
+            configurable: true,
+            get() {
+              if (!changed) {
+                writeFileSync(
+                  join(context.root, "node_modules/@fixture/ui/package.json"),
+                  `${JSON.stringify({
+                    exports: { ".": "./dist/runtime.js", "./build": "./build/index.js", "./compiler-foundation.css": "./src/compiler-foundation.css", "./stylex.css": "./dist/stylex.css" },
+                    name: "@fixture/ui",
+                    type: "module",
+                    version: "1.0.1",
+                  })}\n`,
+                );
+                changed = true;
+              }
+              return metafile;
+            },
+          });
+        }
+        return result;
+      });
+
+      try {
+        await expect(collectBunStylexGraph({
+          build: { minify: true },
+          generation: handle,
+          graphId: "client",
+          rootDirectory: context.root,
+        })).rejects.toThrow(
+          variant === "same-length-drift"
+            ? /observed native CSS URL input changed after its completed load/u
+            : variant === "late-package-scope-drift"
+              ? /promoted native CSS URL input package scope changed during edge settlement/u
+              : variant === "mixed-context-free-original"
+                ? /promoted native CSS URL input has a noncanonical inbound edge/u
+                : /Bun output .* cites an unknown input/u,
+        );
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
   });
 
   test("excludes speculatively loaded tree-shaken inputs, absolute edges, and StyleX rules", async () => {
