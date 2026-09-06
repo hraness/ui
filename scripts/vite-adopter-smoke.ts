@@ -623,9 +623,87 @@ function resolveGenuineNodeExecutable(): string {
 
 type RunOptions = Readonly<{
   echo?: boolean;
+  readyReceipt?: Readonly<{
+    path: string;
+    startupTimeoutMs?: number;
+    token: string;
+  }>;
   terminationGraceMs?: number;
   timeoutMs?: number;
 }>;
+
+type ReadyReceiptOutcome =
+  | Readonly<{ kind: "exit" }>
+  | Readonly<{ error: Error; kind: "failure" }>
+  | Readonly<{ kind: "ready" }>;
+
+async function waitForReadyReceipt(
+  receipt: NonNullable<RunOptions["readyReceipt"]>,
+  pid: number,
+  exited: Promise<number>,
+): Promise<ReadyReceiptOutcome> {
+  const startupTimeoutMs = receipt.startupTimeoutMs ?? 10_000;
+  const deadline = Date.now() + startupTimeoutMs;
+  const inspect = async (): Promise<ReadyReceiptOutcome | undefined> => {
+    try {
+      const candidate = JSON.parse(await readFile(receipt.path, "utf8")) as {
+        pid?: unknown;
+        token?: unknown;
+      };
+      if (candidate.pid === pid && candidate.token === receipt.token) {
+        return { kind: "ready" };
+      }
+      return {
+        error: new Error(`Ready receipt identity did not match spawned process ${String(pid)}`),
+        kind: "failure",
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      return {
+        error: new Error(`Failed to read ready receipt ${receipt.path}`, { cause: error }),
+        kind: "failure",
+      };
+    }
+  };
+  while (true) {
+    const observed = await inspect();
+    if (observed !== undefined) return observed;
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      return {
+        error: new Error(`Command did not become ready after ${String(startupTimeoutMs)}ms`),
+        kind: "failure",
+      };
+    }
+    const outcome = await Promise.race([
+      exited.then(() => ({ kind: "exit" as const })),
+      new Promise<{ kind: "poll" }>((resolvePoll) => {
+        setTimeout(() => resolvePoll({ kind: "poll" }), Math.min(25, remainingMs));
+      }),
+    ]);
+    if (outcome.kind === "exit") return (await inspect()) ?? outcome;
+  }
+}
+
+async function terminateAndReap(
+  child: Readonly<{
+    exited: Promise<number>;
+    kill(signal?: number | NodeJS.Signals): void;
+  }>,
+  terminationGraceMs: number,
+): Promise<void> {
+  child.kill("SIGTERM");
+  let grace: ReturnType<typeof setTimeout> | undefined;
+  const terminated = await Promise.race([
+    child.exited.then(() => true),
+    new Promise<false>((resolveGrace) => {
+      grace = setTimeout(() => resolveGrace(false), terminationGraceMs);
+    }),
+  ]);
+  if (grace !== undefined) clearTimeout(grace);
+  if (!terminated) child.kill("SIGKILL");
+  await child.exited;
+}
 
 async function run(
   command: readonly string[],
@@ -637,6 +715,11 @@ async function run(
   const terminationGraceMs = options.terminationGraceMs ?? 2_000;
   assert.ok(Number.isSafeInteger(timeoutMs) && timeoutMs > 0);
   assert.ok(Number.isSafeInteger(terminationGraceMs) && terminationGraceMs > 0);
+  if (options.readyReceipt !== undefined) {
+    const startupTimeoutMs = options.readyReceipt.startupTimeoutMs ?? 10_000;
+    assert.ok(Number.isSafeInteger(startupTimeoutMs) && startupTimeoutMs > 0);
+    assert.ok(options.readyReceipt.token.length > 0, "Ready receipt token must not be empty");
+  }
   const child = Bun.spawn([...command], {
     cwd,
     env: environment,
@@ -646,6 +729,18 @@ async function run(
   });
   const stdout = new Response(child.stdout).text();
   const stderr = new Response(child.stderr).text();
+  const readyOutcome = options.readyReceipt === undefined
+    ? { kind: "ready" as const }
+    : await waitForReadyReceipt(options.readyReceipt, child.pid, child.exited);
+  if (readyOutcome.kind !== "ready") {
+    if (readyOutcome.kind === "exit") await child.exited;
+    else await terminateAndReap(child, terminationGraceMs);
+    const [stdoutText, stderrText] = await Promise.all([stdout, stderr]);
+    if (options.echo !== false && stdoutText.length > 0) process.stdout.write(stdoutText);
+    if (options.echo !== false && stderrText.length > 0) process.stderr.write(stderrText);
+    if (readyOutcome.kind === "failure") throw readyOutcome.error;
+    throw new Error(`Command exited before publishing its ready receipt: ${command.join(" ")}`);
+  }
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const outcome = await Promise.race([
     child.exited.then((exitCode) => ({ exitCode, kind: "exit" as const })),
@@ -655,18 +750,7 @@ async function run(
   ]);
   if (timeout !== undefined) clearTimeout(timeout);
   const timedOut = outcome.kind === "timeout";
-  if (timedOut) {
-    child.kill("SIGTERM");
-    let grace: ReturnType<typeof setTimeout> | undefined;
-    const terminated = await Promise.race([
-      child.exited.then(() => true),
-      new Promise<false>((resolveGrace) => {
-        grace = setTimeout(() => resolveGrace(false), terminationGraceMs);
-      }),
-    ]);
-    if (grace !== undefined) clearTimeout(grace);
-    if (!terminated) child.kill("SIGKILL");
-  }
+  if (timedOut) await terminateAndReap(child, terminationGraceMs);
   const exitCode = await child.exited;
   const [stdoutText, stderrText] = await Promise.all([stdout, stderr]);
   if (options.echo !== false && stdoutText.length > 0) process.stdout.write(stdoutText);
@@ -698,10 +782,19 @@ async function verifyBoundedRunner(
   environment: NodeJS.ProcessEnv,
 ): Promise<void> {
   const artifact = resolve(directory, "retained-handle-child.json");
+  const token = `${String(process.pid)}-${String(Date.now())}`;
+  const temporaryArtifact = `${artifact}.${token}.tmp`;
   const source = `
-    import { writeFileSync } from "node:fs";
-    writeFileSync(${JSON.stringify(artifact)}, JSON.stringify({ pid: process.pid }));
+    import { renameSync, writeFileSync } from "node:fs";
     process.on("SIGTERM", () => {});
+    setTimeout(() => {
+      writeFileSync(
+        ${JSON.stringify(temporaryArtifact)},
+        JSON.stringify({ pid: process.pid, token: ${JSON.stringify(token)} }),
+        { flag: "wx" },
+      );
+      renameSync(${JSON.stringify(temporaryArtifact)}, ${JSON.stringify(artifact)});
+    }, 250);
     setInterval(() => {}, 1_000);
   `;
   await assert.rejects(
@@ -709,12 +802,21 @@ async function verifyBoundedRunner(
       [nodeExecutable, "--input-type=module", "--eval", source],
       directory,
       environment,
-      { echo: false, terminationGraceMs: 100, timeoutMs: 100 },
+      {
+        echo: false,
+        readyReceipt: { path: artifact, startupTimeoutMs: 10_000, token },
+        terminationGraceMs: 100,
+        timeoutMs: 100,
+      },
     ),
     /Command timed out after 100ms/u,
   );
-  const receipt = JSON.parse(await readFile(artifact, "utf8")) as { pid?: unknown };
+  const receipt = JSON.parse(await readFile(artifact, "utf8")) as {
+    pid?: unknown;
+    token?: unknown;
+  };
   assert.equal(typeof receipt.pid, "number");
+  assert.equal(receipt.token, token);
   assert.equal(processExists(receipt.pid as number), false, "timed-out retained-handle child must not survive");
   await rm(artifact);
 }
