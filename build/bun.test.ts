@@ -835,6 +835,260 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
+  test("settles an observed bare package subpath export wrapper that Bun tree-shakes from the graph", async () => {
+    const context = await fixture();
+    const importerRoot = join(context.root, "node_modules/@fixture/barrel");
+    const runtimeRoot = join(context.root, "node_modules/@fixture/runtime");
+    const exportWrapper = join(runtimeRoot, "dist/exports/private/openLink.mjs");
+    const authoritativeRuntime = join(runtimeRoot, "dist/private/openLink.mjs");
+    await write(
+      join(importerRoot, "package.json"),
+      `${JSON.stringify({
+        exports: "./index.mjs",
+        name: "@fixture/barrel",
+        sideEffects: false,
+        type: "module",
+        version: "1.0.0",
+      })}\n`,
+    );
+    await write(
+      join(importerRoot, "index.mjs"),
+      "import { useFeature } from '@fixture/runtime/useFeature'; export const marker = useFeature;\n",
+    );
+    await write(
+      join(runtimeRoot, "package.json"),
+      `${JSON.stringify({
+        exports: {
+          "./*": {
+            source: "./exports/*.ts",
+            types: "./dist/types/exports/*.d.ts",
+            import: "./dist/exports/*.mjs",
+            require: "./dist/exports/*.cjs",
+          },
+        },
+        name: "@fixture/runtime",
+        sideEffects: false,
+        type: "module",
+        version: "1.0.0",
+      })}\n`,
+    );
+    await write(
+      join(runtimeRoot, "dist/exports/useFeature.mjs"),
+      "export { openLink as useFeature } from '../private/openLink.mjs';\n",
+    );
+    await write(
+      exportWrapper,
+      "export { openLink } from '../../../private/openLink.mjs';\n",
+    );
+    await write(authoritativeRuntime, "export const openLink = 'open-link';\n");
+    const entry = join(context.root, "src/entry.js");
+    await write(
+      entry,
+      "import { marker } from '@fixture/barrel'; globalThis.__bareExportMarker = marker;\n",
+    );
+    const handle = await generation(context, "observed-elided-bare-package-export", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const handlers: Array<(args: { path: string }) => unknown> = [];
+      const plugin = options.plugins?.[0];
+      assert.ok(plugin !== undefined);
+      plugin.setup({
+        onEnd() {},
+        onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
+          handlers.push(callback);
+        },
+      } as never);
+      const javascriptOnLoad = handlers[0];
+      assert.ok(javascriptOnLoad !== undefined);
+      await javascriptOnLoad({ path: exportWrapper });
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const importerKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/node_modules/@fixture/barrel/index.mjs")
+        || path === "node_modules/@fixture/barrel/index.mjs"
+      );
+      assert.ok(importerKey !== undefined);
+      expect(Object.keys(result.metafile.inputs).some((path) =>
+        path.endsWith("/node_modules/@fixture/runtime/dist/exports/private/openLink.mjs")
+        || path === "node_modules/@fixture/runtime/dist/exports/private/openLink.mjs"
+      )).toBe(false);
+      expect(Object.keys(result.metafile.inputs).some((path) =>
+        path.endsWith("/node_modules/@fixture/runtime/dist/private/openLink.mjs")
+        || path === "node_modules/@fixture/runtime/dist/private/openLink.mjs"
+      )).toBe(true);
+      result.metafile.inputs[importerKey]!.imports.push({
+        kind: "import-statement",
+        original: "@fixture/runtime/private/openLink",
+        path: exportWrapper,
+      });
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({
+        generation: handle,
+        graphId: "client",
+        rootDirectory: context.root,
+      });
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(receipt.inputs.map(({ path }) => path)).toContain(
+        "node_modules/@fixture/runtime/dist/private/openLink.mjs",
+      );
+      expect(receipt.inputs.map(({ path }) => path)).not.toContain(
+        "node_modules/@fixture/runtime/dist/exports/private/openLink.mjs",
+      );
+      expect(receipt.edges.some(({ from, to }) =>
+        from.endsWith("/barrel/index.mjs")
+        && to.endsWith("/exports/private/openLink.mjs")
+      )).toBe(false);
+      expect(receipt.edges.some(({ to }) => to.endsWith("/dist/private/openLink.mjs"))).toBe(true);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("rejects near-miss observed bare package subpath export wrappers", async () => {
+    const variants: readonly Readonly<{
+      attributes?: boolean;
+      builtin?: boolean;
+      changed?: boolean;
+      dynamic?: boolean;
+      exportsMismatch?: boolean;
+      external?: boolean;
+      hiddenInstallation?: boolean;
+      id: string;
+      observe?: boolean;
+      overlappingExports?: boolean;
+      sideEffects?: boolean;
+      symlink?: boolean;
+      wrongPackage?: boolean;
+    }>[] = [
+      { id: "wrong-package-identity", wrongPackage: true },
+      { exportsMismatch: true, id: "exports-target-mismatch" },
+      { id: "overlapping-wildcard-exports", overlappingExports: true },
+      { hiddenInstallation: true, id: "resolver-visible-installation-mismatch" },
+      { id: "target-side-effects", sideEffects: true },
+      { id: "missing-onload-snapshot", observe: false },
+      { builtin: true, id: "builtin-spelling" },
+      { external: true, id: "external-edge" },
+      { attributes: true, id: "import-attributes" },
+      { dynamic: true, id: "dynamic-import" },
+      { changed: true, id: "changed-after-load" },
+      { id: "symlink-after-load", symlink: true },
+    ];
+
+    for (const variant of variants) {
+      const context = await fixture();
+      const importerRoot = join(context.root, "node_modules/@fixture/barrel");
+      const targetPackageName = variant.builtin ? "fs" : "@fixture/runtime";
+      const targetRoot = join(context.root, "node_modules", targetPackageName);
+      const targetSubpath = variant.builtin ? "promises" : "private/openLink";
+      const exportWrapper = join(targetRoot, "dist/exports", `${targetSubpath}.mjs`);
+      await write(
+        join(importerRoot, "package.json"),
+        `${JSON.stringify({
+          exports: "./index.mjs",
+          name: "@fixture/barrel",
+          sideEffects: false,
+          type: "module",
+          version: "1.0.0",
+        })}\n`,
+      );
+      await write(join(importerRoot, "index.mjs"), "export const marker = 'marker';\n");
+      const exportMap: Record<string, unknown> = {
+        "./*": {
+          import: variant.exportsMismatch ? "./dist/other/*.mjs" : "./dist/exports/*.mjs",
+          require: "./dist/exports/*.cjs",
+        },
+      };
+      if (variant.overlappingExports) {
+        exportMap["./private/*"] = { import: "./dist/exports/private/*.mjs" };
+      }
+      await write(
+        join(targetRoot, "package.json"),
+        `${JSON.stringify({
+          exports: exportMap,
+          name: targetPackageName,
+          sideEffects: variant.sideEffects ?? false,
+          type: "module",
+          version: "1.0.0",
+        })}\n`,
+      );
+      await write(exportWrapper, "export const openLink = 'open-link';\n");
+      if (variant.hiddenInstallation) {
+        await mkdir(join(importerRoot, "node_modules", targetPackageName), { recursive: true });
+      }
+      const entry = join(context.root, "src/entry.js");
+      await write(
+        entry,
+        "import { marker } from '@fixture/barrel'; globalThis.__bareExportMarker = marker;\n",
+      );
+      const handle = await generation(context, `observed-bare-export-near-miss-${variant.id}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const handlers: Array<(args: { path: string }) => unknown> = [];
+        const plugin = options.plugins?.[0];
+        assert.ok(plugin !== undefined);
+        plugin.setup({
+          onEnd() {},
+          onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
+            handlers.push(callback);
+          },
+        } as never);
+        if (variant.observe !== false) {
+          const javascriptOnLoad = handlers[0];
+          assert.ok(javascriptOnLoad !== undefined);
+          await javascriptOnLoad({ path: exportWrapper });
+        }
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const importerKey = Object.keys(result.metafile.inputs).find((path) =>
+          path.endsWith("/node_modules/@fixture/barrel/index.mjs")
+          || path === "node_modules/@fixture/barrel/index.mjs"
+        );
+        assert.ok(importerKey !== undefined);
+        if (variant.changed) {
+          await writeFile(exportWrapper, "export const openLink = 'changed';\n");
+        } else if (variant.symlink) {
+          await rm(exportWrapper);
+          const actual = join(targetRoot, "actual.mjs");
+          await write(actual, "export const openLink = 'actual';\n");
+          await symlink(actual, exportWrapper);
+        }
+        const original = variant.wrongPackage
+          ? "@fixture/other/private/openLink"
+          : variant.builtin
+            ? "fs/promises"
+            : "@fixture/runtime/private/openLink";
+        result.metafile.inputs[importerKey]!.imports = [{
+          ...(variant.attributes ? { with: { type: "javascript" } } : {}),
+          ...(variant.external ? { external: true } : {}),
+          kind: variant.dynamic ? "dynamic-import" : "import-statement",
+          original,
+          path: exportWrapper,
+        }] as never;
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(
+          variant.changed
+            ? /Bun observed elided package input differs from its completed load/u
+            : /Bun metafile import.*is unresolved/u,
+        );
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
   test("keeps an adversarial unreferenced dependency observation outside the published graph", async () => {
     const context = await fixture();
     const dependencyRoot = join(context.root, "node_modules/@fixture/speculative");
