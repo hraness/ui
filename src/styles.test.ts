@@ -802,20 +802,25 @@ test("knob densities keep a 48px gesture target and distinct dial sizes", async 
   );
 });
 
-test("native Feedback Progress keeps its separate legacy CSS boundary", async () => {
-  const components = await stylesheet("./components.css");
+test("native Feedback Progress owns its finite recipe and leaves only vendor pseudo seams", async () => {
+  const [components, feedback] = await Promise.all([
+    stylesheet("./components.css"),
+    stylesheet("./feedback.stylex.ts"),
+  ]);
 
   for (const selector of [
-    ".hraness-progress {",
-    ".hraness-progress__label-row {",
-    ".hraness-progress__control {",
     ".hraness-progress__control::-webkit-progress-bar {",
     ".hraness-progress__control::-webkit-progress-value {",
     ".hraness-progress__control::-moz-progress-bar {",
   ]) expect(components).toContain(selector);
-  expect(components.match(/\.hraness-progress__control \{/gu)).toHaveLength(2);
-  expect(components).toContain("color: Highlight;");
-  expect(components).toContain("forced-color-adjust: none;");
+  expect(components).not.toMatch(
+    /\.hraness-progress(?:\s*\{|__label-row\s*\{|__control\s*\{)/u,
+  );
+  expect(feedback).toContain("progressRoot: {");
+  expect(feedback).toContain("progressLabelRow: {");
+  expect(feedback).toContain("progressControl: {");
+  expect(feedback).toContain('[forcedColors]: "Highlight"');
+  expect(feedback).toContain('[forcedColors]: "none"');
 });
 
 test("status pills keep one compiled border geometry across their visual variants", async () => {

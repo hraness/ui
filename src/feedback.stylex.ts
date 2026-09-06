@@ -6,6 +6,43 @@ const skeletonGradient =
   "linear-gradient(90deg, var(--ui-muted) 0%, color-mix(in oklch, var(--ui-muted) 72%, var(--ui-foreground)) 50%, var(--ui-muted) 100%)";
 
 export const feedbackStyles = stylex.create({
+  progressControl: {
+    appearance: "none",
+    backgroundAttachment: "scroll",
+    backgroundClip: "border-box",
+    backgroundColor: "var(--ui-muted)",
+    backgroundImage: "none",
+    backgroundOrigin: "padding-box",
+    backgroundPosition: "0% 0%",
+    backgroundRepeat: "repeat",
+    backgroundSize: "auto auto",
+    borderRadius: "var(--radius-round)",
+    borderStyle: "none",
+    borderWidth: 0,
+    color: {
+      default: "var(--ui-primary)",
+      [forcedColors]: "Highlight",
+    },
+    forcedColorAdjust: {
+      default: null,
+      [forcedColors]: "none",
+    },
+    height: "0.5rem",
+    overflow: "hidden",
+    width: "100%",
+  },
+  progressLabelRow: {
+    alignItems: "baseline",
+    display: "flex",
+    fontSize: "var(--text-label)",
+    gap: "var(--space-3)",
+    justifyContent: "space-between",
+  },
+  progressRoot: {
+    display: "grid",
+    gap: "var(--space-2)",
+    minWidth: 0,
+  },
   skeletonRoot: {
     animationComposition: { default: "replace", [reducedMotion]: "replace" },
     animationDelay: { default: "0s", [reducedMotion]: "0s" },

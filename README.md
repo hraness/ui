@@ -264,6 +264,12 @@ real coarse pointers and the synthetic verification seam. Indeterminate
 ProgressBar motion stops under reduced motion, and all three families use
 system colors in forced-colors mode.
 
+The native `Progress` primitive remains server-compatible and normalizes
+foreign values into a finite native range. Its root accepts typed `xstyle`
+after the package recipe and keeps native `style` declarations final. The
+label association, optional percentage, native `progress` element, and
+browser-specific value and track pseudo-elements remain intact.
+
 ```tsx
 <Knob
   defaultValue={0}
@@ -500,8 +506,9 @@ the current non-link page, and truncate that final label without losing its
 separator. Pagination keeps numbered links, disabled boundary spans, ellipses,
 and `rel="prev"` or `rel="next"` intact while centering on compact viewports.
 Both roots accept typed `xstyle` after their package recipe and keep native
-`style` final. Real and verification coarse-pointer modes enlarge links and
-previous or next boundaries to 48 pixels without enlarging ellipses.
+`style` final. Real and verification coarse-pointer modes apply the
+navigation-specific 48-pixel minimum only to links and previous or next
+boundaries; ellipses retain the shared compact-target token behavior.
 
 `PageIntro`, `EmptyState`, `InlineAlert`, and `SettingsCard` remain
 server-compatible native content boundaries. They preserve their optional
