@@ -38,6 +38,7 @@ import {
   normalizeLogicalPath,
   parseStylexRules,
   readStylexPackageManifest,
+  serializeStylexPackageRules,
   serializeStylexRules,
   sha256,
   stylexRulesSha256,
@@ -92,21 +93,27 @@ async function packageAt(
   name = "@fixture/ui",
   version = "1.0.0",
   ruleKey = "x-package",
+  standalonePrefix = `components.${name.replace(/^@/u, "").replaceAll("/", "-")}`,
 ): Promise<string> {
   const packageRoot = join(root, directory);
+  const standaloneSerializer = {
+    before: [`${standalonePrefix}.legacy`],
+    prefix: standalonePrefix,
+  } as const;
   await write(
     join(packageRoot, "package.json"),
     `${JSON.stringify({ name, version })}\n`,
   );
   await write(join(packageRoot, "build/index.js"), "export const tool = true;\n");
   await write(join(packageRoot, "dist/index.js"), "export const runtime = true;\n");
-  await write(join(packageRoot, "dist/stylex.css"), `.${ruleKey}{color:${color}}\n`);
   await write(join(packageRoot, "src/compiler-foundation.css"), ".foundation{display:block}\n");
   const rules: readonly StylexRuleV1[] = [[ruleKey, { ltr: `.${ruleKey}{color:${color}}` }, 1000]];
+  await write(join(packageRoot, "dist/stylex.css"), serializeStylexPackageRules(rules, standaloneSerializer));
   const manifest: StylexPackageManifestV1 = {
     buildTools: [await artifactForFile(packageRoot, "build/index.js")],
     compiler: compilerContract,
     compilerSha256,
+    compilerFoundation: "src/compiler-foundation.css",
     kind: "hraness-stylex-package-manifest",
     package: { name, version },
     rules,
@@ -114,6 +121,7 @@ async function packageAt(
     runtime: [await artifactForFile(packageRoot, "dist/index.js")],
     schemaVersion: 1,
     standaloneCss: await artifactForFile(packageRoot, "dist/stylex.css"),
+    standaloneSerializer,
     stylesheets: [await artifactForFile(packageRoot, "src/compiler-foundation.css")],
   };
   const manifestPath = join(packageRoot, "dist/stylex-manifest.json");
@@ -180,6 +188,19 @@ async function receiptValue(
   const inputs = await Promise.all(
     graph.entrypoints.map((entrypoint) => artifactForFile(context.root, entrypoint)),
   );
+  if (loaded.plan.templates.some(({ stylesheetGraphId }) => stylesheetGraphId === graphId)) {
+    const packageInputDirectory = join(generation.directory, ".stylex-generation/package-inputs");
+    for (const locator of await readdir(packageInputDirectory)) {
+      const manifestPath = (await readFile(join(packageInputDirectory, locator), "utf8")).trimEnd();
+      const manifest = await readStylexPackageManifest(join(context.root, manifestPath));
+      const packageRoot = resolve(join(context.root, manifestPath), "../..");
+      inputs.push(await artifactForFile(
+        context.root,
+        logical(context.root, join(packageRoot, manifest.compilerFoundation)),
+      ));
+    }
+    inputs.sort((left, right) => left.path.localeCompare(right.path));
+  }
   const outputs = [await artifactForFile(prepared.outputDirectory, outputPath)];
   const rules = canonicalizeStylexRules([rule]);
   return {
@@ -424,8 +445,10 @@ describe("compiler boundary", () => {
   test("rejects exact, reformatted, minified, namespaced, and registered recipe leakage", () => {
     const manifest = validateStylexPackageManifest({
       buildTools: [], compiler: compilerContract, compilerSha256, kind: "hraness-stylex-package-manifest",
+      compilerFoundation: "src/compiler-foundation.css",
       package: { name: "@fixture/ui", version: "1.0.0" }, rules: [packageRule], rulesSha256: stylexRulesSha256([packageRule]),
       runtime: [], schemaVersion: 1, standaloneCss: { bytes: 0, path: "dist/stylex.css", sha256: sha256("") },
+      standaloneSerializer: { before: ["components.fixture-ui.legacy"], prefix: "components.fixture-ui" },
       stylesheets: [{ bytes: 0, path: "src/compiler-foundation.css", sha256: sha256("") }],
     });
     expect(() => auditCssWithoutStandaloneRecipes(".foundation{display:block}", [manifest])).not.toThrow();
@@ -438,6 +461,9 @@ describe("compiler boundary", () => {
       "@layer components.hraness-ui.\\70 riority1;",
       "@layer components.hraness-ui { @layer priority1 { .other { color: red; } } }",
       "@layer components { @layer hraness-ui { @layer priority1 { .other { color: red; } } } }",
+      "@layer components.fixture-ui.priority1{.other{color:red}}",
+      "@layer components.fixture-ui { @layer priority1 { .other { color: red; } } }",
+      "@layer components.fixture-ui.\\70 riority1{.other{color:red}}",
       '@import "@hraness/ui/stylex.css";',
     ]) expect(() => auditCssWithoutStandaloneRecipes(css, [manifest])).toThrow(/recipe|selector|layer|import/u);
     const registration = ["registered", { ltr: "@keyframes x-spin{to{opacity:0}}" }, 0] as const satisfies StylexRuleV1;
@@ -448,8 +474,10 @@ describe("compiler boundary", () => {
   test("rejects obsolete Tailwind directives directly", () => {
     const manifest = validateStylexPackageManifest({
       buildTools: [], compiler: compilerContract, compilerSha256, kind: "hraness-stylex-package-manifest",
+      compilerFoundation: "src/compiler-foundation.css",
       package: { name: "@fixture/ui", version: "1.0.0" }, rules: [packageRule], rulesSha256: stylexRulesSha256([packageRule]),
       runtime: [], schemaVersion: 1, standaloneCss: { bytes: 0, path: "dist/stylex.css", sha256: sha256("") },
+      standaloneSerializer: { before: ["components.fixture-ui.legacy"], prefix: "components.fixture-ui" },
       stylesheets: [{ bytes: 0, path: "src/compiler-foundation.css", sha256: sha256("") }],
     });
     for (const [name, css] of [
@@ -570,6 +598,9 @@ describe("generation lifecycle", () => {
     for (const marker of ["x-package", "x-second-package", "x-client", "x-server"]) {
       expect(forward.css).toContain(marker);
     }
+    expect(forward.css).toContain("components.hraness-ui.priority1");
+    expect(forward.css).not.toContain("components.fixture-ui.priority");
+    expect(forward.css).not.toContain("components.fixture-second-ui.priority");
   });
 
   test("unions package, client, and SSR metadata once and publishes collision-safe graph trees deterministically", async () => {
@@ -649,6 +680,154 @@ describe("generation lifecycle", () => {
       packageManifests: [logical(context.root, context.manifestPath), logical(context.root, secondVersion)],
       rootDirectory: context.root,
     })).rejects.toThrow(/more than one identity/iu);
+  });
+
+  test("rejects overlapping standalone package namespaces", async () => {
+    const context = await fixture();
+    const same = await packageAt(
+      context.root,
+      "same-prefix-package",
+      "blue",
+      "@fixture/other-ui",
+      "1.0.0",
+      "x-other-package",
+      "components.fixture-ui",
+    );
+    const descendant = await packageAt(
+      context.root,
+      "descendant-prefix-package",
+      "green",
+      "@fixture/nested-ui",
+      "1.0.0",
+      "x-nested-package",
+      "components.fixture-ui.nested",
+    );
+    for (const [generationId, manifestPath] of [
+      ["same-prefix", same],
+      ["descendant-prefix", descendant],
+    ] as const) {
+      await expect(createStylexGeneration({
+        expectedGraphs: [expectedGraph("client")],
+        generationId,
+        outputDirectory: context.outputDirectory,
+        packageManifests: [logical(context.root, context.manifestPath), logical(context.root, manifestPath)],
+        rootDirectory: context.root,
+      })).rejects.toThrow(/overlapping standalone StyleX namespaces/u);
+    }
+  });
+
+  test("requires every registered package foundation in a template stylesheet graph and rechecks receipts", async () => {
+    const context = await fixture();
+    const secondManifest = await packageAt(
+      context.root,
+      "second-package",
+      "purple",
+      "@fixture/second-ui",
+      "2.0.0",
+      "x-second-package",
+    );
+    await write(join(context.root, "src/client.ts"), "export const client = true;\n");
+    const createTwoPackageGeneration = (generationId: string) => createStylexGeneration({
+      expectedGraphs: [expectedGraph("client")],
+      generationId,
+      outputDirectory: context.outputDirectory,
+      packageManifests: [logical(context.root, context.manifestPath), logical(context.root, secondManifest)],
+      rootDirectory: context.root,
+      templates: [{
+        cssHref: "stylex.css",
+        outputPath: "index.html",
+        sourcePath: logical(context.root, context.templatePath),
+        stylesheetGraphId: "client",
+      }],
+    });
+
+    const canonicalPrimaryFoundation = "package/src/compiler-foundation.css";
+    const primaryFoundationSource = await readFile(
+      join(context.root, canonicalPrimaryFoundation),
+      "utf8",
+    );
+    const aliasedFoundation = "node_modules/@fixture/ui/src/compiler-foundation.css";
+    await write(join(context.root, aliasedFoundation), primaryFoundationSource);
+    const aliased = await createTwoPackageGeneration("aliased-primary-foundation");
+    const aliasedReceipt = await receiptValue(
+      context,
+      aliased,
+      "client",
+      clientRule,
+      "foundation.css",
+      ".foundation { display: block; }\n",
+    );
+    const aliasedArtifact = await artifactForFile(context.root, aliasedFoundation);
+    await expect(writeStylexGraphReceipt({
+      generation: aliased,
+      receipt: {
+        ...aliasedReceipt,
+        inputs: aliasedReceipt.inputs.map((input) =>
+          input.path === canonicalPrimaryFoundation ? aliasedArtifact : input
+        ),
+      },
+      rootDirectory: context.root,
+    })).resolves.toMatchObject({ graphId: "client" });
+    await expect(finalize(context, aliased)).resolves.toBe(
+      join(context.outputDirectory, "aliased-primary-foundation"),
+    );
+
+    const mismatchedFoundation =
+      "nested/node_modules/@fixture/ui/src/compiler-foundation.css";
+    await write(join(context.root, mismatchedFoundation), ".foundation{display:grid}\n");
+    const mismatched = await createTwoPackageGeneration("mismatched-aliased-foundation");
+    const mismatchedReceipt = await receiptValue(
+      context,
+      mismatched,
+      "client",
+      clientRule,
+      "foundation.css",
+      ".foundation { display: block; }\n",
+    );
+    const mismatchedArtifact = await artifactForFile(context.root, mismatchedFoundation);
+    await expect(writeStylexGraphReceipt({
+      generation: mismatched,
+      receipt: {
+        ...mismatchedReceipt,
+        inputs: mismatchedReceipt.inputs.map((input) =>
+          input.path === canonicalPrimaryFoundation ? mismatchedArtifact : input
+        ),
+      },
+      rootDirectory: context.root,
+    })).rejects.toThrow(/compiler foundation differs from @fixture\/ui/u);
+
+    const missing = await createTwoPackageGeneration("missing-second-foundation");
+    const missingReceipt = await receiptValue(
+      context,
+      missing,
+      "client",
+      clientRule,
+      "foundation.css",
+      ".foundation { display: block; }\n",
+    );
+    const withoutSecond = missingReceipt.inputs.filter(({ path }) => !path.includes("second-package/src/compiler-foundation.css"));
+    expect(withoutSecond).toHaveLength(missingReceipt.inputs.length - 1);
+    await expect(writeStylexGraphReceipt({
+      generation: missing,
+      receipt: { ...missingReceipt, inputs: withoutSecond },
+      rootDirectory: context.root,
+    })).rejects.toThrow(/compiler foundation for @fixture\/second-ui/u);
+
+    const tampered = await createTwoPackageGeneration("tampered-second-foundation");
+    const sealed = await seal(
+      context,
+      tampered,
+      "client",
+      clientRule,
+      "foundation.css",
+      ".foundation { display: block; }\n",
+    );
+    const receiptPath = join(tampered.directory, ".stylex-generation/receipts/client.json");
+    await writeFile(receiptPath, `${canonicalJson({
+      ...sealed,
+      inputs: sealed.inputs.filter(({ path }) => !path.includes("second-package/src/compiler-foundation.css")),
+    })}\n`);
+    await expect(finalize(context, tampered)).rejects.toThrow(/compiler foundation for @fixture\/second-ui/u);
   });
 
   test("rejects missing and unexpected receipts, then fences late graph work", async () => {
@@ -870,6 +1049,54 @@ describe("generation lifecycle", () => {
     expect(html.match(/graphs\/client\/foundation-a\.css/gu)).toHaveLength(1);
     expect(html.match(/graphs\/client\/foundation-b\.css/gu)).toHaveLength(1);
     expect(html.match(/href="stylex\.css"/gu)).toHaveLength(1);
+  });
+
+  test("requires every graph stylesheet to precede the finalized CSS link", async () => {
+    const context = await fixture();
+    const run = async (generationId: string, source: string, secondStylesheet: boolean) => {
+      await writeFile(context.templatePath, source);
+      const generation = await create(context, generationId, [["client", "client"]], true);
+      const receipt = await receiptValue(
+        context,
+        generation,
+        "client",
+        clientRule,
+        "foundation-a.css",
+        ".foundation-a { display: block; }\n",
+      );
+      if (secondStylesheet) {
+        const graphRoot = join(generation.directory, ...receipt.outputRoot.split("/"));
+        await write(join(graphRoot, "foundation-b.css"), ".foundation-b { display: contents; }\n");
+        await writeStylexGraphReceipt({
+          generation,
+          receipt: {
+            ...receipt,
+            outputs: [
+              ...receipt.outputs,
+              await artifactForFile(graphRoot, "foundation-b.css"),
+            ].sort((left, right) => left.path.localeCompare(right.path)),
+          },
+          rootDirectory: context.root,
+        });
+      } else {
+        await writeStylexGraphReceipt({ generation, receipt, rootDirectory: context.root });
+      }
+      return generation;
+    };
+
+    const finalFirst = await run(
+      "template-final-first",
+      `<html><head><link rel="stylesheet" href="${STYLEX_TEMPLATE_CSS_PLACEHOLDER}"><link rel="stylesheet" href="/graphs/client/foundation-a.css"></head></html>\n`,
+      false,
+    );
+    await expect(finalize(context, finalFirst)).rejects.toThrow(/must precede the finalized CSS/u);
+
+    const finalBetween = await run(
+      "template-final-between",
+      `<html><head><link rel="stylesheet" href="/graphs/client/foundation-a.css"><link rel="stylesheet" href="${STYLEX_TEMPLATE_CSS_PLACEHOLDER}"><link rel="stylesheet" href="/graphs/client/foundation-b.css"></head></html>\n`,
+      true,
+    );
+    await expect(finalize(context, finalBetween)).rejects.toThrow(/must precede the finalized CSS/u);
   });
 
   test("requires the declared stylesheet graph for prepared templates", async () => {

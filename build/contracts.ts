@@ -66,10 +66,16 @@ export type StylexCompilerContractV1 = Readonly<{
   }>;
 }>;
 
+export type StylexStandaloneSerializerV1 = Readonly<{
+  before: readonly string[];
+  prefix: string;
+}>;
+
 export type StylexPackageManifestV1 = Readonly<{
   buildTools: readonly StylexArtifactV1[];
   compiler: StylexCompilerContractV1;
   compilerSha256: string;
+  compilerFoundation: string;
   kind: "hraness-stylex-package-manifest";
   package: Readonly<{
     name: string;
@@ -80,6 +86,7 @@ export type StylexPackageManifestV1 = Readonly<{
   runtime: readonly StylexArtifactV1[];
   schemaVersion: typeof STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION;
   standaloneCss: StylexArtifactV1;
+  standaloneSerializer: StylexStandaloneSerializerV1;
   stylesheets: readonly StylexArtifactV1[];
 }>;
 

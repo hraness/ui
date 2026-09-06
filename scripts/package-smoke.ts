@@ -6850,6 +6850,164 @@ function typeScriptConfig(moduleResolution: "Bundler" | "NodeNext") {
   };
 }
 
+const packedPackageAuthorProbe = String.raw`import assert from "node:assert/strict";
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION,
+  artifactForFile,
+  canonicalJson,
+  compilerContract,
+  compilerSha256,
+  createStylexGeneration,
+  createStylexTransformCollector,
+  readStylexPackageManifest,
+  serializeStylexPackageRules,
+  stylexRulesSha256,
+  validateStylexPackageManifest,
+  type StylexPackageManifestV1,
+  type StylexStandaloneSerializerV1,
+} from "@hraness/ui/stylex-build";
+
+const rootDirectory = process.cwd();
+const packageRoot = join(rootDirectory, "package-author-fixture");
+const sourceRoot = join(packageRoot, "src");
+const distRoot = join(packageRoot, "dist");
+const collector = createStylexTransformCollector(packageRoot);
+const plugin: Bun.BunPlugin = {
+  name: "packed-package-author-stylex",
+  setup(build) {
+    build.onLoad({ filter: /\.ts$/u }, async ({ path }) => {
+      const source = await readFile(path, "utf8");
+      const transformed = await collector.transform(source, path);
+      return { contents: transformed.code, loader: "ts" };
+    });
+  },
+};
+const result = await Bun.build({
+  conditions: ["production", "browser", "module"],
+  define: { "process.env.NODE_ENV": JSON.stringify("production") },
+  entrypoints: [join(sourceRoot, "index.ts")],
+  env: "disable",
+  format: "esm",
+  minify: true,
+  naming: "[name].[ext]",
+  outdir: distRoot,
+  packages: "external",
+  plugins: [plugin],
+  root: sourceRoot,
+  splitting: false,
+  target: "browser",
+  throw: false,
+});
+if (!result.success) {
+  throw new Error("Packed package-author build failed:\n" + result.logs.map(String).join("\n"));
+}
+assert.equal(result.outputs.length, 1, "Packed package-author build must emit one externalized JavaScript entry");
+const rules = collector.seal();
+assert.ok(rules.length > 0, "Packed package-author collector emitted no StyleX rules");
+const standaloneSerializer = {
+  before: ["components.fixture-kit.legacy"],
+  prefix: "components.fixture-kit",
+} as const satisfies StylexStandaloneSerializerV1;
+const standaloneCss = serializeStylexPackageRules(rules, standaloneSerializer);
+assert.match(standaloneCss, /@layer components\.fixture-kit\.priority/u);
+assert.doesNotMatch(standaloneCss, /components\.hraness-ui\.priority/u);
+await writeFile(join(distRoot, "stylex.css"), standaloneCss, { flag: "wx" });
+
+const manifest: StylexPackageManifestV1 = validateStylexPackageManifest({
+  buildTools: [],
+  compiler: compilerContract,
+  compilerFoundation: "src/compiler-foundation.css",
+  compilerSha256,
+  kind: "hraness-stylex-package-manifest",
+  package: { name: "@fixture/stylex-author", version: "1.0.0" },
+  rules,
+  rulesSha256: stylexRulesSha256(rules),
+  runtime: [await artifactForFile(packageRoot, "dist/index.js")],
+  schemaVersion: STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION,
+  standaloneCss: await artifactForFile(packageRoot, "dist/stylex.css"),
+  standaloneSerializer,
+  stylesheets: [await artifactForFile(packageRoot, "src/compiler-foundation.css")],
+});
+const manifestPath = join(distRoot, "stylex-manifest.json");
+await writeFile(manifestPath, canonicalJson(manifest) + "\n", { flag: "wx" });
+const verifiedManifest = await readStylexPackageManifest(manifestPath, packageRoot);
+assert.deepEqual(verifiedManifest, manifest);
+
+const runtime = await readFile(join(distRoot, "index.js"), "utf8");
+assert.doesNotMatch(
+  runtime,
+  /@stylexjs\/stylex/u,
+  "Packed package-author JavaScript must remove the compile-time StyleX import when the recipe fully lowers",
+);
+assert.doesNotMatch(runtime, /stylex\.create/u, "Packed package-author JavaScript retained an uncompiled recipe");
+
+const uiManifestPath = fileURLToPath(import.meta.resolve("@hraness/ui/stylex-manifest.json"));
+const uiManifest = await readStylexPackageManifest(uiManifestPath, resolve(dirname(uiManifestPath), ".."));
+assert.notEqual(
+  uiManifest.standaloneSerializer.prefix,
+  verifiedManifest.standaloneSerializer.prefix,
+  "Packed package authors must own a distinct standalone StyleX namespace",
+);
+await writeFile(join(rootDirectory, "package-author-entry.ts"), "export const fixture = true;\n", { flag: "wx" });
+const logical = (path: string): string => {
+  const value = relative(rootDirectory, path).split(sep).join("/");
+  assert.ok(value.length > 0 && value !== ".." && !value.startsWith("../") && !value.startsWith("/"));
+  return value;
+};
+const generation = await createStylexGeneration({
+  expectedGraphs: [{
+    adapter: "bun",
+    entrypoints: ["package-author-entry.ts"],
+    id: "client",
+    kind: "client",
+  }],
+  generationId: "packed-package-author",
+  outputDirectory: join(rootDirectory, ".stylex-author-generations"),
+  packageManifests: [logical(uiManifestPath), logical(manifestPath)],
+  rootDirectory,
+});
+assert.match(generation.planSha256, /^[a-f0-9]{64}$/u);
+assert.equal(dirname(generation.directory), join(rootDirectory, ".stylex-author-generations"));
+console.log("Packed package-author StyleX manifest and mixed-package generation passed");
+`;
+
+async function verifyPackedPackageAuthor(consumer: string): Promise<void> {
+  const packageRoot = join(consumer, "package-author-fixture");
+  await mkdir(join(packageRoot, "src"), { recursive: true });
+  await Promise.all([
+    writeFile(
+      join(packageRoot, "package.json"),
+      `${JSON.stringify({ name: "@fixture/stylex-author", type: "module", version: "1.0.0" }, null, 2)}\n`,
+      { flag: "wx" },
+    ),
+    writeFile(
+      join(packageRoot, "src", "compiler-foundation.css"),
+      [
+        "@layer base, components;",
+        "@layer components.fixture-kit.legacy;",
+        "@layer components.fixture-kit.legacy { .fixture-kit-root { color: CanvasText; } }",
+        "",
+      ].join("\n"),
+      { flag: "wx" },
+    ),
+    writeFile(
+      join(packageRoot, "src", "index.ts"),
+      [
+        'import * as stylex from "@stylexjs/stylex";',
+        "const styles = stylex.create({ root: { color: \"rebeccapurple\", paddingInline: \"1rem\" } });",
+        "export const className = stylex.props(styles.root).className;",
+        "",
+      ].join("\n"),
+      { flag: "wx" },
+    ),
+    writeFile(join(consumer, "package-author-probe.mts"), packedPackageAuthorProbe, { flag: "wx" }),
+  ]);
+  await run([process.execPath, "./package-author-probe.mts"], consumer);
+}
+
 async function verifyConsumer(
   archive: string,
   consumer: string,
@@ -6874,6 +7032,11 @@ async function verifyConsumer(
     `react-dom@${release.version}`,
     "typescript@^6.0.3",
     "vite@^7.0.0",
+    ...(release.label === "react-19" ? [
+      "@babel/core@7.29.7",
+      "@stylexjs/babel-plugin@0.19.0",
+      "lightningcss@1.33.0",
+    ] : []),
     "--ignore-scripts",
   ], consumer);
   await access(
@@ -7066,6 +7229,7 @@ async function verifyConsumer(
     installedComponentsCss,
     installedStylesCss,
   );
+  if (release.label === "react-19") await verifyPackedPackageAuthor(consumer);
 
   // A restored package-manager cache can retain this valid duplicate topology.
   // Public source types must remain portable when React Aria resolves through it.

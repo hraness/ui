@@ -18,6 +18,7 @@ import {
   compilerContract,
   compilerSha256,
   createStylexTransformCollector,
+  serializeStylexPackageRules,
   sha256,
   stylexRulesSha256,
 } from "./compiler.js";
@@ -121,14 +122,19 @@ async function fixture(): Promise<Fixture> {
   })}\n`);
   await write(join(packageRoot, "dist/runtime.js"), packageRuntimeSource);
   await write(join(packageRoot, "build/index.js"), packageBuildSource);
-  await write(join(packageRoot, "dist/stylex.css"), ".x-package{color:red}\n");
   await write(join(packageRoot, "src/compiler-foundation.css"), packageStylesheetSource);
   await write(join(packageRoot, "src/unmanifested.css"), ".unmanifested{display:block}\n");
   const rules: readonly StylexRuleV1[] = [["x-package", { ltr: ".x-package{color:red}" }, 1000]];
+  const standaloneSerializer = {
+    before: ["components.fixture-ui.legacy"],
+    prefix: "components.fixture-ui",
+  } as const;
+  await write(join(packageRoot, "dist/stylex.css"), serializeStylexPackageRules(rules, standaloneSerializer));
   const manifest: StylexPackageManifestV1 = {
     buildTools: [await artifactForFile(packageRoot, "build/index.js")],
     compiler: compilerContract,
     compilerSha256,
+    compilerFoundation: "src/compiler-foundation.css",
     kind: "hraness-stylex-package-manifest",
     package: { name: "@fixture/ui", version: "1.0.0" },
     rules,
@@ -136,6 +142,7 @@ async function fixture(): Promise<Fixture> {
     runtime: [await artifactForFile(packageRoot, "dist/runtime.js")],
     schemaVersion: 1,
     standaloneCss: await artifactForFile(packageRoot, "dist/stylex.css"),
+    standaloneSerializer,
     stylesheets: [await artifactForFile(packageRoot, "src/compiler-foundation.css")],
   };
   const manifestPath = join(packageRoot, "dist/stylex-manifest.json");
