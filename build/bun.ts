@@ -874,6 +874,115 @@ function capturedPackageRootExportTarget(
   return candidate;
 }
 
+function capturedPackageSubpathExportTarget(
+  packageName: string,
+  installationRoot: string,
+  specifier: string,
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  buildConditions: readonly string[],
+  buildTarget: "browser" | "bun",
+): string | undefined {
+  if (
+    strictBarePackageRoot(packageName) !== packageName
+    || barePackageName(specifier) !== packageName
+    || !specifier.startsWith(`${packageName}/`)
+  ) return undefined;
+  const subpathSegments = specifier.slice(packageName.length + 1).split("/");
+  if (
+    subpathSegments.length === 0
+    || subpathSegments.some((segment) =>
+      segment.length === 0
+      || segment === "."
+      || segment === ".."
+      || segment.includes("\\")
+      || segment.includes("*")
+      || segment.includes("?")
+      || segment.includes("#")
+      || segment.includes("%")
+      || /[\u0000-\u001f\u007f]/u.test(segment)
+    )
+  ) return undefined;
+
+  const manifest = packageScopeSnapshots.get(posix.join(installationRoot, "package.json"));
+  if (manifest === undefined) return undefined;
+  const parsed = strictJsonObjectFromSnapshot(manifest);
+  const exportsRecord = parsed.record === undefined ? undefined : jsonRecord(parsed.record.exports);
+  if (
+    !parsed.valid
+    || parsed.record === undefined
+    || parsed.record.name !== packageName
+    || !Object.hasOwn(parsed.record, "exports")
+    || exportsRecord === undefined
+  ) return undefined;
+  const exportKeys = Object.keys(exportsRecord);
+  if (
+    exportKeys.length === 0
+    || exportKeys.some((key) =>
+      key !== "."
+      && (
+        !key.startsWith("./")
+        || key.includes("\\")
+        || key.includes("?")
+        || key.includes("#")
+        || key.includes("%")
+        || /[\u0000-\u001f\u007f]/u.test(key)
+        || (key.match(/\*/gu)?.length ?? 0) > 1
+      )
+    )
+  ) return undefined;
+
+  const subpath = `./${subpathSegments.join("/")}`;
+  let branch: unknown;
+  let replacement: string | undefined;
+  if (Object.hasOwn(exportsRecord, subpath)) {
+    branch = exportsRecord[subpath];
+  } else {
+    const matches = exportKeys.flatMap((key) => {
+      const star = key.indexOf("*");
+      if (star === -1) return [];
+      const prefix = key.slice(0, star);
+      const suffix = key.slice(star + 1);
+      if (!subpath.startsWith(prefix) || !subpath.endsWith(suffix)) return [];
+      const value = subpath.slice(prefix.length, subpath.length - suffix.length);
+      return value.length === 0 ? [] : [{ branch: exportsRecord[key], replacement: value }];
+    });
+    if (matches.length !== 1) return undefined;
+    branch = matches[0]!.branch;
+    replacement = matches[0]!.replacement;
+  }
+
+  const activeConditions = new Set([
+    ...buildConditions,
+    "import",
+    ...(buildTarget === "browser" ? ["browser"] : ["bun", "node-addons", "node"]),
+  ]);
+  const resolution = conditionalPackageExportTarget(branch, activeConditions);
+  let target = resolution.kind === "match" ? resolution.target : undefined;
+  if (target === undefined) return undefined;
+  const targetStars = target.match(/\*/gu)?.length ?? 0;
+  if (replacement === undefined ? targetStars !== 0 : targetStars !== 1) return undefined;
+  if (replacement !== undefined) target = target.replace("*", replacement);
+  if (
+    !target.startsWith("./")
+    || target.includes("\\")
+    || target.includes("*")
+    || target.includes("?")
+    || target.includes("#")
+    || target.includes("%")
+    || /[\u0000-\u001f\u007f]/u.test(target)
+  ) return undefined;
+  const targetSegments = target.slice(2).split("/");
+  if (targetSegments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
+    return undefined;
+  }
+  const candidate = posix.join(installationRoot, ...targetSegments);
+  return candidate.startsWith(`${installationRoot}/`)
+      && packageInstallationRoot(candidate) === installationRoot
+      && packageBelowNodeModules(candidate) === packageName
+    ? candidate
+    : undefined;
+}
+
 async function resolvedInputTarget(
   imported: ParsedImport,
   from: string,
@@ -1340,6 +1449,9 @@ async function captureObservedElidedPackageInput(
   capturedTargets: Map<string, ObservedElidedPackageInputSnapshot>,
   capturedScopeSnapshots: Map<string, ResolutionFileSnapshot>,
   capturedInstallationRoots: Set<string>,
+  resolverCache: Map<string, Promise<string | undefined>>,
+  buildConditions: readonly string[],
+  buildTarget: "browser" | "bun",
 ): Promise<boolean> {
   if (
     importerMetadata.format !== "esm"
@@ -1357,8 +1469,7 @@ async function captureObservedElidedPackageInput(
 
   const original = imported.original;
   if (
-    (!original.startsWith("./") && !original.startsWith("../"))
-    || isAbsolute(original)
+    isAbsolute(original)
     || original.includes("\\")
     || original.includes("?")
     || original.includes("#")
@@ -1378,15 +1489,18 @@ async function captureObservedElidedPackageInput(
   } catch {
     return false;
   }
+  const importerInstallationRoot = packageInstallationRoot(from);
+  const importerPackageName = packageBelowNodeModules(from);
+  const candidateInstallationRoot = packageInstallationRoot(candidate);
+  const candidatePackageName = packageBelowNodeModules(candidate);
+  const relativeOriginal = original.startsWith("./") || original.startsWith("../");
+  const bareOriginalPackage = relativeOriginal ? undefined : barePackageName(original);
   const canonicalOriginal = posix.relative(posix.dirname(from), candidate);
   const explicitCanonicalOriginal = canonicalOriginal.startsWith("../")
     ? canonicalOriginal
     : `./${canonicalOriginal}`;
   if (
     resolve(rootDirectory, ...candidate.split("/")) !== imported.path
-    || canonicalOriginal.length === 0
-    || original !== explicitCanonicalOriginal
-    || posix.normalize(posix.join(posix.dirname(from), original)) !== candidate
     || !/\.(?:c|m)?js$/u.test(candidate)
     || knownInputs.has(candidate)
     || speculativeInputs.has(candidate)
@@ -1396,50 +1510,83 @@ async function captureObservedElidedPackageInput(
     || observedAliases.has(imported.path)
     || observedAliases.has(original)
     || observedAliases.has(candidate)
+    || importerInstallationRoot === undefined
+    || importerPackageName === undefined
+    || candidateInstallationRoot === undefined
+    || candidatePackageName === undefined
   ) return false;
+
+  if (relativeOriginal) {
+    if (
+      canonicalOriginal.length === 0
+      || original !== explicitCanonicalOriginal
+      || posix.normalize(posix.join(posix.dirname(from), original)) !== candidate
+      || candidateInstallationRoot !== importerInstallationRoot
+      || candidatePackageName !== importerPackageName
+    ) return false;
+  } else {
+    if (
+      bareOriginalPackage === undefined
+      || bareOriginalPackage === importerPackageName
+      || bareOriginalPackage !== candidatePackageName
+      || original === "bun"
+      || isBuiltin(original)
+      || await resolverVisibleInstallation(
+        rootDirectory,
+        from,
+        candidatePackageName,
+        resolverCache,
+      ) !== candidateInstallationRoot
+      || capturedPackageSubpathExportTarget(
+        candidatePackageName,
+        candidateInstallationRoot,
+        original,
+        packageScopeSnapshots,
+        buildConditions,
+        buildTarget,
+      ) !== candidate
+    ) return false;
+  }
 
   const observedSnapshot = observedSnapshots.get(candidate);
   const importerScope = packageScopes.get(from);
   const targetScope = packageScopes.get(candidate);
-  const installationRoot = packageInstallationRoot(from);
-  const packageName = packageBelowNodeModules(from);
   if (
     observedSnapshot === undefined
     || importerScope === undefined
     || targetScope === undefined
-    || installationRoot === undefined
-    || packageName === undefined
-    || packageInstallationRoot(candidate) !== installationRoot
-    || packageBelowNodeModules(candidate) !== packageName
   ) return false;
 
-  const manifestPath = posix.join(installationRoot, "package.json");
+  const importerManifestPath = posix.join(importerInstallationRoot, "package.json");
+  const targetManifestPath = posix.join(candidateInstallationRoot, "package.json");
   const importerManifest = importerScope.files.at(-1);
   const targetManifest = targetScope.files.at(-1);
-  const capturedManifest = packageScopeSnapshots.get(manifestPath);
+  const capturedImporterManifest = packageScopeSnapshots.get(importerManifestPath);
+  const capturedTargetManifest = packageScopeSnapshots.get(targetManifestPath);
   if (
     !importerScope.valid
-    || importerScope.name !== packageName
+    || importerScope.name !== importerPackageName
     || !targetScope.valid
-    || targetScope.name !== packageName
+    || targetScope.name !== candidatePackageName
     || importerManifest === undefined
-    || importerManifest.path !== manifestPath
+    || importerManifest.path !== importerManifestPath
     || importerManifest.kind !== "file"
     || targetManifest === undefined
-    || targetManifest.path !== manifestPath
+    || targetManifest.path !== targetManifestPath
     || targetManifest.kind !== "file"
-    || capturedManifest === undefined
+    || capturedImporterManifest === undefined
+    || capturedTargetManifest === undefined
   ) return false;
-  assert.deepEqual(importerManifest, capturedManifest, `Bun importer package scope differs for ${from}`);
-  assert.deepEqual(targetManifest, capturedManifest, `Bun observed elided target package scope differs for ${candidate}`);
-  const parsedManifest = strictJsonObjectFromSnapshot(capturedManifest);
+  assert.deepEqual(importerManifest, capturedImporterManifest, `Bun importer package scope differs for ${from}`);
+  assert.deepEqual(targetManifest, capturedTargetManifest, `Bun observed elided target package scope differs for ${candidate}`);
+  const parsedManifest = strictJsonObjectFromSnapshot(capturedTargetManifest);
   if (
     !parsedManifest.valid
     || parsedManifest.record === undefined
-    || parsedManifest.record.name !== packageName
+    || parsedManifest.record.name !== candidatePackageName
     || !Object.hasOwn(parsedManifest.record, "sideEffects")
     || !packageDeclaresJavaScriptSideEffectFree(parsedManifest.record)
-    || !await exactOrdinaryDirectory(rootDirectory, installationRoot)
+    || !await exactOrdinaryDirectory(rootDirectory, candidateInstallationRoot)
   ) return false;
 
   const targetSnapshot = await exactOrdinaryFileSnapshot(rootDirectory, candidate);
@@ -1454,7 +1601,7 @@ async function captureObservedElidedPackageInput(
   else assert.deepEqual(targetSnapshot, previousTarget, `Bun observed elided package input changed between edges: ${candidate}`);
   for (const snapshot of importerScope.files) retainResolutionFileSnapshot(capturedScopeSnapshots, snapshot);
   for (const snapshot of targetScope.files) retainResolutionFileSnapshot(capturedScopeSnapshots, snapshot);
-  capturedInstallationRoots.add(installationRoot);
+  capturedInstallationRoots.add(candidateInstallationRoot);
   return true;
 }
 
@@ -2114,6 +2261,9 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
           observedElidedPackageInputs,
           observedElidedPackageScopeSnapshots,
           observedElidedPackageInstallationRoots,
+          resolverCache,
+          buildConditions,
+          target,
         )
       ) continue;
       assert.ok(
