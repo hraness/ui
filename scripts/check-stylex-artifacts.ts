@@ -40,13 +40,15 @@ const LEGACY_LAYERS = [
 const LAYER_PRELUDE =
   "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;";
 const GENERATED_LAYER_PRELUDE =
-  "@layer components.hraness-ui.legacy.base, components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;";
+  "@layer components.hraness-ui.legacy.base, components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4, components.hraness-ui.priority5, components.hraness-ui.priority6, components.hraness-ui.priority7;";
 const STYLEX_IMPORT = '@import "../dist/stylex.css";';
 const STYLEX_LAYERS = [
-  "components.hraness-ui.priority1",
   "components.hraness-ui.priority2",
   "components.hraness-ui.priority3",
   "components.hraness-ui.priority4",
+  "components.hraness-ui.priority5",
+  "components.hraness-ui.priority6",
+  "components.hraness-ui.priority7",
 ] as const;
 const TOP_LEVEL_LAYER_PRELUDE = "@layer base, components;";
 
@@ -1772,23 +1774,35 @@ function requireOnlyLayerBlocks(
   source: string,
   allowedLayers: ReadonlySet<string>,
   description: string,
+  allowGeneratedKeyframes = false,
 ): string[] {
   const statements = topLevelStatements(source, description);
   if (statements.length === 0) {
     throw new Error(`${description} must contain a named layer block`);
   }
 
-  return statements.map((statement) => {
+  const layers: string[] = [];
+  for (const statement of statements) {
     const layer = statement.match(
       /^@layer\s+([A-Za-z0-9_.-]+)\s*\{/u,
     )?.[1];
-    if (layer === undefined || !allowedLayers.has(layer)) {
+    if (layer !== undefined && allowedLayers.has(layer)) {
+      layers.push(layer);
+      continue;
+    }
+    if (
+      allowGeneratedKeyframes
+      && /^@keyframes\s+x[A-Za-z0-9_-]+\s*\{/u.test(statement)
+    ) {
+      continue;
+    }
+    {
       throw new Error(
         `${description} contains top-level content outside its allowed named layers`,
       );
     }
-    return layer;
-  });
+  }
+  return layers;
 }
 
 function requirePublicLayerContract(
@@ -1799,7 +1813,7 @@ function requirePublicLayerContract(
   const generatedPrelude = `${TOP_LEVEL_LAYER_PRELUDE}\n${GENERATED_LAYER_PRELUDE}\n`;
   if (!compiledCss.startsWith(generatedPrelude)) {
     throw new Error(
-      "dist/stylex.css must begin with the exact canonical base < components and legacy.base < legacy < priority1 < priority2 < priority3 < priority4 layer preludes",
+      "dist/stylex.css must begin with the exact canonical base < components and legacy.base < legacy < priority1 < priority2 < priority3 < priority4 < priority5 < priority6 < priority7 layer preludes",
     );
   }
 
@@ -1829,6 +1843,7 @@ function requirePublicLayerContract(
     compiledCss.slice(generatedPrelude.length),
     new Set(STYLEX_LAYERS),
     "dist/stylex.css",
+    true,
   );
   if (
     generatedLayers.length !== STYLEX_LAYERS.length
@@ -1837,7 +1852,7 @@ function requirePublicLayerContract(
     )
   ) {
     throw new Error(
-      "dist/stylex.css must contain the exact priority1 < priority2 < priority3 < priority4 layer sequence",
+      "dist/stylex.css must contain the exact occupied priority2 < priority3 < priority4 < priority5 < priority6 < priority7 layer sequence",
     );
   }
   for (const expectedLayer of STYLEX_LAYERS) {
@@ -3099,7 +3114,8 @@ const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
   ],
   section: [/display:\s*grid;/u],
   separator: [
-    /height:\s*1px;/u, /margin-block-start:\s*var\(--space-1\);/u, /margin-block-end:\s*var\(--space-1\);/u,
+    /height:\s*1px;/u, /(?:margin-block-start|margin-top):\s*var\(--space-1\);/u,
+    /(?:margin-block-end|margin-bottom):\s*var\(--space-1\);/u,
     ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-border\);/u,
   ],
   shortcut: [
@@ -3247,7 +3263,7 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /overflow-y:\s*auto;/u,
     /background-attachment:\s*scroll;/u,
     /background-clip:\s*border-box;/u,
-    /background-color:\s*(?:color-mix\(in oklch,\s*(?:black|#000) 55%,\s*(?:transparent|#0000)\)|oklab\(0 0 0\s*\/\s*0?\.55\)|rgba?\(0[ ,]+0[ ,]+0(?:\s*\/\s*|,\s*)0?\.55\));/u,
+    /background-color:\s*(?:color-mix\(in oklch,\s*(?:black|#000) 55%,\s*(?:transparent|#0000)\)|oklab\(0 0 0\s*\/\s*0?\.55\)|rgba?\(0[ ,]+0[ ,]+0(?:\s*\/\s*|,\s*)0?\.55\)|#0000008c;\s*background-color:\s*lab\(0% 0 0\s*\/\s*0?\.55\));/u,
     /background-image:\s*none;/u,
     /background-origin:\s*padding-box;/u,
     /background-position:\s*0%?\s+0%?;/u,
@@ -3382,7 +3398,7 @@ function requireOverlayContract(legacy: string, css: string, js: string, source:
 }
 function verifyOverlayNegativeControls(legacy: string, css: string, js: string, source: string, recipe: string): void {
   const map = namedCompiledStyleMap(js, OVERLAY_STYLE_KEYS, "overlayStyles class map");
-  const rejects = (changed: string) => assert.throws(() => requireOverlayContract(legacy, changed, js, source, recipe), /Popover|Tooltip|overlayStyles/u);
+  const rejects = (changed: string) => assert.throws(() => requireOverlayContract(legacy, changed, js, source, recipe), /Popover|Tooltip|overlayStyles|StyleX entry/u);
   for (const key of OVERLAY_STYLE_KEYS) for (const declaration of OVERLAY_DECLARATIONS[key]) rejects(mutateCompiledRule(css, map, key, declaration, "remove"));
   for (const key of OVERLAY_STYLE_KEYS) for (const { condition, declaration } of OVERLAY_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(mutateCompiledRule(css, map, key, declaration, "remove", condition));
   const entry = map.properties.get("tooltip")!.value;
@@ -3392,7 +3408,7 @@ function verifyOverlayNegativeControls(legacy: string, css: string, js: string, 
   assert.notEqual(disconnected, js);
   assert.throws(() => requireOverlayContract(legacy, css, disconnected, source, recipe), /compiled overlayStyles.tooltip composition binding/u);
   assert.throws(() => requireOverlayContract(legacy + "\n.hraness-tooltip { color: red; }", css, js, source, recipe), /legacy Popover\/Tooltip/u);
-  assert.throws(() => requireOverlayContract(legacy, css, js, source.replace("state.isEntering && overlayStyles.popoverEntering", "false && overlayStyles.popoverEntering"), recipe), /Popover surface, state, and caller order/u);
+  assert.throws(() => requireOverlayContract(legacy, css, js, source.replace("state.isEntering && overlayStyles.popoverEntering", "false && overlayStyles.popoverEntering"), recipe), /Popover surface, shared motion, state, and caller order/u);
 }
 
 const TOAST_STYLE_KEYS = [
@@ -3442,10 +3458,10 @@ const TOAST_DECLARATIONS: Readonly<Record<ToastStyleKey, readonly RegExp[]>> = {
   toneSuccess: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-success\) 55%,\s*var\(--ui-border\)\);/u],
   toneWarning: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-warning\) 55%,\s*var\(--ui-border\)\);/u],
   content: [/display:\s*flex;/u, /min-width:\s*0;/u, /flex-wrap:\s*wrap;/u, /align-items:\s*center;/u, /gap:\s*var\(--space-3\);/u],
-  copy: [/display:\s*grid;/u, /min-width:\s*0;/u, /flex:\s*1 1 12rem;/u, /gap:\s*var\(--space-1\);/u],
+  copy: [/display:\s*grid;/u, /min-width:\s*0;/u, /flex:\s*(?:1 1 )?12rem;/u, /gap:\s*var\(--space-1\);/u],
   title: [/font-weight:\s*var\(--font-weight-bold\);/u, /line-height:\s*1\.3;/u],
   description: [/color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-label\);/u, /line-height:\s*1\.5;/u],
-  action: [/flex:\s*0 0 auto;/u],
+  action: [/flex:\s*(?:0 0 auto|none);/u],
   close: [
     /display:\s*inline-grid;/u, /width:\s*var\(--interactive-target-compact\);/u,
     /min-width:\s*var\(--interactive-target-compact\);/u,
@@ -3465,9 +3481,9 @@ const TOAST_DECLARATIONS: Readonly<Record<ToastStyleKey, readonly RegExp[]>> = {
 };
 const TOAST_CONDITIONAL_DECLARATIONS: Partial<Record<ToastStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
   region: [
-    { condition: "@media(max-width:40rem)", declaration: /inset-inline-end:\s*max\(var\(--space-3\),\s*env\(safe-area-inset-left\)\);/u },
-    { condition: "@media(max-width:40rem)", declaration: /inset-inline-start:\s*max\(var\(--space-3\),\s*env\(safe-area-inset-left\)\);/u },
-    { condition: "@media(max-width:40rem)", declaration: /width:\s*auto;/u },
+    { condition: "@media(width<=40rem)", declaration: /inset-inline-end:\s*max\(var\(--space-3\),\s*env\(safe-area-inset-left\)\);/u },
+    { condition: "@media(width<=40rem)", declaration: /inset-inline-start:\s*max\(var\(--space-3\),\s*env\(safe-area-inset-left\)\);/u },
+    { condition: "@media(width<=40rem)", declaration: /width:\s*auto;/u },
   ],
   root: [
     { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
@@ -3509,7 +3525,9 @@ function requireToastContract(legacy: string, css: string, js: string, source: s
       const conditions = rule.ancestors.map((ancestor) => normalizedHeader(ancestor.header)).filter((header) => /^@(?:container|media|supports)/u.test(header));
       assert.ok(conditions.length === 0
         ? (key === "closeNativeInteractionFallbacks"
-          ? TOAST_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) => dialogDeclarationMatches(rule.body, declaration) && rule.header.endsWith(":" + pseudo))
+          ? TOAST_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) =>
+            dialogDeclarationMatches(rule.body, declaration)
+            && cssSelectorList(rule.header).some((selector) => selector.endsWith(":" + pseudo)))
           : TOAST_DECLARATIONS[key].some((declaration) => dialogDeclarationMatches(rule.body, declaration)))
         : conditions.length === 1 && (TOAST_CONDITIONAL_DECLARATIONS[key] ?? []).some(({ condition, declaration }) => condition === conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
       "Toast " + key + " exact declaration and condition inventory");
@@ -3519,8 +3537,8 @@ function requireToastContract(legacy: string, css: string, js: string, source: s
   requireExactSourceMatches(source, /stylex\.props\(toastStyles\.region,\s*regionXstyle\)/gu, 1, "Toast region caller order");
   requireExactSourceMatches(source, /toastStyles\.root,\s*motionStyles\.toastEnter,\s*toastStyles\.entering,\s*toastToneStyles\[tone\],\s*toastXstyle,/gu, 1, "Toast shared motion, arrival, tone, and caller order");
   requireExactSourceMatches(source, /toastStyles\.close,\s*!hasClosePresentation && toastStyles\.closeNativeInteractionFallbacks,\s*state\.isHovered && toastStyles\.closeHovered,\s*state\.isFocusVisible && toastStyles\.closeFocusVisible,\s*closeXstyle,/gu, 1, "Toast close fallback, state, and caller order");
-  requireExactSourceMatches(source, /style=\{regionPresentation\.style\}/gu, 1, "Toast region dynamic StyleX binding");
-  requireExactSourceMatches(source, /style=\{toastPresentation\.style\}/gu, 1, "Toast root dynamic StyleX binding");
+  requireExactSourceMatches(source, /\{\.\.\.regionPresentation\}/gu, 1, "Toast region dynamic StyleX binding");
+  requireExactSourceMatches(source, /\{\.\.\.toastPresentation\}/gu, 1, "Toast root dynamic StyleX binding");
   requireExactSourceMatches(source, /style=\{\(state\) => closePresentation\(state\)\.style\}/gu, 1, "Toast close dynamic StyleX binding");
   forbid(source, /\.is(?:Entering|Exiting)\b/u, "an unsupported React Aria Toast transition render state");
   for (const tone of ["danger", "info", "success", "warning"] as const) requireMatch(source, new RegExp(tone + ": toastStyles\\.tone" + tone[0]!.toUpperCase() + tone.slice(1), "u"), "Toast " + tone + " finite recipe binding");
@@ -3528,22 +3546,22 @@ function requireToastContract(legacy: string, css: string, js: string, source: s
 }
 function verifyToastNegativeControls(legacy: string, css: string, js: string, source: string, recipe: string): void {
   const map = namedCompiledStyleMap(js, TOAST_STYLE_KEYS, "toastStyles class map");
-  const rejects = (changed: string) => assert.throws(() => requireToastContract(legacy, changed, js, source, recipe), /Toast|toastStyles/u);
+  const rejects = (changed: string) => assert.throws(() => requireToastContract(legacy, changed, js, source, recipe), /Toast|toastStyles|StyleX entry/u);
   for (const key of TOAST_STYLE_KEYS) for (const declaration of TOAST_DECLARATIONS[key]) rejects(mutateCompiledRule(css, map, key, declaration, "remove"));
   for (const key of TOAST_STYLE_KEYS) for (const { condition, declaration } of TOAST_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(mutateCompiledRule(css, map, key, declaration, "remove", condition));
   for (const { declaration } of TOAST_NATIVE_DECLARATIONS) rejects(mutateCompiledRule(css, map, "closeNativeInteractionFallbacks", declaration, "remove"));
   const entry = map.properties.get("title")!.value;
   const extra = entry.replace("{", "{unexpectedToastBinding: " + JSON.stringify([...generatedClassNames(entry, "Toast title")][0]) + ",");
   assert.throws(() => requireToastContract(legacy, css, js.replace(map.object, map.object.replace(entry, extra)), source, recipe), /Toast title exact property bindings/u);
-  const disconnected = js.replace(new RegExp(map.identifier + "\\.description(?![A-Za-z0-9_$])", "gu"), "disconnectedToast.description");
+  const disconnected = js.replace(new RegExp(map.identifier + "\\.description(?![A-Za-z0-9_$])", "gu"), 'disconnectedToast["description"]');
   assert.notEqual(disconnected, js);
   assert.throws(() => requireToastContract(legacy, css, disconnected, source, recipe), /compiled toastStyles.description composition binding/u);
   assert.throws(() => requireToastContract(legacy + "\n.hraness-toast { color: red; }", css, js, source, recipe), /legacy Toast/u);
   assert.throws(() => requireToastContract(legacy, css, js, source.replace("state.isHovered && toastStyles.closeHovered", "false && toastStyles.closeHovered"), recipe), /Toast close fallback, state, and caller order/u);
-  assert.throws(() => requireToastContract(legacy, css, js, source.replace("style={regionPresentation.style}", "style={undefined}"), recipe), /Toast region dynamic StyleX binding/u);
-  assert.throws(() => requireToastContract(legacy, css, js, source.replace("style={toastPresentation.style}", "style={undefined}"), recipe), /Toast root dynamic StyleX binding/u);
+  assert.throws(() => requireToastContract(legacy, css, js, source.replace("{...regionPresentation}", "{...{ className: regionPresentation.className }}"), recipe), /Toast region dynamic StyleX binding/u);
+  assert.throws(() => requireToastContract(legacy, css, js, source.replace("{...toastPresentation}", "{...{ className: toastPresentation.className }}"), recipe), /Toast root dynamic StyleX binding/u);
   assert.throws(() => requireToastContract(legacy, css, js, source.replace("style={(state) => closePresentation(state).style}", "style={undefined}"), recipe), /Toast close dynamic StyleX binding/u);
-  assert.throws(() => requireToastContract(legacy, css, js, source.replace("toastStyles.entering", "toastStyles.root"), recipe), /Toast arrival, tone, and caller order/u);
+  assert.throws(() => requireToastContract(legacy, css, js, source.replace("toastStyles.entering", "toastStyles.root"), recipe), /Toast shared motion, arrival, tone, and caller order/u);
 }
 
 function requireDialogContract(legacy: string, css: string, js: string, source: string, recipe: string): void {
@@ -3577,7 +3595,9 @@ function requireDialogContract(legacy: string, css: string, js: string, source: 
       const conditions = rule.ancestors.map((ancestor) => normalizedHeader(ancestor.header)).filter((header) => /^@(?:container|media|supports)/u.test(header));
       assert.ok(conditions.length === 0
         ? (key === "closeNativeInteraction"
-          ? DIALOG_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) => dialogDeclarationMatches(rule.body, declaration) && rule.header.endsWith(":" + pseudo))
+          ? DIALOG_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) =>
+            dialogDeclarationMatches(rule.body, declaration)
+            && cssSelectorList(rule.header).some((selector) => selector.endsWith(":" + pseudo)))
           : DIALOG_DECLARATIONS[key].some((declaration) => dialogDeclarationMatches(rule.body, declaration)))
         : conditions.length === 1 && conditional.some(({ condition, declaration }) => condition === conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
       "Dialog " + key + " exact declaration and condition inventory");
@@ -3593,7 +3613,7 @@ function requireDialogContract(legacy: string, css: string, js: string, source: 
 
 function verifyDialogNegativeControls(legacy: string, css: string, js: string, source: string, recipe: string): void {
   const map = namedCompiledStyleMap(js, DIALOG_STYLE_KEYS, "dialogStyles class map");
-  const rejects = (changedCss: string) => assert.throws(() => requireDialogContract(legacy, changedCss, js, source, recipe), /Dialog|dialogStyles/u);
+  const rejects = (changedCss: string) => assert.throws(() => requireDialogContract(legacy, changedCss, js, source, recipe), /Dialog|dialogStyles|StyleX entry/u);
   for (const key of DIALOG_STYLE_KEYS) {
     const declaration = key === "closeNativeInteraction" ? DIALOG_NATIVE_DECLARATIONS[0]!.declaration : DIALOG_DECLARATIONS[key][0]!;
     rejects(mutateCompiledRule(css, map, key, declaration, "remove"));
@@ -3617,7 +3637,7 @@ function verifyDialogNegativeControls(legacy: string, css: string, js: string, s
   assert.notEqual(disconnected, js);
   assert.throws(() => requireDialogContract(legacy, css, disconnected, source, recipe), /compiled dialogStyles.title composition binding/u);
   assert.throws(() => requireDialogContract(legacy + "\n.hraness-dialog { color: red; }", css, js, source, recipe), /legacy Dialog/u);
-  assert.throws(() => requireDialogContract(legacy, css, js, source.replace("state.isEntering && dialogStyles.overlayEntering", "false && dialogStyles.overlayEntering"), recipe), /Dialog overlay state and caller order/u);
+  assert.throws(() => requireDialogContract(legacy, css, js, source.replace("state.isEntering && dialogStyles.overlayEntering", "false && dialogStyles.overlayEntering"), recipe), /Dialog shared motion, overlay state, and caller order/u);
 }
 
 function requireMenuContract(legacy: string, css: string, js: string, source: string, recipe: string): void {
@@ -4124,7 +4144,7 @@ function requireActionFamilyContract(
   }
   requireMatch(
     legacyComponents,
-    /:root\[data-verification-pointer=["']coarse["']\]\s*\{\s*--hraness-action-coarse-min:\s*var\(--interactive-target-min\);\s*(?:--hraness-field-coarse-min:\s*var\(--interactive-target-min\);\s*)?(?:--hraness-slider-coarse-min:\s*var\(--interactive-target-min\);\s*)?(?:--hraness-list-box-coarse-min:\s*var\(--interactive-target-min\);\s*)?\}/u,
+    /:root\[data-verification-pointer=["']coarse["']\]\s*\{[^}]*--hraness-action-coarse-min:\s*var\(--interactive-target-min\);[^}]*\}/u,
     "the synthetic coarse-pointer action variable",
   );
   requireMatch(
@@ -6035,8 +6055,8 @@ function requireIndicatorAndKnobContract(
   );
   forbid(
     compiledCss,
-    /@layer\s+components\.hraness-ui\.priority5/u,
-    "a priority5 layer created by an out-of-envelope StyleX keyframe",
+    /@layer\s+components\.hraness-ui\.priority8/u,
+    "a priority8 layer outside the sealed generated StyleX inventory",
   );
   requireExactPseudoDeclarations(
     indicatorRules("sliderThumbNativeFocusFallback"),
@@ -6222,7 +6242,7 @@ function requireNavigationContract(
     ["breadcrumbCurrent", /min-width:\s*0;/u, "current breadcrumb shrink boundary"],
     ["breadcrumbCurrent", /overflow:\s*hidden;/u, "current breadcrumb clipping"],
     ["breadcrumbCurrent", /text-overflow:\s*ellipsis;/u, "current breadcrumb ellipsis"],
-    ["breadcrumbCurrentItem", /flex:\s*1 1 auto;/u, "current breadcrumb flexible item"],
+    ["breadcrumbCurrentItem", /flex:\s*(?:1 1 )?auto;/u, "current breadcrumb flexible item"],
     ["breadcrumbItem", /min-width:\s*0;/u, "breadcrumb item shrink boundary"],
     ["breadcrumbList", /min-width:\s*0;/u, "breadcrumb list shrink boundary"],
     ["breadcrumbList", /overflow:\s*hidden;/u, "breadcrumb list clipping"],
@@ -6257,7 +6277,8 @@ function requireNavigationContract(
   );
   const separatorRules = rules("breadcrumbSeparator");
   if (!separatorRules.some((rule) =>
-    rule.header.endsWith("::before") && /content:\s*["']\/["'];/u.test(rule.body)
+    cssSelectorList(rule.header).some((selector) => /:{1,2}before$/u.test(selector))
+    && /content:\s*["']\/["'];/u.test(rule.body)
   )) {
     throw new Error("StyleX artifact is missing the Breadcrumbs slash pseudo-element separator");
   }
@@ -6399,17 +6420,56 @@ function requireSharedMotionContract(
     "timing or playback policy inside the shared motion-name module",
   );
 
-  const keyframeBlocks = new Map<string, string>();
+  const topLevelKeyframeNames = topLevelStatements(
+    compiledCss,
+    "dist/stylex.css",
+  ).flatMap((statement) => {
+    const match = /^@keyframes\s+([^\s{]+)\s*\{/u.exec(statement);
+    return match === null ? [] : [match[1]!];
+  });
+  assert.equal(
+    topLevelKeyframeNames.length,
+    MOTION_STYLE_KEYS.length,
+    "dist/stylex.css must retain exactly nine top-level shared motion keyframe blocks",
+  );
+  assert.equal(
+    new Set(topLevelKeyframeNames).size,
+    topLevelKeyframeNames.length,
+    "dist/stylex.css must not duplicate a shared motion keyframe block",
+  );
+
+  const parsedKeyframeBlocks = new Set<CssBlock>();
   for (const rule of cssRules(compiledCss, "dist/stylex.css")) {
     for (const ancestor of rule.ancestors) {
-      const match = /^@keyframes\s+([^\s{]+)/u.exec(ancestor.header);
-      if (match !== null) keyframeBlocks.set(match[1]!, ancestor.source);
+      if (/^@keyframes\s+[^\s{]+/u.test(ancestor.header)) {
+        parsedKeyframeBlocks.add(ancestor);
+      }
     }
+  }
+  assert.equal(
+    parsedKeyframeBlocks.size,
+    topLevelKeyframeNames.length,
+    "dist/stylex.css must contain only its exact top-level shared motion keyframe blocks",
+  );
+  const keyframeBlocks = new Map<string, string>();
+  for (const block of parsedKeyframeBlocks) {
+    const match = /^@keyframes\s+([^\s{]+)/u.exec(block.header);
+    assert.ok(match !== null, "parsed shared motion keyframe must retain its name");
+    assert.ok(
+      !keyframeBlocks.has(match[1]!),
+      `dist/stylex.css must not duplicate shared motion keyframe ${match[1]!}`,
+    );
+    keyframeBlocks.set(match[1]!, block.source);
   }
   assert.equal(
     keyframeBlocks.size,
     MOTION_STYLE_KEYS.length,
     "dist/stylex.css must retain exactly the nine shared motion keyframes",
+  );
+  assert.deepEqual(
+    [...new Set(topLevelKeyframeNames)].toSorted(),
+    [...keyframeBlocks.keys()].toSorted(),
+    "dist/stylex.css must keep every shared motion keyframe at the top level",
   );
   const geometries = [
     ["fadeIn", /from\s*\{[^{}]*opacity:\s*0;/u],
@@ -6422,6 +6482,7 @@ function requireSharedMotionContract(
     ["toastEnter", /from\s*\{[^{}]*opacity:\s*0;[^{}]*transform:\s*translateX\(1rem\);/u],
     ["toastExit", /to\s*\{[^{}]*opacity:\s*0;[^{}]*transform:\s*translateX\(1rem\);/u],
   ] as const;
+  const referencedKeyframeNames = new Set<string>();
   for (const [key, geometry] of geometries) {
     const rules = compiledStyleRules(compiledCss, map, key);
     assert.equal(rules.length, 2, `compiled motionStyles.${key} must own only a base and reduced-motion name`);
@@ -6447,6 +6508,7 @@ function requireSharedMotionContract(
         .filter((name) => name !== "none");
     });
     assert.equal(names.length, 1, `compiled motionStyles.${key} must bind one shared keyframe`);
+    referencedKeyframeNames.add(names[0]!);
     const keyframes = keyframeBlocks.get(names[0]!);
     assert.ok(keyframes !== undefined, `compiled motionStyles.${key} references an unregistered keyframe`);
     requireMatch(keyframes, geometry, `the shared ${key} keyframe geometry`);
@@ -6457,6 +6519,11 @@ function requireSharedMotionContract(
       `the reduced-motion ${key} name reset`,
     );
   }
+  assert.deepEqual(
+    [...referencedKeyframeNames].toSorted(),
+    [...keyframeBlocks.keys()].toSorted(),
+    "dist/stylex.css must contain only the shared motion keyframes referenced by motionStyles",
+  );
   for (const [name] of geometries) {
     requireMatch(
       motionStyleSource,
@@ -6661,11 +6728,6 @@ if (compiledCss.trim().length === 0) {
 
 requireMatch(
   compiledCss,
-  /@layer components\.hraness-ui\.priority1\s*\{/u,
-  "the package-owned priority1 layer",
-);
-requireMatch(
-  compiledCss,
   /@layer components\.hraness-ui\.priority2\s*\{/u,
   "the package-owned priority2 layer",
 );
@@ -6678,6 +6740,26 @@ requireMatch(
   compiledCss,
   /@layer components\.hraness-ui\.priority4\s*\{/u,
   "the package-owned priority4 layer",
+);
+requireMatch(
+  compiledCss,
+  /@layer components\.hraness-ui\.priority5\s*\{/u,
+  "the package-owned priority5 layer",
+);
+requireMatch(
+  compiledCss,
+  /@layer components\.hraness-ui\.priority6\s*\{/u,
+  "the package-owned priority6 layer",
+);
+requireMatch(
+  compiledCss,
+  /@layer components\.hraness-ui\.priority7\s*\{/u,
+  "the package-owned priority7 layer",
+);
+forbid(
+  compiledCss,
+  /@layer components\.hraness-ui\.priority(?:1|8)\s*\{/u,
+  "an unoccupied priority1 or out-of-inventory priority8 block",
 );
 requireMatch(compiledCss, /flex:\s*none;/u, "the icon flex declaration");
 requireMatch(
@@ -7151,7 +7233,7 @@ assert.throws(
     ),
     selectFieldStyleSource,
   ),
-  /Select popover entering bindings/u,
+  /Select shared enter motion before component timing/u,
   "the Fields/Select guard must reject a missing Select entering-state binding",
 );
 assert.throws(
@@ -7840,8 +7922,8 @@ assert.throws(
       legacyComponents,
       orderedStylesheet,
       compiledCss.replace(
-        "@layer components.hraness-ui.priority4 {",
-        "@layer components.hraness-ui.priority5 {",
+        "@layer components.hraness-ui.priority7 {",
+        "@layer components.hraness-ui.priority8 {",
       ),
     ),
   /top-level content outside its allowed named layers/u,
@@ -7877,7 +7959,7 @@ assert.throws(
       orderedStylesheet,
       compiledCss.replace(
         GENERATED_LAYER_PRELUDE,
-        "@layer components.hraness-ui.legacy, components.hraness-ui.legacy.base, components.hraness-ui.priority4, components.hraness-ui.priority3, components.hraness-ui.priority2, components.hraness-ui.priority1;",
+        "@layer components.hraness-ui.legacy, components.hraness-ui.legacy.base, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4, components.hraness-ui.priority5, components.hraness-ui.priority6, components.hraness-ui.priority7;",
       ),
     ),
   /exact canonical base < components/u,
