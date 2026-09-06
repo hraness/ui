@@ -208,8 +208,9 @@ test("action variants and presentations retain semantic controls and selected pr
 });
 
 test("action StyleX source owns every migrated visual recipe and legacy CSS owns none", async () => {
-  const [components, source] = await Promise.all([
+  const [components, motion, source] = await Promise.all([
     Bun.file(new URL("./components.css", import.meta.url)).text(),
+    Bun.file(new URL("./motion.stylex.ts", import.meta.url)).text(),
     Bun.file(new URL("./actions.stylex.ts", import.meta.url)).text(),
   ]);
 
@@ -231,12 +232,14 @@ test("action StyleX source owns every migrated visual recipe and legacy CSS owns
   ]) {
     expect(source).toContain(`${recipe}: {`);
   }
-  expect(source).toContain('animationName: {');
-  expect(source).toContain('[reducedMotion]: "none"');
+  expect(motion).toContain('animationName: {');
+  expect(motion).toContain('[reducedMotion]: "none"');
   expect(source).toContain('fontFamily: "inherit"');
   expect(source).toContain('fontStretch: "inherit"');
   expect(source).toContain('fontStyle: "inherit"');
   expect(source).toContain('fontVariant: "inherit"');
   expect(source).not.toContain("fontSizeAdjust");
-  expect(components).toContain("@keyframes hraness-spin");
+  expect(components).not.toContain("@keyframes");
+  expect(motion).toContain("export const spinKeyframes = stylex.keyframes({");
+  expect(motion).toContain("default: spinKeyframes");
 });

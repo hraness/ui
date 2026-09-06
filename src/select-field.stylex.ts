@@ -112,20 +112,12 @@ export const selectFieldStyles = stylex.create({
       default: "var(--motion-duration-standard)",
       [reducedMotion]: "0s",
     },
-    animationName: {
-      default: "hraness-overlay-enter",
-      [reducedMotion]: "none",
-    },
     animationTimingFunction: "var(--motion-easing-emphasized)",
   },
   popoverExiting: {
     animationDuration: {
       default: "var(--motion-duration-fast)",
       [reducedMotion]: "0s",
-    },
-    animationName: {
-      default: "hraness-overlay-exit",
-      [reducedMotion]: "none",
     },
     animationTimingFunction: "var(--motion-easing-standard)",
   },

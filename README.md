@@ -270,6 +270,11 @@ after the package recipe and keeps native `style` declarations final. The
 label association, optional percentage, native `progress` element, and
 browser-specific value and track pseudo-elements remain intact.
 
+Package-owned motion is compiled with StyleX alongside the recipes that use
+it. Spinners, skeletons, overlays, dialogs, indeterminate progress, and toasts
+share deterministic keyframes while each component retains its own duration,
+easing, direction, iteration, and reduced-motion behavior.
+
 ```tsx
 <Knob
   defaultValue={0}

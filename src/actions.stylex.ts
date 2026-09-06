@@ -2,7 +2,6 @@ import * as stylex from "@stylexjs/stylex";
 
 const coarsePointer = "@media(pointer: coarse)";
 const forcedColors = "@media(forced-colors: active)";
-const reducedMotion = "@media(prefers-reduced-motion: reduce)";
 const syntheticCoarseMinimum = "var(--hraness-action-coarse-min, 0px)";
 
 export const actionStyles = stylex.create({
@@ -456,10 +455,6 @@ export const actionStyles = stylex.create({
   spinner: {
     animationDuration: "700ms",
     animationIterationCount: "infinite",
-    animationName: {
-      default: "hraness-spin",
-      [reducedMotion]: "none",
-    },
     animationTimingFunction: "linear",
     borderBlockEndColor:
       "color-mix(in oklch, currentColor 25%, transparent)",

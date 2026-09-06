@@ -33,6 +33,7 @@ import {
 import { cn } from "./lib/utils.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { menuStyles } from "./menu.stylex.js";
+import { motionStyles } from "./motion.stylex.js";
 import { dialogStyles } from "./dialog.stylex.js";
 import { overlayStyles } from "./overlays.stylex.js";
 
@@ -90,7 +91,9 @@ export function Menu({
   const footerPresentation = stylex.props(menuStyles.footer, footerXstyle);
   const popoverPresentation = (state: { isEntering: boolean; isExiting: boolean }) => stylex.props(
     menuStyles.popover,
+    state.isEntering && motionStyles.overlayEnter,
     state.isEntering && menuStyles.popoverEntering,
+    state.isExiting && motionStyles.overlayExit,
     state.isExiting && menuStyles.popoverExiting,
     popoverXstyle,
   );
@@ -301,7 +304,9 @@ export function DialogContent({
   const presentation = stylex.props(dialogStyles.root, size === "small" && dialogStyles.rootSmall, size === "large" && dialogStyles.rootLarge, xstyle);
   const overlayPresentation = (state: { isEntering: boolean; isExiting: boolean }) => stylex.props(
     dialogStyles.overlay,
+    state.isEntering && motionStyles.fadeIn,
     state.isEntering && dialogStyles.overlayEntering,
+    state.isExiting && motionStyles.fadeOut,
     state.isExiting && dialogStyles.overlayExiting,
     overlayXstyle,
   );
@@ -403,7 +408,9 @@ export function Popover({
   const presentation = (state: { isEntering: boolean; isExiting: boolean }) => stylex.props(
     overlayStyles.surface,
     overlayStyles.popover,
+    state.isEntering && motionStyles.overlayEnter,
     state.isEntering && overlayStyles.popoverEntering,
+    state.isExiting && motionStyles.overlayExit,
     state.isExiting && overlayStyles.popoverExiting,
     xstyle,
   );

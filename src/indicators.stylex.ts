@@ -30,10 +30,6 @@ export const indicatorStyles = stylex.create({
     animationDuration: { default: "1.25s", [reducedMotion]: "0s" },
     animationFillMode: { default: "none", [reducedMotion]: "none" },
     animationIterationCount: { default: "infinite", [reducedMotion]: 1 },
-    animationName: {
-      default: "hraness-progress-indeterminate",
-      [reducedMotion]: "none",
-    },
     animationPlayState: { default: "running", [reducedMotion]: "running" },
     animationRangeEnd: { default: "normal", [reducedMotion]: "normal" },
     animationRangeStart: { default: "normal", [reducedMotion]: "normal" },

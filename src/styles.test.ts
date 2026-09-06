@@ -126,8 +126,9 @@ test("compiler adopters start from a recipe-free foundation", async () => {
 });
 
 test("portable layers expose namespaced roles and resilient interaction recipes", async () => {
-  const [components, reset, tailwind, tokens] = await Promise.all([
+  const [components, motion, reset, tailwind, tokens] = await Promise.all([
     stylesheet("./components.css"),
+    stylesheet("./motion.stylex.ts"),
     stylesheet("./reset.css"),
     stylesheet("./tailwind.css"),
     stylesheet("./tokens.css"),
@@ -170,7 +171,19 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   expect(components).not.toMatch(/\.hraness-(?:popover(?:__content)?|tooltip)(?![A-Za-z0-9_-])/u);
   expect(components).not.toMatch(/\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u);
   expect(components).toContain("--hraness-toast-coarse-min: var(--interactive-target-min);");
-  for (const retained of ["@keyframes hraness-toast-enter", "@keyframes hraness-toast-exit", "@keyframes hraness-overlay-enter", "@keyframes hraness-overlay-exit", "@keyframes hraness-fade-in", "@keyframes hraness-fade-out"]) expect(components).toContain(retained);
+  expect(components).not.toContain("@keyframes");
+  expect(motion.match(/stylex\.keyframes\(/gu)).toHaveLength(9);
+  for (const retained of [
+    "fadeInKeyframes",
+    "fadeOutKeyframes",
+    "overlayEnterKeyframes",
+    "overlayExitKeyframes",
+    "progressIndeterminateKeyframes",
+    "skeletonKeyframes",
+    "spinKeyframes",
+    "toastEnterKeyframes",
+    "toastExitKeyframes",
+  ]) expect(motion).toContain(`export const ${retained} = stylex.keyframes({`);
   const cardBridgePattern =
     /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
   expect(components.match(cardBridgePattern)).toHaveLength(1);
@@ -206,14 +219,20 @@ test("forced-colors field placeholders use unfaded system text", async () => {
 });
 
 test("ListBox and Menu compile recipes while preserving independent coarse-pointer boundaries", async () => {
-  const components = await stylesheet("./components.css");
+  const [component, components, motion] = await Promise.all([
+    stylesheet("./overlays.tsx"),
+    stylesheet("./components.css"),
+    stylesheet("./motion.stylex.ts"),
+  ]);
   expect(components).not.toMatch(/\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
   expect(components).not.toMatch(/\.hraness-menu(?:__[A-Za-z0-9_-]+|-popover)?(?![A-Za-z0-9_-])/u);
   const verification = declarationBlock(components, ':root[data-verification-pointer="coarse"] {');
   expect(verification).toContain("--hraness-list-box-coarse-min: var(--interactive-target-min);");
   expect(verification).toContain("--hraness-menu-coarse-min: var(--interactive-target-min);");
-  expect(components).toContain("@keyframes hraness-overlay-enter");
-  expect(components).toContain("@keyframes hraness-overlay-exit");
+  expect(motion).toContain("default: overlayEnterKeyframes");
+  expect(motion).toContain("default: overlayExitKeyframes");
+  expect(component).toContain("state.isEntering && motionStyles.overlayEnter");
+  expect(component).toContain("state.isExiting && motionStyles.overlayExit");
 });
 
 test("content families compile presentation while legacy CSS retains no owned selectors", async () => {
@@ -713,10 +732,12 @@ test("collapsed disclosure panels do not retain their expanded inset", async () 
 });
 
 test("transport actions and slider thumbs use their compiled shared geometry", async () => {
-  const [actions, components, indicators] = await Promise.all([
+  const [actions, components, indicatorComponent, indicators, motion] = await Promise.all([
     stylesheet("./actions.stylex.ts"),
     stylesheet("./components.css"),
+    stylesheet("./indicators.tsx"),
     stylesheet("./indicators.stylex.ts"),
+    stylesheet("./motion.stylex.ts"),
   ]);
 
   expect(actions).toContain('transportIconControl: {');
@@ -744,12 +765,14 @@ test("transport actions and slider thumbs use their compiled shared geometry", a
     '[coarsePointer]: "var(--interactive-target-min)"',
   );
   expect(indicators).toContain('width: "1.25rem"');
-  expect(indicators).toContain('default: "hraness-progress-indeterminate"');
+  expect(motion).toContain("default: progressIndeterminateKeyframes");
+  expect(indicatorComponent).toContain(
+    "percentage === undefined && motionStyles.progressIndeterminate",
+  );
   expect(indicators).toContain('[reducedMotion]: "none"');
   expect(indicators).toContain('borderRadius: "inherit",\n    display: "block"');
-  expect(components).toContain("@keyframes hraness-progress-indeterminate");
-  expect(components).toContain("transform: translateX(-125%);");
-  expect(components).toContain("transform: translateX(250%);");
+  expect(motion).toContain('from: { transform: "translateX(-125%)" }');
+  expect(motion).toContain('to: { transform: "translateX(250%)" }');
   expect(indicators).toContain('[forcedColors]: "Highlight"');
   expect(indicators).toContain('[forcedColors]: "Canvas"');
   expect(indicators.match(/backgroundAttachment: "scroll"/gu)).toHaveLength(6);

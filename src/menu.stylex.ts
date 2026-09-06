@@ -2,7 +2,6 @@ import * as stylex from "@stylexjs/stylex";
 
 const coarsePointer = "@media(pointer: coarse)";
 const forcedColors = "@media(forced-colors: active)";
-const reducedMotion = "@media(prefers-reduced-motion: reduce)";
 
 export const menuStyles = stylex.create({
   copy: { display: "grid", minWidth: 0, gap: "0.125rem" },
@@ -63,12 +62,10 @@ export const menuStyles = stylex.create({
     boxShadow: "var(--elevation-overlay)", forcedColorAdjust: { default: null, [forcedColors]: "auto" },
   },
   popoverEntering: {
-    animationName: { default: "hraness-overlay-enter", [reducedMotion]: "none" },
     animationDuration: "var(--motion-duration-standard)", animationTimingFunction: "var(--motion-easing-emphasized)",
     animationDelay: "0s", animationIterationCount: 1, animationDirection: "normal", animationFillMode: "none", animationPlayState: "running",
   },
   popoverExiting: {
-    animationName: { default: "hraness-overlay-exit", [reducedMotion]: "none" },
     animationDuration: "var(--motion-duration-fast)", animationTimingFunction: "var(--motion-easing-standard)",
     animationDelay: "0s", animationIterationCount: 1, animationDirection: "normal", animationFillMode: "none", animationPlayState: "running",
   },
