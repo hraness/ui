@@ -494,6 +494,15 @@ slot, ref, attributes, and children remain stable while a typed caller `xstyle`
 recipe resolves after its compact presentation. Dynamic StyleX values merge
 before the native `style` prop, so native declarations remain final.
 
+`Breadcrumbs` and `Pagination` remain server-compatible native navigation
+landmarks. Breadcrumbs keep a nonempty ancestry, render only the final item as
+the current non-link page, and truncate that final label without losing its
+separator. Pagination keeps numbered links, disabled boundary spans, ellipses,
+and `rel="prev"` or `rel="next"` intact while centering on compact viewports.
+Both roots accept typed `xstyle` after their package recipe and keep native
+`style` final. Real and verification coarse-pointer modes enlarge links and
+previous or next boundaries to 48 pixels without enlarging ellipses.
+
 `PageIntro`, `EmptyState`, `InlineAlert`, and `SettingsCard` remain
 server-compatible native content boundaries. They preserve their optional
 regions, caller-selected heading levels, semantic classes, slots, refs, native

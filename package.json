@@ -114,6 +114,7 @@
     "src/menu.stylex.ts",
     "src/dialog.stylex.ts",
     "src/overlays.stylex.ts",
+    "src/navigation.stylex.ts",
     "src/navigation.tsx",
     "src/overlays.tsx",
     "src/quiet-site.stylex.ts",
