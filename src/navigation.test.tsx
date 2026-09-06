@@ -94,10 +94,14 @@ test("Breadcrumbs preserve native ancestry, current-page semantics, and exact re
   const separatorClasses = classTokens(stylex.props(navigationStyles.breadcrumbSeparator));
   const currentItemClasses = classTokens(stylex.props(navigationStyles.breadcrumbCurrentItem));
   const currentClasses = classTokens(stylex.props(navigationStyles.breadcrumbCurrent));
+  const rootClasses = classTokens(stylex.props(navigationStyles.breadcrumbRoot));
+  const listClasses = classTokens(stylex.props(navigationStyles.breadcrumbList));
 
   expect(nav).toContain('aria-label="Breadcrumbs"');
   expect(nav).toContain('data-product="library"');
+  expect(tagClasses(nav)).toEqual(["hraness-breadcrumbs", ...rootClasses]);
   expect(list).not.toBe("");
+  expect(tagClasses(list)).toEqual(listClasses);
   expect(itemTags).toHaveLength(3);
   for (const [index, tag] of itemTags.entries()) {
     const expected = classTokens(stylex.props(
@@ -143,6 +147,19 @@ test("Pagination preserves links, finite gaps, and disabled native boundaries", 
     navigationStyles.paginationLink,
     navigationStyles.paginationCurrent,
   ));
+  const rootTokens = classTokens(stylex.props(navigationStyles.paginationRoot));
+  const listTokens = classTokens(stylex.props(navigationStyles.paginationList));
+  const boundaryTokens = classTokens(stylex.props(
+    navigationStyles.paginationLink,
+    navigationStyles.paginationBoundary,
+  ));
+  const boundary = middle.match(/<a[^>]*data-slot="pagination-previous"[^>]*>/u)?.[0] ?? "";
+  const list = middle.match(/<ol[^>]*data-slot="pagination-list"[^>]*>/u)?.[0] ?? "";
+  const root = middle.match(/<nav[^>]*data-slot="pagination"[^>]*>/u)?.[0] ?? "";
+  const ellipses = middle.match(/<span[^>]*data-slot="pagination-ellipsis"[^>]*>/gu) ?? [];
+  const ellipsisTokens = classTokens(stylex.props(
+    navigationStyles.paginationEllipsis,
+  ));
   const disabledTags = edge.match(/<span[^>]*aria-disabled="true"[^>]*>/gu) ?? [];
   const disabledTokens = classTokens(stylex.props(
     navigationStyles.paginationBoundary,
@@ -152,7 +169,21 @@ test("Pagination preserves links, finite gaps, and disabled native boundaries", 
   expect(middle).toContain('aria-label="Project pages"');
   expect(middle).toContain('href="/projects?page=4" rel="prev"');
   expect(middle).toContain('href="/projects?page=6" rel="next"');
-  expect(middle.match(/data-slot="pagination-ellipsis"/gu)).toHaveLength(2);
+  expect(tagClasses(root)).toEqual(["hraness-pagination", ...rootTokens]);
+  expect(tagClasses(list)).toEqual(listTokens);
+  expect(tagClasses(boundary)).toEqual([
+    "hraness-pagination__boundary",
+    ...boundaryTokens,
+  ]);
+  expect(boundary).toContain('rel="prev"');
+  expect(ellipses).toHaveLength(2);
+  for (const ellipsis of ellipses) {
+    expect(ellipsis).toContain('aria-hidden="true"');
+    expect(tagClasses(ellipsis)).toEqual([
+      "hraness-pagination__ellipsis",
+      ...ellipsisTokens,
+    ]);
+  }
   expect(current).toContain('href="/projects?page=5"');
   for (const token of currentTokens) expect(tagClasses(current)).toContain(token);
   expect(disabledTags).toHaveLength(2);
@@ -205,9 +236,18 @@ test("navigation roots compose semantic, generated, and caller presentation in o
   ] as const) {
     const root = html.slice(0, html.indexOf(">") + 1);
     const classes = tagClasses(root);
-    expect(classes[0]).toBe(semanticClass);
-    expect(classes.at(-1)).toBe(callerClass);
-    expect(classes.length).toBeGreaterThan(2);
+    const recipe = semanticClass === "hraness-breadcrumbs"
+      ? navigationStyles.breadcrumbRoot
+      : navigationStyles.paginationRoot;
+    expect(classes).toEqual([
+      semanticClass,
+      ...classTokens(stylex.props(
+        recipe,
+        testStyles.rootOverride,
+        testStyles.dynamicWidth("14rem"),
+      )),
+      callerClass,
+    ]);
     expect(root).toMatch(/style="--[^:]+:14rem;width:15rem"/u);
   }
 
@@ -241,6 +281,7 @@ test("navigation recipe ownership is complete and leaves no legacy selector", as
   ]);
   expect(component).not.toContain('"use client"');
   expect(recipes).toContain('"::before"');
+  expect(recipes).toContain('paddingInline: "var(--space-3)"');
   expect(recipes).toContain('const coarsePointer = "@media(pointer: coarse)"');
   expect(recipes).toContain('const compactViewport = "@media(max-width: 40rem)"');
   expect(legacy).not.toMatch(/\.hraness-(?:breadcrumbs|pagination)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
