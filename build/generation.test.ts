@@ -891,6 +891,40 @@ describe("generation lifecycle", () => {
     await expect(finalize(context, staleInput)).rejects.toThrow(/changed|Artifact/u);
   });
 
+  test("runs graph receipt precommit revalidation under the mutation lock and leaves a failed receipt retryable", async () => {
+    const context = await fixture();
+    const generation = await create(context, "precommit-revalidation");
+    const receipt = await receiptValue(context, generation, "client", clientRule);
+    const mutationLock = join(generation.directory, ".stylex-generation/mutation.lock");
+    const receiptDirectory = join(generation.directory, ".stylex-generation/receipts");
+    let revalidated = false;
+
+    await expect(writeStylexGraphReceipt({
+      generation,
+      receipt,
+      revalidateBeforeCommit: async () => {
+        revalidated = true;
+        expect(await pathExists(mutationLock)).toBe(true);
+        const precommitEntries = await readdir(receiptDirectory);
+        expect(precommitEntries).toHaveLength(1);
+        expect(precommitEntries[0]).toMatch(/^\.client\.json\.[0-9a-f-]+\.tmp$/u);
+        expect(precommitEntries).not.toContain("client.json");
+        throw new Error("injected precommit revalidation failure");
+      },
+      rootDirectory: context.root,
+    })).rejects.toThrow(/injected precommit revalidation failure/u);
+
+    expect(revalidated).toBe(true);
+    expect(await pathExists(mutationLock)).toBe(false);
+    expect(await readdir(receiptDirectory)).toEqual([]);
+    await expect(writeStylexGraphReceipt({
+      generation,
+      receipt,
+      rootDirectory: context.root,
+    })).resolves.toEqual(receipt);
+    expect(await readdir(receiptDirectory)).toEqual(["client.json"]);
+  });
+
   test("rejects conflicting package and graph rules before serialization can publish", async () => {
     const context = await fixture();
     const generation = await create(context, "conflicting-union");
