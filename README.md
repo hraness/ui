@@ -351,7 +351,7 @@ const styles = stylex.create({
 `AskAiAboutThis`, `Button`, `CopyButton`, `IconButton`, `IconLink`, `ToggleButton`,
 `LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `KeyHint`, `PageIntro`, `EmptyState`, `InlineAlert`, `SettingsCard`, `DataTable`,
-`Popover`, `Tooltip`, `DialogContent`, `Menu`, `MenuItem`, `MenuSection`, `MenuSeparator`, `ListBox`, `ListBoxItem`, `ListBoxSection`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
+`ToastProvider`, `Popover`, `Tooltip`, `DialogContent`, `Menu`, `MenuItem`, `MenuSection`, `MenuSeparator`, `ListBox`, `ListBoxItem`, `ListBoxSection`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `SkipLink`, `Separator`, `Form`, `FieldDescription`, `FieldError`, `TextField`,
 `TextAreaField`, `SearchField`, `NumberField`, `CheckboxField`, `CheckboxGroup`,
@@ -361,6 +361,15 @@ accept a typed StyleX override. Base declarations are applied first, finite
 size, tone, shape, and interaction recipes come next, and the caller recipe is
 applied last. `CheckboxField` exposes `controlXstyle` separately for its
 semantic checkbox label.
+`ToastProvider` exposes separate `regionXstyle`, `toastXstyle`, and
+`closeXstyle` seams. Each request-local queue keeps its live-region, content,
+action, dismissal, duration, and maximum-visible behavior while the compiled
+region, finite tone, mount-arrival, and close-control recipes remain caller
+overridable. React Aria Components 1.19 removes a toast immediately on close and
+exposes no exit render state, so dismissal is not delayed for a synthetic exit
+animation. Toast arrival respects reduced-motion preferences, borders retain
+system colors in forced-colors mode, and close targets remain at least 48
+pixels for coarse pointers.
 `Popover` and `Tooltip` accept `xstyle` on their outer surfaces, with native
 `style` applied last, including React Aria style render functions. Popover
 preserves its required accessible label, inner dialog, ref, offsets, and

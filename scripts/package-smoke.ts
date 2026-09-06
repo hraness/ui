@@ -1282,6 +1282,167 @@ function verifyPackageOverlayNegativeControls(javaScript: string, css: string, l
   assert.throws(() => requirePackageOverlay(javaScript, css, legacy + "\n.hraness-popover { color: red; }"), /Popover\/Tooltip legacy/u);
 }
 
+const TOAST_STYLE_KEYS = [
+  "region", "root", "entering", "toneDanger", "toneInfo", "toneSuccess", "toneWarning",
+  "content", "copy", "title", "description", "action", "close", "closeHovered", "closeFocusVisible", "closeNativeInteractionFallbacks",
+] as const;
+type ToastStyleKey = (typeof TOAST_STYLE_KEYS)[number];
+const TOAST_BACKGROUND_RESET = [
+  /background-attachment:\s*scroll;/u, /background-clip:\s*border-box;/u,
+  /background-image:\s*none;/u, /background-origin:\s*padding-box;/u,
+  /background-position:\s*0%?\s+0%?;/u, /background-repeat:\s*repeat;/u,
+  /background-size:\s*auto(?: auto)?;/u,
+] as const;
+const TOAST_DECLARATIONS: Readonly<Record<ToastStyleKey, readonly RegExp[]>> = {
+  region: [
+    /position:\s*fixed;/u, /z-index:\s*var\(--z-modal\);/u,
+    /inset-block-end:\s*max\(var\(--space-4\),\s*env\(safe-area-inset-bottom\)\);/u,
+    /inset-inline-end:\s*max\(var\(--space-4\),\s*env\(safe-area-inset-right\)\);/u,
+    /display:\s*flex;/u, /width:\s*min\(26rem,\s*(?:calc\(100vw - 2rem\)|100vw - 2rem)\);/u,
+    /max-height:\s*(?:calc\(100dvh - 2rem\)|100dvh - 2rem);/u,
+    /flex-direction:\s*column;/u, /gap:\s*var\(--space-2\);/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u,
+    /outline-width:\s*medium;/u, /pointer-events:\s*none;/u,
+  ],
+  root: [
+    /position:\s*relative;/u, /display:\s*grid;/u, /min-width:\s*0;/u,
+    /grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/u, /gap:\s*var\(--space-3\);/u,
+    /padding-top:\s*var\(--space-4\);/u, /padding-right:\s*var\(--space-4\);/u,
+    /padding-bottom:\s*var\(--space-4\);/u, /padding-left:\s*var\(--space-4\);/u,
+    /border-width:\s*1px;/u, /border-style:\s*solid;/u, /border-color:\s*var\(--ui-border\);/u,
+    /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
+    /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
+    /border-radius:\s*var\(--radius-lg\);/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
+    ...TOAST_BACKGROUND_RESET, /background-color:\s*var\(--ui-popover\);/u,
+    /color:\s*var\(--ui-popover-foreground\);/u, /box-shadow:\s*var\(--elevation-overlay\);/u,
+    /pointer-events:\s*auto;/u,
+  ],
+  entering: [
+    /animation-name:\s*hraness-toast-enter;/u, /animation-duration:\s*var\(--motion-duration-standard\);/u,
+    /animation-timing-function:\s*var\(--motion-easing-emphasized\);/u, /animation-delay:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
+    /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
+  ],
+  toneDanger: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-destructive\) 55%,\s*var\(--ui-border\)\);/u],
+  toneInfo: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-info\) 55%,\s*var\(--ui-border\)\);/u],
+  toneSuccess: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-success\) 55%,\s*var\(--ui-border\)\);/u],
+  toneWarning: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-warning\) 55%,\s*var\(--ui-border\)\);/u],
+  content: [/display:\s*flex;/u, /min-width:\s*0;/u, /flex-wrap:\s*wrap;/u, /align-items:\s*center;/u, /gap:\s*var\(--space-3\);/u],
+  copy: [/display:\s*grid;/u, /min-width:\s*0;/u, /flex:\s*1 1 12rem;/u, /gap:\s*var\(--space-1\);/u],
+  title: [/font-weight:\s*var\(--font-weight-bold\);/u, /line-height:\s*1\.3;/u],
+  description: [/color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-label\);/u, /line-height:\s*1\.5;/u],
+  action: [/flex:\s*0 0 auto;/u],
+  close: [
+    /display:\s*inline-grid;/u, /width:\s*var\(--interactive-target-compact\);/u,
+    /min-width:\s*var\(--interactive-target-compact\);/u,
+    /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-toast-coarse-min,\s*0px\)\);/u,
+    /align-items:\s*center;/u, /justify-items:\s*center;/u, /align-self:\s*start;/u,
+    /border-width:\s*0;/u, /border-style:\s*none;/u, /border-color:\s*current[Cc]olor;/u,
+    /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
+    /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
+    /border-radius:\s*var\(--radius-md\);/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
+    ...TOAST_BACKGROUND_RESET, /background-color:\s*(?:transparent|#0000);/u,
+    /color:\s*var\(--ui-muted-foreground\);/u,
+  ],
+  closeHovered: [...TOAST_BACKGROUND_RESET, /background-color:\s*var\(--ui-accent\);/u, /color:\s*var\(--ui-accent-foreground\);/u],
+  closeFocusVisible: [/outline-color:\s*var\(--ui-ring\);/u, /outline-style:\s*solid;/u, /outline-width:\s*2px;/u, /outline-offset:\s*2px;/u],
+  closeNativeInteractionFallbacks: [],
+};
+const TOAST_CONDITIONAL_DECLARATIONS: Partial<Record<ToastStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  region: [
+    { condition: "@media(max-width:40rem)", declaration: /inset-inline-end:\s*max\(var\(--space-3\),\s*env\(safe-area-inset-left\)\);/u },
+    { condition: "@media(max-width:40rem)", declaration: /inset-inline-start:\s*max\(var\(--space-3\),\s*env\(safe-area-inset-left\)\);/u },
+    { condition: "@media(max-width:40rem)", declaration: /width:\s*auto;/u },
+  ],
+  root: [
+    { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
+    { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
+  ],
+  entering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
+  toneDanger: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
+  toneInfo: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
+  toneSuccess: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
+  toneWarning: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
+  close: [{ condition: "@media(pointer:coarse)", declaration: /min-height:\s*var\(--interactive-target-min\);/u }],
+};
+const TOAST_NATIVE_DECLARATIONS = [
+  ...TOAST_DECLARATIONS.closeHovered.map((declaration) => ({ pseudo: "hover" as const, declaration })),
+  ...TOAST_DECLARATIONS.closeFocusVisible.map((declaration) => ({ pseudo: "focus-visible" as const, declaration })),
+];
+
+function requirePackageToast(javaScript: string, css: string, legacy: string): void {
+  const map = packageNamedStyleMap(javaScript, TOAST_STYLE_KEYS, "toastStyles class map");
+  const identifier = javaScript.slice(0, javaScript.indexOf(map.object)).match(/([A-Za-z_$][\w$]*)\s*=\s*$/u)?.[1];
+  assert.ok(identifier, "packed toastStyles declaration binding");
+  assert.deepEqual(packageTopLevelStyleKeys(map.object, "toastStyles"), TOAST_STYLE_KEYS);
+  for (const key of TOAST_STYLE_KEYS) {
+    const entry = packageNamedStyleEntry(map, key);
+    const bindings = [...entry.matchAll(/(?:^|[,{])\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu)];
+    const expectedBindings = key === "closeNativeInteractionFallbacks"
+      ? TOAST_NATIVE_DECLARATIONS.length
+      : TOAST_DECLARATIONS[key].length + (key === "region" || key === "root" ? 1 : 0);
+    assert.equal(bindings.length, expectedBindings, "packed Toast " + key + " exact property bindings");
+    const classes = packageEntryClassNames(map, key);
+    const rules = packageStyleRules(css, classes);
+    for (const className of classes) assert.ok(rules.some((rule) => new RegExp("\\." + className + "(?![A-Za-z0-9_-])", "u").test(rule.header)), "packed Toast binds every atom");
+    for (const declaration of TOAST_DECLARATIONS[key]) {
+      const exactCss = rules.filter((rule) => rule.conditions.length === 0 && dialogDeclarationMatches(rule.body, declaration)).map((rule) => rule.source).join("\n");
+      requirePackageExactBaseDeclaration(exactCss, classes, declaration, "packed Toast " + key);
+    }
+    const conditional = TOAST_CONDITIONAL_DECLARATIONS[key] ?? [];
+    for (const { condition, declaration } of conditional) requirePackageExactBaseDeclaration(packageExactConditionalCss(css, condition), classes, declaration, "packed Toast " + key + " conditional");
+    if (key === "closeNativeInteractionFallbacks") {
+      for (const { pseudo, declaration } of TOAST_NATIVE_DECLARATIONS) {
+        const matching = rules.filter((rule) => rule.conditions.length === 0 && dialogDeclarationMatches(rule.body, declaration));
+        assert.ok(matching.length > 0, "packed Toast native " + pseudo + " declaration");
+        for (const rule of matching) requirePackageExactClassPseudoSelector(rule.header, classes, pseudo, "packed Toast native interaction");
+      }
+    }
+    for (const rule of rules) assert.ok(rule.conditions.length === 0
+      ? (key === "closeNativeInteractionFallbacks"
+        ? TOAST_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) => dialogDeclarationMatches(rule.body, declaration) && rule.header.endsWith(":" + pseudo))
+        : TOAST_DECLARATIONS[key].some((declaration) => dialogDeclarationMatches(rule.body, declaration)))
+      : rule.conditions.length === 1 && conditional.some(({ condition, declaration }) => normalizedPackageCondition(condition) === rule.conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
+    "packed Toast " + key + " exact declaration and condition inventory");
+    assert.match(javaScript, new RegExp(identifier + "\\." + key + "(?![A-Za-z0-9_$])", "u"), "packed toastStyles composition binding");
+  }
+  assert.doesNotMatch(legacy, /\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u, "packed Toast legacy selector");
+  assert.doesNotMatch(css, /\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u, "packed Toast semantic selector");
+  assert.doesNotMatch(css, /--gallery-toast-collision/u, "packed Toast gallery marker");
+  assert.match(legacy, /--hraness-toast-coarse-min:\s*var\(--interactive-target-min\);/u, "packed Toast synthetic coarse minimum");
+  assert.match(legacy, /@keyframes\s+hraness-toast-enter/u, "packed Toast enter keyframes");
+  assert.match(legacy, /@keyframes\s+hraness-toast-exit/u, "packed Toast exit keyframes");
+  for (const slot of ["toast-region", "toast", "toast-content", "toast-copy", "toast-title", "toast-description", "toast-action", "toast-close"]) {
+    assert.match(javaScript, new RegExp("[\"']" + slot + "[\"']", "u"), "packed Toast " + slot + " semantic slot");
+  }
+}
+
+function verifyPackageToastNegativeControls(javaScript: string, css: string, legacy: string): void {
+  const map = packageNamedStyleMap(javaScript, TOAST_STYLE_KEYS, "toastStyles class map");
+  const remove = (key: ToastStyleKey, declaration: RegExp, condition?: string) => {
+    const rules = packageStyleRules(css, packageEntryClassNames(map, key)).filter((rule) => dialogDeclarationMatches(rule.body, declaration) && (condition === undefined ? rule.conditions.length === 0 : rule.conditions.length === 1 && rule.conditions[0] === normalizedPackageCondition(condition)));
+    assert.equal(rules.length, 1, "packed Toast negative control owns one rule");
+    const rule = rules[0]!;
+    assert.equal(css.split(rule.source).length - 1, 1);
+    return css.replace(rule.source, "");
+  };
+  const rejects = (changed: string) => assert.throws(() => requirePackageToast(javaScript, changed, legacy), /Toast|toastStyles/u);
+  for (const key of TOAST_STYLE_KEYS) for (const declaration of TOAST_DECLARATIONS[key]) rejects(remove(key, declaration));
+  for (const key of TOAST_STYLE_KEYS) for (const { condition, declaration } of TOAST_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(remove(key, declaration, condition));
+  for (const { declaration } of TOAST_NATIVE_DECLARATIONS) rejects(remove("closeNativeInteractionFallbacks", declaration));
+  const entry = packageNamedStyleEntry(map, "title");
+  const extra = entry.replace("{", "{unexpectedToastBinding: " + JSON.stringify([...packageEntryClassNames(map, "title")][0]) + ",");
+  assert.throws(() => requirePackageToast(javaScript.replace(map.object, map.object.replace(entry, extra)), css, legacy), /Toast title exact property bindings/u);
+  const identifier = javaScript.slice(0, javaScript.indexOf(map.object)).match(/([A-Za-z_$][\w$]*)\s*=\s*$/u)?.[1];
+  assert.ok(identifier);
+  const disconnected = javaScript.replace(new RegExp(identifier + "\\.description(?![A-Za-z0-9_$])", "gu"), "disconnectedToast.description");
+  assert.notEqual(disconnected, javaScript);
+  assert.throws(() => requirePackageToast(disconnected, css, legacy), /packed toastStyles composition binding/u);
+  assert.throws(() => requirePackageToast(javaScript, css, legacy + "\n.hraness-toast { color: red; }"), /Toast legacy/u);
+}
+
 function requirePackageDialog(javaScript: string, css: string, legacy: string): void {
   const map = packageNamedStyleMap(javaScript, DIALOG_STYLE_KEYS, "dialogStyles class map");
   assert.deepEqual(packageTopLevelStyleKeys(map.object, "dialogStyles"), DIALOG_STYLE_KEYS);
@@ -2361,6 +2522,7 @@ function requireNoMigratedGallerySentinels(...sources: string[]): void {
     "data-gallery-content-layer-conflict",
     "data-gallery-data-table-layer-conflict",
     "data-gallery-list-box-layer-conflict",
+    "--gallery-toast-collision",
   ]) {
     assert.doesNotMatch(
       output,
@@ -3024,6 +3186,30 @@ for (const requestedOpen of [false, true]) {
   assert.doesNotMatch(overlayMarkup, /Package portal-only|data-slot="(?:popover|popover-content|tooltip)"|xstyle=|popoverRef=/u);
   assert.equal(overlayRef.current, null, "server rendering must not attach a portal ref");
 }
+
+function PackageToastControllerProbe({ label }) {
+  const controller = useToast();
+  return React.createElement("span", {
+    "data-package-toast-controller": [
+      typeof controller.dismiss,
+      typeof controller.dismissAll,
+      typeof controller.toast,
+    ].join(","),
+  }, label);
+}
+for (const label of ["First package Toast root", "Second package Toast root"]) {
+  const toastMarkup = renderToStaticMarkup(React.createElement(ToastProvider, {
+    closeLabel: "Dismiss package notification",
+    closeXstyle: { $$css: true },
+    label: label + " notifications",
+    maxVisibleToasts: 2,
+    regionXstyle: { $$css: true },
+    toastXstyle: { $$css: true },
+  }, React.createElement(PackageToastControllerProbe, { label })));
+  assert.match(toastMarkup, /data-package-toast-controller="function,function,function"/u);
+  assert.match(toastMarkup, new RegExp(">" + label + "<", "u"));
+  assert.doesNotMatch(toastMarkup, /data-slot="toast(?:-region)?"|(?:close|region|toast)Xstyle=/u);
+}
 `;
 
 function ssrProbe(
@@ -3040,7 +3226,7 @@ function ssrProbe(
 ): string {
   return String.raw`import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
-import { Button, DialogTrigger, Popover, Tooltip } from "@hraness/ui";
+import { Button, DialogTrigger, Popover, ToastProvider, Tooltip, useToast } from "@hraness/ui";
 
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import {
@@ -4519,6 +4705,9 @@ import {
   type PopoverProps,
   Tooltip,
   type TooltipProps,
+  ToastProvider,
+  type ToastProviderProps,
+  type ToastTone,
   EmptyState,
   FileField,
   Form,
@@ -5284,6 +5473,33 @@ const invalidTooltipXstyle: TooltipProps = { ...packageTooltipProps,
 // @ts-expect-error Popover requires an accessible name.
 const unnamedPopover: PopoverProps = { children: "Details" };
 void [invalidPopoverXstyle, invalidTooltipXstyle, unnamedPopover];
+const packageToastTone: ToastTone = "success";
+const packageToastProps: ToastProviderProps = {
+  children: createElement("span", null, "Package Toast child"),
+  closeLabel: "Dismiss package notification",
+  closeXstyle: styles.wrapper,
+  defaultDuration: 8_000,
+  label: "Package notifications",
+  maxVisibleToasts: 4,
+  regionXstyle: styles.wrapper,
+  toastXstyle: styles.wrapper,
+};
+void createElement(ToastProvider, packageToastProps);
+const invalidToastRegionXstyle: ToastProviderProps = { ...packageToastProps,
+  // @ts-expect-error Toast regions accept compiled recipes rather than raw CSS.
+  regionXstyle: { gap: "12px" },
+};
+const invalidToastRootXstyle: ToastProviderProps = { ...packageToastProps,
+  // @ts-expect-error Toast roots accept compiled recipes rather than raw CSS.
+  toastXstyle: { paddingTop: "12px" },
+};
+const invalidToastCloseXstyle: ToastProviderProps = { ...packageToastProps,
+  // @ts-expect-error Toast close controls accept compiled recipes rather than raw CSS.
+  closeXstyle: { color: "red" },
+};
+// @ts-expect-error Toast tones remain a finite public union.
+const invalidToastTone: ToastTone = "neutral";
+void [packageToastTone, invalidToastRegionXstyle, invalidToastRootXstyle, invalidToastCloseXstyle, invalidToastTone];
 const packageDialogProps: DialogContentProps = {
   title: "Settings", size: "small", dialogRef: createRef<HTMLDivElement>(),
   xstyle: styles.wrapper, overlayXstyle: styles.wrapper,
@@ -5492,7 +5708,7 @@ function viteClientProbe(
   dataTableProbe: PackageDataTableProbe,
 ): string {
   return `import "@hraness/ui/styles.css";
-import { AskAiAboutThis, Button, Card, CardDescription, CheckboxField, DataTable, DialogTrigger, EmptyState, FileField, Form, InlineAlert, KeyHint, Knob, Link, Meter, NativeSelectField, PageIntro, Popover, PressableCard, ProgressBar, SelectField, SettingsCard, Slider, TextField, Toolbar, Tooltip } from "@hraness/ui";
+import { AskAiAboutThis, Button, Card, CardDescription, CheckboxField, DataTable, DialogTrigger, EmptyState, FileField, Form, InlineAlert, KeyHint, Knob, Link, Meter, NativeSelectField, PageIntro, Popover, PressableCard, ProgressBar, SelectField, SettingsCard, Slider, TextField, ToastProvider, Toolbar, Tooltip, useToast } from "@hraness/ui";
 import * as React from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -5514,6 +5730,12 @@ const dataTableWrapperXstyle = {
 };
 const dataTableBaseClasses = ${JSON.stringify(dataTableProbe.tableBaseClasses)};
 const dataTableWrapperBaseClasses = ${JSON.stringify(dataTableProbe.wrapperBaseClasses)};
+function ViteToastControllerProbe() {
+  const controller = useToast();
+  return React.createElement("span", {
+    "data-vite-toast-controller": [typeof controller.dismiss, typeof controller.dismissAll, typeof controller.toast].join(","),
+  }, "Vite Toast child");
+}
 const reactRoot = createRoot(root);
 flushSync(() => reactRoot.render(React.createElement(React.Fragment, null,
   React.createElement(DialogTrigger, { defaultOpen: false },
@@ -5523,6 +5745,12 @@ flushSync(() => reactRoot.render(React.createElement(React.Fragment, null,
   React.createElement(Tooltip, { content: "Vite portal-only supplementary content", isOpen: false, delay: 0, closeDelay: 0 },
     React.createElement(Button, { id: "vite-tooltip-trigger" }, "Vite Tooltip trigger"),
   ),
+  React.createElement(ToastProvider, {
+    closeXstyle: contentRootXstyle,
+    label: "Vite notifications",
+    regionXstyle: contentRootXstyle,
+    toastXstyle: contentRootXstyle,
+  }, React.createElement(ViteToastControllerProbe)),
   React.createElement(Card, { tone: "accent" },
     React.createElement(CardDescription, null, "Vite card"),
   ),
@@ -5608,6 +5836,10 @@ if (!(tooltipTrigger instanceof HTMLButtonElement) || tooltipTrigger.textContent
 if (document.querySelector('[data-slot="popover"], [data-slot="popover-content"], [data-slot="tooltip"]') !== null || root.textContent?.includes("Vite portal-only")) {
   throw new Error("Vite client closed Popover/Tooltip leaked portal content");
 }
+const toastController = root.querySelector('[data-vite-toast-controller="function,function,function"]');
+if (!(toastController instanceof HTMLSpanElement) || toastController.textContent !== "Vite Toast child" || root.querySelector('[data-slot="toast"]') !== null) {
+  throw new Error("Vite client empty ToastProvider context or queue isolation changed");
+}
 if (!(contentRoot instanceof HTMLElement)) {
   throw new Error("Vite client content precedence probe is missing");
 }
@@ -5665,7 +5897,7 @@ function viteSsrProbe(
   visuallyHiddenClasses: readonly string[],
 ): string {
   return `import assert from "node:assert/strict";
-import { Button, CheckboxField, DataTable, DialogTrigger, EmptyState, Form, InlineAlert, Knob, Link, Meter, NativeSelectField, PageIntro, Popover, ProgressBar, SelectField, SettingsCard, Slider, TextField, Tooltip } from "@hraness/ui";
+import { Button, CheckboxField, DataTable, DialogTrigger, EmptyState, Form, InlineAlert, Knob, Link, Meter, NativeSelectField, PageIntro, Popover, ProgressBar, SelectField, SettingsCard, Slider, TextField, ToastProvider, Tooltip, useToast } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -5941,7 +6173,7 @@ for (const focusClass of ${JSON.stringify(indicatorKnobProbe.knobControlNativeFo
   assert.ok(!knobControlTag.split(/[\\s"]/u).includes(focusClass));
 }
 ${overlaySsrRuntimeProbe}
-console.log("Vite SSR CheckboxField, Form, Link, Content, DataTable, indicators, and Knob xstyle runtime and Popover/Tooltip portal-safe runtime passed");
+console.log("Vite SSR CheckboxField, Form, Link, Content, DataTable, indicators, Knob, and Toast xstyle runtime and Popover/Tooltip portal-safe runtime passed");
 `;
 }
 
@@ -6062,6 +6294,7 @@ async function verifyConsumer(
   await access(join(consumer, "node_modules", "@hraness", "ui", "src", "menu.stylex.ts"));
   await access(join(consumer, "node_modules", "@hraness", "ui", "src", "dialog.stylex.ts"));
   await access(join(consumer, "node_modules", "@hraness", "ui", "src", "overlays.stylex.ts"));
+  await access(join(consumer, "node_modules", "@hraness", "ui", "src", "toast.stylex.ts"));
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "data-display.tsx"),
   );
@@ -6143,7 +6376,9 @@ async function verifyConsumer(
   requirePackageMenu(installedJavaScript, installedStylexCss, installedComponentsCss);
   requirePackageDialog(installedJavaScript, installedStylexCss, installedComponentsCss);
   requirePackageOverlay(installedJavaScript, installedStylexCss, installedComponentsCss);
+  requirePackageToast(installedJavaScript, installedStylexCss, installedComponentsCss);
   verifyPackageOverlayNegativeControls(installedJavaScript, installedStylexCss, installedComponentsCss);
+  verifyPackageToastNegativeControls(installedJavaScript, installedStylexCss, installedComponentsCss);
   verifyPackageDialogNegativeControls(installedJavaScript, installedStylexCss, installedComponentsCss);
   verifyPackageMenuNegativeControls(installedJavaScript, installedStylexCss, installedComponentsCss);
   assert.doesNotMatch(installedComponentsCss, /\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
@@ -6258,6 +6493,8 @@ async function verifyConsumer(
   assert.match(viteJavaScript, /hraness-key-hint/u);
   for (const hook of ["hraness-popover", "hraness-tooltip", "vite-popover-trigger", "vite-tooltip-trigger"]) assert.ok(viteJavaScript.includes(hook), "Vite client must bundle " + hook);
   assert.ok(viteJavaScript.includes("Vite client closed Popover/Tooltip leaked portal content"), "Vite client must bundle closed-overlay assertions");
+  assert.match(viteJavaScript, /hraness-toast/u, "Vite client must bundle the Toast implementation");
+  assert.match(viteJavaScript, /Vite client empty ToastProvider context or queue isolation changed/u, "Vite client must bundle the empty ToastProvider assertion");
   assert.match(viteJavaScript, /hraness-page-intro/u);
   assert.match(
     viteJavaScript,
@@ -6305,6 +6542,7 @@ async function verifyConsumer(
   assert.doesNotMatch(viteCss, /\.hraness-link(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(viteCss, /\.hraness-visually-hidden(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(viteCss, /\.hraness-form(?![A-Za-z0-9_-])/u);
+  assert.doesNotMatch(viteCss, /\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u);
   assert.doesNotMatch(
     viteCss,
     /\.hraness-(?:progress-bar|meter|slider|knob)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
@@ -6435,6 +6673,7 @@ async function verifyConsumer(
   }
   requireNoMigratedGallerySentinels(viteSsrBundle);
   for (const hook of ["hraness-popover", "hraness-tooltip", "package-popover-trigger", "package-tooltip-trigger"]) assert.ok(viteSsrBundle.includes(hook), "Vite SSR must bundle " + hook);
+  for (const hook of ["hraness-toast", "data-package-toast-controller", "First package Toast root", "Second package Toast root"]) assert.ok(viteSsrBundle.includes(hook), "Vite SSR must bundle " + hook);
   assert.doesNotMatch(
     viteSsrBundle,
     /from\s*["']@hraness\/ui["']/u,

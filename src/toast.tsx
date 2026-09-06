@@ -6,6 +6,8 @@ import {
   useContext,
   useMemo,
 } from "react";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 import {
   Button as AriaButton,
   UNSTABLE_Toast as AriaToast,
@@ -16,6 +18,10 @@ import {
   type ToastOptions as AriaToastOptions,
   type ToastProps as AriaToastProps,
 } from "react-aria-components";
+
+import { hasStylexPresentation } from "./lib/stylex.js";
+import { cn } from "./lib/utils.js";
+import { toastStyles } from "./toast.stylex.js";
 
 export type ToastTone = "danger" | "info" | "success" | "warning";
 
@@ -54,18 +60,31 @@ function visibleToastLimit(value: number): number {
 export interface ToastProviderProps {
   readonly children: ReactNode;
   readonly closeLabel?: string;
+  readonly closeXstyle?: StyleXStyles;
   readonly defaultDuration?: number;
   readonly label?: string;
   readonly maxVisibleToasts?: number;
+  readonly regionXstyle?: StyleXStyles;
+  readonly toastXstyle?: StyleXStyles;
 }
+
+const toastToneStyles = {
+  danger: toastStyles.toneDanger,
+  info: toastStyles.toneInfo,
+  success: toastStyles.toneSuccess,
+  warning: toastStyles.toneWarning,
+} satisfies Record<ToastTone, StyleXStyles>;
 
 /** Owns an isolated toast queue; no state is shared between requests or roots. */
 export function ToastProvider({
   children,
   closeLabel = "Dismiss notification",
+  closeXstyle,
   defaultDuration = DEFAULT_DURATION,
   label = "Notifications",
   maxVisibleToasts = DEFAULT_MAX_VISIBLE_TOASTS,
+  regionXstyle,
+  toastXstyle,
 }: ToastProviderProps) {
   const duration = finiteDuration(defaultDuration, DEFAULT_DURATION);
   const visibleLimit = visibleToastLimit(maxVisibleToasts);
@@ -85,21 +104,44 @@ export function ToastProvider({
           }),
     }),
   }), [duration, queue]);
+  const regionPresentation = stylex.props(toastStyles.region, regionXstyle);
+  const hasClosePresentation = hasStylexPresentation(closeXstyle);
 
   return (
     <ToastContext.Provider value={controller}>
       {children}
       <AriaToastRegion
         aria-label={label}
-        className="hraness-toast-region"
+        className={cn("hraness-toast-region", regionPresentation.className)}
         data-slot="toast-region"
         queue={queue}
+        style={regionPresentation.style}
       >
-        {({ toast }) => (
-          <AriaToast
-            className="hraness-toast"
+        {({ toast }) => {
+          const tone = toast.content.tone ?? "info";
+          const toastPresentation = stylex.props(
+            toastStyles.root,
+            toastStyles.entering,
+            toastToneStyles[tone],
+            toastXstyle,
+          );
+          const contentPresentation = stylex.props(toastStyles.content);
+          const copyPresentation = stylex.props(toastStyles.copy);
+          const titlePresentation = stylex.props(toastStyles.title);
+          const descriptionPresentation = stylex.props(toastStyles.description);
+          const actionPresentation = stylex.props(toastStyles.action);
+          const closePresentation = (state: { isFocusVisible: boolean; isHovered: boolean }) => stylex.props(
+            toastStyles.close,
+            !hasClosePresentation && toastStyles.closeNativeInteractionFallbacks,
+            state.isHovered && toastStyles.closeHovered,
+            state.isFocusVisible && toastStyles.closeFocusVisible,
+            closeXstyle,
+          );
+          return <AriaToast
+            className={cn("hraness-toast", toastPresentation.className)}
             data-slot="toast"
-            data-tone={toast.content.tone ?? "info"}
+            data-tone={tone}
+            style={toastPresentation.style}
             toast={(
               // These props describe the same object. A duplicate react-stately
               // tree makes only their private Timer types nominal.
@@ -107,16 +149,18 @@ export function ToastProvider({
             )}
           >
             <AriaToastContent
-              className="hraness-toast__content"
+              {...contentPresentation}
+              className={cn("hraness-toast__content", contentPresentation.className)}
               data-slot="toast-content"
             >
-              <div className="hraness-toast__copy" data-slot="toast-copy">
-                <Text className="hraness-toast__title" data-slot="toast-title" slot="title">
+              <div {...copyPresentation} className={cn("hraness-toast__copy", copyPresentation.className)} data-slot="toast-copy">
+                <Text {...titlePresentation} className={cn("hraness-toast__title", titlePresentation.className)} data-slot="toast-title" slot="title">
                   {toast.content.title}
                 </Text>
                 {toast.content.description === undefined ? null : (
                   <Text
-                    className="hraness-toast__description"
+                    {...descriptionPresentation}
+                    className={cn("hraness-toast__description", descriptionPresentation.className)}
                     data-slot="toast-description"
                     slot="description"
                   >
@@ -125,21 +169,22 @@ export function ToastProvider({
                 )}
               </div>
               {toast.content.action === undefined ? null : (
-                <div className="hraness-toast__action" data-slot="toast-action">
+                <div {...actionPresentation} className={cn("hraness-toast__action", actionPresentation.className)} data-slot="toast-action">
                   {toast.content.action}
                 </div>
               )}
             </AriaToastContent>
             <AriaButton
               aria-label={closeLabel}
-              className="hraness-toast__close"
+              className={(state) => cn("hraness-toast__close", closePresentation(state).className)}
               data-slot="toast-close"
               slot="close"
+              style={(state) => closePresentation(state).style}
             >
               <span aria-hidden="true">×</span>
             </AriaButton>
-          </AriaToast>
-        )}
+          </AriaToast>;
+        }}
       </AriaToastRegion>
     </ToastContext.Provider>
   );

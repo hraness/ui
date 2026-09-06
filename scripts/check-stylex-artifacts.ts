@@ -30,6 +30,7 @@ const GALLERY_LAYER_CONFLICT_SENTINELS = [
   "data-gallery-select-option-layer-conflict",
   "data-gallery-indicators-layer-conflict",
   "data-gallery-knob-layer-conflict",
+  "--gallery-toast-collision",
 ] as const;
 const LEGACY_LAYER = "components.hraness-ui.legacy";
 const LEGACY_LAYERS = [
@@ -3298,6 +3299,159 @@ function verifyOverlayNegativeControls(legacy: string, css: string, js: string, 
   assert.throws(() => requireOverlayContract(legacy, css, js, source.replace("state.isEntering && overlayStyles.popoverEntering", "false && overlayStyles.popoverEntering"), recipe), /Popover surface, state, and caller order/u);
 }
 
+const TOAST_STYLE_KEYS = [
+  "region", "root", "entering", "toneDanger", "toneInfo", "toneSuccess", "toneWarning",
+  "content", "copy", "title", "description", "action", "close", "closeHovered", "closeFocusVisible", "closeNativeInteractionFallbacks",
+] as const;
+type ToastStyleKey = (typeof TOAST_STYLE_KEYS)[number];
+const TOAST_BACKGROUND_RESET = [
+  /background-attachment:\s*scroll;/u, /background-clip:\s*border-box;/u,
+  /background-image:\s*none;/u, /background-origin:\s*padding-box;/u,
+  /background-position:\s*0%?\s+0%?;/u, /background-repeat:\s*repeat;/u,
+  /background-size:\s*auto(?: auto)?;/u,
+] as const;
+const TOAST_DECLARATIONS: Readonly<Record<ToastStyleKey, readonly RegExp[]>> = {
+  region: [
+    /position:\s*fixed;/u, /z-index:\s*var\(--z-modal\);/u,
+    /inset-block-end:\s*max\(var\(--space-4\),\s*env\(safe-area-inset-bottom\)\);/u,
+    /inset-inline-end:\s*max\(var\(--space-4\),\s*env\(safe-area-inset-right\)\);/u,
+    /display:\s*flex;/u, /width:\s*min\(26rem,\s*(?:calc\(100vw - 2rem\)|100vw - 2rem)\);/u,
+    /max-height:\s*(?:calc\(100dvh - 2rem\)|100dvh - 2rem);/u,
+    /flex-direction:\s*column;/u, /gap:\s*var\(--space-2\);/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u,
+    /outline-width:\s*medium;/u, /pointer-events:\s*none;/u,
+  ],
+  root: [
+    /position:\s*relative;/u, /display:\s*grid;/u, /min-width:\s*0;/u,
+    /grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/u, /gap:\s*var\(--space-3\);/u,
+    /padding-top:\s*var\(--space-4\);/u, /padding-right:\s*var\(--space-4\);/u,
+    /padding-bottom:\s*var\(--space-4\);/u, /padding-left:\s*var\(--space-4\);/u,
+    /border-width:\s*1px;/u, /border-style:\s*solid;/u, /border-color:\s*var\(--ui-border\);/u,
+    /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
+    /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
+    /border-radius:\s*var\(--radius-lg\);/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
+    ...TOAST_BACKGROUND_RESET, /background-color:\s*var\(--ui-popover\);/u,
+    /color:\s*var\(--ui-popover-foreground\);/u, /box-shadow:\s*var\(--elevation-overlay\);/u,
+    /pointer-events:\s*auto;/u,
+  ],
+  entering: [
+    /animation-name:\s*hraness-toast-enter;/u, /animation-duration:\s*var\(--motion-duration-standard\);/u,
+    /animation-timing-function:\s*var\(--motion-easing-emphasized\);/u, /animation-delay:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
+    /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
+  ],
+  toneDanger: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-destructive\) 55%,\s*var\(--ui-border\)\);/u],
+  toneInfo: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-info\) 55%,\s*var\(--ui-border\)\);/u],
+  toneSuccess: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-success\) 55%,\s*var\(--ui-border\)\);/u],
+  toneWarning: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-warning\) 55%,\s*var\(--ui-border\)\);/u],
+  content: [/display:\s*flex;/u, /min-width:\s*0;/u, /flex-wrap:\s*wrap;/u, /align-items:\s*center;/u, /gap:\s*var\(--space-3\);/u],
+  copy: [/display:\s*grid;/u, /min-width:\s*0;/u, /flex:\s*1 1 12rem;/u, /gap:\s*var\(--space-1\);/u],
+  title: [/font-weight:\s*var\(--font-weight-bold\);/u, /line-height:\s*1\.3;/u],
+  description: [/color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-label\);/u, /line-height:\s*1\.5;/u],
+  action: [/flex:\s*0 0 auto;/u],
+  close: [
+    /display:\s*inline-grid;/u, /width:\s*var\(--interactive-target-compact\);/u,
+    /min-width:\s*var\(--interactive-target-compact\);/u,
+    /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-toast-coarse-min,\s*0px\)\);/u,
+    /align-items:\s*center;/u, /justify-items:\s*center;/u, /align-self:\s*start;/u,
+    /border-width:\s*0;/u, /border-style:\s*none;/u, /border-color:\s*current[Cc]olor;/u,
+    /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
+    /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
+    /border-radius:\s*var\(--radius-md\);/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
+    ...TOAST_BACKGROUND_RESET, /background-color:\s*(?:transparent|#0000);/u,
+    /color:\s*var\(--ui-muted-foreground\);/u,
+  ],
+  closeHovered: [...TOAST_BACKGROUND_RESET, /background-color:\s*var\(--ui-accent\);/u, /color:\s*var\(--ui-accent-foreground\);/u],
+  closeFocusVisible: [/outline-color:\s*var\(--ui-ring\);/u, /outline-style:\s*solid;/u, /outline-width:\s*2px;/u, /outline-offset:\s*2px;/u],
+  closeNativeInteractionFallbacks: [],
+};
+const TOAST_CONDITIONAL_DECLARATIONS: Partial<Record<ToastStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  region: [
+    { condition: "@media(max-width:40rem)", declaration: /inset-inline-end:\s*max\(var\(--space-3\),\s*env\(safe-area-inset-left\)\);/u },
+    { condition: "@media(max-width:40rem)", declaration: /inset-inline-start:\s*max\(var\(--space-3\),\s*env\(safe-area-inset-left\)\);/u },
+    { condition: "@media(max-width:40rem)", declaration: /width:\s*auto;/u },
+  ],
+  root: [
+    { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
+    { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
+  ],
+  entering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
+  toneDanger: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
+  toneInfo: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
+  toneSuccess: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
+  toneWarning: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
+  close: [{ condition: "@media(pointer:coarse)", declaration: /min-height:\s*var\(--interactive-target-min\);/u }],
+};
+const TOAST_NATIVE_DECLARATIONS = [
+  ...TOAST_DECLARATIONS.closeHovered.map((declaration) => ({ pseudo: "hover" as const, declaration })),
+  ...TOAST_DECLARATIONS.closeFocusVisible.map((declaration) => ({ pseudo: "focus-visible" as const, declaration })),
+];
+function requireToastContract(legacy: string, css: string, js: string, source: string, recipe: string): void {
+  assert.deepEqual(sourceStyleKeys(recipe, "toastStyles"), TOAST_STYLE_KEYS);
+  forbid(legacy, /\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u, "a legacy Toast recipe");
+  forbid(css, /\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u, "a semantic Toast selector");
+  forbid(css, /--gallery-toast-collision/u, "a gallery Toast marker");
+  requireMatch(legacy, /--hraness-toast-coarse-min:\s*var\(--interactive-target-min\);/u, "Toast synthetic coarse minimum");
+  requireMatch(legacy, /@keyframes\s+hraness-toast-enter/u, "retained Toast enter keyframes");
+  requireMatch(legacy, /@keyframes\s+hraness-toast-exit/u, "retained Toast exit keyframes");
+  const map = namedCompiledStyleMap(js, TOAST_STYLE_KEYS, "toastStyles class map");
+  assert.deepEqual([...map.properties.keys()], TOAST_STYLE_KEYS);
+  for (const key of TOAST_STYLE_KEYS) {
+    const entry = map.properties.get(key)!.value;
+    const classes = generatedClassNames(entry, "toastStyles." + key);
+    const rules = compiledStyleRules(css, map, key);
+    const bindings = [...compiledObjectProperties(entry, "toastStyles." + key)].filter(([property, value]) => property !== "$$css" && /["']x[A-Za-z0-9_-]+/u.test(value.value));
+    const expectedBindings = key === "closeNativeInteractionFallbacks"
+      ? TOAST_NATIVE_DECLARATIONS.length
+      : TOAST_DECLARATIONS[key].length + (key === "region" || key === "root" ? 1 : 0);
+    assert.equal(bindings.length, expectedBindings, "Toast " + key + " exact property bindings");
+    for (const className of classes) requireMatch(rules.map((rule) => rule.header).join("\n"), new RegExp("\\." + className + "(?![A-Za-z0-9_-])", "u"), "Toast bound class CSS");
+    for (const declaration of TOAST_DECLARATIONS[key]) requireExactBaseDeclarations(rules.filter((rule) => dialogDeclarationMatches(rule.body, declaration)), classes, [{ declaration }], "Toast " + key);
+    for (const { condition, declaration } of TOAST_CONDITIONAL_DECLARATIONS[key] ?? []) requireCompiledConditionalDeclaration(rules, condition, declaration, "Toast " + key);
+    if (key === "closeNativeInteractionFallbacks") for (const { pseudo, declaration } of TOAST_NATIVE_DECLARATIONS) requireExactPseudoDeclarations(rules.filter((rule) => dialogDeclarationMatches(rule.body, declaration)), classes, pseudo, [declaration], "Toast native close interaction");
+    for (const rule of rules) {
+      const conditions = rule.ancestors.map((ancestor) => normalizedHeader(ancestor.header)).filter((header) => /^@(?:container|media|supports)/u.test(header));
+      assert.ok(conditions.length === 0
+        ? (key === "closeNativeInteractionFallbacks"
+          ? TOAST_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) => dialogDeclarationMatches(rule.body, declaration) && rule.header.endsWith(":" + pseudo))
+          : TOAST_DECLARATIONS[key].some((declaration) => dialogDeclarationMatches(rule.body, declaration)))
+        : conditions.length === 1 && (TOAST_CONDITIONAL_DECLARATIONS[key] ?? []).some(({ condition, declaration }) => condition === conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
+      "Toast " + key + " exact declaration and condition inventory");
+    }
+    requireMatch(js, new RegExp(map.identifier + "\\." + key + "(?![A-Za-z0-9_$])", "u"), "compiled toastStyles." + key + " composition binding");
+  }
+  requireExactSourceMatches(source, /stylex\.props\(toastStyles\.region,\s*regionXstyle\)/gu, 1, "Toast region caller order");
+  requireExactSourceMatches(source, /toastStyles\.root,\s*toastStyles\.entering,\s*toastToneStyles\[tone\],\s*toastXstyle,/gu, 1, "Toast arrival, tone, and caller order");
+  requireExactSourceMatches(source, /toastStyles\.close,\s*!hasClosePresentation && toastStyles\.closeNativeInteractionFallbacks,\s*state\.isHovered && toastStyles\.closeHovered,\s*state\.isFocusVisible && toastStyles\.closeFocusVisible,\s*closeXstyle,/gu, 1, "Toast close fallback, state, and caller order");
+  requireExactSourceMatches(source, /style=\{regionPresentation\.style\}/gu, 1, "Toast region dynamic StyleX binding");
+  requireExactSourceMatches(source, /style=\{toastPresentation\.style\}/gu, 1, "Toast root dynamic StyleX binding");
+  requireExactSourceMatches(source, /style=\{\(state\) => closePresentation\(state\)\.style\}/gu, 1, "Toast close dynamic StyleX binding");
+  forbid(source, /\.is(?:Entering|Exiting)\b/u, "an unsupported React Aria Toast transition render state");
+  for (const tone of ["danger", "info", "success", "warning"] as const) requireMatch(source, new RegExp(tone + ": toastStyles\\.tone" + tone[0]!.toUpperCase() + tone.slice(1), "u"), "Toast " + tone + " finite recipe binding");
+  for (const slot of ["toast-region", "toast", "toast-content", "toast-copy", "toast-title", "toast-description", "toast-action", "toast-close"]) requireMatch(js, new RegExp('["\']' + slot + '["\']', "u"), "Toast " + slot + " semantic slot");
+}
+function verifyToastNegativeControls(legacy: string, css: string, js: string, source: string, recipe: string): void {
+  const map = namedCompiledStyleMap(js, TOAST_STYLE_KEYS, "toastStyles class map");
+  const rejects = (changed: string) => assert.throws(() => requireToastContract(legacy, changed, js, source, recipe), /Toast|toastStyles/u);
+  for (const key of TOAST_STYLE_KEYS) for (const declaration of TOAST_DECLARATIONS[key]) rejects(mutateCompiledRule(css, map, key, declaration, "remove"));
+  for (const key of TOAST_STYLE_KEYS) for (const { condition, declaration } of TOAST_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(mutateCompiledRule(css, map, key, declaration, "remove", condition));
+  for (const { declaration } of TOAST_NATIVE_DECLARATIONS) rejects(mutateCompiledRule(css, map, "closeNativeInteractionFallbacks", declaration, "remove"));
+  const entry = map.properties.get("title")!.value;
+  const extra = entry.replace("{", "{unexpectedToastBinding: " + JSON.stringify([...generatedClassNames(entry, "Toast title")][0]) + ",");
+  assert.throws(() => requireToastContract(legacy, css, js.replace(map.object, map.object.replace(entry, extra)), source, recipe), /Toast title exact property bindings/u);
+  const disconnected = js.replace(new RegExp(map.identifier + "\\.description(?![A-Za-z0-9_$])", "gu"), "disconnectedToast.description");
+  assert.notEqual(disconnected, js);
+  assert.throws(() => requireToastContract(legacy, css, disconnected, source, recipe), /compiled toastStyles.description composition binding/u);
+  assert.throws(() => requireToastContract(legacy + "\n.hraness-toast { color: red; }", css, js, source, recipe), /legacy Toast/u);
+  assert.throws(() => requireToastContract(legacy, css, js, source.replace("state.isHovered && toastStyles.closeHovered", "false && toastStyles.closeHovered"), recipe), /Toast close fallback, state, and caller order/u);
+  assert.throws(() => requireToastContract(legacy, css, js, source.replace("style={regionPresentation.style}", "style={undefined}"), recipe), /Toast region dynamic StyleX binding/u);
+  assert.throws(() => requireToastContract(legacy, css, js, source.replace("style={toastPresentation.style}", "style={undefined}"), recipe), /Toast root dynamic StyleX binding/u);
+  assert.throws(() => requireToastContract(legacy, css, js, source.replace("style={(state) => closePresentation(state).style}", "style={undefined}"), recipe), /Toast close dynamic StyleX binding/u);
+  assert.throws(() => requireToastContract(legacy, css, js, source.replace("toastStyles.entering", "toastStyles.root"), recipe), /Toast arrival, tone, and caller order/u);
+}
+
 function requireDialogContract(legacy: string, css: string, js: string, source: string, recipe: string): void {
   assert.deepEqual(sourceStyleKeys(recipe, "dialogStyles"), DIALOG_STYLE_KEYS);
   forbid(legacy, /\.hraness-dialog(?:__[A-Za-z0-9_-]+|-overlay)?(?![A-Za-z0-9_-])/u, "a legacy Dialog recipe");
@@ -5916,6 +6070,8 @@ const [
   menuStyleSource,
   dialogStyleSource,
   overlayStyleSource,
+  toastSource,
+  toastStyleSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -5951,6 +6107,8 @@ const [
     readFile(resolve(repository, "src/menu.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/dialog.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/overlays.stylex.ts"), "utf8"),
+    readFile(resolve(repository, "src/toast.tsx"), "utf8"),
+    readFile(resolve(repository, "src/toast.stylex.ts"), "utf8"),
   ]);
 
 const visuallyHiddenSources: VisuallyHiddenSources = {
@@ -6090,6 +6248,8 @@ requireMenuContract(legacyComponents, compiledCss, compiledJavaScript, menuSourc
 requireDialogContract(legacyComponents, compiledCss, compiledJavaScript, menuSource, dialogStyleSource);
 requireOverlayContract(legacyComponents, compiledCss, compiledJavaScript, menuSource, overlayStyleSource);
 verifyOverlayNegativeControls(legacyComponents, compiledCss, compiledJavaScript, menuSource, overlayStyleSource);
+requireToastContract(legacyComponents, compiledCss, compiledJavaScript, toastSource, toastStyleSource);
+verifyToastNegativeControls(legacyComponents, compiledCss, compiledJavaScript, toastSource, toastStyleSource);
 verifyDialogNegativeControls(legacyComponents, compiledCss, compiledJavaScript, menuSource, dialogStyleSource);
 const menuGuardMap = namedCompiledStyleMap(compiledJavaScript, MENU_STYLE_KEYS, "menuStyles class map");
 for (const key of MENU_STYLE_KEYS) {

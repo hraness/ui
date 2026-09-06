@@ -5,6 +5,21 @@
 }
 
 @layer components.hraness-ui.legacy {
+  [data-slot="toast-region"][aria-label$=" notifications"] {
+    --gallery-toast-collision: active;
+    gap: 1px;
+    width: 7px;
+  }
+  [data-slot="toast-region"][aria-label$=" notifications"] [data-slot="toast"] {
+    --gallery-toast-collision: active;
+    padding-top: 3px;
+    border-radius: 3px;
+    background-image: linear-gradient(red, blue);
+  }
+  [data-slot="toast-region"][aria-label$=" notifications"] [data-slot="toast-close"] {
+    background: red;
+    outline: 9px dashed red;
+  }
   .gallery-overlay-collision {
     --gallery-overlay-collision: active;
     max-width: 7px;

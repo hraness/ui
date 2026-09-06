@@ -144,8 +144,6 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   ]) expect(tokens).toContain(role);
 
   for (const contract of [
-    ".hraness-toast-region",
-    '[data-tone="success"]',
     "@media (pointer: coarse)",
     "@media (prefers-reduced-motion: reduce)",
     "@media (forced-colors: active)",
@@ -170,7 +168,9 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   expect(components).not.toMatch(/\.hraness-dialog(?:__[A-Za-z0-9_-]+|-overlay)?(?![A-Za-z0-9_-])/u);
   expect(components).toContain("--hraness-dialog-coarse-min: var(--interactive-target-min);");
   expect(components).not.toMatch(/\.hraness-(?:popover(?:__content)?|tooltip)(?![A-Za-z0-9_-])/u);
-  for (const retained of [".hraness-toast__close", "@keyframes hraness-overlay-enter", "@keyframes hraness-overlay-exit", "@keyframes hraness-fade-in", "@keyframes hraness-fade-out"]) expect(components).toContain(retained);
+  expect(components).not.toMatch(/\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u);
+  expect(components).toContain("--hraness-toast-coarse-min: var(--interactive-target-min);");
+  for (const retained of ["@keyframes hraness-toast-enter", "@keyframes hraness-toast-exit", "@keyframes hraness-overlay-enter", "@keyframes hraness-overlay-exit", "@keyframes hraness-fade-in", "@keyframes hraness-fade-out"]) expect(components).toContain(retained);
   const cardBridgePattern =
     /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
   expect(components.match(cardBridgePattern)).toHaveLength(1);

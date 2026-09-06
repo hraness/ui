@@ -80,6 +80,8 @@ import {
   Toolbar,
   ToggleButton,
   Tooltip,
+  ToastProvider,
+  useToast,
   ViewportFrame,
   WrappingRow,
 } from "@hraness/ui";
@@ -353,6 +355,24 @@ const galleryStyles = stylex.create({
   menuSeparatorOverride: { height: "2px" },
   dialogRootOverride: (width: string) => ({ width, borderRadius: "19px" }),
   overlayOverride: (radius: string) => ({ borderRadius: radius, paddingTop: "21px", maxWidth: "19rem" }),
+  toastCloseOverride: {
+    backgroundColor: "var(--ui-secondary)",
+    ":focus-visible": {
+      outlineColor: "var(--ui-warning)",
+      outlineOffset: "5px",
+      outlineStyle: "dashed",
+      outlineWidth: "3px",
+    },
+    ":hover": {
+      backgroundColor: "var(--ui-primary)",
+      color: "var(--ui-primary-foreground)",
+    },
+  },
+  toastCloseDynamicWidth: (width: string) => ({ width }),
+  toastRegionDynamicWidth: (width: string) => ({ width }),
+  toastRegionOverride: { gap: "19px" },
+  toastRootDynamicPadding: (paddingTop: string) => ({ paddingTop }),
+  toastRootOverride: { borderRadius: "19px" },
   dialogOverlayOverride: (padding: string) => ({ paddingTop: padding, backgroundColor: "color-mix(in oklch, black 35%, transparent)" }),
   linkDynamicLetterSpacing: (letterSpacing: string) => ({ letterSpacing }),
   linkOverride: {
@@ -693,6 +713,47 @@ function DialogGallery() {
       </DialogTrigger>
     </section>
   );
+}
+
+function ToastGalleryControls({ customized = false }: { readonly customized?: boolean }) {
+  const controller = useToast();
+  const [closed, setClosed] = useState(0);
+  const label = customized ? "customized" : "compiled";
+  const show = (tone: "danger" | "info" | "success" | "warning") => controller.toast({
+    action: tone === "success" ? <Button>Undo compiled change</Button> : undefined,
+    description: `${tone} Toast description`,
+    title: `${tone} ${label} Toast`,
+    tone,
+  }, {
+    duration: null,
+    onClose: () => setClosed((count) => count + 1),
+  });
+  return <div data-gallery-toast-controls={label}>
+    {(["danger", "info", "success", "warning"] as const).map((tone) => (
+      <Button key={tone} onPress={() => show(tone)}>Show {tone} {label} Toast</Button>
+    ))}
+    <Button onPress={controller.dismissAll}>Clear {label} Toasts</Button>
+    <output data-gallery-toast-closed={label}>{closed}</output>
+  </div>;
+}
+
+function ToastGallery() {
+  return <section aria-label="Toast presentation" data-gallery-section="toast">
+    <h2>Toast</h2>
+    <ToastProvider closeLabel="Dismiss compiled notification" label="Compiled notifications" maxVisibleToasts={3}>
+      <ToastGalleryControls />
+    </ToastProvider>
+    <ToastProvider
+      closeLabel="Dismiss customized notification"
+      closeXstyle={[galleryStyles.toastCloseOverride, galleryStyles.toastCloseDynamicWidth("3rem")]}
+      label="Customized notifications"
+      maxVisibleToasts={2}
+      regionXstyle={[galleryStyles.toastRegionOverride, galleryStyles.toastRegionDynamicWidth("21rem")]}
+      toastXstyle={[galleryStyles.toastRootOverride, galleryStyles.toastRootDynamicPadding("21px")]}
+    >
+      <ToastGalleryControls customized />
+    </ToastProvider>
+  </section>;
 }
 
 export function PrimitiveGallery() {
@@ -2200,6 +2261,7 @@ export function PrimitiveGallery() {
         <ListBoxGallery />
         <DialogGallery />
         <PopoverTooltipGallery />
+        <ToastGallery />
       </QuietSitePage>
       <QuietSiteFooter
         className="gallery-quiet-site-footer"

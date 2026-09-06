@@ -20,9 +20,18 @@ import {
   type ToastOptions,
   useToast,
 } from "./toast.js";
+import { toastStyles } from "./toast.stylex.js";
 
 const menuOverrides = stylex.create({ item: { color: "rebeccapurple", backgroundColor: "papayawhip" }, section: { gap: "13px" }, header: { fontSize: "17px" } });
 const dialogOverrides = stylex.create({ root: { width: "19rem" }, overlay: { paddingTop: "21px" } });
+const toastOverrides = stylex.create({
+  close: { backgroundColor: "papayawhip", ":hover": { backgroundColor: "rebeccapurple" } },
+  closeDynamic: (width: string) => ({ width }),
+  region: { gap: "13px" },
+  regionDynamic: (gap: string) => ({ gap }),
+  root: { borderRadius: "19px" },
+  rootDynamic: (paddingTop: string) => ({ paddingTop }),
+});
 
 test("Popover and Tooltip preserve portal-safe server rendering and typed caller seams", () => {
   const html = renderToStaticMarkup(<>
@@ -241,7 +250,7 @@ test("portal-backed overlays preserve their triggers during server rendering", (
   expect(html).not.toContain("More information");
 });
 
-test("toast context is request-local and its empty portal is SSR-safe", () => {
+test("toast context is request-local and its empty portal preserves typed presentation seams", () => {
   const persistent = { duration: null } satisfies ToastOptions;
 
   function ContextProbe() {
@@ -250,7 +259,12 @@ test("toast context is request-local and its empty portal is SSR-safe", () => {
   }
 
   const html = renderToStaticMarkup(
-    <ToastProvider maxVisibleToasts={Number.POSITIVE_INFINITY}>
+    <ToastProvider
+      closeXstyle={toastOverrides.close}
+      maxVisibleToasts={Number.POSITIVE_INFINITY}
+      regionXstyle={toastOverrides.region}
+      toastXstyle={toastOverrides.root}
+    >
       <ContextProbe />
     </ToastProvider>,
   );
@@ -259,9 +273,37 @@ test("toast context is request-local and its empty portal is SSR-safe", () => {
   expect(html).toContain('data-controller="function"');
   expect(html).toContain("Application");
   expect(html).not.toContain("hraness-toast-region");
+  expect(html).not.toContain("Xstyle=");
   expect(() => renderToStaticMarkup(<ContextProbe />)).toThrow(
     "useToast must be used within a ToastProvider.",
   );
+});
+
+test("Toast owns exact recipes, caller order, and no legacy visual selectors", async () => {
+  const [components, source, recipe] = await Promise.all([
+    Bun.file(new URL("./components.css", import.meta.url)).text(),
+    Bun.file(new URL("./toast.tsx", import.meta.url)).text(),
+    Bun.file(new URL("./toast.stylex.ts", import.meta.url)).text(),
+  ]);
+  expect(recipe.match(/^  [A-Za-z][A-Za-z0-9]+: \{/gmu)?.map((entry) => entry.slice(2, -3))).toEqual([
+    "region", "root", "entering", "toneDanger", "toneInfo", "toneSuccess", "toneWarning",
+    "content", "copy", "title", "description", "action", "close", "closeHovered", "closeFocusVisible", "closeNativeInteractionFallbacks",
+  ]);
+  expect(source).toContain("stylex.props(toastStyles.region, regionXstyle)");
+  expect(source).toMatch(/toastStyles\.root,[\s\S]*toastStyles\.entering,[\s\S]*toastToneStyles\[tone\],[\s\S]*toastXstyle/u);
+  expect(source).not.toMatch(/\.is(?:Entering|Exiting)\b/u);
+  expect(source).toMatch(/toastStyles\.close,[\s\S]*!hasClosePresentation && toastStyles\.closeNativeInteractionFallbacks,[\s\S]*state\.isHovered && toastStyles\.closeHovered,[\s\S]*state\.isFocusVisible && toastStyles\.closeFocusVisible,[\s\S]*closeXstyle/u);
+  expect(components).not.toMatch(/\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u);
+  expect(components).toContain("@keyframes hraness-toast-enter");
+  expect(components).toContain("@keyframes hraness-toast-exit");
+  expect(stylex.props(toastStyles.region, toastOverrides.region).className).toContain(stylex.props(toastOverrides.region).className);
+  expect(stylex.props(toastStyles.root, toastStyles.toneSuccess, toastOverrides.root).className).toContain(stylex.props(toastOverrides.root).className);
+  expect(stylex.props(toastStyles.close, toastStyles.closeHovered, toastOverrides.close).className).toContain(stylex.props(toastOverrides.close).className);
+  for (const [presentation, value] of [
+    [stylex.props(toastStyles.region, toastOverrides.regionDynamic("17px")), "17px"],
+    [stylex.props(toastStyles.root, toastOverrides.rootDynamic("19px")), "19px"],
+    [stylex.props(toastStyles.close, toastOverrides.closeDynamic("3rem")), "3rem"],
+  ] as const) expect(Object.values(presentation.style ?? {})).toContain(value);
 });
 
 test("collections own no remaining legacy visual selector", async () => {
