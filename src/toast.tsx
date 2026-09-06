@@ -21,6 +21,7 @@ import {
 
 import { hasStylexPresentation } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
+import { motionStyles } from "./motion.stylex.js";
 import { toastStyles } from "./toast.stylex.js";
 
 export type ToastTone = "danger" | "info" | "success" | "warning";
@@ -121,6 +122,7 @@ export function ToastProvider({
           const tone = toast.content.tone ?? "info";
           const toastPresentation = stylex.props(
             toastStyles.root,
+            motionStyles.toastEnter,
             toastStyles.entering,
             toastToneStyles[tone],
             toastXstyle,

@@ -347,8 +347,10 @@ test("Spinner and Skeleton compile their recipes before caller presentation", as
   const skeletonTag = skeleton.slice(0, skeleton.indexOf(">") + 1);
   const spinnerClasses = spinnerTag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
   const skeletonClasses = skeletonTag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
-  const [components, source] = await Promise.all([
+  const [component, components, motion, source] = await Promise.all([
+    Bun.file(new URL("./feedback.tsx", import.meta.url)).text(),
     Bun.file(new URL("./components.css", import.meta.url)).text(),
+    Bun.file(new URL("./motion.stylex.ts", import.meta.url)).text(),
     Bun.file(new URL("./feedback.stylex.ts", import.meta.url)).text(),
   ]);
 
@@ -361,8 +363,13 @@ test("Spinner and Skeleton compile their recipes before caller presentation", as
   expect(skeletonClasses.slice(1, -1).some((name) => name.startsWith("x"))).toBe(true);
   expect(skeletonTag).toMatch(/style="--[^:]+:2rem;height:4rem;min-height:3rem;width:7rem"/u);
   expect(components).not.toMatch(/\.hraness-(?:spinner|skeleton)(?![A-Za-z0-9_-])/u);
-  expect(components.match(/@keyframes hraness-spin/gu)).toHaveLength(1);
-  expect(components.match(/@keyframes hraness-skeleton/gu)).toHaveLength(1);
+  expect(components).not.toContain("@keyframes");
+  expect(motion).toContain("export const spinKeyframes = stylex.keyframes({");
+  expect(motion).toContain("export const skeletonKeyframes = stylex.keyframes({");
+  expect(motion).toContain("default: spinKeyframes");
+  expect(motion).toContain("default: skeletonKeyframes");
+  expect(component).toContain("motionStyles.spin");
+  expect(component).toContain("motionStyles.skeleton");
   expect(source).toContain('default: "700ms"');
   expect(source).toContain('default: "1.4s"');
   expect(source).toContain('const forcedColors = "@media(forced-colors: active)"');

@@ -280,8 +280,9 @@ test("toast context is request-local and its empty portal preserves typed presen
 });
 
 test("Toast owns exact recipes, caller order, and no legacy visual selectors", async () => {
-  const [components, source, recipe] = await Promise.all([
+  const [components, motion, source, recipe] = await Promise.all([
     Bun.file(new URL("./components.css", import.meta.url)).text(),
+    Bun.file(new URL("./motion.stylex.ts", import.meta.url)).text(),
     Bun.file(new URL("./toast.tsx", import.meta.url)).text(),
     Bun.file(new URL("./toast.stylex.ts", import.meta.url)).text(),
   ]);
@@ -294,8 +295,11 @@ test("Toast owns exact recipes, caller order, and no legacy visual selectors", a
   expect(source).not.toMatch(/\.is(?:Entering|Exiting)\b/u);
   expect(source).toMatch(/toastStyles\.close,[\s\S]*!hasClosePresentation && toastStyles\.closeNativeInteractionFallbacks,[\s\S]*state\.isHovered && toastStyles\.closeHovered,[\s\S]*state\.isFocusVisible && toastStyles\.closeFocusVisible,[\s\S]*closeXstyle/u);
   expect(components).not.toMatch(/\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u);
-  expect(components).toContain("@keyframes hraness-toast-enter");
-  expect(components).toContain("@keyframes hraness-toast-exit");
+  expect(components).not.toContain("@keyframes");
+  expect(motion).toContain("export const toastEnterKeyframes = stylex.keyframes({");
+  expect(motion).toContain("export const toastExitKeyframes = stylex.keyframes({");
+  expect(motion).toContain("default: toastEnterKeyframes");
+  expect(source).toContain("motionStyles.toastEnter");
   expect(stylex.props(toastStyles.region, toastOverrides.region).className).toContain(stylex.props(toastOverrides.region).className);
   expect(stylex.props(toastStyles.root, toastStyles.toneSuccess, toastOverrides.root).className).toContain(stylex.props(toastOverrides.root).className);
   expect(stylex.props(toastStyles.close, toastStyles.closeHovered, toastOverrides.close).className).toContain(stylex.props(toastOverrides.close).className);

@@ -29,6 +29,7 @@ import {
   mergeStylexInlineStyles,
 } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
+import { motionStyles } from "./motion.stylex.js";
 import {
   selectFieldStyles,
   selectTriggerSizeStyles,
@@ -234,7 +235,9 @@ export function SelectField<Id extends string>({
               className={(popoverState) => {
                 const presentation = stylex.props(
                   selectFieldStyles.popover,
+                  popoverState.isEntering && motionStyles.overlayEnter,
                   popoverState.isEntering && selectFieldStyles.popoverEntering,
+                  popoverState.isExiting && motionStyles.overlayExit,
                   popoverState.isExiting && selectFieldStyles.popoverExiting,
                 );
                 return cn(
@@ -245,7 +248,9 @@ export function SelectField<Id extends string>({
               placement="bottom start"
               style={(popoverState) => stylex.props(
                 selectFieldStyles.popover,
+                popoverState.isEntering && motionStyles.overlayEnter,
                 popoverState.isEntering && selectFieldStyles.popoverEntering,
+                popoverState.isExiting && motionStyles.overlayExit,
                 popoverState.isExiting && selectFieldStyles.popoverExiting,
               ).style}
             >

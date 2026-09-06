@@ -24,6 +24,7 @@ import {
 import { indicatorStyles } from "./indicators.stylex.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
+import { motionStyles } from "./motion.stylex.js";
 
 type PercentageStyle = CSSProperties & {
   readonly "--hraness-percentage": `${number}%`;
@@ -132,6 +133,7 @@ export function ProgressBar({
             {(() => {
               const fillPresentation = stylex.props(
                 indicatorStyles.fill,
+                percentage === undefined && motionStyles.progressIndeterminate,
                 percentage === undefined && indicatorStyles.indeterminateFill,
               );
               return (

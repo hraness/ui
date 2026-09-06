@@ -40,6 +40,7 @@ import {
   mergeStylexInlineStyles,
 } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
+import { motionStyles } from "./motion.stylex.js";
 import { Tooltip } from "./overlays.js";
 import { useLinkPrefetch } from "./router.js";
 import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
@@ -215,7 +216,7 @@ function inlineIconControlPresentation(
 }
 
 function PendingIndicator({ className }: Readonly<{ className?: string }>) {
-  const presentation = stylex.props(actionStyles.spinner);
+  const presentation = stylex.props(motionStyles.spin, actionStyles.spinner);
   return (
     <span
       aria-hidden="true"

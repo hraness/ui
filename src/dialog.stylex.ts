@@ -2,7 +2,6 @@ import * as stylex from "@stylexjs/stylex";
 
 const coarsePointer = "@media(pointer: coarse)";
 const forcedColors = "@media(forced-colors: active)";
-const reducedMotion = "@media(prefers-reduced-motion: reduce)";
 
 export const dialogStyles = stylex.create({
   body: {
@@ -71,12 +70,10 @@ export const dialogStyles = stylex.create({
     overscrollBehaviorX: "contain", overscrollBehaviorY: "contain",
   },
   overlayEntering: {
-    animationName: { default: "hraness-fade-in", [reducedMotion]: "none" },
     animationDuration: "var(--motion-duration-standard)", animationTimingFunction: "var(--motion-easing-standard)",
     animationDelay: "0s", animationIterationCount: 1, animationDirection: "normal", animationFillMode: "none", animationPlayState: "running",
   },
   overlayExiting: {
-    animationName: { default: "hraness-fade-out", [reducedMotion]: "none" },
     animationDuration: "var(--motion-duration-fast)", animationTimingFunction: "var(--motion-easing-standard)",
     animationDelay: "0s", animationIterationCount: 1, animationDirection: "normal", animationFillMode: "none", animationPlayState: "running",
   },

@@ -3,7 +3,6 @@ import * as stylex from "@stylexjs/stylex";
 const coarsePointer = "@media(pointer: coarse)";
 const compactViewport = "@media(max-width: 40rem)";
 const forcedColors = "@media(forced-colors: active)";
-const reducedMotion = "@media(prefers-reduced-motion: reduce)";
 
 export const toastStyles = stylex.create({
   region: {
@@ -73,10 +72,6 @@ export const toastStyles = stylex.create({
     },
   },
   entering: {
-    animationName: {
-      default: "hraness-toast-enter",
-      [reducedMotion]: "none",
-    },
     animationDuration: "var(--motion-duration-standard)",
     animationTimingFunction: "var(--motion-easing-emphasized)",
     animationDelay: "0s",

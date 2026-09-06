@@ -11,6 +11,7 @@ import type { StyleXStyles } from "@stylexjs/stylex";
 import { feedbackStyles } from "./feedback.stylex.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
+import { motionStyles } from "./motion.stylex.js";
 import { visuallyHiddenClassName } from "./visually-hidden.stylex.js";
 
 export interface SpinnerProps extends Omit<
@@ -37,6 +38,7 @@ export const Spinner = forwardRef<HTMLSpanElement, SpinnerProps>(
     ref,
   ) => {
     const presentation = stylex.props(
+      motionStyles.spin,
       feedbackStyles.spinnerRoot,
       size === "small" && feedbackStyles.spinnerSmall,
       size === "large" && feedbackStyles.spinnerLarge,
@@ -98,6 +100,7 @@ export const Skeleton = forwardRef<HTMLDivElement, SkeletonProps>(
     ref,
   ) => {
     const presentation = stylex.props(
+      motionStyles.skeleton,
       feedbackStyles.skeletonRoot,
       isText && feedbackStyles.skeletonText,
       xstyle,
