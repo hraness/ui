@@ -6,9 +6,9 @@ import { createRequire } from "node:module";
 import { dirname, extname, relative, resolve, sep } from "node:path";
 
 import { transformAsync, type ParserOptions } from "@babel/core";
-import stylexPluginModule, {
-  type Rule as UpstreamStylexRule,
-  type StyleXTransformObj,
+import type {
+  Rule as UpstreamStylexRule,
+  StyleXTransformObj,
 } from "@stylexjs/babel-plugin";
 import { transform as transformCss } from "lightningcss";
 
@@ -22,6 +22,15 @@ import {
   type StylexRuleValueV1,
   type StylexStandaloneSerializerV1,
 } from "./contracts.js";
+import {
+  STYLEX_BABEL_COMPAT_PATCH_ID,
+  STYLEX_BABEL_COMPAT_PATCH_SHA256,
+  STYLEX_BABEL_COMPAT_PATCHED_SOURCE_BYTES,
+  STYLEX_BABEL_COMPAT_PATCHED_SOURCE_SHA256,
+  STYLEX_BABEL_COMPAT_UPSTREAM_SOURCE_BYTES,
+  STYLEX_BABEL_COMPAT_UPSTREAM_SOURCE_SHA256,
+  stylexBabelPluginModule,
+} from "./stylex-babel-compat.js";
 
 // StyleX 0.19 combines a CommonJS module.exports runtime with ESM-shaped declarations,
 // so NodeNext needs this explicit checked boundary for the default binding.
@@ -40,7 +49,7 @@ function normalizeStylexPlugin(value: unknown): StyleXTransformObj {
   return plugin as unknown as StyleXTransformObj;
 }
 
-const stylexPlugin = normalizeStylexPlugin(stylexPluginModule);
+const stylexPlugin = normalizeStylexPlugin(stylexBabelPluginModule);
 
 export const compilerContract: StylexCompilerContractV1 = {
   compilerContractVersion: STYLEX_COMPILER_CONTRACT_VERSION,
@@ -61,10 +70,24 @@ export const compilerContract: StylexCompilerContractV1 = {
       prefix: "components.hraness-ui",
     },
   },
-  tools: { babelCore: "7.29.7", lightningcss: "1.33.0", stylex: "0.19.0" },
+  tools: {
+    babelCore: "7.29.7",
+    lightningcss: "1.33.0",
+    stylex: "0.19.0",
+    stylexBabelCompatibility: {
+      entry: "lib/index.js",
+      patchId: STYLEX_BABEL_COMPAT_PATCH_ID,
+      patchSha256: STYLEX_BABEL_COMPAT_PATCH_SHA256,
+      patchedSourceBytes: STYLEX_BABEL_COMPAT_PATCHED_SOURCE_BYTES,
+      patchedSourceSha256: STYLEX_BABEL_COMPAT_PATCHED_SOURCE_SHA256,
+      sourceBytes: STYLEX_BABEL_COMPAT_UPSTREAM_SOURCE_BYTES,
+      sourceSha256: STYLEX_BABEL_COMPAT_UPSTREAM_SOURCE_SHA256,
+    },
+  },
   transform: {
     classNamePrefix: "x",
     dev: false,
+    enableMediaQueryOrder: true,
     importSources: ["@stylexjs/stylex"],
     logicalRoot: "<graph-root>",
     moduleResolution: "commonJS",
@@ -327,6 +350,7 @@ export function createStylexTransformCollector(rootDirectory: string): StylexTra
         plugins: [stylexPlugin.withOptions({
           classNamePrefix: compilerContract.transform.classNamePrefix,
           dev: compilerContract.transform.dev,
+          enableMediaQueryOrder: compilerContract.transform.enableMediaQueryOrder,
           importSources: [...compilerContract.transform.importSources],
           runtimeInjection: false,
           styleResolution: compilerContract.transform.styleResolution,

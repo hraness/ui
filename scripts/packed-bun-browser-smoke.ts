@@ -273,6 +273,8 @@ const typeContractConfig = `${JSON.stringify({
 
 function buildSource(consumer: string): string {
   return `import {
+  compilerContract,
+  createStylexTransformCollector,
   createStylexGeneration,
   finalizeStylexGeneration,
   prepareStylexProducedTemplate,
@@ -284,6 +286,28 @@ import { rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const root = ${JSON.stringify(consumer)};
+
+assert.ok(import.meta.resolve("@hraness/ui/stylex-build").endsWith("/node_modules/@hraness/ui/dist/build/index.js"), "Compiler proof must load the installed packed build entry");
+assert.equal(compilerContract.transform.enableMediaQueryOrder, true);
+assert.equal(compilerContract.tools.stylexBabelCompatibility.patchId, "stylex-0.19.0-token-parser-explicit-eof-v1");
+const parserCollector = createStylexTransformCollector(root);
+const parserPrimer = 'import * as stylex from "@stylexjs/stylex"; export const styles = stylex.create({' + Array.from({ length: 128 }, (_, index) => 'item' + index + ':{color:{default:"black","@media (forced-colors: active)":"CanvasText"},animationName:{default:"none","@media (prefers-reduced-motion: reduce)":"none"}}').join(",") + '});';
+const firstPrimer = await parserCollector.transform(parserPrimer, resolve(root, "parser-primer.stylex.ts"));
+const secondPrimer = await parserCollector.transform(parserPrimer, resolve(root, "parser-primer.stylex.ts"));
+assert.equal(secondPrimer.code, firstPrimer.code);
+assert.deepEqual(secondPrimer.rules, firstPrimer.rules);
+const overlapSource = 'import * as stylex from "@stylexjs/stylex"; export const styles = stylex.create({root:{color:{default:"black","@media (min-width: 1px)":"red","@media (min-width: 2px)":"blue"}}});';
+const overlapResult = await parserCollector.transform(overlapSource, resolve(root, "parser-overlap.stylex.ts"));
+assert.deepEqual(overlapResult.rules.map(([key, value, priority]) => [value.ltr.replaceAll(key, "fixture"), priority]), [
+  [".fixture{color:black}", 3000],
+  ["@media (min-width: 1px) and (max-width: 1.99px){.fixture.fixture{color:red}}", 3200],
+  ["@media (min-width: 2px){.fixture.fixture{color:blue}}", 3200],
+]);
+for (const query of ["@media (forced-colors: active) trailing", "@media (forced-colors: active"]) {
+  await assert.rejects(parserCollector.transform('import * as stylex from "@stylexjs/stylex"; export const styles = stylex.create({root:{color:{default:"black",' + JSON.stringify(query) + ':"red"}}});', resolve(root, "parser-invalid.stylex.ts")), /Invalid media query syntax/u);
+}
+parserCollector.seal();
+console.log("Packed compiler verified repeated media, explicit ordering, overlap semantics, and malformed-query rejection");
 
 async function requireBuild(result, label) {
   if (result.success) return;

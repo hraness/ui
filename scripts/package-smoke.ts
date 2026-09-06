@@ -7153,6 +7153,7 @@ async function verifyConsumer(
   for (const path of [
     "build/bun.ts",
     "build/compiler.ts",
+    "build/stylex-babel-compat.ts",
     "build/contracts.ts",
     "build/generation.ts",
     "build/index.ts",
