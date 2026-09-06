@@ -34,6 +34,7 @@ import { cn } from "./lib/utils.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { menuStyles } from "./menu.stylex.js";
 import { dialogStyles } from "./dialog.stylex.js";
+import { overlayStyles } from "./overlays.stylex.js";
 
 export { DialogTrigger, MenuTrigger };
 export type { Placement };
@@ -385,6 +386,7 @@ export type PopoverProps = Omit<AriaPopoverProps, "children" | "className"> & {
   readonly children: ReactNode;
   readonly className?: string;
   readonly popoverRef?: Ref<HTMLElement>;
+  readonly xstyle?: StyleXStyles;
 };
 
 /** A named, non-modal popover for rich content under a DialogTrigger. */
@@ -394,19 +396,31 @@ export function Popover({
   className,
   offset = 8,
   popoverRef,
+  style,
+  xstyle,
   ...props
 }: PopoverProps) {
+  const presentation = (state: { isEntering: boolean; isExiting: boolean }) => stylex.props(
+    overlayStyles.surface,
+    overlayStyles.popover,
+    state.isEntering && overlayStyles.popoverEntering,
+    state.isExiting && overlayStyles.popoverExiting,
+    xstyle,
+  );
+  const contentPresentation = stylex.props(overlayStyles.popoverContent);
   return (
     <AriaPopover
       {...props}
-      className={cn("hraness-popover", className)}
+      className={(state) => cn("hraness-popover", presentation(state).className, className)}
+      style={(state) => mergeStylexInlineStyles(presentation(state).style, typeof style === "function" ? style(state) : style)}
       data-slot="popover"
       offset={offset}
       ref={popoverRef}
     >
       <AriaDialog
         aria-label={ariaLabel}
-        className="hraness-popover__content"
+        className={cn("hraness-popover__content", contentPresentation.className)}
+        style={contentPresentation.style}
         data-slot="popover-content"
       >
         {children}
@@ -426,6 +440,7 @@ export type TooltipProps = Omit<
   readonly children: ReactElement;
   readonly className?: string;
   readonly content: ReactNode;
+  readonly xstyle?: StyleXStyles;
 };
 
 export function Tooltip({
@@ -440,8 +455,11 @@ export function Tooltip({
   onOpenChange,
   offset = 8,
   placement = "top",
+  style,
+  xstyle,
   ...props
 }: TooltipProps) {
+  const presentation = stylex.props(overlayStyles.surface, overlayStyles.tooltip, xstyle);
   return (
     <TooltipTrigger
       closeDelay={closeDelay}
@@ -454,7 +472,8 @@ export function Tooltip({
       {children}
       <AriaTooltip
         {...props}
-        className={cn("hraness-tooltip", className)}
+        className={cn("hraness-tooltip", presentation.className, className)}
+        style={(state) => mergeStylexInlineStyles(presentation.style, typeof style === "function" ? style(state) : style)}
         data-slot="tooltip"
         offset={offset}
         placement={placement}

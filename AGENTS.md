@@ -20,8 +20,11 @@
 
 - `src/menu.stylex.ts` – package-compiled Menu, MenuItem, MenuSection, MenuSeparator, footer, and menu-popover presentation.
 - `src/dialog.stylex.ts` – package-compiled Dialog overlay, modal, structural slots, close interactions, and finite size recipes.
+- `src/overlays.stylex.ts` – package-compiled Popover and Tooltip surfaces, content, and Popover animation states.
 
 # Guidelines
+
+- Keep Popover and Tooltip presentation in `src/overlays.stylex.ts`. Compose the shared surface, component base, Popover entering/exiting states, then caller `xstyle`; native `style` remains final. Preserve Popover labels, inner AriaDialog, trigger/portal/ref/dismissal/offsets and Tooltip supplementary linkage, delays, placement, controlled state, and disabled behavior. Keep Menu, Dialog, Toast, shared overlay keyframes, and SelectField's keyframe dependency independent. Preserve forced-color borders and Popover reduced-motion behavior.
 
 - Keep Dialog presentation in `src/dialog.stylex.ts`. Apply overlay base, entering, exiting, then `overlayXstyle`, with native overlay `style` final. Apply modal base, finite size, then `xstyle`. Keep the internal close control's native hover/focus fallbacks before React Aria states. Preserve portals, dismissal defaults, focus containment/restoration, title and description relationships, inner dialog ref, and shared close callbacks for body/footer render functions. Keep Toast, Popover, Tooltip, and shared overlay keyframes independent. Preserve real and synthetic coarse close targets, reduced motion, and forced-color modal borders.
 - Keep Menu presentation in `src/menu.stylex.ts`, including all rich item slots and the menu popover. Apply focused-or-hovered, selected, disabled, danger, danger-highlighted, then caller recipes in order. Preserve React Aria semantics, final native item styles, trigger minimum width, reduced motion, forced-color borders, and independent real and synthetic coarse targets. Shared overlay keyframes remain a separate boundary.

@@ -9410,6 +9410,106 @@ async function verifyListBoxInteractions(page: Page, id: string): Promise<void> 
   await verifyMenuInteractions(page, id);
 }
 
+async function verifyPopoverTooltipInteractions(page: Page, id: string): Promise<void> {
+  const trigger = page.getByRole("button", { name: "Open compiled Popover", exact: true });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Compiled Popover", exact: true });
+  await dialog.waitFor({ state: "visible" });
+  await settleOwnedAnimations(page.locator('[data-slot="popover"]'));
+  const base = await dialog.evaluate((element) => {
+    const root = element.closest<HTMLElement>('[data-slot="popover"]')!;
+    const hasAtoms = (node: Element) => Array.from(node.classList).some((name) => /^x[A-Za-z0-9_-]+$/u.test(name));
+    const style = getComputedStyle(root);
+    const probe = document.createElement("span"); probe.style.paddingTop = "var(--space-4)"; root.append(probe);
+    const expectedPadding = getComputedStyle(probe).paddingTop; probe.remove();
+    return hasAtoms(root) && hasAtoms(element) && root.dataset.galleryPopoverRef === "true" && root.classList[0] === "hraness-popover"
+      && root.classList[root.classList.length - 1] === "gallery-overlay-collision" && style.getPropertyValue("--gallery-overlay-collision").trim() === "active"
+      && style.paddingTop === expectedPadding && style.backgroundImage === "none" && style.outlineStyle === "none" && getComputedStyle(element).minWidth === "0px" && getComputedStyle(element).outlineStyle === "none";
+  });
+  invariant(base, id + ": Popover compiled surface, content, ref, class order, or collision isolation changed");
+  await dialog.getByRole("button", { name: "Popover content action", exact: true }).focus();
+  await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+  invariant(await trigger.evaluate((element) => element === document.activeElement), id + ": Popover did not restore trigger focus");
+  await trigger.click(); await dialog.waitFor({ state: "visible" });
+  await page.mouse.click(1, 1); await dialog.waitFor({ state: "hidden" });
+
+  const customTrigger = page.getByRole("button", { name: "Open customized Popover", exact: true });
+  await customTrigger.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await customTrigger.click();
+  const custom = page.getByRole("dialog", { name: "Customized Popover", exact: true }); await custom.waitFor({ state: "visible" });
+  await settleOwnedAnimations(page.locator('[data-slot="popover"]'));
+  const customized = await custom.evaluate((element) => {
+    const root = element.closest<HTMLElement>('[data-slot="popover"]')!;
+    const style = getComputedStyle(root);
+    const trigger = [...document.querySelectorAll("button")].find((button) => button.textContent === "Open customized Popover")!;
+    return style.borderRadius === "19px" && style.paddingTop === "23px" && style.maxWidth === "304px" && style.backgroundImage === "none"
+      && root.dataset.placement === "bottom" && Math.abs(root.getBoundingClientRect().top - trigger.getBoundingClientRect().bottom - 12) < 2;
+  });
+  invariant(customized, id + ": Popover caller recipe, final native render style, placement, or offset changed");
+  await page.keyboard.press("Escape"); await custom.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Open locked Popover", exact: true }).click();
+  const locked = page.getByRole("dialog", { name: "Locked Popover", exact: true }); await locked.waitFor({ state: "visible" });
+  invariant(await locked.evaluate((element) => getComputedStyle(element.closest('[data-slot="popover"]')!).paddingTop === "25px"), id + ": Popover object native style changed");
+  await page.keyboard.press("Escape"); await page.mouse.click(1, 1);
+  invariant(await locked.isVisible(), id + ": locked Popover dismissed unexpectedly");
+  await locked.getByRole("button", { name: "Close locked Popover", exact: true }).click(); await locked.waitFor({ state: "hidden" });
+
+  const tooltipTrigger = page.getByRole("button", { name: "Compiled Tooltip trigger", exact: true });
+  await tooltipTrigger.hover();
+  const tooltip = page.getByRole("tooltip", { name: "Compiled supplementary tooltip", exact: true }); await tooltip.waitFor({ state: "visible" });
+  const tooltipBase = await tooltip.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const trigger = [...document.querySelectorAll("button")].find((button) => button.textContent === "Compiled Tooltip trigger")!;
+    const probe = document.createElement("span"); probe.style.padding = "var(--space-2) var(--space-3)"; element.append(probe);
+    const expected = getComputedStyle(probe); const padding = style.paddingTop === expected.paddingTop && style.paddingRight === expected.paddingRight; probe.remove();
+    return Array.from(element.classList).some((name) => /^x[A-Za-z0-9_-]+$/u.test(name)) && element.classList[0] === "hraness-tooltip" && element.classList[element.classList.length - 1] === "gallery-overlay-collision"
+      && style.getPropertyValue("--gallery-overlay-collision").trim() === "active"
+      && trigger.getAttribute("aria-describedby")?.split(/\s+/u).includes(element.id) && padding && style.maxWidth === "320px" && style.pointerEvents === "none" && style.backgroundImage === "none" && style.outlineStyle === "none";
+  });
+  invariant(tooltipBase, id + ": Tooltip naming linkage, compiled recipe, or collision precedence changed");
+  await page.mouse.move(1, 1); await tooltip.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Open locked Popover", exact: true }).focus();
+  await page.keyboard.press("Tab"); await tooltip.waitFor({ state: "visible" });
+  invariant(await tooltipTrigger.evaluate((element) => element === document.activeElement), id + ": Tooltip keyboard trigger lost focus");
+  await page.keyboard.press("Escape"); await tooltip.waitFor({ state: "hidden" });
+  await page.keyboard.press("Tab");
+  const disabled = page.getByRole("button", { name: "Disabled Tooltip trigger", exact: true }); await disabled.hover();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  invariant(await page.getByRole("tooltip", { name: "Disabled supplementary tooltip", exact: true }).count() === 0, id + ": disabled Tooltip opened");
+  await page.mouse.move(1, 1);
+  invariant(await page.locator('[data-slot="popover"]').count() === 0, id + ": Popover portal remained after dismissal");
+}
+
+async function verifyPopoverTooltipEnvironment(page: Page, id: string): Promise<void> {
+  await page.getByRole("button", { name: "Open compiled Popover", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Compiled Popover", exact: true }); await dialog.waitFor({ state: "visible" });
+  const popover = page.locator('[data-slot="popover"]');
+  const surface = await popover.evaluate((element) => {
+    const style = getComputedStyle(element); const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--ui-popover)"; probe.style.color = "CanvasText"; element.append(probe);
+    const expected = getComputedStyle(probe);
+    const snapshot = { background: style.backgroundColor, expectedBackground: expected.backgroundColor, border: style.borderTopColor, canvas: expected.color, adjust: style.forcedColorAdjust, forced: matchMedia("(forced-colors: active)").matches, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches, animation: style.animationName };
+    probe.remove(); return snapshot;
+  });
+  invariant(surface.background === surface.expectedBackground && (!surface.forced || (surface.border === surface.canvas && surface.adjust === "auto")) && (!surface.reduced || surface.animation === "none"), id + ": Popover theme, forced-color border, or reduced motion changed: " + JSON.stringify(surface));
+  await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+  const toggle = page.getByRole("button", { name: "Toggle controlled Tooltip", exact: true });
+  await toggle.evaluate((element) => element.scrollIntoView({ block: "center" })); await toggle.click();
+  const tooltip = page.getByRole("tooltip", { name: "Customized supplementary tooltip", exact: true }); await tooltip.waitFor({ state: "visible" });
+  const evidence = await tooltip.evaluate((element) => {
+    const style = getComputedStyle(element); const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--ui-foreground)"; probe.style.color = "CanvasText"; element.append(probe);
+    const expected = getComputedStyle(probe); const trigger = [...document.querySelectorAll("button")].find((button) => button.textContent === "Controlled Tooltip trigger")!;
+    const snapshot = { background: style.backgroundColor, expectedBackground: expected.backgroundColor, border: style.borderTopColor, canvas: expected.color, adjust: style.forcedColorAdjust, forced: matchMedia("(forced-colors: active)").matches,
+      custom: style.getPropertyValue("--gallery-overlay-collision").trim() === "active" && style.borderRadius === "19px" && style.paddingTop === "23px" && style.maxWidth === "304px" && style.pointerEvents === "none" && style.backgroundImage === "none",
+      linkage: trigger.getAttribute("aria-describedby")?.split(/\s+/u).includes(element.id), placement: element.getAttribute("data-placement"), offset: element.getBoundingClientRect().top - trigger.getBoundingClientRect().bottom };
+    probe.remove(); return snapshot;
+  });
+  invariant(evidence.custom && evidence.linkage && evidence.placement === "bottom" && Math.abs(evidence.offset - 12) < 2 && evidence.background === evidence.expectedBackground && (!evidence.forced || (evidence.border === evidence.canvas && evidence.adjust === "auto")), id + ": Tooltip controlled state, caller/native styles, placement/offset, theme, or forced colors changed: " + JSON.stringify(evidence));
+  await toggle.click(); await tooltip.waitFor({ state: "hidden" });
+  invariant(await page.locator('[data-slot="tooltip"]').count() === 0, id + ": Tooltip portal remained after controlled close");
+}
+
 async function verifyDialogInteractions(page: Page, id: string): Promise<void> {
   for (const size of ["small", "medium", "large"] as const) {
     const trigger = page.getByRole("button", { name: "Open compiled Dialog " + size, exact: true });
@@ -13424,6 +13524,8 @@ try {
           await verifyKeyboardPath(page, layout.id, checkboxFocusContract);
           await verifyListBoxInteractions(page, layout.id);
           await verifyDialogInteractions(page, layout.id);
+          await verifyPopoverTooltipInteractions(page, layout.id);
+          await verifyPopoverTooltipEnvironment(page, layout.id);
           await verifyDialogEnvironment(page, layout.id);
           await verifyLinkNativeFallbackCascadeIsolation(
             page,
@@ -13440,6 +13542,7 @@ try {
           await verifyListBoxPresentation(page, `${layout.id} dark`);
           await verifyMenuEnvironment(page, `${layout.id} dark`);
           await verifyDialogEnvironment(page, `${layout.id} dark`);
+          await verifyPopoverTooltipEnvironment(page, `${layout.id} dark`);
           const darkIndicators = await indicatorKnobEvidence(page);
           verifyIndicatorKnobEvidence(darkIndicators, `${layout.id} dark`);
           const darkSegmented = await segmentedControlEvidence(page);
@@ -13613,6 +13716,7 @@ try {
         await verifyListBoxCoarsePointer(page, true);
         await verifyMenuEnvironment(page, "real coarse pointer");
         await verifyDialogEnvironment(page, "real coarse pointer");
+        await verifyPopoverTooltipEnvironment(page, "real coarse pointer");
         invariant(
           failures.length === 0,
           `coarse-pointer action, CheckboxField, Fields, Indicators, and Knob matrix: ${failures.join("; ")}`,
@@ -13718,6 +13822,7 @@ try {
         await verifyListBoxForcedColors(page);
         await verifyMenuEnvironment(page, "forced colors and reduced motion");
         await verifyDialogEnvironment(page, "forced colors and reduced motion");
+        await verifyPopoverTooltipEnvironment(page, "forced colors and reduced motion");
         await verifyIndicatorKnobForcedColors(page);
 
         await resetKeyboardFocusToDocumentStart(page, "forced colors");
@@ -13854,6 +13959,7 @@ try {
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
   console.log(
     "Dialog gallery passed: three finite sizes, compiled structural slots, title and description relationships, inner ref, shared close callbacks, close hover and keyboard focus, focus containment and restoration, default outside/Escape dismissal, locked and disabled-close controls, caller recipes and final native styles, gallery collision isolation, light/dark tokens, real and synthetic coarse targets, forced colors, reduced motion, and portal cleanup.",
+    "Popover/Tooltip gallery passed: compiled surfaces and content, named dialog/ref, outside and Escape dismissal, locked controls, focus restoration, tooltip hover and keyboard linkage, disabled and controlled state, caller recipes and final object/render native styles, placement/offsets, collision isolation, light/dark and coarse environments, forced-color borders, reduced-motion Popover, and portal cleanup.",
   );
   console.log(
     "ListBox gallery passed: static and dynamic collections, inherited orientation and slot-null isolation, direct horizontal sections, caller DOM renderers and refs, StyleX/native-style precedence, hover/focus/selection/disabled states, typeahead, Autocomplete input-owned virtual focus and selection, retained Menu presentation, light/dark tokens, real and synthetic coarse targets under a local compact-token override, forced colors, gallery-only collision controls, SSR/hydration, and cleanup.",

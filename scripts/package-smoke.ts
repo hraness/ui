@@ -1222,6 +1222,66 @@ function dialogDeclarationMatches(body: string, declaration: RegExp): boolean {
   return new RegExp(`^(?:${declaration.source})$`, "u").test(body.trim());
 }
 
+const OVERLAY_STYLE_KEYS = ["popover", "popoverContent", "popoverEntering", "popoverExiting", "surface", "tooltip"] as const;
+type OverlayStyleKey = (typeof OVERLAY_STYLE_KEYS)[number];
+const OVERLAY_DECLARATIONS: Readonly<Record<OverlayStyleKey, readonly RegExp[]>> = {
+  popover: [/padding-top:\s*var\(--space-4\);/u, /padding-right:\s*var\(--space-4\);/u, /padding-bottom:\s*var\(--space-4\);/u, /padding-left:\s*var\(--space-4\);/u],
+  popoverContent: [/min-width:\s*0;/u, /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u],
+  popoverEntering: MENU_DECLARATIONS.popoverEntering,
+  popoverExiting: MENU_DECLARATIONS.popoverExiting,
+  surface: MENU_DECLARATIONS.popover,
+  tooltip: [
+    /max-width:\s*20rem;/u, /padding-top:\s*var\(--space-2\);/u, /padding-right:\s*var\(--space-3\);/u, /padding-bottom:\s*var\(--space-2\);/u, /padding-left:\s*var\(--space-3\);/u,
+    /border-radius:\s*var\(--radius-md\);/u, /background-attachment:\s*scroll;/u, /background-clip:\s*border-box;/u, /background-color:\s*var\(--ui-foreground\);/u,
+    /background-image:\s*none;/u, /background-origin:\s*padding-box;/u, /background-position:\s*0(?:%|px)? 0(?:%|px)?;/u, /background-repeat:\s*repeat;/u, /background-size:\s*auto(?: auto)?;/u,
+    /color:\s*var\(--ui-background\);/u, /font-size:\s*var\(--text-caption\);/u, /line-height:\s*1\.4;/u, /pointer-events:\s*none;/u,
+  ],
+};
+const OVERLAY_CONDITIONAL_DECLARATIONS: Partial<Record<OverlayStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  surface: MENU_CONDITIONAL_DECLARATIONS.popover!,
+  popoverEntering: MENU_CONDITIONAL_DECLARATIONS.popoverEntering!,
+  popoverExiting: MENU_CONDITIONAL_DECLARATIONS.popoverExiting!,
+};
+function requirePackageOverlay(javaScript: string, css: string, legacy: string): void {
+  const map = packageNamedStyleMap(javaScript, OVERLAY_STYLE_KEYS, "overlayStyles class map");
+  const identifier = javaScript.slice(0, javaScript.indexOf(map.object)).match(/([A-Za-z_$][\w$]*)\s*=\s*$/u)?.[1];
+  assert.ok(identifier, "packed overlayStyles declaration binding");
+  assert.deepEqual(packageTopLevelStyleKeys(map.object, "overlayStyles"), OVERLAY_STYLE_KEYS);
+  for (const key of OVERLAY_STYLE_KEYS) {
+    const entry = packageNamedStyleEntry(map, key);
+    const bindings = [...entry.matchAll(/(?:^|[,{])\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu)];
+    assert.equal(bindings.length, OVERLAY_DECLARATIONS[key].length + (key === "surface" ? 1 : 0), "packed Popover/Tooltip " + key + " exact property bindings");
+    const classes = packageEntryClassNames(map, key);
+    const rules = packageStyleRules(css, classes);
+    for (const className of classes) assert.ok(rules.some((rule) => new RegExp("\\." + className + "(?![A-Za-z0-9_-])", "u").test(rule.header)), "packed Popover/Tooltip binds every atom");
+    for (const declaration of OVERLAY_DECLARATIONS[key]) requirePackageExactBaseDeclaration(rules.filter((rule) => rule.conditions.length === 0 && dialogDeclarationMatches(rule.body, declaration)).map((rule) => rule.source).join("\n"), classes, declaration, "packed Popover/Tooltip " + key);
+    const conditional = OVERLAY_CONDITIONAL_DECLARATIONS[key] ?? [];
+    for (const { condition, declaration } of conditional) requirePackageExactBaseDeclaration(packageExactConditionalCss(css, condition), classes, declaration, "packed Popover/Tooltip " + key + " conditional");
+    for (const rule of rules) assert.ok(rule.conditions.length === 0 ? OVERLAY_DECLARATIONS[key].some((declaration) => dialogDeclarationMatches(rule.body, declaration)) : rule.conditions.length === 1 && conditional.some(({ condition, declaration }) => normalizedPackageCondition(condition) === rule.conditions[0] && dialogDeclarationMatches(rule.body, declaration)), "packed Popover/Tooltip " + key + " exact declaration and condition inventory");
+    assert.match(javaScript, new RegExp(identifier + "\\." + key + "(?![A-Za-z0-9_$])", "u"), "packed overlayStyles composition binding");
+  }
+  assert.doesNotMatch(legacy, /\.hraness-(?:popover(?:__content)?|tooltip)(?![A-Za-z0-9_-])/u, "packed Popover/Tooltip legacy selector");
+  assert.doesNotMatch(css, /\.hraness-(?:popover(?:__content)?|tooltip)(?![A-Za-z0-9_-])/u, "packed Popover/Tooltip semantic selector");
+  assert.doesNotMatch(css, /--gallery-overlay-collision/u, "packed Popover/Tooltip gallery marker");
+}
+function verifyPackageOverlayNegativeControls(javaScript: string, css: string, legacy: string): void {
+  const map = packageNamedStyleMap(javaScript, OVERLAY_STYLE_KEYS, "overlayStyles class map");
+  const remove = (key: OverlayStyleKey, declaration: RegExp, condition?: string) => {
+    const rules = packageStyleRules(css, packageEntryClassNames(map, key)).filter((rule) => dialogDeclarationMatches(rule.body, declaration) && (condition === undefined ? rule.conditions.length === 0 : rule.conditions.length === 1 && rule.conditions[0] === normalizedPackageCondition(condition)));
+    assert.equal(rules.length, 1, "packed Popover/Tooltip negative control owns one rule");
+    const rule = rules[0]!;
+    assert.equal(css.split(rule.source).length - 1, 1);
+    return css.replace(rule.source, "");
+  };
+  const rejects = (changed: string) => assert.throws(() => requirePackageOverlay(javaScript, changed, legacy), /Popover|Tooltip/u);
+  for (const key of OVERLAY_STYLE_KEYS) for (const declaration of OVERLAY_DECLARATIONS[key]) rejects(remove(key, declaration));
+  for (const key of OVERLAY_STYLE_KEYS) for (const { condition, declaration } of OVERLAY_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(remove(key, declaration, condition));
+  const entry = packageNamedStyleEntry(map, "tooltip");
+  const extra = entry.replace("{", "{unexpectedOverlayBinding: " + JSON.stringify([...packageEntryClassNames(map, "tooltip")][0]) + ",");
+  assert.throws(() => requirePackageOverlay(javaScript.replace(map.object, map.object.replace(entry, extra)), css, legacy), /Tooltip tooltip exact property bindings/u);
+  assert.throws(() => requirePackageOverlay(javaScript, css, legacy + "\n.hraness-popover { color: red; }"), /Popover\/Tooltip legacy/u);
+}
+
 function requirePackageDialog(javaScript: string, css: string, legacy: string): void {
   const map = packageNamedStyleMap(javaScript, DIALOG_STYLE_KEYS, "dialogStyles class map");
   assert.deepEqual(packageTopLevelStyleKeys(map.object, "dialogStyles"), DIALOG_STYLE_KEYS);
@@ -2936,6 +2996,36 @@ function resolveGenuineNodeExecutable(): string {
   throw new Error("package smoke requires a genuine Node 24 executable on PATH");
 }
 
+const overlaySsrRuntimeProbe = String.raw`
+// React Aria portals do not render on the server, even when requested open.
+// Exercise installed runtime and trigger semantics without claiming an open portal.
+for (const requestedOpen of [false, true]) {
+  const overlayRef = React.createRef();
+  const overlayMarkup = renderToStaticMarkup(React.createElement(React.Fragment, null,
+    React.createElement(DialogTrigger, { defaultOpen: requestedOpen },
+      React.createElement(Button, { id: "package-popover-trigger" }, "Package Popover trigger"),
+      React.createElement(Popover, {
+        "aria-label": "Package named Popover", popoverRef: overlayRef,
+        offset: 12, placement: "bottom start", xstyle: { $$css: true },
+        style: () => ({ paddingTop: "23px" }),
+      }, "Package portal-only rich content"),
+    ),
+    React.createElement(Tooltip, {
+      content: "Package portal-only supplementary content", isOpen: requestedOpen,
+      delay: 0, closeDelay: 0, placement: "bottom", xstyle: { $$css: true },
+      style: () => ({ paddingTop: "25px" }),
+    }, React.createElement(Button, { id: "package-tooltip-trigger" }, "Package Tooltip trigger")),
+  ));
+  assert.match(overlayMarkup, /id="package-popover-trigger"/u);
+  assert.match(overlayMarkup, /aria-haspopup="dialog"/u);
+  assert.match(overlayMarkup, />Package Popover trigger</u);
+  assert.match(overlayMarkup, /id="package-tooltip-trigger"/u);
+  assert.match(overlayMarkup, />Package Tooltip trigger</u);
+  assert.doesNotMatch(overlayMarkup, /Package portal-only|data-slot="(?:popover|popover-content|tooltip)"|xstyle=|popoverRef=/u);
+  assert.equal(overlayRef.current, null, "server rendering must not attach a portal ref");
+}
+`;
+
 function ssrProbe(
   release: ReactRelease,
   checkboxProbe: CheckboxPrecedenceProbe,
@@ -2950,6 +3040,7 @@ function ssrProbe(
 ): string {
   return String.raw`import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
+import { Button, DialogTrigger, Popover, Tooltip } from "@hraness/ui";
 
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import {
@@ -3006,6 +3097,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 assert.equal(React.version, ${JSON.stringify(release.version)});
+${overlaySsrRuntimeProbe}
 
 const checkboxRootXstyle = {
   ${JSON.stringify(checkboxProbe.rootProperty)}: "package-checkbox-root-xstyle",
@@ -4423,6 +4515,10 @@ import {
   type MenuSectionProps,
   DialogContent,
   type DialogContentProps,
+  Popover,
+  type PopoverProps,
+  Tooltip,
+  type TooltipProps,
   EmptyState,
   FileField,
   Form,
@@ -5173,6 +5269,21 @@ const invalidDataTableWrapperXstyle: DataTableProps<PackageDataTableRow> = {
   wrapperXstyle: { overflowX: "scroll" },
 };
 const packageMenuProps: MenuProps = { "aria-label": "Actions", children: null, xstyle: styles.wrapper, popoverXstyle: styles.wrapper, footerXstyle: styles.wrapper, menuRef: createRef<HTMLDivElement>(), matchTriggerWidth: true };
+const packagePopoverProps: PopoverProps = { "aria-label": "Details", children: "Rich content", xstyle: styles.wrapper, popoverRef: createRef<HTMLElement>(), offset: 12, isKeyboardDismissDisabled: true, style: ({ isEntering }) => ({ paddingTop: isEntering ? "21px" : "23px" }) };
+const packageTooltipProps: TooltipProps = { children: createElement("button", null, "Named trigger"), content: "Supplementary details", xstyle: styles.wrapper, delay: 0, closeDelay: 0, placement: "bottom", isOpen: true, onOpenChange: () => {}, style: () => ({ paddingTop: "15px" }) };
+void createElement(Popover, packagePopoverProps);
+void createElement(Tooltip, packageTooltipProps);
+const invalidPopoverXstyle: PopoverProps = { ...packagePopoverProps,
+  // @ts-expect-error Popover accepts compiled recipes rather than raw CSS.
+  xstyle: { color: "red" },
+};
+const invalidTooltipXstyle: TooltipProps = { ...packageTooltipProps,
+  // @ts-expect-error Tooltip accepts compiled recipes rather than raw CSS.
+  xstyle: { color: "red" },
+};
+// @ts-expect-error Popover requires an accessible name.
+const unnamedPopover: PopoverProps = { children: "Details" };
+void [invalidPopoverXstyle, invalidTooltipXstyle, unnamedPopover];
 const packageDialogProps: DialogContentProps = {
   title: "Settings", size: "small", dialogRef: createRef<HTMLDivElement>(),
   xstyle: styles.wrapper, overlayXstyle: styles.wrapper,
@@ -5381,7 +5492,7 @@ function viteClientProbe(
   dataTableProbe: PackageDataTableProbe,
 ): string {
   return `import "@hraness/ui/styles.css";
-import { AskAiAboutThis, Card, CardDescription, CheckboxField, DataTable, EmptyState, FileField, Form, InlineAlert, KeyHint, Knob, Link, Meter, NativeSelectField, PageIntro, PressableCard, ProgressBar, SelectField, SettingsCard, Slider, TextField, Toolbar } from "@hraness/ui";
+import { AskAiAboutThis, Button, Card, CardDescription, CheckboxField, DataTable, DialogTrigger, EmptyState, FileField, Form, InlineAlert, KeyHint, Knob, Link, Meter, NativeSelectField, PageIntro, Popover, PressableCard, ProgressBar, SelectField, SettingsCard, Slider, TextField, Toolbar, Tooltip } from "@hraness/ui";
 import * as React from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -5405,6 +5516,13 @@ const dataTableBaseClasses = ${JSON.stringify(dataTableProbe.tableBaseClasses)};
 const dataTableWrapperBaseClasses = ${JSON.stringify(dataTableProbe.wrapperBaseClasses)};
 const reactRoot = createRoot(root);
 flushSync(() => reactRoot.render(React.createElement(React.Fragment, null,
+  React.createElement(DialogTrigger, { defaultOpen: false },
+    React.createElement(Button, { id: "vite-popover-trigger" }, "Vite Popover trigger"),
+    React.createElement(Popover, { "aria-label": "Vite named Popover", offset: 12, placement: "bottom start" }, "Vite portal-only rich content"),
+  ),
+  React.createElement(Tooltip, { content: "Vite portal-only supplementary content", isOpen: false, delay: 0, closeDelay: 0 },
+    React.createElement(Button, { id: "vite-tooltip-trigger" }, "Vite Tooltip trigger"),
+  ),
   React.createElement(Card, { tone: "accent" },
     React.createElement(CardDescription, null, "Vite card"),
   ),
@@ -5479,6 +5597,17 @@ flushSync(() => reactRoot.render(React.createElement(React.Fragment, null,
   }, React.createElement("button", { type: "button" }, "Save locally")),
 )));
 const contentRoot = root.querySelector('[data-slot="page-intro"]');
+const popoverTrigger = root.querySelector("#vite-popover-trigger");
+const tooltipTrigger = root.querySelector("#vite-tooltip-trigger");
+if (!(popoverTrigger instanceof HTMLButtonElement) || popoverTrigger.textContent !== "Vite Popover trigger" || popoverTrigger.getAttribute("aria-haspopup") !== "dialog" || popoverTrigger.getAttribute("aria-expanded") !== "false") {
+  throw new Error("Vite client closed Popover trigger semantics changed");
+}
+if (!(tooltipTrigger instanceof HTMLButtonElement) || tooltipTrigger.textContent !== "Vite Tooltip trigger" || tooltipTrigger.hasAttribute("aria-describedby")) {
+  throw new Error("Vite client closed Tooltip trigger semantics changed");
+}
+if (document.querySelector('[data-slot="popover"], [data-slot="popover-content"], [data-slot="tooltip"]') !== null || root.textContent?.includes("Vite portal-only")) {
+  throw new Error("Vite client closed Popover/Tooltip leaked portal content");
+}
 if (!(contentRoot instanceof HTMLElement)) {
   throw new Error("Vite client content precedence probe is missing");
 }
@@ -5536,7 +5665,7 @@ function viteSsrProbe(
   visuallyHiddenClasses: readonly string[],
 ): string {
   return `import assert from "node:assert/strict";
-import { CheckboxField, DataTable, EmptyState, Form, InlineAlert, Knob, Link, Meter, NativeSelectField, PageIntro, ProgressBar, SelectField, SettingsCard, Slider, TextField } from "@hraness/ui";
+import { Button, CheckboxField, DataTable, DialogTrigger, EmptyState, Form, InlineAlert, Knob, Link, Meter, NativeSelectField, PageIntro, Popover, ProgressBar, SelectField, SettingsCard, Slider, TextField, Tooltip } from "@hraness/ui";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -5811,7 +5940,8 @@ for (const baseClass of ${JSON.stringify(indicatorKnobProbe.knobControlBaseClass
 for (const focusClass of ${JSON.stringify(indicatorKnobProbe.knobControlNativeFocusClasses)}) {
   assert.ok(!knobControlTag.split(/[\\s"]/u).includes(focusClass));
 }
-console.log("Vite SSR CheckboxField, Form, Link, Content, DataTable, indicators, and Knob xstyle runtime passed");
+${overlaySsrRuntimeProbe}
+console.log("Vite SSR CheckboxField, Form, Link, Content, DataTable, indicators, and Knob xstyle runtime and Popover/Tooltip portal-safe runtime passed");
 `;
 }
 
@@ -5931,6 +6061,7 @@ async function verifyConsumer(
   await access(join(consumer, "node_modules", "@hraness", "ui", "src", "list-box.stylex.ts"));
   await access(join(consumer, "node_modules", "@hraness", "ui", "src", "menu.stylex.ts"));
   await access(join(consumer, "node_modules", "@hraness", "ui", "src", "dialog.stylex.ts"));
+  await access(join(consumer, "node_modules", "@hraness", "ui", "src", "overlays.stylex.ts"));
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "data-display.tsx"),
   );
@@ -6011,6 +6142,8 @@ async function verifyConsumer(
   const listBoxProbe = packageListBoxProbe(installedJavaScript, installedStylexCss);
   requirePackageMenu(installedJavaScript, installedStylexCss, installedComponentsCss);
   requirePackageDialog(installedJavaScript, installedStylexCss, installedComponentsCss);
+  requirePackageOverlay(installedJavaScript, installedStylexCss, installedComponentsCss);
+  verifyPackageOverlayNegativeControls(installedJavaScript, installedStylexCss, installedComponentsCss);
   verifyPackageDialogNegativeControls(installedJavaScript, installedStylexCss, installedComponentsCss);
   verifyPackageMenuNegativeControls(installedJavaScript, installedStylexCss, installedComponentsCss);
   assert.doesNotMatch(installedComponentsCss, /\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
@@ -6123,6 +6256,8 @@ async function verifyConsumer(
   assert.match(viteJavaScript, /hraness-pressable-card/u);
   assert.match(viteJavaScript, /hraness-toolbar/u);
   assert.match(viteJavaScript, /hraness-key-hint/u);
+  for (const hook of ["hraness-popover", "hraness-tooltip", "vite-popover-trigger", "vite-tooltip-trigger"]) assert.ok(viteJavaScript.includes(hook), "Vite client must bundle " + hook);
+  assert.ok(viteJavaScript.includes("Vite client closed Popover/Tooltip leaked portal content"), "Vite client must bundle closed-overlay assertions");
   assert.match(viteJavaScript, /hraness-page-intro/u);
   assert.match(
     viteJavaScript,
@@ -6299,6 +6434,7 @@ async function verifyConsumer(
     );
   }
   requireNoMigratedGallerySentinels(viteSsrBundle);
+  for (const hook of ["hraness-popover", "hraness-tooltip", "package-popover-trigger", "package-tooltip-trigger"]) assert.ok(viteSsrBundle.includes(hook), "Vite SSR must bundle " + hook);
   assert.doesNotMatch(
     viteSsrBundle,
     /from\s*["']@hraness\/ui["']/u,

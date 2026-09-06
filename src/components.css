@@ -42,40 +42,6 @@
     display: none;
   }
 
-  :where(.hraness-popover, .hraness-tooltip) {
-    z-index: var(--z-tooltip);
-    max-width: min(24rem, calc(100vw - 2rem));
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    outline: none;
-    background: var(--ui-popover);
-    color: var(--ui-popover-foreground);
-    box-shadow: var(--elevation-overlay);
-  }
-
-  :where(.hraness-popover)[data-entering] {
-    animation: hraness-overlay-enter var(--motion-duration-standard) var(--motion-easing-emphasized);
-  }
-
-  :where(.hraness-popover)[data-exiting] {
-    animation: hraness-overlay-exit var(--motion-duration-fast) var(--motion-easing-standard);
-  }
-
-  .hraness-popover {
-    padding: var(--space-4);
-  }
-
-  .hraness-tooltip {
-    max-width: 20rem;
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    background: var(--ui-foreground);
-    color: var(--ui-background);
-    font-size: var(--text-caption);
-    line-height: 1.4;
-    pointer-events: none;
-  }
-
   .hraness-breadcrumbs {
     min-width: 0;
   }
@@ -165,11 +131,6 @@
   ) {
     outline: 2px solid var(--ui-ring);
     outline-offset: 2px;
-  }
-
-  .hraness-popover__content {
-    min-width: 0;
-    outline: none;
   }
 
   .hraness-progress__label-row {
@@ -450,8 +411,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :where(.hraness-popover,
-    .hraness-toast) {
+  :where(.hraness-toast) {
     animation: none;
   }
 }
@@ -477,8 +437,6 @@
   }
 
   :where(
-    .hraness-popover,
-    .hraness-tooltip,
     .hraness-toast
   ) {
     border-color: CanvasText;

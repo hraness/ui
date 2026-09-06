@@ -351,7 +351,7 @@ const styles = stylex.create({
 `AskAiAboutThis`, `Button`, `CopyButton`, `IconButton`, `IconLink`, `ToggleButton`,
 `LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `KeyHint`, `PageIntro`, `EmptyState`, `InlineAlert`, `SettingsCard`, `DataTable`,
-`DialogContent`, `Menu`, `MenuItem`, `MenuSection`, `MenuSeparator`, `ListBox`, `ListBoxItem`, `ListBoxSection`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
+`Popover`, `Tooltip`, `DialogContent`, `Menu`, `MenuItem`, `MenuSection`, `MenuSeparator`, `ListBox`, `ListBoxItem`, `ListBoxSection`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `SkipLink`, `Separator`, `Form`, `FieldDescription`, `FieldError`, `TextField`,
 `TextAreaField`, `SearchField`, `NumberField`, `CheckboxField`, `CheckboxGroup`,
@@ -361,6 +361,13 @@ accept a typed StyleX override. Base declarations are applied first, finite
 size, tone, shape, and interaction recipes come next, and the caller recipe is
 applied last. `CheckboxField` exposes `controlXstyle` separately for its
 semantic checkbox label.
+`Popover` and `Tooltip` accept `xstyle` on their outer surfaces, with native
+`style` applied last, including React Aria style render functions. Popover
+preserves its required accessible label, inner dialog, ref, offsets, and
+dismissal behavior. Tooltip remains supplementary to its trigger's accessible
+name and preserves controlled state, delay, placement, and disabled behavior.
+Popover animations respect reduced motion; both surfaces retain system borders
+in forced colors. Shared overlay keyframes remain available to SelectField.
 `DialogContent` exposes `xstyle` on the modal surface and `overlayXstyle` on
 its backdrop. Its native `style`, including a React Aria render function,
 applies last to the backdrop. The `small`, `medium`, and `large` sizes remain

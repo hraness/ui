@@ -3233,6 +3233,71 @@ function dialogDeclarationMatches(body: string, declaration: RegExp): boolean {
   return new RegExp(`^(?:${declaration.source})$`, "u").test(body.trim());
 }
 
+const OVERLAY_STYLE_KEYS = ["popover", "popoverContent", "popoverEntering", "popoverExiting", "surface", "tooltip"] as const;
+type OverlayStyleKey = (typeof OVERLAY_STYLE_KEYS)[number];
+const OVERLAY_DECLARATIONS: Readonly<Record<OverlayStyleKey, readonly RegExp[]>> = {
+  popover: [/padding-top:\s*var\(--space-4\);/u, /padding-right:\s*var\(--space-4\);/u, /padding-bottom:\s*var\(--space-4\);/u, /padding-left:\s*var\(--space-4\);/u],
+  popoverContent: [/min-width:\s*0;/u, /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u],
+  popoverEntering: MENU_DECLARATIONS.popoverEntering,
+  popoverExiting: MENU_DECLARATIONS.popoverExiting,
+  surface: MENU_DECLARATIONS.popover,
+  tooltip: [
+    /max-width:\s*20rem;/u, /padding-top:\s*var\(--space-2\);/u, /padding-right:\s*var\(--space-3\);/u, /padding-bottom:\s*var\(--space-2\);/u, /padding-left:\s*var\(--space-3\);/u,
+    /border-radius:\s*var\(--radius-md\);/u, /background-attachment:\s*scroll;/u, /background-clip:\s*border-box;/u, /background-color:\s*var\(--ui-foreground\);/u,
+    /background-image:\s*none;/u, /background-origin:\s*padding-box;/u, /background-position:\s*0(?:%|px)? 0(?:%|px)?;/u, /background-repeat:\s*repeat;/u, /background-size:\s*auto(?: auto)?;/u,
+    /color:\s*var\(--ui-background\);/u, /font-size:\s*var\(--text-caption\);/u, /line-height:\s*1\.4;/u, /pointer-events:\s*none;/u,
+  ],
+};
+const OVERLAY_CONDITIONAL_DECLARATIONS: Partial<Record<OverlayStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  surface: MENU_CONDITIONAL_DECLARATIONS.popover!,
+  popoverEntering: MENU_CONDITIONAL_DECLARATIONS.popoverEntering!,
+  popoverExiting: MENU_CONDITIONAL_DECLARATIONS.popoverExiting!,
+};
+function requireOverlayContract(legacy: string, css: string, js: string, source: string, recipe: string): void {
+  assert.deepEqual(sourceStyleKeys(recipe, "overlayStyles"), OVERLAY_STYLE_KEYS);
+  forbid(legacy, /\.hraness-(?:popover(?:__content)?|tooltip)(?![A-Za-z0-9_-])/u, "a legacy Popover/Tooltip recipe");
+  forbid(css, /\.hraness-(?:popover(?:__content)?|tooltip)(?![A-Za-z0-9_-])/u, "a semantic Popover/Tooltip selector");
+  forbid(css, /--gallery-overlay-collision/u, "a gallery Popover/Tooltip marker");
+  const map = namedCompiledStyleMap(js, OVERLAY_STYLE_KEYS, "overlayStyles class map");
+  assert.deepEqual([...map.properties.keys()], OVERLAY_STYLE_KEYS);
+  for (const key of OVERLAY_STYLE_KEYS) {
+    const entry = map.properties.get(key)!.value;
+    const classes = generatedClassNames(entry, "overlayStyles." + key);
+    const rules = compiledStyleRules(css, map, key);
+    const bindings = [...compiledObjectProperties(entry, "overlayStyles." + key)].filter(([property, value]) => property !== "$$css" && /["']x[A-Za-z0-9_-]+/u.test(value.value));
+    assert.equal(bindings.length, OVERLAY_DECLARATIONS[key].length + (key === "surface" ? 1 : 0), "Popover/Tooltip " + key + " exact property bindings");
+    for (const className of classes) requireMatch(rules.map((rule) => rule.header).join("\n"), new RegExp("\\." + className + "(?![A-Za-z0-9_-])", "u"), "Popover/Tooltip bound class CSS");
+    for (const declaration of OVERLAY_DECLARATIONS[key]) requireExactBaseDeclarations(rules.filter((rule) => dialogDeclarationMatches(rule.body, declaration)), classes, [{ declaration }], "Popover/Tooltip " + key);
+    const conditional = OVERLAY_CONDITIONAL_DECLARATIONS[key] ?? [];
+    for (const { condition, declaration } of conditional) requireCompiledConditionalDeclaration(rules, condition, declaration, "Popover/Tooltip " + key);
+    for (const rule of rules) {
+      const conditions = rule.ancestors.map((ancestor) => normalizedHeader(ancestor.header)).filter((header) => /^@(?:container|media|supports)/u.test(header));
+      assert.ok(conditions.length === 0 ? OVERLAY_DECLARATIONS[key].some((declaration) => dialogDeclarationMatches(rule.body, declaration)) : conditions.length === 1 && conditional.some(({ condition, declaration }) => condition === conditions[0] && dialogDeclarationMatches(rule.body, declaration)), "Popover/Tooltip " + key + " exact declaration and condition inventory");
+    }
+    requireMatch(js, new RegExp(map.identifier + "\\." + key + "(?![A-Za-z0-9_$])", "u"), "compiled overlayStyles." + key + " composition binding");
+  }
+  requireExactSourceMatches(source, /overlayStyles\.surface,\s*overlayStyles\.popover,\s*state\.isEntering && overlayStyles\.popoverEntering,\s*state\.isExiting && overlayStyles\.popoverExiting,\s*xstyle,/gu, 1, "Popover surface, state, and caller order");
+  requireExactSourceMatches(source, /stylex\.props\(overlayStyles\.surface, overlayStyles\.tooltip, xstyle\)/gu, 1, "Tooltip surface and caller order");
+  const popoverSource = source.slice(source.indexOf("export function Popover("), source.indexOf("export type TooltipProps"));
+  const tooltipSource = source.slice(source.indexOf("export function Tooltip("));
+  requireMatch(popoverSource, /mergeStylexInlineStyles\(presentation\(state\)\.style, typeof style === "function" \? style\(state\) : style\)/u, "Popover final native style");
+  requireMatch(tooltipSource, /mergeStylexInlineStyles\(presentation\.style, typeof style === "function" \? style\(state\) : style\)/u, "Tooltip final native style");
+}
+function verifyOverlayNegativeControls(legacy: string, css: string, js: string, source: string, recipe: string): void {
+  const map = namedCompiledStyleMap(js, OVERLAY_STYLE_KEYS, "overlayStyles class map");
+  const rejects = (changed: string) => assert.throws(() => requireOverlayContract(legacy, changed, js, source, recipe), /Popover|Tooltip|overlayStyles/u);
+  for (const key of OVERLAY_STYLE_KEYS) for (const declaration of OVERLAY_DECLARATIONS[key]) rejects(mutateCompiledRule(css, map, key, declaration, "remove"));
+  for (const key of OVERLAY_STYLE_KEYS) for (const { condition, declaration } of OVERLAY_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(mutateCompiledRule(css, map, key, declaration, "remove", condition));
+  const entry = map.properties.get("tooltip")!.value;
+  const extra = entry.replace("{", "{unexpectedOverlayBinding: " + JSON.stringify([...generatedClassNames(entry, "Tooltip")][0]) + ",");
+  assert.throws(() => requireOverlayContract(legacy, css, js.replace(map.object, map.object.replace(entry, extra)), source, recipe), /Tooltip tooltip exact property bindings/u);
+  const disconnected = js.replace(new RegExp(map.identifier + "\\.tooltip(?![A-Za-z0-9_$])", "gu"), "disconnectedOverlay.tooltip");
+  assert.notEqual(disconnected, js);
+  assert.throws(() => requireOverlayContract(legacy, css, disconnected, source, recipe), /compiled overlayStyles.tooltip composition binding/u);
+  assert.throws(() => requireOverlayContract(legacy + "\n.hraness-tooltip { color: red; }", css, js, source, recipe), /legacy Popover\/Tooltip/u);
+  assert.throws(() => requireOverlayContract(legacy, css, js, source.replace("state.isEntering && overlayStyles.popoverEntering", "false && overlayStyles.popoverEntering"), recipe), /Popover surface, state, and caller order/u);
+}
+
 function requireDialogContract(legacy: string, css: string, js: string, source: string, recipe: string): void {
   assert.deepEqual(sourceStyleKeys(recipe, "dialogStyles"), DIALOG_STYLE_KEYS);
   forbid(legacy, /\.hraness-dialog(?:__[A-Za-z0-9_-]+|-overlay)?(?![A-Za-z0-9_-])/u, "a legacy Dialog recipe");
@@ -5850,6 +5915,7 @@ const [
   menuSource,
   menuStyleSource,
   dialogStyleSource,
+  overlayStyleSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -5884,6 +5950,7 @@ const [
     readFile(resolve(repository, "src/overlays.tsx"), "utf8"),
     readFile(resolve(repository, "src/menu.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/dialog.stylex.ts"), "utf8"),
+    readFile(resolve(repository, "src/overlays.stylex.ts"), "utf8"),
   ]);
 
 const visuallyHiddenSources: VisuallyHiddenSources = {
@@ -6021,6 +6088,8 @@ requireDataTableContract(
 requireLinkContract(legacyComponents, compiledCss, compiledJavaScript);
 requireMenuContract(legacyComponents, compiledCss, compiledJavaScript, menuSource, menuStyleSource);
 requireDialogContract(legacyComponents, compiledCss, compiledJavaScript, menuSource, dialogStyleSource);
+requireOverlayContract(legacyComponents, compiledCss, compiledJavaScript, menuSource, overlayStyleSource);
+verifyOverlayNegativeControls(legacyComponents, compiledCss, compiledJavaScript, menuSource, overlayStyleSource);
 verifyDialogNegativeControls(legacyComponents, compiledCss, compiledJavaScript, menuSource, dialogStyleSource);
 const menuGuardMap = namedCompiledStyleMap(compiledJavaScript, MENU_STYLE_KEYS, "menuStyles class map");
 for (const key of MENU_STYLE_KEYS) {
