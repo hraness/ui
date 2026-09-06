@@ -169,7 +169,8 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
   expect(components).not.toMatch(/\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
   expect(components).not.toMatch(/\.hraness-dialog(?:__[A-Za-z0-9_-]+|-overlay)?(?![A-Za-z0-9_-])/u);
   expect(components).toContain("--hraness-dialog-coarse-min: var(--interactive-target-min);");
-  for (const retained of [".hraness-toast__close", ".hraness-popover", ".hraness-tooltip", "@keyframes hraness-fade-in", "@keyframes hraness-fade-out"]) expect(components).toContain(retained);
+  expect(components).not.toMatch(/\.hraness-(?:popover(?:__content)?|tooltip)(?![A-Za-z0-9_-])/u);
+  for (const retained of [".hraness-toast__close", "@keyframes hraness-overlay-enter", "@keyframes hraness-overlay-exit", "@keyframes hraness-fade-in", "@keyframes hraness-fade-out"]) expect(components).toContain(retained);
   const cardBridgePattern =
     /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
   expect(components.match(cardBridgePattern)).toHaveLength(1);

@@ -5,6 +5,14 @@
 }
 
 @layer components.hraness-ui.legacy {
+  .gallery-overlay-collision {
+    --gallery-overlay-collision: active;
+    max-width: 7px;
+    padding: 3px;
+    border-radius: 3px;
+    background-image: linear-gradient(red, blue);
+    outline: 9px dashed red;
+  }
   .gallery-dialog-collision {
     --gallery-dialog-collision: active;
     width: 7px;

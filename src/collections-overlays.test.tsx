@@ -14,7 +14,7 @@ import {
   ToggleGroup,
 } from "./collections.js";
 import { Meter, ProgressBar, Slider } from "./indicators.js";
-import { DialogContent, DialogTrigger, MenuItem, MenuSection, MenuSeparator, Tooltip } from "./overlays.js";
+import { DialogContent, DialogTrigger, MenuItem, MenuSection, MenuSeparator, Popover, Tooltip } from "./overlays.js";
 import {
   ToastProvider,
   type ToastOptions,
@@ -23,6 +23,21 @@ import {
 
 const menuOverrides = stylex.create({ item: { color: "rebeccapurple", backgroundColor: "papayawhip" }, section: { gap: "13px" }, header: { fontSize: "17px" } });
 const dialogOverrides = stylex.create({ root: { width: "19rem" }, overlay: { paddingTop: "21px" } });
+
+test("Popover and Tooltip preserve portal-safe server rendering and typed caller seams", () => {
+  const html = renderToStaticMarkup(<>
+    <DialogTrigger defaultOpen><button type="button">Open details</button>
+      <Popover aria-label="Named details" xstyle={dialogOverrides.root} className="caller-popover" popoverRef={createRef<HTMLElement>()} offset={12} style={() => ({ paddingTop: "23px" })}>Hidden rich content</Popover>
+    </DialogTrigger>
+    <Tooltip content="Supplementary details" xstyle={dialogOverrides.root} className="caller-tooltip" delay={0} closeDelay={0} isOpen style={{ paddingTop: "15px" }}><button type="button">Named trigger</button></Tooltip>
+  </>);
+  expect(html).toContain("Open details");
+  expect(html).toContain("Named trigger");
+  expect(html).not.toContain("Hidden rich content");
+  expect(html).not.toContain("Supplementary details");
+  expect(html).not.toContain("xstyle=");
+  expect(html).not.toContain("popoverRef=");
+});
 
 test("Dialog remains portal-safe for every size with typed caller seams and close render functions", () => {
   for (const size of ["small", "medium", "large"] as const) {

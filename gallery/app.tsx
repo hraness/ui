@@ -53,6 +53,7 @@ import {
   NativeSelectField,
   NumberField,
   PageIntro,
+  Popover,
   Progress,
   ProgressBar,
   PressableCard,
@@ -78,6 +79,7 @@ import {
   TextField,
   Toolbar,
   ToggleButton,
+  Tooltip,
   ViewportFrame,
   WrappingRow,
 } from "@hraness/ui";
@@ -350,6 +352,7 @@ const galleryStyles = stylex.create({
   menuItemOverride: { backgroundColor: "var(--ui-secondary)", color: "var(--ui-secondary-foreground)" },
   menuSeparatorOverride: { height: "2px" },
   dialogRootOverride: (width: string) => ({ width, borderRadius: "19px" }),
+  overlayOverride: (radius: string) => ({ borderRadius: radius, paddingTop: "21px", maxWidth: "19rem" }),
   dialogOverlayOverride: (padding: string) => ({ paddingTop: padding, backgroundColor: "color-mix(in oklch, black 35%, transparent)" }),
   linkDynamicLetterSpacing: (letterSpacing: string) => ({ letterSpacing }),
   linkOverride: {
@@ -622,6 +625,33 @@ function ListBoxGallery() {
       </MenuTrigger>
     </section>
   );
+}
+
+function PopoverTooltipGallery() {
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const [lockedOpen, setLockedOpen] = useState(false);
+  return <section data-gallery-section="popover-tooltip" aria-label="Popover and Tooltip presentation">
+    <h2>Popover and Tooltip</h2>
+    <DialogTrigger><Button>Open compiled Popover</Button>
+      <Popover aria-label="Compiled Popover" className="gallery-overlay-collision" popoverRef={(element) => { if (element !== null) element.dataset.galleryPopoverRef = "true"; }}>
+        <p>Rich popover details</p><Button>Popover content action</Button>
+      </Popover>
+    </DialogTrigger>
+    <DialogTrigger><Button>Open customized Popover</Button>
+      <Popover aria-label="Customized Popover" className="gallery-overlay-collision" xstyle={galleryStyles.overlayOverride("19px")} style={() => ({ paddingTop: "23px" })} offset={12} placement="bottom start">
+        <p>Customized rich details</p><Button>Customized Popover action</Button>
+      </Popover>
+    </DialogTrigger>
+    <DialogTrigger isOpen={lockedOpen} onOpenChange={setLockedOpen}><Button>Open locked Popover</Button>
+      <Popover aria-label="Locked Popover" isKeyboardDismissDisabled shouldCloseOnInteractOutside={() => false} style={{ paddingTop: "25px" }}>
+        <Button onPress={() => setLockedOpen(false)}>Close locked Popover</Button>
+      </Popover>
+    </DialogTrigger>
+    <Tooltip content="Compiled supplementary tooltip" className="gallery-overlay-collision" delay={0} closeDelay={0}><Button>Compiled Tooltip trigger</Button></Tooltip>
+    <Tooltip content="Disabled supplementary tooltip" delay={0} closeDelay={0} isDisabled><Button>Disabled Tooltip trigger</Button></Tooltip>
+    <Button onPress={() => setTooltipOpen(!tooltipOpen)}>Toggle controlled Tooltip</Button>
+    <Tooltip content="Customized supplementary tooltip" className="gallery-overlay-collision" xstyle={galleryStyles.overlayOverride("19px")} style={{ paddingTop: "23px" }} placement="bottom" offset={12} delay={0} closeDelay={0} isOpen={tooltipOpen} onOpenChange={setTooltipOpen}><Button>Controlled Tooltip trigger</Button></Tooltip>
+  </section>;
 }
 
 function DialogGallery() {
@@ -2169,6 +2199,7 @@ export function PrimitiveGallery() {
         </section>
         <ListBoxGallery />
         <DialogGallery />
+        <PopoverTooltipGallery />
       </QuietSitePage>
       <QuietSiteFooter
         className="gallery-quiet-site-footer"
