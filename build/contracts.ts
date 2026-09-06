@@ -52,10 +52,20 @@ export type StylexCompilerContractV1 = Readonly<{
     babelCore: "7.29.7";
     lightningcss: "1.33.0";
     stylex: "0.19.0";
+    stylexBabelCompatibility: Readonly<{
+      entry: "lib/index.js";
+      patchId: string;
+      patchSha256: string;
+      patchedSourceBytes: number;
+      patchedSourceSha256: string;
+      sourceBytes: number;
+      sourceSha256: string;
+    }>;
   }>;
   transform: Readonly<{
     classNamePrefix: "x";
     dev: false;
+    enableMediaQueryOrder: true;
     importSources: readonly ["@stylexjs/stylex"];
     logicalRoot: "<graph-root>";
     moduleResolution: "commonJS";

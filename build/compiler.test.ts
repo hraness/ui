@@ -71,6 +71,34 @@ function manifestValue(
 }
 
 describe("package StyleX compiler contract", () => {
+  test("binds the parser repair and enabled media ordering into every package manifest", () => {
+    expect(compilerContract.transform.enableMediaQueryOrder).toBeTrue();
+    expect(compilerContract.tools.stylexBabelCompatibility).toEqual({
+      entry: "lib/index.js",
+      patchId: "stylex-0.19.0-token-parser-explicit-eof-v1",
+      patchSha256: "4d17ac835421e037788f800035cfe91ee4fdce384ce97529d572015ea4318295",
+      patchedSourceBytes: 418119,
+      patchedSourceSha256: "32dfd685bf0ccc18c922ac6906cb911b05b081cc00c0fa6e100818d211abd1ba",
+      sourceBytes: 418079,
+      sourceSha256: "f880cd6733b91557647f1f894dbcbef7102199a112d1e8a6689fcf7b94f736c3",
+    });
+    const valid = manifestValue();
+    const { stylexBabelCompatibility: omitted, ...legacyTools } = compilerContract.tools;
+    void omitted;
+    const legacyCompiler = { ...compilerContract, tools: legacyTools };
+    expect(() => validateStylexPackageManifest({
+      ...valid,
+      compiler: legacyCompiler,
+      compilerSha256: sha256(canonicalJson(legacyCompiler)),
+    })).toThrow();
+    const unordered = { ...compilerContract, transform: { ...compilerContract.transform, enableMediaQueryOrder: false } };
+    expect(() => validateStylexPackageManifest({
+      ...valid,
+      compiler: unordered,
+      compilerSha256: sha256(canonicalJson(unordered)),
+    })).toThrow();
+  });
+
   test("serializes standalone rules in their registered namespace without changing the fixed final-union serializer", () => {
     const fixedBefore = serializeStylexRules([rule]);
     const serializer: PublicStylexStandaloneSerializerV1 = {

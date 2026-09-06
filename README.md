@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.2"
+    "@hraness/ui": "github:hraness/ui#v0.5.3"
   }
 }
 ```
@@ -191,6 +191,8 @@ template must link. They can differ when an SSR graph renders HTML for a client
 graph. Finalization rejects a missing, duplicate, or foreign graph stylesheet.
 
 The finalizer validates package and graph identities, rejects missing or stale graph receipts and mixed partial CSS, unions all raw rule metadata, and calls the pinned StyleX serializer once. It preserves the full finite priority inventory rather than mapping it to a fixed range. Build-tool modules remain outside the UI runtime entry, runtime CSS injection stays disabled, and the compiler contract pins property-specificity resolution and its Babel, StyleX, and Lightning CSS versions.
+
+The compiler also binds a narrowly scoped StyleX 0.19.0 parser compatibility repair. It verifies the installed Babel plugin's exact source bytes before accepting an explicit terminal EOF token after a complete media query. The repaired plugin runs in memory without modifying installed dependencies or global loader hooks. Media-query ordering remains enabled, malformed trailing input remains invalid, and the same compiler implementation runs under Bun and Node. Source and repair hashes form part of the compiler identity, so adopters must rebuild package manifests and graph receipts together when upgrading from an earlier compiler release.
 
 Unlayered product CSS retains its existing override authority, except for the shared visually-hidden accessibility recipe. Its offscreen reset uses layered important declarations so conflicting unlayered important rules cannot accidentally expose accessible-only copy. Change the component visibility prop instead of overriding this helper.
 

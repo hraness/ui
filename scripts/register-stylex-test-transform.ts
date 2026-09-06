@@ -1,20 +1,11 @@
-import stylex from "@stylexjs/unplugin";
 import { extname, resolve } from "node:path";
 
-import { stylexCompilerOptions } from "./stylex-config.js";
+import { createStylexTransformCollector } from "../build/compiler.js";
 
 const repository = process.cwd();
 const sourceRoot = resolve(repository, "src");
 const escapedSourceRoot = sourceRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-const plugin = stylex.raw(stylexCompilerOptions(repository));
-const transform =
-  typeof plugin.transform === "function"
-    ? plugin.transform
-    : plugin.transform?.handler;
-
-if (transform === undefined) {
-  throw new Error("StyleX test transform is unavailable");
-}
+const collector = createStylexTransformCollector(repository);
 
 Bun.plugin({
   name: "hraness-ui-stylex-test-transform",
@@ -28,9 +19,7 @@ Bun.plugin({
       },
       async ({ path }) => {
         const source = await Bun.file(path).text();
-        const result = await transform.call({}, source, path);
-        const contents =
-          typeof result === "string" ? result : (result?.code ?? source);
+        const { code: contents } = await collector.transform(source, path);
         const extension = extname(path);
         const loader = extension === ".tsx"
           ? "tsx"
