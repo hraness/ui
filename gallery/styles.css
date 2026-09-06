@@ -4,6 +4,13 @@
   min-block-size: 100svh;
 }
 
+@layer components.hraness-ui.legacy {
+  .gallery-menu-collision {
+    --gallery-menu-collision: active;
+    min-width: 7px;
+  }
+}
+
 [data-gallery-intro="true"] {
   display: grid;
   gap: var(--space-3);

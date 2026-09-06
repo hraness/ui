@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import * as stylex from "@stylexjs/stylex";
+import { Menu as AriaMenu } from "react-aria-components";
+import { menuStyles } from "./menu.stylex.js";
 
 import {
   Accordion,
@@ -10,12 +13,38 @@ import {
   ToggleGroup,
 } from "./collections.js";
 import { Meter, ProgressBar, Slider } from "./indicators.js";
-import { DialogContent, DialogTrigger, Tooltip } from "./overlays.js";
+import { DialogContent, DialogTrigger, MenuItem, MenuSection, MenuSeparator, Tooltip } from "./overlays.js";
 import {
   ToastProvider,
   type ToastOptions,
   useToast,
 } from "./toast.js";
+
+const menuOverrides = stylex.create({ item: { color: "rebeccapurple", backgroundColor: "papayawhip" }, section: { gap: "13px" }, header: { fontSize: "17px" } });
+
+test("Menu retains collection semantics, rich slots, and caller recipes", () => {
+  const html = renderToStaticMarkup(
+    <AriaMenu aria-label="Actions" selectionMode="single" selectedKeys={["save"]} disabledKeys={["delete"]}>
+      <MenuSection title="Document" className="caller-section" xstyle={menuOverrides.section} headerXstyle={menuOverrides.header}>
+        <MenuItem id="save" textValue="Save document" leading="+" description="Keep changes" shortcut="⌘S" className="caller-item" xstyle={menuOverrides.item} style={() => ({ color: "tomato" })}>Save</MenuItem>
+        <MenuItem id="delete" textValue="Delete document" variant="danger">Delete</MenuItem>
+      </MenuSection>
+      <MenuSeparator className="caller-separator" />
+    </AriaMenu>,
+  );
+  for (const slot of ["menu-section", "menu-header", "menu-item", "menu-item-leading", "menu-item-copy", "menu-item-label", "menu-item-description", "menu-item-shortcut", "menu-separator"]) expect(html).toContain(`data-slot="${slot}"`);
+  expect(html).toContain('role="menuitemradio"');
+  expect(html).toContain('aria-checked="true"');
+  expect(html).toContain('aria-disabled="true"');
+  expect(html).toContain('data-variant="danger"');
+  expect(html).toContain("color:tomato");
+  expect(html).not.toContain("xstyle=");
+  const firstItem = html.match(/<[^>]+data-slot="menu-item"[^>]*>/u)?.[0] ?? "";
+  const classes = firstItem.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+  expect(classes[0]).toBe("hraness-menu__item");
+  expect(classes.at(-1)).toBe("caller-item");
+  for (const atom of (stylex.props(menuStyles.item, menuStyles.itemSelected, menuOverrides.item).className ?? "").split(" ")) expect(classes).toContain(atom);
+});
 
 test("tabs and disclosures retain collection ownership and ARIA relationships", () => {
   const html = renderToStaticMarkup(

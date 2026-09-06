@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactElement, ReactNode, Ref } from "react";
+import * as stylex from "@stylexjs/stylex";
+import type { StyleXStyles } from "@stylexjs/stylex";
 import {
   Dialog as AriaDialog,
   DialogTrigger,
@@ -29,6 +31,8 @@ import {
 } from "react-aria-components";
 
 import { cn } from "./lib/utils.js";
+import { mergeStylexInlineStyles } from "./lib/stylex.js";
+import { menuStyles } from "./menu.stylex.js";
 
 export { DialogTrigger, MenuTrigger };
 export type { Placement };
@@ -54,6 +58,9 @@ export interface MenuProps extends MenuSelectionProps {
   readonly placement?: Placement;
   readonly popoverClassName?: string;
   readonly shouldCloseOnSelect?: boolean;
+  readonly xstyle?: StyleXStyles;
+  readonly popoverXstyle?: StyleXStyles;
+  readonly footerXstyle?: StyleXStyles;
 }
 
 export function Menu({
@@ -73,21 +80,31 @@ export function Menu({
   selectedKeys,
   selectionMode,
   shouldCloseOnSelect = true,
+  xstyle,
+  popoverXstyle,
+  footerXstyle,
 }: MenuProps) {
+  const presentation = stylex.props(menuStyles.root, xstyle);
+  const footerPresentation = stylex.props(menuStyles.footer, footerXstyle);
+  const popoverPresentation = (state: { isEntering: boolean; isExiting: boolean }) => stylex.props(
+    menuStyles.popover,
+    state.isEntering && menuStyles.popoverEntering,
+    state.isExiting && menuStyles.popoverExiting,
+    popoverXstyle,
+  );
   return (
     <AriaPopover
-      className={cn("hraness-menu-popover", popoverClassName)}
+      className={(state) => cn("hraness-menu-popover", popoverPresentation(state).className, popoverClassName)}
       data-match-trigger-width={matchTriggerWidth || undefined}
       data-slot="menu-popover"
       offset={6}
       placement={placement}
-      {...(matchTriggerWidth
-        ? { style: { minWidth: "var(--trigger-width)" } }
-        : {})}
+      style={(state) => mergeStylexInlineStyles(popoverPresentation(state).style, matchTriggerWidth ? { minWidth: "var(--trigger-width)" } : undefined)}
     >
       <AriaMenu
         aria-label={ariaLabel}
-        className={cn("hraness-menu", className)}
+        className={cn("hraness-menu", presentation.className, className)}
+        style={presentation.style}
         data-slot="menu"
         {...(defaultSelectedKeys === undefined ? {} : { defaultSelectedKeys })}
         {...(disabledKeys === undefined ? {} : { disabledKeys })}
@@ -104,7 +121,7 @@ export function Menu({
         {children}
       </AriaMenu>
       {footer === undefined ? null : (
-        <div className="hraness-menu__footer" data-slot="menu-footer">{footer}</div>
+        <div className={cn("hraness-menu__footer", footerPresentation.className)} style={footerPresentation.style} data-slot="menu-footer">{footer}</div>
       )}
     </AriaPopover>
   );
@@ -123,6 +140,7 @@ export type MenuItemProps = Omit<
   /** Required for deterministic typeahead when labels contain rich content. */
   readonly textValue: string;
   readonly variant?: "danger" | "default";
+  readonly xstyle?: StyleXStyles;
 };
 
 export function MenuItem({
@@ -133,12 +151,31 @@ export function MenuItem({
   shortcut,
   textValue,
   variant = "default",
+  xstyle,
+  style,
   ...props
 }: MenuItemProps) {
   return (
     <AriaMenuItem
       {...props}
-      className={cn("hraness-menu__item", className)}
+      className={(state) => cn("hraness-menu__item", stylex.props(
+        menuStyles.item,
+        (state.isFocused || state.isHovered) && menuStyles.itemHighlighted,
+        state.isSelected && menuStyles.itemSelected,
+        state.isDisabled && menuStyles.itemDisabled,
+        variant === "danger" && menuStyles.itemDanger,
+        variant === "danger" && (state.isFocused || state.isHovered) && menuStyles.itemDangerHighlighted,
+        xstyle,
+      ).className, className)}
+      style={(state) => mergeStylexInlineStyles(stylex.props(
+        menuStyles.item,
+        (state.isFocused || state.isHovered) && menuStyles.itemHighlighted,
+        state.isSelected && menuStyles.itemSelected,
+        state.isDisabled && menuStyles.itemDisabled,
+        variant === "danger" && menuStyles.itemDanger,
+        variant === "danger" && (state.isFocused || state.isHovered) && menuStyles.itemDangerHighlighted,
+        xstyle,
+      ).style, typeof style === "function" ? style(state) : style)}
       data-has-description={description === undefined ? undefined : "true"}
       data-slot="menu-item"
       data-variant={variant}
@@ -147,19 +184,21 @@ export function MenuItem({
       {leading === undefined ? null : (
         <span
           aria-hidden="true"
-          className="hraness-menu__leading"
+          {...stylex.props(menuStyles.leading)}
+          className={cn("hraness-menu__leading", stylex.props(menuStyles.leading).className)}
           data-slot="menu-item-leading"
         >
           {leading}
         </span>
       )}
-      <span className="hraness-menu__copy" data-slot="menu-item-copy">
-        <Text className="hraness-menu__label" data-slot="menu-item-label" slot="label">
+      <span {...stylex.props(menuStyles.copy)} className={cn("hraness-menu__copy", stylex.props(menuStyles.copy).className)} data-slot="menu-item-copy">
+        <Text {...stylex.props(menuStyles.label)} className={cn("hraness-menu__label", stylex.props(menuStyles.label).className)} data-slot="menu-item-label" slot="label">
           {children}
         </Text>
         {description === undefined ? null : (
           <Text
-            className="hraness-menu__description"
+            {...stylex.props(menuStyles.description)}
+            className={cn("hraness-menu__description", stylex.props(menuStyles.description).className)}
             data-slot="menu-item-description"
             slot="description"
           >
@@ -168,7 +207,7 @@ export function MenuItem({
         )}
       </span>
       {shortcut === undefined ? null : (
-        <Keyboard className="hraness-menu__shortcut" data-slot="menu-item-shortcut">
+        <Keyboard {...stylex.props(menuStyles.shortcut)} className={cn("hraness-menu__shortcut", stylex.props(menuStyles.shortcut).className)} data-slot="menu-item-shortcut">
           {shortcut}
         </Keyboard>
       )}
@@ -176,10 +215,12 @@ export function MenuItem({
   );
 }
 
-export function MenuSeparator({ className }: { readonly className?: string }) {
+export function MenuSeparator({ className, xstyle }: { readonly className?: string; readonly xstyle?: StyleXStyles }) {
+  const presentation = stylex.props(menuStyles.separator, xstyle);
   return (
     <AriaSeparator
-      className={cn("hraness-menu__separator", className)}
+      {...presentation}
+      className={cn("hraness-menu__separator", presentation.className, className)}
       data-slot="menu-separator"
     />
   );
@@ -189,16 +230,21 @@ export interface MenuSectionProps {
   readonly children: ReactNode;
   readonly className?: string;
   readonly title?: ReactNode;
+  readonly xstyle?: StyleXStyles;
+  readonly headerXstyle?: StyleXStyles;
 }
 
-export function MenuSection({ children, className, title }: MenuSectionProps) {
+export function MenuSection({ children, className, title, xstyle, headerXstyle }: MenuSectionProps) {
+  const presentation = stylex.props(menuStyles.section, xstyle);
+  const headerPresentation = stylex.props(menuStyles.header, headerXstyle);
   return (
     <AriaMenuSection
-      className={cn("hraness-menu__section", className)}
+      {...presentation}
+      className={cn("hraness-menu__section", presentation.className, className)}
       data-slot="menu-section"
     >
       {title === undefined ? null : (
-        <Header className="hraness-menu__header" data-slot="menu-header">
+        <Header {...headerPresentation} className={cn("hraness-menu__header", headerPresentation.className)} data-slot="menu-header">
           {title}
         </Header>
       )}

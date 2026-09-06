@@ -111,6 +111,7 @@
     "src/lib/utils.ts",
     "src/list-box.tsx",
     "src/list-box.stylex.ts",
+    "src/menu.stylex.ts",
     "src/navigation.tsx",
     "src/overlays.tsx",
     "src/quiet-site.stylex.ts",

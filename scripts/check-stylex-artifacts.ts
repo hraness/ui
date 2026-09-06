@@ -2906,6 +2906,175 @@ function requireDataTableContract(
   }
 }
 
+const MENU_STYLE_KEYS = [
+  "copy", "description", "footer", "header", "item", "itemDanger", "itemDangerHighlighted",
+  "itemDisabled", "itemHighlighted", "itemSelected", "label", "leading", "popover",
+  "popoverEntering", "popoverExiting", "root", "section", "separator", "shortcut",
+] as const;
+
+type MenuStyleKey = (typeof MENU_STYLE_KEYS)[number];
+const MENU_BACKGROUND_RESET = [
+  /background-attachment:\s*scroll;/u, /background-clip:\s*border-box;/u,
+  /background-image:\s*none;/u, /background-origin:\s*padding-box;/u,
+  /background-position:\s*0(?:%|px)? 0(?:%|px)?;/u,
+  /background-repeat:\s*repeat;/u, /background-size:\s*auto(?: auto)?;/u,
+] as const;
+const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
+  copy: [/display:\s*grid;/u, /min-width:\s*0;/u, /gap:\s*0?\.125rem;/u],
+  description: [
+    /color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-caption\);/u,
+    /font-weight:\s*var\(--font-weight-regular\);/u, /line-height:\s*1\.4;/u,
+  ],
+  footer: [
+    /padding-bottom:\s*var\(--space-2\);/u, /padding-top:\s*var\(--space-2\);/u,
+    /padding-left:\s*var\(--space-3\);/u, /padding-right:\s*var\(--space-3\);/u,
+    /border-block-start-width:\s*1px;/u, /border-block-start-style:\s*solid;/u,
+    /border-block-start-color:\s*var\(--ui-border\);/u,
+    /color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-caption\);/u,
+  ],
+  header: [
+    /padding-bottom:\s*var\(--space-2\);/u, /padding-top:\s*var\(--space-2\);/u,
+    /padding-left:\s*var\(--space-3\);/u, /padding-right:\s*var\(--space-3\);/u,
+    /color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-caption\);/u,
+    /font-weight:\s*var\(--font-weight-medium\);/u,
+  ],
+  item: [
+    /position:\s*relative;/u, /display:\s*grid;/u,
+    /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-menu-coarse-min,\s*0px\)\);/u,
+    /grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto;/u,
+    /align-items:\s*center;/u, /gap:\s*var\(--space-3\);/u,
+    /padding-bottom:\s*var\(--space-2\);/u, /padding-top:\s*var\(--space-2\);/u,
+    /padding-left:\s*var\(--space-3\);/u, /padding-right:\s*var\(--space-3\);/u,
+    /border-radius:\s*var\(--radius-md\);/u, /outline-color:\s*current[Cc]olor;/u,
+    /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
+    /color:\s*var\(--ui-popover-foreground\);/u, /cursor:\s*default;/u, /user-select:\s*none;/u,
+  ],
+  itemDanger: [/color:\s*var\(--ui-destructive\);/u],
+  itemDangerHighlighted: [
+    ...MENU_BACKGROUND_RESET,
+    /background-color:\s*color-mix\(in oklch,\s*var\(--ui-destructive\) 12%,\s*var\(--ui-popover\)\);/u,
+  ],
+  itemDisabled: [/opacity:\s*0?\.5;/u],
+  itemHighlighted: [
+    ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-accent\);/u,
+    /color:\s*var\(--ui-accent-foreground\);/u,
+  ],
+  itemSelected: [/font-weight:\s*var\(--font-weight-medium\);/u],
+  label: [/overflow-wrap:\s*anywhere;/u],
+  leading: [/display:\s*inline-grid;/u, /align-items:\s*center;/u, /justify-items:\s*center;/u],
+  popover: [
+    /z-index:\s*var\(--z-tooltip\);/u, /max-width:\s*min\(24rem,\s*(?:calc\(100vw - 2rem\)|100vw - 2rem)\);/u,
+    /border-width:\s*1px;/u, /border-style:\s*solid;/u,
+    /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
+    /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
+    /border-color:\s*var\(--ui-border\);/u, /border-radius:\s*var\(--radius-lg\);/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
+    ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-popover\);/u,
+    /color:\s*var\(--ui-popover-foreground\);/u, /box-shadow:\s*var\(--elevation-overlay\);/u,
+  ],
+  popoverEntering: [
+    /animation-name:\s*hraness-overlay-enter;/u, /animation-duration:\s*var\(--motion-duration-standard\);/u,
+    /animation-timing-function:\s*var\(--motion-easing-emphasized\);/u, /animation-delay:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
+    /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
+  ],
+  popoverExiting: [
+    /animation-name:\s*hraness-overlay-exit;/u, /animation-duration:\s*var\(--motion-duration-fast\);/u,
+    /animation-timing-function:\s*var\(--motion-easing-standard\);/u, /animation-delay:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
+    /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
+  ],
+  root: [
+    /display:\s*grid;/u, /min-width:\s*12rem;/u,
+    /max-height:\s*min\(24rem,\s*var\(--visual-viewport-height,\s*70vh\)\);/u,
+    /padding-bottom:\s*var\(--space-1\);/u, /padding-top:\s*var\(--space-1\);/u,
+    /padding-left:\s*var\(--space-1\);/u, /padding-right:\s*var\(--space-1\);/u,
+    /overflow-x:\s*auto;/u, /overflow-y:\s*auto;/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
+  ],
+  section: [/display:\s*grid;/u],
+  separator: [
+    /height:\s*1px;/u, /margin-block-start:\s*var\(--space-1\);/u, /margin-block-end:\s*var\(--space-1\);/u,
+    ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-border\);/u,
+  ],
+  shortcut: [
+    /color:\s*var\(--ui-muted-foreground\);/u, /font-family:\s*var\(--ui-font-mono\);/u,
+    /font-size:\s*var\(--text-caption\);/u,
+  ],
+};
+const MENU_CONDITIONAL_DECLARATIONS: Partial<Record<MenuStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  item: [{ condition: "@media(pointer:coarse)", declaration: /min-height:\s*var\(--interactive-target-min\);/u }],
+  popover: [
+    { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
+    { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
+  ],
+  popoverEntering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
+  popoverExiting: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
+};
+
+function menuDeclarationMatches(body: string, declaration: RegExp): boolean {
+  const canonical = body.trim().replace(/^-webkit-user-select:\s*none;\s*(?=user-select:\s*none;\s*$)/u, "");
+  return new RegExp(`^(?:${declaration.source})$`, "u").test(canonical);
+}
+
+function requireMenuContract(legacy: string, css: string, js: string, source: string, recipe: string): void {
+  assert.deepEqual(sourceStyleKeys(recipe, "menuStyles"), MENU_STYLE_KEYS);
+  forbid(legacy, /\.hraness-menu(?:__[A-Za-z0-9_-]+|-popover)?(?![A-Za-z0-9_-])/u, "a legacy Menu recipe");
+  forbid(css, /\.hraness-menu(?:__[A-Za-z0-9_-]+|-popover)?(?![A-Za-z0-9_-])/u, "a semantic Menu selector in compiled CSS");
+  const map = namedCompiledStyleMap(js, MENU_STYLE_KEYS, "menuStyles class map");
+  assert.deepEqual([...map.properties.keys()], MENU_STYLE_KEYS);
+  for (const key of MENU_STYLE_KEYS) {
+    const rules = compiledStyleRules(css, map, key);
+    const entry = map.properties.get(key)?.value ?? "";
+    const classes = generatedClassNames(entry, `compiled menuStyles.${key}`);
+    const bindings = [...compiledObjectProperties(entry, `compiled menuStyles.${key}`)].filter(
+      ([property, value]) => property !== "$$css" && /["']x[A-Za-z0-9_-]+/u.test(value.value),
+    );
+    // forcedColorAdjust has no default declaration but owns one conditional binding.
+    assert.equal(bindings.length, MENU_DECLARATIONS[key].length + (key === "popover" ? 1 : 0), `menuStyles.${key} exact property bindings`);
+    for (const className of classes) requireMatch(rules.map((rule) => rule.header).join("\n"), new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u"), `menuStyles.${key} class CSS`);
+    for (const declaration of MENU_DECLARATIONS[key]) {
+      requireExactBaseDeclarations(rules.filter((rule) => menuDeclarationMatches(rule.body, declaration)), classes, [{ declaration }], `Menu ${key}`);
+    }
+    const conditional = MENU_CONDITIONAL_DECLARATIONS[key] ?? [];
+    for (const { condition, declaration } of conditional) {
+      requireCompiledConditionalDeclaration(rules, condition, declaration, `Menu ${key} conditional declaration`);
+    }
+    for (const rule of rules) {
+      const conditions = rule.ancestors.map((ancestor) => normalizedHeader(ancestor.header)).filter(
+        (header) => /^@(?:container|media|supports)/u.test(header),
+      );
+      assert.ok(
+        conditions.length === 0
+          ? MENU_DECLARATIONS[key].some((expected) => menuDeclarationMatches(rule.body, expected))
+          : conditions.length === 1 && conditional.some((expected) => expected.condition === conditions[0] && menuDeclarationMatches(rule.body, expected.declaration)),
+        `Menu ${key} exact declaration and condition inventory`,
+      );
+    }
+    requireMatch(js, new RegExp(`${map.identifier}\\.${key}(?![A-Za-z0-9_$])`, "u"), `compiled menuStyles.${key} composition binding`);
+  }
+  requireCompiledConditionalDeclaration(compiledStyleRules(css, map, "item"), "@media(pointer:coarse)", /min-height:\s*var\(--interactive-target-min\);/u, "Menu coarse minimum");
+  requireCompiledConditionalDeclaration(compiledStyleRules(css, map, "popover"), "@media(forced-colors:active)", /border-color:\s*canvastext;/u, "Menu forced-color border");
+  forbid(css, /--gallery-menu-collision/u, "a gallery Menu collision marker in package output");
+  for (const key of ["popoverEntering", "popoverExiting"] as const) requireCompiledConditionalDeclaration(compiledStyleRules(css, map, key), "@media(prefers-reduced-motion:reduce)", /animation-name:\s*none;/u, "Menu reduced motion");
+  requireMatch(legacy, /--hraness-menu-coarse-min:\s*var\(--interactive-target-min\);/u, "Menu synthetic coarse minimum");
+  requireExactSourceMatches(source, /menuStyles\.item,\s*\(state\.isFocused \|\| state\.isHovered\) && menuStyles\.itemHighlighted,\s*state\.isSelected && menuStyles\.itemSelected,\s*state\.isDisabled && menuStyles\.itemDisabled,\s*variant === "danger" && menuStyles\.itemDanger,\s*variant === "danger" && \(state\.isFocused \|\| state\.isHovered\) && menuStyles\.itemDangerHighlighted,\s*xstyle,/gu, 2, "Menu state and caller order");
+}
+
+function replaceMenuDeclaration(css: string, map: NamedCompiledStyleMap, key: MenuStyleKey, declaration: RegExp, replacement: string): string {
+  const matches = compiledStyleRules(css, map, key).filter((rule) =>
+    rule.ancestors.every((ancestor) => !/^@(?:container|media|supports)/u.test(normalizedHeader(ancestor.header)))
+    && declaration.test(rule.body),
+  );
+  assert.equal(matches.length, 1, `Menu ${key} negative control must own one base rule`);
+  const rule = matches[0]!;
+  assert.equal(css.split(rule.source).length - 1, 1, "Menu negative control must own one source occurrence");
+  assert.equal([...rule.body.matchAll(new RegExp(declaration.source, "gu"))].length, 1, "Menu negative control must replace one declaration");
+  const altered = rule.source.replace(declaration, replacement);
+  assert.notEqual(altered, rule.source, "Menu negative control must change its declaration");
+  return css.replace(rule.source, altered);
+}
+
 function requireListBoxContract(
   legacyComponents: string,
   compiledCss: string,
@@ -5388,6 +5557,8 @@ const [
   dataTableStyleSource,
   listBoxSource,
   listBoxStyleSource,
+  menuSource,
+  menuStyleSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -5419,6 +5590,8 @@ const [
     readFile(resolve(repository, "src/data-table.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/list-box.tsx"), "utf8"),
     readFile(resolve(repository, "src/list-box.stylex.ts"), "utf8"),
+    readFile(resolve(repository, "src/overlays.tsx"), "utf8"),
+    readFile(resolve(repository, "src/menu.stylex.ts"), "utf8"),
   ]);
 
 const visuallyHiddenSources: VisuallyHiddenSources = {
@@ -5554,6 +5727,39 @@ requireDataTableContract(
   dataTableStyleSource,
 );
 requireLinkContract(legacyComponents, compiledCss, compiledJavaScript);
+requireMenuContract(legacyComponents, compiledCss, compiledJavaScript, menuSource, menuStyleSource);
+const menuGuardMap = namedCompiledStyleMap(compiledJavaScript, MENU_STYLE_KEYS, "menuStyles class map");
+for (const key of MENU_STYLE_KEYS) {
+  assert.throws(
+    () => requireMenuContract(legacyComponents, replaceMenuDeclaration(compiledCss, menuGuardMap, key, MENU_DECLARATIONS[key][0]!, "--unexpected-menu-declaration: initial;"), compiledJavaScript, menuSource, menuStyleSource),
+    /Menu|menuStyles/u,
+    `Menu ${key} must reject a changed owned declaration`,
+  );
+}
+for (const [key, declaration, replacement] of [
+  ["leading", /align-items:\s*center;/u, "align-items: start;"],
+  ["leading", /justify-items:\s*center;/u, "justify-items: end;"],
+  ["shortcut", /font-family:\s*var\(--ui-font-mono\);/u, "font-family: serif;"],
+  ["footer", /border-block-start-width:\s*1px;/u, "border-top-width: 1px;"],
+] as const) {
+  assert.throws(() => requireMenuContract(legacyComponents, replaceMenuDeclaration(compiledCss, menuGuardMap, key, declaration, replacement), compiledJavaScript, menuSource, menuStyleSource), /Menu|menuStyles/u, `Menu ${key} rejects non-equivalent presentation`);
+}
+const menuLeadingEntry = menuGuardMap.properties.get("leading")!.value;
+const menuExtraBindingEntry = menuLeadingEntry.replace("{", `{unexpectedMenuBinding: ${JSON.stringify([...generatedClassNames(menuLeadingEntry, "Menu leading")][0])},`);
+const menuExtraBindingJs = compiledJavaScript.replace(menuGuardMap.object, menuGuardMap.object.replace(menuLeadingEntry, menuExtraBindingEntry));
+assert.notEqual(menuExtraBindingJs, compiledJavaScript);
+assert.throws(() => requireMenuContract(legacyComponents, compiledCss, menuExtraBindingJs, menuSource, menuStyleSource), /menuStyles.leading exact property bindings/u, "Menu rejects an added binding even when its CSS already exists");
+for (const [key, contracts] of Object.entries(MENU_CONDITIONAL_DECLARATIONS)) {
+  if (contracts === undefined) continue;
+  for (const { condition, declaration } of contracts) {
+    assert.throws(() => requireMenuContract(legacyComponents, mutateCompiledRule(compiledCss, menuGuardMap, key, declaration, "remove", condition), compiledJavaScript, menuSource, menuStyleSource), /Menu|menuStyles/u, `Menu ${key} rejects a missing ${condition} declaration`);
+  }
+}
+const menuDisconnectedShortcut = compiledJavaScript.replace(new RegExp(`${menuGuardMap.identifier}\\.shortcut(?![A-Za-z0-9_$])`, "gu"), "disconnectedMenuStyles.shortcut");
+assert.notEqual(menuDisconnectedShortcut, compiledJavaScript);
+assert.throws(() => requireMenuContract(legacyComponents, compiledCss, menuDisconnectedShortcut, menuSource, menuStyleSource), /compiled menuStyles.shortcut composition binding/u);
+assert.throws(() => requireMenuContract(`${legacyComponents}\n.hraness-menu__item { color: red; }`, compiledCss, compiledJavaScript, menuSource, menuStyleSource), /legacy Menu recipe/u);
+assert.throws(() => requireMenuContract(legacyComponents, compiledCss, compiledJavaScript, menuSource.replace("state.isSelected && menuStyles.itemSelected", "false && menuStyles.itemSelected"), menuStyleSource), /Menu state and caller order/u);
 requireListBoxContract(legacyComponents, compiledCss, compiledJavaScript, listBoxSource, listBoxStyleSource);
 const listBoxGuardMap = namedCompiledStyleMap(compiledJavaScript, LIST_BOX_STYLE_KEYS, "listBoxStyles class map");
 const listBoxEquivalentFlex = replaceListBoxDeclaration(

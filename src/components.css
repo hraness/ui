@@ -42,16 +42,7 @@
     display: none;
   }
 
-  :where(.hraness-menu) {
-    display: grid;
-    min-width: 12rem;
-    max-height: min(24rem, var(--visual-viewport-height, 70vh));
-    padding: var(--space-1);
-    overflow: auto;
-    outline: none;
-  }
-
-  :where(.hraness-menu-popover, .hraness-popover, .hraness-tooltip) {
+  :where(.hraness-popover, .hraness-tooltip) {
     z-index: var(--z-tooltip);
     max-width: min(24rem, calc(100vw - 2rem));
     border: 1px solid var(--ui-border);
@@ -62,11 +53,11 @@
     box-shadow: var(--elevation-overlay);
   }
 
-  :where(.hraness-menu-popover, .hraness-popover)[data-entering] {
+  :where(.hraness-popover)[data-entering] {
     animation: hraness-overlay-enter var(--motion-duration-standard) var(--motion-easing-emphasized);
   }
 
-  :where(.hraness-menu-popover, .hraness-popover)[data-exiting] {
+  :where(.hraness-popover)[data-exiting] {
     animation: hraness-overlay-exit var(--motion-duration-fast) var(--motion-easing-standard);
   }
 
@@ -232,94 +223,6 @@
   .hraness-pagination [aria-current="page"] {
     background: var(--ui-primary);
     color: var(--ui-primary-foreground);
-  }
-
-  :where(.hraness-menu__section) {
-    display: grid;
-  }
-
-  :where(.hraness-menu__header) {
-    padding: var(--space-2) var(--space-3);
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-caption);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .hraness-menu__item {
-    position: relative;
-    display: grid;
-    min-height: var(--interactive-target-compact);
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    outline: none;
-    color: var(--ui-popover-foreground);
-    cursor: default;
-    user-select: none;
-  }
-
-  .hraness-menu__item:where([data-focused], [data-hovered]) {
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  .hraness-menu__item[data-selected] {
-    font-weight: var(--font-weight-medium);
-  }
-
-  .hraness-menu__item[data-disabled] {
-    opacity: 0.5;
-  }
-
-  .hraness-menu__item[data-variant="danger"] {
-    color: var(--ui-destructive);
-  }
-
-  .hraness-menu__item[data-variant="danger"]:where([data-focused], [data-hovered]) {
-    background: color-mix(in oklch, var(--ui-destructive) 12%, var(--ui-popover));
-  }
-
-  .hraness-menu__leading {
-    display: inline-grid;
-    place-items: center;
-  }
-
-  .hraness-menu__copy {
-    display: grid;
-    min-width: 0;
-    gap: 0.125rem;
-  }
-
-  .hraness-menu__label {
-    overflow-wrap: anywhere;
-  }
-
-  .hraness-menu__description {
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-caption);
-    font-weight: var(--font-weight-regular);
-    line-height: 1.4;
-  }
-
-  .hraness-menu__shortcut {
-    color: var(--ui-muted-foreground);
-    font-family: var(--ui-font-mono);
-    font-size: var(--text-caption);
-  }
-
-  .hraness-menu__separator {
-    height: 1px;
-    margin-block: var(--space-1);
-    background: var(--ui-border);
-  }
-
-  .hraness-menu__footer {
-    padding: var(--space-2) var(--space-3);
-    border-block-start: 1px solid var(--ui-border);
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-caption);
   }
 
   .hraness-dialog__content {
@@ -607,7 +510,6 @@
     .hraness-disclosure__trigger,
     .hraness-toggle-group__item,
     .hraness-segmented-control__item,
-    .hraness-menu__item,
     .hraness-dialog__close,
     .hraness-toast__close,
     .hraness-pagination a,
@@ -627,6 +529,7 @@
   --hraness-field-coarse-min: var(--interactive-target-min);
   --hraness-slider-coarse-min: var(--interactive-target-min);
   --hraness-list-box-coarse-min: var(--interactive-target-min);
+  --hraness-menu-coarse-min: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
@@ -634,7 +537,6 @@
   .hraness-disclosure__trigger,
   .hraness-toggle-group__item,
   .hraness-segmented-control__item,
-  .hraness-menu__item,
   .hraness-dialog__close,
   .hraness-toast__close,
   .hraness-pagination a,
@@ -648,7 +550,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :where(.hraness-menu-popover, .hraness-popover, .hraness-dialog-overlay,
+  :where(.hraness-popover, .hraness-dialog-overlay,
     .hraness-toast) {
     animation: none;
   }
@@ -675,7 +577,6 @@
   }
 
   :where(
-    .hraness-menu-popover,
     .hraness-popover,
     .hraness-tooltip,
     .hraness-dialog,
