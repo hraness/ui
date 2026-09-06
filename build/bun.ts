@@ -99,6 +99,7 @@ type BareInputFallbackPolicy = Readonly<{
 }>;
 
 type RawBareInputFallbackUse = Readonly<{
+  fileSnapshots: readonly LoadedInputFileSnapshot[];
   from: string;
   installationRoot: string;
   packageName: string;
@@ -119,6 +120,11 @@ type ResolutionFileSnapshot = Readonly<
   | { kind: "other"; mode: number; path: string }
   | { kind: "symlink"; path: string; target: string }
 >;
+
+type LoadedInputFileSnapshot = Readonly<{
+  resolvedPath: string;
+  snapshot: ResolutionFileSnapshot;
+}>;
 
 type ElidedPackageInputSnapshot = Readonly<{
   bytes: number;
@@ -1039,6 +1045,184 @@ function capturedAuthoritativePackageSubpathExportTarget(
   return candidate;
 }
 
+type TransparentCommonJsSelectorTarget = Readonly<{
+  fileSnapshots: readonly LoadedInputFileSnapshot[];
+  scopeSnapshots: readonly ResolutionFileSnapshot[];
+  target: string;
+}>;
+
+function canonicalCommonJsRequireTarget(
+  wrapper: string,
+  literal: string,
+  packageName: string,
+  installationRoot: string,
+): string | undefined {
+  if (
+    !(literal.startsWith("./") || literal.startsWith("../"))
+    || literal.includes("\\")
+    || literal.includes("?")
+    || literal.includes("#")
+    || literal.includes("%")
+    || /[\u0000-\u001f\u007f]/u.test(literal)
+  ) return undefined;
+  const normalizedLiteral = posix.normalize(literal);
+  const canonicalLiteral = normalizedLiteral.startsWith("../")
+    ? normalizedLiteral
+    : `./${normalizedLiteral}`;
+  if (canonicalLiteral !== literal) return undefined;
+  const candidate = posix.normalize(posix.join(posix.dirname(wrapper), literal));
+  return candidate.startsWith(`${installationRoot}/`)
+      && packageInstallationRoot(candidate) === installationRoot
+      && packageBelowNodeModules(candidate) === packageName
+      && javascriptFilter.test(candidate)
+    ? candidate
+    : undefined;
+}
+
+function transparentCommonJsSelectorBranches(
+  snapshot: ResolutionFileSnapshot,
+  productionEnvironmentDefine: string,
+): Readonly<{ development: string; production: string }> | undefined {
+  if (
+    snapshot.kind !== "file"
+    || productionEnvironmentDefine !== JSON.stringify("production")
+  ) return undefined;
+  let source: string;
+  try {
+    source = new TextDecoder("utf-8", { fatal: true }).decode(snapshot.source);
+  } catch {
+    return undefined;
+  }
+  const match = /^(?:\s*(?:"use strict"|'use strict');)?\s*if\s*\(\s*process\.env\.NODE_ENV\s*===\s*(?:"production"|'production')\s*\)\s*\{\s*module\.exports\s*=\s*require\s*\(\s*(?:"([^"\\\r\n]+)"|'([^'\\\r\n]+)')\s*\)\s*;\s*\}\s*else\s*\{\s*module\.exports\s*=\s*require\s*\(\s*(?:"([^"\\\r\n]+)"|'([^'\\\r\n]+)')\s*\)\s*;\s*\}\s*$/u.exec(source);
+  if (match === null) return undefined;
+  const production = match[1] ?? match[2];
+  const development = match[3] ?? match[4];
+  return production === undefined || development === undefined
+    ? undefined
+    : { development, production };
+}
+
+function capturedTransparentCommonJsPackageSubpathTarget(
+  packageName: string,
+  installationRoot: string,
+  specifier: string,
+  known: ReadonlySet<string>,
+  packageScopes: ReadonlyMap<string, PackageScope>,
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  inputFileSnapshots: ReadonlyMap<string, LoadedInputFileSnapshot>,
+  rootDirectory: string,
+  buildConditions: readonly string[],
+  buildTarget: "browser" | "bun",
+  productionEnvironmentDefine: string,
+): TransparentCommonJsSelectorTarget | undefined {
+  if (
+    packageName !== "use-sync-external-store"
+    || specifier !== "use-sync-external-store/shim/index.js"
+  ) return undefined;
+  const manifestPath = posix.join(installationRoot, "package.json");
+  const capturedManifest = packageScopeSnapshots.get(manifestPath);
+  if (capturedManifest === undefined) return undefined;
+  const parsedManifest = strictJsonObjectFromSnapshot(capturedManifest);
+  if (
+    !parsedManifest.valid
+    || parsedManifest.record === undefined
+    || parsedManifest.record.name !== packageName
+    || Object.hasOwn(parsedManifest.record, "browser")
+    || (parsedManifest.record.type !== undefined && parsedManifest.record.type !== "commonjs")
+  ) return undefined;
+  const wrapper = capturedPackageSubpathExportTarget(
+    packageName,
+    installationRoot,
+    specifier,
+    packageScopeSnapshots,
+    buildConditions,
+    buildTarget,
+  );
+  if (
+    wrapper === undefined
+    || wrapper !== posix.join(installationRoot, "shim/index.js")
+    || known.has(wrapper)
+    || !javascriptFilter.test(wrapper)
+  ) return undefined;
+  const wrapperSnapshot = inputFileSnapshots.get(wrapper);
+  if (
+    wrapperSnapshot === undefined
+    || wrapperSnapshot.snapshot.kind !== "file"
+    || wrapperSnapshot.resolvedPath !== resolve(rootDirectory, ...wrapper.split("/"))
+  ) return undefined;
+  const wrapperScope = packageScopes.get(wrapper);
+  if (wrapperScope === undefined) return undefined;
+  const wrapperScopeSnapshots = matchingCapturedPackageScopeSnapshots(
+    wrapperScope,
+    packageScopeSnapshots,
+    `Bun raw CommonJS selector wrapper ${wrapper}`,
+  );
+  if (
+    wrapperScopeSnapshots === undefined
+    || packageScopeHasBrowserRemap(wrapperScopeSnapshots)
+  ) return undefined;
+  const branches = transparentCommonJsSelectorBranches(
+    wrapperSnapshot.snapshot,
+    productionEnvironmentDefine,
+  );
+  if (branches === undefined) return undefined;
+  const productionTarget = canonicalCommonJsRequireTarget(
+    wrapper,
+    branches.production,
+    packageName,
+    installationRoot,
+  );
+  const developmentTarget = canonicalCommonJsRequireTarget(
+    wrapper,
+    branches.development,
+    packageName,
+    installationRoot,
+  );
+  if (
+    productionTarget === undefined
+    || developmentTarget === undefined
+    || productionTarget === wrapper
+    || developmentTarget === wrapper
+    || !known.has(productionTarget)
+  ) return undefined;
+  const installationInputs = [...known]
+    .filter((path) => packageInstallationRoot(path) === installationRoot)
+    .sort();
+  if (installationInputs.length !== 1 || installationInputs[0] !== productionTarget) return undefined;
+  const targetSnapshot = inputFileSnapshots.get(productionTarget);
+  const targetScope = packageScopes.get(productionTarget);
+  if (
+    targetSnapshot === undefined
+    || targetSnapshot.snapshot.kind !== "file"
+    || targetSnapshot.resolvedPath !== resolve(rootDirectory, ...productionTarget.split("/"))
+    || targetScope === undefined
+  ) return undefined;
+  const targetScopeSnapshots = matchingCapturedPackageScopeSnapshots(
+    targetScope,
+    packageScopeSnapshots,
+    `Bun raw CommonJS selector target ${productionTarget}`,
+  );
+  if (
+    targetScopeSnapshots === undefined
+    || packageScopeHasBrowserRemap(targetScopeSnapshots)
+  ) return undefined;
+  const targetManifest = targetScopeSnapshots.at(-1);
+  const wrapperManifest = wrapperScopeSnapshots.at(-1);
+  if (
+    targetManifest === undefined
+    || wrapperManifest === undefined
+    || targetManifest.path !== manifestPath
+    || wrapperManifest.path !== manifestPath
+  ) return undefined;
+  assert.deepEqual(wrapperManifest, capturedManifest, `Bun raw CommonJS selector wrapper scope differs for ${wrapper}`);
+  assert.deepEqual(targetManifest, capturedManifest, `Bun raw CommonJS selector target scope differs for ${productionTarget}`);
+  return {
+    fileSnapshots: [wrapperSnapshot, targetSnapshot],
+    scopeSnapshots: wrapperScopeSnapshots,
+    target: productionTarget,
+  };
+}
+
 function matchingCapturedPackageScopeSnapshots(
   scope: PackageScope,
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
@@ -1075,6 +1259,8 @@ function retainRawBareInputFallbackUse(
   importerScopeSnapshots: readonly ResolutionFileSnapshot[],
   packageScopes: ReadonlyMap<string, PackageScope>,
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  additionalScopeSnapshots: readonly ResolutionFileSnapshot[] = [],
+  fileSnapshots: readonly LoadedInputFileSnapshot[] = [],
 ): string | undefined {
   if (target === undefined) return undefined;
   const targetScope = packageScopes.get(target);
@@ -1086,12 +1272,13 @@ function retainRawBareInputFallbackUse(
   );
   if (targetScopeSnapshots === undefined) return undefined;
   const byPath = new Map<string, ResolutionFileSnapshot>();
-  for (const snapshot of [...importerScopeSnapshots, ...targetScopeSnapshots]) {
+  for (const snapshot of [...importerScopeSnapshots, ...targetScopeSnapshots, ...additionalScopeSnapshots]) {
     const previous = byPath.get(snapshot.path);
     if (previous === undefined) byPath.set(snapshot.path, snapshot);
     else assert.deepEqual(snapshot, previous, `Bun raw fallback package scope ${snapshot.path} is inconsistent`);
   }
   uses.push({
+    fileSnapshots,
     from,
     installationRoot,
     packageName,
@@ -1117,8 +1304,10 @@ async function resolvedInputTarget(
   rawFallbackUses: RawBareInputFallbackUse[],
   packageScopes: ReadonlyMap<string, PackageScope>,
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  inputFileSnapshots: ReadonlyMap<string, LoadedInputFileSnapshot>,
   buildConditions: readonly string[],
   buildTarget: "browser" | "bun",
+  productionEnvironmentDefine: string,
 ): Promise<string | undefined> {
   if (imported.external) return undefined;
   const direct = imported.original !== undefined || pathLikeImport(imported.path)
@@ -1192,25 +1381,43 @@ async function resolvedInputTarget(
   );
   if (resolverVisible !== installationRoot) return undefined;
   if (strictBarePackageRoot(imported.path) !== packageName) {
-    return retainRawBareInputFallbackUse(
-      rawFallbackUses,
-      imported,
-      from,
-      capturedAuthoritativePackageSubpathExportTarget(
+    const authoritative = capturedAuthoritativePackageSubpathExportTarget(
+      packageName,
+      installationRoot,
+      imported.path,
+      known,
+      packageScopes,
+      packageScopeSnapshots,
+      buildConditions,
+      buildTarget,
+    );
+    const selector = authoritative === undefined
+      ? capturedTransparentCommonJsPackageSubpathTarget(
         packageName,
         installationRoot,
         imported.path,
         known,
         packageScopes,
         packageScopeSnapshots,
+        inputFileSnapshots,
+        rootDirectory,
         buildConditions,
         buildTarget,
-      ),
+        productionEnvironmentDefine,
+      )
+      : undefined;
+    return retainRawBareInputFallbackUse(
+      rawFallbackUses,
+      imported,
+      from,
+      authoritative ?? selector?.target,
       packageName,
       installationRoot,
       importerScopeSnapshots,
       packageScopes,
       packageScopeSnapshots,
+      selector?.scopeSnapshots,
+      selector?.fileSnapshots,
     );
   }
   const installationInputs = [...known]
@@ -1266,6 +1473,19 @@ async function revalidateRawBareInputFallbackUses(
         await resolutionFileSnapshot(rootDirectory, snapshot.path),
         snapshot,
         `Bun raw fallback package scope changed after edge settlement: ${snapshot.path}`,
+      );
+    }
+    for (const snapshot of use.fileSnapshots) {
+      const absolute = resolve(rootDirectory, ...snapshot.snapshot.path.split("/"));
+      assert.equal(
+        await realpath(absolute),
+        snapshot.resolvedPath,
+        `Bun raw fallback source realpath changed after edge settlement: ${snapshot.snapshot.path}`,
+      );
+      assert.deepEqual(
+        await resolutionFileSnapshot(rootDirectory, snapshot.snapshot.path),
+        snapshot.snapshot,
+        `Bun raw fallback source changed after edge settlement: ${snapshot.snapshot.path}`,
       );
     }
   }
@@ -1902,10 +2122,12 @@ async function importTargetsStylexRuntime(
   rawFallbackUses: RawBareInputFallbackUse[],
   packageScopes: ReadonlyMap<string, PackageScope>,
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  inputFileSnapshots: ReadonlyMap<string, LoadedInputFileSnapshot>,
   buildConditions: readonly string[],
   knownOutputs: ReadonlySet<string>,
   outputMetadata: ReadonlyMap<string, ParsedOutput>,
   buildTarget: "browser" | "bun",
+  productionEnvironmentDefine: string,
 ): Promise<boolean> {
   const pathLike = pathLikeImport(dependency.path);
   if (dependency.path === "@stylexjs/stylex" || dependency.path.startsWith("@stylexjs/stylex/")) return true;
@@ -1923,8 +2145,10 @@ async function importTargetsStylexRuntime(
     rawFallbackUses,
     packageScopes,
     packageScopeSnapshots,
+    inputFileSnapshots,
     buildConditions,
     buildTarget,
+    productionEnvironmentDefine,
   );
   if (target === undefined && pathLike) {
     const output = outputTarget(dependency.path, from, knownOutputs);
@@ -1958,6 +2182,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const buildConditions = buildOptions.conditions === undefined
     ? expected.kind === "client" ? ["browser", "module", "production"] : ["module", "node", "production"]
     : [...buildOptions.conditions];
+  const productionEnvironmentDefine = JSON.stringify("production");
   const logicalEntrypoints = [...expected.entrypoints].map((path) => normalizeLogicalPath(path, "Bun entrypoint")).sort();
   assert.equal(new Set(logicalEntrypoints).size, logicalEntrypoints.length, "Bun entrypoints must be unique");
   const entrypoints = await Promise.all(logicalEntrypoints.map((path) => resolveRootRelativeInput(rootDirectory, path)));
@@ -1968,6 +2193,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   // onLoad is an observation superset: Bun may load package modules that it
   // later tree-shakes out of the authoritative metafile graph.
   const inputSnapshots = new Map<string, Readonly<{ bytes: number; sha256: string }>>();
+  const inputFileSnapshots = new Map<string, LoadedInputFileSnapshot>();
   const transformedInputs = new Set<string>();
   const transformedRules = new Map<string, readonly StylexRuleV1[]>();
   const packageScopeCaptures = new Map<string, Promise<PackageScope>>();
@@ -1988,6 +2214,17 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
           const previous = inputSnapshots.get(logical);
           if (previous === undefined) inputSnapshots.set(logical, snapshot);
           else assert.deepEqual(snapshot, previous, `Bun input changed between loads: ${logical}`);
+          const fileSnapshot = await resolutionFileSnapshot(rootDirectory, logical);
+          assert.ok(fileSnapshot.kind === "file", `Bun loaded input is no longer an ordinary file: ${logical}`);
+          assert.deepEqual(
+            { bytes: fileSnapshot.bytes, sha256: fileSnapshot.sha256 },
+            snapshot,
+            `Bun loaded input changed while capturing its file identity: ${logical}`,
+          );
+          const loadedFileSnapshot = { resolvedPath: ordinary, snapshot: fileSnapshot };
+          const previousFileSnapshot = inputFileSnapshots.get(logical);
+          if (previousFileSnapshot === undefined) inputFileSnapshots.set(logical, loadedFileSnapshot);
+          else assert.deepEqual(loadedFileSnapshot, previousFileSnapshot, `Bun input file identity changed between loads: ${logical}`);
           const dependencyPackage = packageBelowNodeModules(logical);
           if (dependencyPackage !== undefined) {
             return { contents: source, loader: loaderFor(ordinary) };
@@ -2060,7 +2297,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const bunConfig: Bun.BuildConfig = {
     conditions: buildConditions,
     define: {
-      "process.env.NODE_ENV": JSON.stringify("production"),
+      "process.env.NODE_ENV": productionEnvironmentDefine,
       ...buildOptions.define,
     },
     entrypoints,
@@ -2178,10 +2415,12 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         rawFallbackUses,
         settledPackageScopes,
         packageScopeSnapshots,
+        inputFileSnapshots,
         buildConditions,
         outputSet,
         outputMetadata,
         target,
+        productionEnvironmentDefine,
       )) {
         importsStylexRuntime = true;
         break;
@@ -2405,8 +2644,10 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
             rawFallbackUses,
             settledPackageScopes,
             packageScopeSnapshots,
+            inputFileSnapshots,
             buildConditions,
             target,
+            productionEnvironmentDefine,
           )
           : undefined;
       const output = input === undefined && pathLike

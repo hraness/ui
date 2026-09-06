@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
@@ -2312,6 +2312,328 @@ describe("collectBunStylexGraph", () => {
           kind: "import-statement",
           to: `input:node_modules/@fixture/runtime/dist/tokens/${replacement.value}.mjs`,
         });
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("maps an observed transparent CommonJS selector directly to its authoritative production child", async () => {
+    for (const exportMode of ["exact", "conditional-default"] as const) {
+      const context = await fixture();
+      const packageName = "use-sync-external-store";
+      const runtimeDirectory = join(context.root, "node_modules", packageName);
+      const wrapper = join(runtimeDirectory, "shim/index.js");
+      const production = join(runtimeDirectory, "cjs/use-sync-external-store-shim.production.js");
+      const development = join(runtimeDirectory, "cjs/use-sync-external-store-shim.development.js");
+      const specifier = `${packageName}/shim/index.js`;
+      await write(
+        join(runtimeDirectory, "package.json"),
+        `${JSON.stringify({
+          exports: exportMode === "exact"
+            ? { "./shim/index.js": "./shim/index.js" }
+            : { "./shim/index.js": { "react-native": "./shim/index.native.js", default: "./shim/index.js" } },
+          name: packageName,
+          version: "1.6.0",
+        })}\n`,
+      );
+      await write(
+        wrapper,
+        [
+          "'use strict';",
+          "",
+          "if (process.env.NODE_ENV === 'production') {",
+          "  module.exports = require('../cjs/use-sync-external-store-shim.production.js');",
+          "} else {",
+          "  module.exports = require('../cjs/use-sync-external-store-shim.development.js');",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      await write(production, "'use strict'; module.exports = { marker: 'production' };\n");
+      await write(development, "'use strict'; module.exports = { marker: 'development' };\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(
+        entry,
+        `import runtime from '../node_modules/${packageName}/cjs/use-sync-external-store-shim.production.js'; export const value = runtime.marker;\n`,
+      );
+      const handle = await generation(context, `commonjs-selector-${exportMode}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const handlers: Array<(args: { path: string }) => unknown> = [];
+        const plugin = options.plugins?.[0];
+        assert.ok(plugin !== undefined);
+        plugin.setup({
+          onEnd() {},
+          onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
+            handlers.push(callback);
+          },
+        } as never);
+        const javascriptOnLoad = handlers[0];
+        assert.ok(javascriptOnLoad !== undefined);
+        await javascriptOnLoad({ path: wrapper });
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) =>
+          path.endsWith("/src/entry.ts") || path === "src/entry.ts"
+        );
+        assert.ok(entryKey !== undefined);
+        expect(Object.keys(inputs).some((path) => path.endsWith(`/${logical(context.root, production)}`)
+          || path === logical(context.root, production))).toBe(true);
+        expect(Object.keys(inputs).some((path) => path.endsWith(`/${logical(context.root, wrapper)}`)
+          || path === logical(context.root, wrapper))).toBe(false);
+        expect(Object.keys(inputs).some((path) => path.endsWith(`/${logical(context.root, development)}`)
+          || path === logical(context.root, development))).toBe(false);
+        inputs[entryKey]!.imports = [{ kind: "import-statement", path: specifier }] as never;
+        return result;
+      });
+
+      try {
+        const receipt = await collectBunStylexGraph({
+          generation: handle,
+          graphId: "client",
+          rootDirectory: context.root,
+        });
+        expect(receipt.edges).toContainEqual({
+          external: false,
+          from: "input:src/entry.ts",
+          kind: "import-statement",
+          to: `input:${logical(context.root, production)}`,
+        });
+        expect(receipt.inputs.some(({ path }) => path === logical(context.root, wrapper))).toBe(false);
+        expect(receipt.inputs.some(({ path }) => path === logical(context.root, development))).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
+  test("rejects unsafe transparent CommonJS selector fallbacks and late identity changes", async () => {
+    const canonicalWrapper = [
+      "'use strict';",
+      "",
+      "if (process.env.NODE_ENV === 'production') {",
+      "  module.exports = require('../cjs/runtime.production.js');",
+      "} else {",
+      "  module.exports = require('../cjs/runtime.development.js');",
+      "}",
+      "",
+    ].join("\n");
+    const variants: readonly Readonly<{
+      ambiguousInstallationInput?: boolean;
+      childScope?: boolean;
+      edge?: "attributes" | "dynamic" | "require";
+      id: string;
+      importerBrowser?: boolean;
+      lateMutation?: "child-bytes" | "child-mode" | "child-parent-symlink" | "config" | "manifest" | "wrapper-bytes" | "wrapper-mode" | "wrapper-parent-symlink";
+      observeWrapper?: boolean;
+      packageBrowser?: boolean;
+      packageName?: "@fixture/runtime";
+      pathsAlias?: boolean;
+      rawSpecifier?: "use-sync-external-store/shim";
+      selectedChild?: "development";
+      wrapperScope?: boolean;
+      wrapperSource?: string;
+    }>[] = [
+      { id: "unobserved-wrapper", observeWrapper: false },
+      { id: "extra-statement", wrapperSource: `globalThis.sideEffect = true;\n${canonicalWrapper}` },
+      { id: "wrong-condition", wrapperSource: canonicalWrapper.replace("=== 'production'", "=== 'development'") },
+      { id: "loose-condition", wrapperSource: canonicalWrapper.replace("=== 'production'", "== 'production'") },
+      { id: "computed-export", wrapperSource: canonicalWrapper.replaceAll("module.exports", "module['exports']") },
+      { id: "nonliteral-require", wrapperSource: canonicalWrapper.replace("require('../cjs/runtime.production.js')", "require(productionTarget)") },
+      { id: "escaping-production-require", wrapperSource: canonicalWrapper.replace("../cjs/runtime.production.js", "../../outside.js") },
+      { id: "noncanonical-production-require", wrapperSource: canonicalWrapper.replace("../cjs/runtime.production.js", "../cjs/nested/../runtime.production.js") },
+      { id: "redundant-dot-parent-production-require", wrapperSource: canonicalWrapper.replace("../cjs/runtime.production.js", "./../cjs/runtime.production.js") },
+      { id: "escaping-development-require", wrapperSource: canonicalWrapper.replace("../cjs/runtime.development.js", "../../outside.js") },
+      { id: "recursive-development-require", wrapperSource: canonicalWrapper.replace("../cjs/runtime.development.js", "../shim/index.js") },
+      { id: "production-child-not-authoritative", selectedChild: "development" },
+      { ambiguousInstallationInput: true, id: "ambiguous-authoritative-installation-inputs" },
+      { childScope: true, id: "selected-child-package-scope" },
+      { id: "wrapper-package-scope", wrapperScope: true },
+      { id: "target-package-browser-remap", packageBrowser: true },
+      { id: "importer-package-browser-remap", importerBrowser: true },
+      { id: "root-paths-alias", pathsAlias: true },
+      { id: "wrong-package", packageName: "@fixture/runtime" },
+      { id: "shim-alias", rawSpecifier: "use-sync-external-store/shim" },
+      { edge: "attributes", id: "import-attributes" },
+      { edge: "dynamic", id: "dynamic-import" },
+      { edge: "require", id: "require-call" },
+      { id: "late-wrapper-bytes", lateMutation: "wrapper-bytes" },
+      { id: "late-wrapper-mode", lateMutation: "wrapper-mode" },
+      { id: "late-wrapper-parent-symlink", lateMutation: "wrapper-parent-symlink" },
+      { id: "late-selected-child-bytes", lateMutation: "child-bytes" },
+      { id: "late-selected-child-mode", lateMutation: "child-mode" },
+      { id: "late-selected-child-parent-symlink", lateMutation: "child-parent-symlink" },
+      { id: "late-package-manifest", lateMutation: "manifest" },
+      { id: "late-root-config", lateMutation: "config" },
+    ];
+
+    for (const variant of variants) {
+      const context = await fixture();
+      const packageName = variant.packageName ?? "use-sync-external-store";
+      const runtimeDirectory = join(context.root, "node_modules", packageName);
+      const manifestPath = join(runtimeDirectory, "package.json");
+      const wrapper = join(runtimeDirectory, "shim/index.js");
+      const production = join(runtimeDirectory, "cjs/runtime.production.js");
+      const development = join(runtimeDirectory, "cjs/runtime.development.js");
+      const extra = join(runtimeDirectory, "cjs/runtime.extra.js");
+      const manifest: Record<string, unknown> = {
+        exports: { "./shim/index.js": "./shim/index.js" },
+        name: packageName,
+        version: "1.6.0",
+      };
+      if (variant.packageBrowser) manifest.browser = { "./shim/index.js": "./shim/browser.js" };
+      await write(manifestPath, `${JSON.stringify(manifest)}\n`);
+      await write(wrapper, variant.wrapperSource ?? canonicalWrapper);
+      await write(production, "'use strict'; module.exports = { marker: 'production' };\n");
+      await write(development, "'use strict'; module.exports = { marker: 'development' };\n");
+      if (variant.ambiguousInstallationInput) {
+        await write(extra, "'use strict'; module.exports = { marker: 'extra' };\n");
+      }
+      if (variant.childScope) {
+        await write(
+          join(runtimeDirectory, "cjs/package.json"),
+          `${JSON.stringify({ name: "use-sync-external-store-child", version: "1.0.0" })}\n`,
+        );
+      }
+      if (variant.wrapperScope) {
+        await write(
+          join(runtimeDirectory, "shim/package.json"),
+          `${JSON.stringify({ name: "use-sync-external-store-wrapper", version: "1.0.0" })}\n`,
+        );
+      }
+      if (variant.importerBrowser) {
+        await write(
+          join(context.root, "package.json"),
+          `${JSON.stringify({ browser: { "./src/entry.ts": "./src/browser.ts" }, name: "@fixture/app" })}\n`,
+        );
+      }
+      if (variant.pathsAlias || variant.lateMutation === "config") {
+        await write(
+          join(context.root, "tsconfig.json"),
+          `${JSON.stringify({ compilerOptions: variant.pathsAlias
+            ? { paths: { [`${packageName}/*`]: ["./src/*"] } }
+            : { strict: true } })}\n`,
+        );
+      }
+      const authoritative = variant.selectedChild === "development" ? development : production;
+      const entry = join(context.root, "src/entry.ts");
+      await write(
+        entry,
+        variant.ambiguousInstallationInput
+          ? `import runtime from '../${logical(context.root, authoritative)}'; import extra from '../${logical(context.root, extra)}'; export const value = runtime.marker + extra.marker;\n`
+          : `import runtime from '../${logical(context.root, authoritative)}'; export const value = runtime.marker;\n`,
+      );
+      const handle = await generation(context, `commonjs-selector-near-miss-${variant.id}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const handlers: Array<(args: { path: string }) => unknown> = [];
+        const plugin = options.plugins?.[0];
+        assert.ok(plugin !== undefined);
+        plugin.setup({
+          onEnd() {},
+          onLoad(_options: unknown, callback: (args: { path: string }) => unknown) {
+            handlers.push(callback);
+          },
+        } as never);
+        if (variant.observeWrapper !== false) {
+          const javascriptOnLoad = handlers[0];
+          assert.ok(javascriptOnLoad !== undefined);
+          await javascriptOnLoad({ path: wrapper });
+        }
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) =>
+          path.endsWith("/src/entry.ts") || path === "src/entry.ts"
+        );
+        assert.ok(entryKey !== undefined);
+        inputs[entryKey]!.imports = [{
+          ...(variant.edge === "attributes" ? { with: { type: "javascript" } } : {}),
+          kind: variant.edge === "dynamic"
+            ? "dynamic-import"
+            : variant.edge === "require"
+              ? "require-call"
+              : "import-statement",
+          path: variant.rawSpecifier ?? `${packageName}/shim/index.js`,
+        }] as never;
+        if (variant.lateMutation !== undefined) {
+          const output = result.outputs[0];
+          assert.ok(output !== undefined);
+          const arrayBuffer = output.arrayBuffer.bind(output);
+          let mutated = false;
+          Object.defineProperty(output, "arrayBuffer", {
+            configurable: true,
+            value: async () => {
+              const bytes = await arrayBuffer();
+              if (!mutated) {
+                mutated = true;
+                switch (variant.lateMutation) {
+                  case "wrapper-bytes":
+                    writeFileSync(wrapper, canonicalWrapper.replace("runtime.production.js", "runtime.changed.js"));
+                    break;
+                  case "wrapper-mode":
+                    chmodSync(wrapper, 0o600);
+                    break;
+                  case "wrapper-parent-symlink": {
+                    const actual = join(runtimeDirectory, "actual-shim");
+                    mkdirSync(actual);
+                    writeFileSync(join(actual, "index.js"), canonicalWrapper);
+                    rmSync(resolve(wrapper, ".."), { recursive: true });
+                    symlinkSync(actual, resolve(wrapper, ".."), "dir");
+                    break;
+                  }
+                  case "child-bytes":
+                    writeFileSync(production, "'use strict'; module.exports = { marker: 'changed' };\n");
+                    break;
+                  case "child-mode":
+                    chmodSync(production, 0o600);
+                    break;
+                  case "child-parent-symlink": {
+                    const actual = join(runtimeDirectory, "actual-cjs");
+                    mkdirSync(actual);
+                    writeFileSync(join(actual, "runtime.production.js"), "'use strict'; module.exports = { marker: 'production' };\n");
+                    writeFileSync(join(actual, "runtime.development.js"), "'use strict'; module.exports = { marker: 'development' };\n");
+                    rmSync(resolve(production, ".."), { recursive: true });
+                    symlinkSync(actual, resolve(production, ".."), "dir");
+                    break;
+                  }
+                  case "manifest":
+                    writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, version: "1.6.1" })}\n`);
+                    break;
+                  case "config":
+                    writeFileSync(
+                      join(context.root, "tsconfig.json"),
+                      `${JSON.stringify({ compilerOptions: { paths: { [`${packageName}/*`]: ["./src/*"] }, strict: true } })}\n`,
+                    );
+                    break;
+                }
+              }
+              return bytes;
+            },
+          });
+        }
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(
+          variant.lateMutation === "config"
+            ? /Bun root resolution configuration changed after raw fallback edge settlement/u
+            : variant.lateMutation === "manifest"
+              ? /Bun raw fallback package scope changed after edge settlement/u
+              : variant.lateMutation !== undefined
+                ? /Bun raw fallback source(?: realpath)? changed after edge settlement/u
+                : /Bun metafile import.*is unresolved/u,
+        );
+        expect(await receiptExists(handle, "client")).toBe(false);
       } finally {
         build.mockRestore();
       }
