@@ -599,6 +599,15 @@ function balancedObject(
   throw new Error(`${description} contains an unterminated object`);
 }
 
+function injectCompiledObjectBinding(
+  entry: string,
+  binding: string,
+  description: string,
+): string {
+  assert.equal(entry[0], "{", `${description} must start with an object opening`);
+  return `{${binding},${entry.slice(1)}`;
+}
+
 interface CompiledObjectProperty {
   readonly key: string;
   readonly source: string;
@@ -3402,7 +3411,11 @@ function verifyOverlayNegativeControls(legacy: string, css: string, js: string, 
   for (const key of OVERLAY_STYLE_KEYS) for (const declaration of OVERLAY_DECLARATIONS[key]) rejects(mutateCompiledRule(css, map, key, declaration, "remove"));
   for (const key of OVERLAY_STYLE_KEYS) for (const { condition, declaration } of OVERLAY_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(mutateCompiledRule(css, map, key, declaration, "remove", condition));
   const entry = map.properties.get("tooltip")!.value;
-  const extra = entry.replace("{", "{unexpectedOverlayBinding: " + JSON.stringify([...generatedClassNames(entry, "Tooltip")][0]) + ",");
+  const extra = injectCompiledObjectBinding(
+    entry,
+    "unexpectedOverlayBinding: " + JSON.stringify([...generatedClassNames(entry, "Tooltip")][0]),
+    "Tooltip negative-control entry",
+  );
   assert.throws(() => requireOverlayContract(legacy, css, js.replace(map.object, map.object.replace(entry, extra)), source, recipe), /Tooltip tooltip exact property bindings/u);
   const disconnected = js.replace(new RegExp(map.identifier + "\\.tooltip(?![A-Za-z0-9_$])", "gu"), "disconnectedOverlay.tooltip");
   assert.notEqual(disconnected, js);
@@ -3551,7 +3564,11 @@ function verifyToastNegativeControls(legacy: string, css: string, js: string, so
   for (const key of TOAST_STYLE_KEYS) for (const { condition, declaration } of TOAST_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(mutateCompiledRule(css, map, key, declaration, "remove", condition));
   for (const { declaration } of TOAST_NATIVE_DECLARATIONS) rejects(mutateCompiledRule(css, map, "closeNativeInteractionFallbacks", declaration, "remove"));
   const entry = map.properties.get("title")!.value;
-  const extra = entry.replace("{", "{unexpectedToastBinding: " + JSON.stringify([...generatedClassNames(entry, "Toast title")][0]) + ",");
+  const extra = injectCompiledObjectBinding(
+    entry,
+    "unexpectedToastBinding: " + JSON.stringify([...generatedClassNames(entry, "Toast title")][0]),
+    "Toast negative-control entry",
+  );
   assert.throws(() => requireToastContract(legacy, css, js.replace(map.object, map.object.replace(entry, extra)), source, recipe), /Toast title exact property bindings/u);
   const disconnected = js.replace(new RegExp(map.identifier + "\\.description(?![A-Za-z0-9_$])", "gu"), 'disconnectedToast["description"]');
   assert.notEqual(disconnected, js);
@@ -3629,7 +3646,11 @@ function verifyDialogNegativeControls(legacy: string, css: string, js: string, s
     ["overlay", /overscroll-behavior-x:\s*contain;/u],
   ] as const) rejects(mutateCompiledRule(css, map, key, declaration, "remove"));
   const entry = map.properties.get("title")!.value;
-  const extraEntry = entry.replace("{", "{unexpectedDialogBinding: " + JSON.stringify([...generatedClassNames(entry, "Dialog title")][0]) + ",");
+  const extraEntry = injectCompiledObjectBinding(
+    entry,
+    "unexpectedDialogBinding: " + JSON.stringify([...generatedClassNames(entry, "Dialog title")][0]),
+    "Dialog negative-control entry",
+  );
   const extraJs = js.replace(map.object, map.object.replace(entry, extraEntry));
   assert.notEqual(extraJs, js);
   assert.throws(() => requireDialogContract(legacy, css, extraJs, source, recipe), /Dialog title exact property bindings/u);
@@ -6885,7 +6906,11 @@ for (const [key, declaration, replacement] of [
   assert.throws(() => requireMenuContract(legacyComponents, replaceMenuDeclaration(compiledCss, menuGuardMap, key, declaration, replacement), compiledJavaScript, menuSource, menuStyleSource), /Menu|menuStyles/u, `Menu ${key} rejects non-equivalent presentation`);
 }
 const menuLeadingEntry = menuGuardMap.properties.get("leading")!.value;
-const menuExtraBindingEntry = menuLeadingEntry.replace("{", `{unexpectedMenuBinding: ${JSON.stringify([...generatedClassNames(menuLeadingEntry, "Menu leading")][0])},`);
+const menuExtraBindingEntry = injectCompiledObjectBinding(
+  menuLeadingEntry,
+  `unexpectedMenuBinding: ${JSON.stringify([...generatedClassNames(menuLeadingEntry, "Menu leading")][0])}`,
+  "Menu negative-control entry",
+);
 const menuExtraBindingJs = compiledJavaScript.replace(menuGuardMap.object, menuGuardMap.object.replace(menuLeadingEntry, menuExtraBindingEntry));
 assert.notEqual(menuExtraBindingJs, compiledJavaScript);
 assert.throws(() => requireMenuContract(legacyComponents, compiledCss, menuExtraBindingJs, menuSource, menuStyleSource), /menuStyles.leading exact property bindings/u, "Menu rejects an added binding even when its CSS already exists");

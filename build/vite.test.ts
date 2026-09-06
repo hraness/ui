@@ -648,6 +648,23 @@ export const value = true;
     }
   });
 
+  test("normalizes module IDs at the first query or fragment delimiter", async () => {
+    for (const [index, suffix] of ["?query#fragment", "#fragment?query"].entries()) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      const source = "export const value = true;\n";
+      await write(entry, source);
+      const graph = graphExpectation(context, `module-id-delimiter-${String(index)}`, "client", [entry]);
+      const session = await configureGraph(context, graph);
+
+      await expect(session.transform.call(
+        resolver(),
+        source,
+        `${entry}${suffix}`,
+      )).resolves.toMatchObject({ map: null });
+    }
+  });
+
   test("rejects JavaScript URL assets outside the declared root", async () => {
     const context = await fixture();
     const outside = await mkdtemp(join(await realpath(tmpdir()), "hraness-ui-vite-asset-outside-"));

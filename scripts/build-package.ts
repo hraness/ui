@@ -412,6 +412,12 @@ let nativeErrnoLocation: (() => Pointer | null) | undefined;
 const nativeLibraries: unknown[] = [];
 const activeAdvisoryLocks = new Map<string, FileHandle>();
 
+function advisoryCloseOnExecOpenFlag(): number {
+  if (process.platform === "darwin") return 0x01000000;
+  if (process.platform === "linux") return 0x00080000;
+  throw new Error(`Dist promotion advisory locking is unsupported on ${process.platform}`);
+}
+
 function linuxLibcCandidates(): readonly string[] {
   const candidates: string[] = [];
   const append = (candidate: string): void => {
@@ -895,7 +901,7 @@ async function acquireAdvisoryLock(
 ): Promise<AdvisoryLockLease> {
   const handle = await open(
     expected.path,
-    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | advisoryCloseOnExecOpenFlag(),
   );
   let key: string | undefined;
   let registered = false;
