@@ -1106,15 +1106,34 @@ try {
     priorityLayers.length,
     "each finite priority layer must be serialized exactly once",
   );
+  const iconElement = html.match(
+    /<svg\b(?=[^>]*\bdata-slot="icon")(?=[^>]*\bclass="([^"]*)")[^>]*>/u,
+  );
+  assert.ok(iconElement !== null, "the packed icon element must be present");
+  const iconClassNames = (iconElement[1] ?? "")
+    .split(/\s+/u)
+    .filter((className) => className.length > 0);
+  const countIconRules = (declaration: string): number =>
+    iconClassNames.reduce(
+      (count, className) =>
+        count + countMatches(
+          finalCss,
+          new RegExp(
+            `\\.${escapeRegExp(className)}\\s*\\{[^{}]*${declaration}\\s*(?=;|\\})`,
+            "gu",
+          ),
+        ),
+      0,
+    );
   assert.equal(
-    countMatches(finalCss, /flex\s*:\s*none\s*(?=;|\})/gu),
+    countIconRules("flex\\s*:\\s*none"),
     1,
-    "the packed UI flex declaration must appear exactly once after union",
+    "the packed icon flex declaration must appear exactly once after union",
   );
   assert.equal(
-    countMatches(finalCss, /display\s*:\s*inline-block\s*(?=;|\})/gu),
+    countIconRules("display\\s*:\\s*inline-block"),
     1,
-    "the packed UI display declaration must appear exactly once after union",
+    "the packed icon display declaration must appear exactly once after union",
   );
   assert.match(
     browserCss,
