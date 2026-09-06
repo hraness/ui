@@ -131,6 +131,11 @@ type ElidedPackageInputSnapshot = Readonly<{
 
 type ObservedElidedPackageInputSnapshot = ElidedPackageInputSnapshot;
 
+type PromotedNativeCssUrlInputs = Readonly<{
+  inputs: ReadonlyMap<string, ElidedPackageInputSnapshot>;
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>;
+}>;
+
 const javascriptFilter = /\.[cm]?[jt]sx?$/u;
 const outputNaming = {
   asset: "assets/[name]-[hash].[ext]",
@@ -1607,6 +1612,133 @@ async function exactOrdinaryFileSnapshot(
   };
 }
 
+function isExactNativeCssUrlInputWitness(
+  rootDirectory: string,
+  imported: ParsedImport,
+  from: string,
+  importerFormat: ParsedInput["format"],
+  path: string,
+): boolean {
+  if (
+    importerFormat !== "css"
+    || imported.kind !== "url-token"
+    || imported.external
+    || imported.hasAttributes
+    || imported.original === undefined
+    || (!imported.original.startsWith("./") && !imported.original.startsWith("../"))
+    || /[\\?#%\u0000-\u001f\u007f]/u.test(imported.original)
+  ) return false;
+  const absolute = resolve(rootDirectory, ...path.split("/"));
+  if (!isAbsolute(imported.path) || resolve(imported.path) !== imported.path || imported.path !== absolute) return false;
+  const relativeFromImporter = posix.relative(posix.dirname(from), path);
+  const expectedOriginal = relativeFromImporter.startsWith("../")
+    ? relativeFromImporter
+    : `./${relativeFromImporter}`;
+  return imported.original === expectedOriginal;
+}
+
+async function promoteObservedNativeCssUrlInputs(
+  rootDirectory: string,
+  inputMetadata: Map<string, ParsedInput>,
+  inputAliases: Map<string, string>,
+  inputSnapshots: ReadonlyMap<string, Readonly<{ bytes: number; sha256: string }>>,
+  packageScopes: ReadonlyMap<string, PackageScope>,
+  knownOutputs: ReadonlySet<string>,
+  buildTarget: "browser" | "bun",
+): Promise<PromotedNativeCssUrlInputs> {
+  const authoritativeInputs = [...inputMetadata.entries()];
+  const observedNativePaths = [...inputSnapshots.keys()]
+    .filter((path) => !inputMetadata.has(path))
+    .filter((path) => !javascriptFilter.test(path) && !path.endsWith(".css"))
+    .filter((path) => nativeLoaderFor(path) === "file")
+    .sort();
+  const observedInputs = new Set([...inputMetadata.keys(), ...observedNativePaths]);
+  const observedAliases = new Map(inputAliases);
+  for (const path of observedNativePaths) {
+    const absolute = resolve(rootDirectory, ...path.split("/"));
+    const relativeToProcess = relative(process.cwd(), absolute).split(sep).join("/");
+    for (const alias of [path, absolute, relativeToProcess]) {
+      const previous = observedAliases.get(alias);
+      assert.ok(
+        previous === undefined || previous === path,
+        `Bun observed native CSS URL input alias is ambiguous: ${alias}`,
+      );
+      observedAliases.set(alias, path);
+    }
+  }
+
+  const promoted = new Map<string, ElidedPackageInputSnapshot>();
+  const promotedPackageScopeSnapshots = new Map<string, ResolutionFileSnapshot>();
+  for (const [from, metadata] of authoritativeInputs) {
+    if (metadata.format !== "css") continue;
+    for (const imported of metadata.imports) {
+      if (
+        imported.kind !== "url-token"
+        || !isAbsolute(imported.path)
+      ) continue;
+      const original = imported.original;
+      if (original === undefined) continue;
+      const path = observedPathLikeInputTarget(
+        imported,
+        from,
+        observedInputs,
+        observedAliases,
+        buildTarget,
+      );
+      if (
+        path === undefined
+        || !isExactNativeCssUrlInputWitness(rootDirectory, imported, from, metadata.format, path)
+        || inputMetadata.has(path)
+        || nativeLoaderFor(path) !== "file"
+        || outputTarget(imported.path, from, knownOutputs) !== undefined
+        || outputTarget(original, from, knownOutputs) !== undefined
+      ) continue;
+      const snapshot = inputSnapshots.get(path);
+      const scope = packageScopes.get(path);
+      const dependencyPackage = packageBelowNodeModules(path);
+      if (
+        snapshot === undefined
+        || scope?.valid !== true
+        || (dependencyPackage !== undefined && scope.name !== dependencyPackage)
+      ) continue;
+      const current = await exactOrdinaryFileSnapshot(rootDirectory, path);
+      if (current === undefined) continue;
+      assert.deepEqual(
+        { bytes: current.bytes, sha256: current.sha256 },
+        snapshot,
+        `Bun observed native CSS URL input changed after its completed load: ${path}`,
+      );
+      const previous = promoted.get(path);
+      if (previous === undefined) promoted.set(path, current);
+      else assert.deepEqual(current, previous, `Bun observed native CSS URL input changed between edges: ${path}`);
+      for (const scopeSnapshot of scope.files) {
+        retainResolutionFileSnapshot(promotedPackageScopeSnapshots, scopeSnapshot);
+      }
+    }
+  }
+
+  for (const [path, snapshot] of [...promoted.entries()].sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0
+  )) {
+    assert.equal(inputMetadata.has(path), false, `Bun observed native CSS URL input collides with a metafile input: ${path}`);
+    inputMetadata.set(path, { bytes: snapshot.bytes, imports: [] });
+    const absolute = resolve(rootDirectory, ...path.split("/"));
+    const relativeToProcess = relative(process.cwd(), absolute).split(sep).join("/");
+    for (const alias of [path, absolute, relativeToProcess]) {
+      const previous = inputAliases.get(alias);
+      assert.ok(
+        previous === undefined || previous === path,
+        `Bun promoted native CSS URL input alias is ambiguous: ${alias}`,
+      );
+      inputAliases.set(alias, path);
+    }
+  }
+  return {
+    inputs: promoted,
+    packageScopeSnapshots: promotedPackageScopeSnapshots,
+  };
+}
+
 function retainResolutionFileSnapshot(
   snapshots: Map<string, ResolutionFileSnapshot>,
   snapshot: ResolutionFileSnapshot,
@@ -2360,6 +2492,15 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     inputAliases.set(posix.normalize(raw).replace(/^\.\//u, ""), logical);
     inputAliases.set(resolve(rootDirectory, ...logical.split("/")), logical);
   }
+  const promotedNativeCssUrlInputs = await promoteObservedNativeCssUrlInputs(
+    rootDirectory,
+    inputMetadata,
+    inputAliases,
+    inputSnapshots,
+    settledPackageScopes,
+    outputSet,
+    target,
+  );
   for (const entrypoint of logicalEntrypoints) {
     assert.ok(inputMetadata.has(entrypoint), `Bun metafile omitted registered entrypoint ${entrypoint}`);
   }
@@ -2614,6 +2755,12 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
             ?? inputAliases.get(posix.normalize(outputEntrypoint).replace(/^\.\//u, ""));
         }
       }
+      if (input !== undefined && promotedNativeCssUrlInputs.inputs.has(input)) {
+        assert.ok(
+          isExactNativeCssUrlInputWitness(rootDirectory, imported, from, metadata.format, input),
+          `Bun promoted native CSS URL input has a noncanonical inbound edge from ${from}: ${imported.path}`,
+        );
+      }
       if (
         input === undefined
         && output === undefined
@@ -2772,6 +2919,22 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
       await exactOrdinaryFileSnapshot(rootDirectory, path),
       before,
       `Bun observed elided package input changed during edge settlement: ${path}`,
+    );
+  }
+  for (const [path, before] of [...promotedNativeCssUrlInputs.packageScopeSnapshots].sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0
+  )) {
+    assert.deepEqual(
+      await resolutionFileSnapshot(rootDirectory, path),
+      before,
+      `Bun promoted native CSS URL input package scope changed during edge settlement: ${path}`,
+    );
+  }
+  for (const [path, before] of promotedNativeCssUrlInputs.inputs) {
+    assert.deepEqual(
+      await exactOrdinaryFileSnapshot(rootDirectory, path),
+      before,
+      `Bun promoted native CSS URL input changed during edge settlement: ${path}`,
     );
   }
 
