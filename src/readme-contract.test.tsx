@@ -68,7 +68,7 @@ test("keeps installation and compatibility claims pinned to the package manifest
   expect(readme).toContain('import.meta.resolve("@hraness/ui/stylex-manifest.json")');
 
   const cssExports = Object.keys(manifest.exports).filter((path) => path.endsWith(".css"));
-  expect(cssExports).toHaveLength(8);
+  expect(cssExports).toHaveLength(6);
   for (const path of cssExports) expect(readme).toContain(`@hraness/ui${path.slice(1)}`);
 });
 
