@@ -61,8 +61,7 @@ export const navigationStyles = stylex.create({
       default: `max(var(--interactive-target-compact), ${syntheticCoarseMinimum})`,
       [coarsePointer]: "var(--interactive-target-min)",
     },
-    paddingLeft: "var(--space-3)",
-    paddingRight: "var(--space-3)",
+    paddingInline: "var(--space-3)",
   },
   paginationCurrent: {
     backgroundAttachment: "scroll",
@@ -88,8 +87,7 @@ export const navigationStyles = stylex.create({
     justifyContent: "center",
     minHeight: "var(--interactive-target-compact)",
     minWidth: "var(--interactive-target-compact)",
-    paddingLeft: 0,
-    paddingRight: 0,
+    paddingInline: 0,
   },
   paginationLink: {
     alignItems: "center",
