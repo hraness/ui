@@ -76,89 +76,6 @@
     pointer-events: none;
   }
 
-  .hraness-dialog-overlay {
-    position: fixed;
-    z-index: var(--z-modal);
-    inset: 0;
-    display: grid;
-    padding: var(--space-4);
-    place-items: center;
-    overflow-y: auto;
-    background: color-mix(in oklch, black 55%, transparent);
-    overscroll-behavior: contain;
-  }
-
-  .hraness-dialog-overlay[data-entering] {
-    animation: hraness-fade-in var(--motion-duration-standard) var(--motion-easing-standard);
-  }
-
-  .hraness-dialog-overlay[data-exiting] {
-    animation: hraness-fade-out var(--motion-duration-fast) var(--motion-easing-standard);
-  }
-
-  .hraness-dialog {
-    position: relative;
-    display: grid;
-    width: min(32rem, 100%);
-    max-height: min(42rem, calc(100dvh - 2rem));
-    overflow: hidden;
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    outline: none;
-    background: var(--ui-card);
-    color: var(--ui-card-foreground);
-    box-shadow: var(--elevation-overlay);
-  }
-
-  .hraness-dialog[data-size="sm"] {
-    width: min(24rem, 100%);
-  }
-
-  .hraness-dialog[data-size="lg"] {
-    width: min(48rem, 100%);
-  }
-
-  .hraness-dialog__header {
-    display: grid;
-    gap: var(--space-2);
-    padding: var(--space-6) var(--space-6) var(--space-4);
-  }
-
-  .hraness-dialog__title {
-    color: var(--ui-card-foreground);
-    font-size: var(--text-heading);
-    font-weight: var(--font-weight-bold);
-    line-height: 1.2;
-  }
-
-  .hraness-dialog__description {
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-label);
-    line-height: 1.5;
-  }
-
-  .hraness-dialog__body {
-    min-width: 0;
-    padding: 0 var(--space-6) var(--space-6);
-    overflow-y: auto;
-  }
-
-  .hraness-dialog__footer {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    padding: var(--space-4) var(--space-6);
-    border-block-start: 1px solid var(--ui-border);
-    background: var(--ui-muted);
-  }
-
-  .hraness-dialog__close {
-    position: absolute;
-    inset-block-start: var(--space-3);
-    inset-inline-end: var(--space-3);
-  }
-
   .hraness-breadcrumbs {
     min-width: 0;
   }
@@ -225,22 +142,6 @@
     color: var(--ui-primary-foreground);
   }
 
-  .hraness-dialog__content {
-    display: grid;
-    min-width: 0;
-    min-height: 0;
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    outline: none;
-  }
-
-  .hraness-dialog__heading {
-    display: grid;
-    min-width: 0;
-    gap: var(--space-2);
-    padding-inline-end: var(--interactive-target-compact);
-  }
-
-  .hraness-dialog__close,
   .hraness-toast__close {
     display: inline-grid;
     width: var(--interactive-target-compact);
@@ -254,12 +155,12 @@
     color: var(--ui-muted-foreground);
   }
 
-  :where(.hraness-dialog__close, .hraness-toast__close):where([data-hovered], :hover) {
+  :where(.hraness-toast__close):where([data-hovered], :hover) {
     background: var(--ui-accent);
     color: var(--ui-accent-foreground);
   }
 
-  :where(.hraness-dialog__close, .hraness-toast__close):where(
+  :where(.hraness-toast__close):where(
     [data-focus-visible], :focus-visible
   ) {
     outline: 2px solid var(--ui-ring);
@@ -510,7 +411,6 @@
     .hraness-disclosure__trigger,
     .hraness-toggle-group__item,
     .hraness-segmented-control__item,
-    .hraness-dialog__close,
     .hraness-toast__close,
     .hraness-pagination a,
     .hraness-pagination__boundary
@@ -530,6 +430,7 @@
   --hraness-slider-coarse-min: var(--interactive-target-min);
   --hraness-list-box-coarse-min: var(--interactive-target-min);
   --hraness-menu-coarse-min: var(--interactive-target-min);
+  --hraness-dialog-coarse-min: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
@@ -537,7 +438,6 @@
   .hraness-disclosure__trigger,
   .hraness-toggle-group__item,
   .hraness-segmented-control__item,
-  .hraness-dialog__close,
   .hraness-toast__close,
   .hraness-pagination a,
   .hraness-pagination__boundary
@@ -550,7 +450,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :where(.hraness-popover, .hraness-dialog-overlay,
+  :where(.hraness-popover,
     .hraness-toast) {
     animation: none;
   }
@@ -579,7 +479,6 @@
   :where(
     .hraness-popover,
     .hraness-tooltip,
-    .hraness-dialog,
     .hraness-toast
   ) {
     border-color: CanvasText;

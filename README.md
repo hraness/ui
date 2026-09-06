@@ -351,7 +351,7 @@ const styles = stylex.create({
 `AskAiAboutThis`, `Button`, `CopyButton`, `IconButton`, `IconLink`, `ToggleButton`,
 `LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `KeyHint`, `PageIntro`, `EmptyState`, `InlineAlert`, `SettingsCard`, `DataTable`,
-`Menu`, `MenuItem`, `MenuSection`, `MenuSeparator`, `ListBox`, `ListBoxItem`, `ListBoxSection`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
+`DialogContent`, `Menu`, `MenuItem`, `MenuSection`, `MenuSeparator`, `ListBox`, `ListBoxItem`, `ListBoxSection`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `SkipLink`, `Separator`, `Form`, `FieldDescription`, `FieldError`, `TextField`,
 `TextAreaField`, `SearchField`, `NumberField`, `CheckboxField`, `CheckboxGroup`,
@@ -361,6 +361,13 @@ accept a typed StyleX override. Base declarations are applied first, finite
 size, tone, shape, and interaction recipes come next, and the caller recipe is
 applied last. `CheckboxField` exposes `controlXstyle` separately for its
 semantic checkbox label.
+`DialogContent` exposes `xstyle` on the modal surface and `overlayXstyle` on
+its backdrop. Its native `style`, including a React Aria render function,
+applies last to the backdrop. The `small`, `medium`, and `large` sizes remain
+finite, and the inner dialog retains its title, description, ref, focus trap,
+and dismissal behavior. Body and footer render functions receive the same
+`close` callback. Close controls preserve native and React Aria hover/focus
+presentation, coarse-pointer targets, and reduced-motion behavior.
 Action wrappers accept `xstyle`, while their nested button or anchor accepts
 `controlXstyle`. Native hover, press, and focus fallbacks remain active for
 empty conditional overrides. An effective control recipe selects explicit

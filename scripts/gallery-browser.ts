@@ -9410,6 +9410,161 @@ async function verifyListBoxInteractions(page: Page, id: string): Promise<void> 
   await verifyMenuInteractions(page, id);
 }
 
+async function verifyDialogInteractions(page: Page, id: string): Promise<void> {
+  for (const size of ["small", "medium", "large"] as const) {
+    const trigger = page.getByRole("button", { name: "Open compiled Dialog " + size, exact: true });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Compiled Dialog " + size, exact: true });
+    await dialog.waitFor({ state: "visible" });
+    const evidence = await dialog.evaluate((element, size) => {
+      const root = element.closest<HTMLElement>('[data-slot="dialog"]');
+      const overlay = element.closest<HTMLElement>('[data-slot="dialog-overlay"]');
+      if (!root || !overlay) throw new Error("Dialog structure is incomplete");
+      const slots = ["content", "header", "heading", "title", "description", "body", "footer", "close"];
+      const hasAtoms = (node: Element) => Array.from(node.classList).some((name) => /^x[A-Za-z0-9_-]+$/u.test(name));
+      const titleId = element.getAttribute("aria-labelledby");
+      const descriptionId = element.getAttribute("aria-describedby");
+      const rootStyle = getComputedStyle(root);
+      const overlayStyle = getComputedStyle(overlay);
+      const body = element.querySelector<HTMLElement>('[data-slot="dialog-body"]')!;
+      const maxWidth = size === "small" ? 384 : size === "large" ? 768 : 512;
+      return {
+        atoms: hasAtoms(root) && hasAtoms(overlay) && slots.every((slot) => {
+          const node = slot === "content" ? element : element.querySelector('[data-slot="dialog-' + slot + '"]');
+          return node !== null && hasAtoms(node);
+        }),
+        ref: element.getAttribute("data-gallery-dialog-ref") === "true",
+        size: root.dataset.size,
+        width: root.getBoundingClientRect().width,
+        expectedWidth: Math.min(maxWidth, window.innerWidth - 32),
+        named: titleId !== null && document.getElementById(titleId)?.textContent === "Compiled Dialog " + size,
+        described: descriptionId !== null && document.getElementById(descriptionId)?.textContent === "Review project settings",
+        overlay: overlayStyle.position === "fixed" && overlayStyle.display === "grid" && overlayStyle.overflowY === "auto" && overlayStyle.overscrollBehaviorX === "contain" && overlayStyle.overscrollBehaviorY === "contain",
+        surface: rootStyle.display === "grid" && rootStyle.overflowX === "hidden" && rootStyle.overflowY === "hidden" && rootStyle.backgroundImage === "none",
+        body: getComputedStyle(body).overflowY === "auto",
+        sameClose: element.querySelector('[data-gallery-dialog-close-shared="true"]') !== null,
+      };
+    }, size);
+    invariant(evidence.atoms && evidence.ref && evidence.named && evidence.described && evidence.overlay && evidence.surface && evidence.body && evidence.sameClose, id + ": Dialog structure, naming, recipes, or callbacks changed: " + JSON.stringify(evidence));
+    invariant(evidence.size === ({ small: "sm", medium: "md", large: "lg" } as const)[size] && Math.abs(evidence.width - evidence.expectedWidth) < 2, id + ": Dialog finite size changed: " + JSON.stringify(evidence));
+    const close = dialog.getByRole("button", { name: "Close dialog", exact: true });
+    const finish = dialog.getByRole("button", { name: "Finish dialog", exact: true });
+    await finish.focus();
+    await page.keyboard.press("Tab");
+    invariant(await close.evaluate((element) => element === document.activeElement), id + ": Dialog focus did not wrap inside the modal");
+    const focus = await close.evaluate((element) => {
+      const probe = document.createElement("span"); probe.style.color = "var(--ui-ring)"; element.append(probe);
+      const expected = getComputedStyle(probe).color; const style = getComputedStyle(element); probe.remove();
+      return element.hasAttribute("data-focus-visible") && style.outlineStyle === "solid" && style.outlineWidth === "2px" && style.outlineOffset === "2px" && style.outlineColor === expected;
+    });
+    invariant(focus, id + ": Dialog keyboard close focus recipe changed");
+    await close.hover();
+    const hovered = await close.evaluate((element) => {
+      const probe = document.createElement("span"); probe.style.backgroundColor = "var(--ui-accent)"; probe.style.color = "var(--ui-accent-foreground)"; element.append(probe);
+      const actual = getComputedStyle(element); const expected = getComputedStyle(probe);
+      const pass = actual.backgroundColor === expected.backgroundColor && actual.color === expected.color; probe.remove(); return pass;
+    });
+    invariant(hovered, id + ": Dialog close hover recipe changed");
+    if (size === "small") await page.keyboard.press("Escape");
+    else if (size === "medium") await dialog.getByRole("button", { name: "Close from body", exact: true }).click();
+    else await finish.click();
+    await dialog.waitFor({ state: "hidden" });
+    invariant(await trigger.evaluate((element) => element === document.activeElement), id + ": Dialog did not restore trigger focus");
+  }
+  const customTrigger = page.getByRole("button", { name: "Open customized Dialog", exact: true });
+  await customTrigger.click();
+  const custom = page.getByRole("dialog", { name: "Customized Dialog", exact: true });
+  await custom.waitFor({ state: "visible" });
+  const customized = await custom.evaluate((element) => {
+    const root = element.closest<HTMLElement>('[data-slot="dialog"]')!;
+    const overlay = element.closest<HTMLElement>('[data-slot="dialog-overlay"]')!;
+    const rootStyle = getComputedStyle(root);
+    return root.classList[0] === "hraness-dialog" && root.classList[root.classList.length - 1] === "gallery-dialog-collision"
+      && overlay.classList[0] === "hraness-dialog-overlay" && overlay.classList[overlay.classList.length - 1] === "gallery-dialog-overlay-collision"
+      && Math.abs(root.getBoundingClientRect().width - Math.min(464, window.innerWidth - 32)) < 2
+      && rootStyle.borderRadius === "19px" && rootStyle.backgroundImage === "none"
+      && rootStyle.getPropertyValue("--gallery-dialog-collision").trim() === "active"
+      && getComputedStyle(overlay).paddingTop === "27px"
+      && element.querySelector('[data-slot="dialog-description"]') === null
+      && element.querySelector('[data-slot="dialog-footer"]') === null
+      && element.querySelector('[data-slot="dialog-close"]')?.textContent === "−"
+      && !root.hasAttribute("xstyle") && !overlay.hasAttribute("overlayXstyle");
+  });
+  invariant(customized, id + ": Dialog caller recipes, dynamic values, native styles, or collision precedence changed");
+  await custom.getByRole("button", { name: "Dismiss customized dialog", exact: true }).click();
+  await custom.waitFor({ state: "hidden" });
+  invariant(await customTrigger.evaluate((element) => element === document.activeElement), id + ": customized Dialog did not restore focus");
+
+  await page.getByRole("button", { name: "Open compiled Dialog medium", exact: true }).click();
+  const dismissable = page.getByRole("dialog", { name: "Compiled Dialog medium", exact: true });
+  await dismissable.waitFor({ state: "visible" });
+  await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 4, y: 4 } });
+  await dismissable.waitFor({ state: "hidden" });
+
+  await page.getByRole("button", { name: "Open locked Dialog", exact: true }).click();
+  const locked = page.getByRole("dialog", { name: "Locked Dialog", exact: true });
+  await locked.waitFor({ state: "visible" });
+  invariant(await page.locator('[data-slot="dialog-overlay"]').evaluate((element) => getComputedStyle(element).paddingTop === "23px"), id + ": Dialog object native style changed");
+  await page.keyboard.press("Escape");
+  await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 4, y: 4 } });
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  invariant(await locked.isVisible(), id + ": locked Dialog dismissed without an explicit close");
+  await locked.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await locked.waitFor({ state: "hidden" });
+
+  await page.getByRole("button", { name: "Open disabled-close Dialog", exact: true }).click();
+  const disabled = page.getByRole("dialog", { name: "Disabled-close Dialog", exact: true });
+  await disabled.waitFor({ state: "visible" });
+  invariant(await disabled.getByRole("button", { name: "Close dialog", exact: true }).isDisabled(), id + ": Dialog disabled close contract changed");
+  await disabled.getByRole("button", { name: "Finish disabled-close dialog", exact: true }).click();
+  await disabled.waitFor({ state: "hidden" });
+  invariant(await page.locator('[data-slot="dialog-overlay"]').count() === 0, id + ": Dialog portal remained after dismissal");
+}
+
+async function verifyDialogEnvironment(page: Page, id: string): Promise<void> {
+  const trigger = page.getByRole("button", { name: "Open compiled Dialog medium", exact: true });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Compiled Dialog medium", exact: true });
+  await dialog.waitFor({ state: "visible" });
+  const evidence = await dialog.evaluate((element) => {
+    const root = element.closest<HTMLElement>('[data-slot="dialog"]')!;
+    const overlay = element.closest<HTMLElement>('[data-slot="dialog-overlay"]')!;
+    const close = element.querySelector<HTMLElement>('[data-slot="dialog-close"]')!;
+    const probe = document.createElement("span"); probe.style.color = "CanvasText"; probe.style.backgroundColor = "var(--ui-card)"; root.append(probe);
+    const rootStyle = getComputedStyle(root);
+    const snapshot = {
+      coarse: matchMedia("(pointer: coarse)").matches,
+      minimum: parseFloat(getComputedStyle(close).minHeight),
+      forced: matchMedia("(forced-colors: active)").matches,
+      border: rootStyle.borderColor, canvas: getComputedStyle(probe).color, adjustment: rootStyle.forcedColorAdjust,
+      background: rootStyle.backgroundColor, expectedBackground: getComputedStyle(probe).backgroundColor,
+      reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      animation: getComputedStyle(overlay).animationName,
+    };
+    probe.remove(); return snapshot;
+  });
+  invariant(!evidence.coarse || evidence.minimum >= 48, id + ": Dialog real coarse target changed");
+  invariant(!evidence.forced || (evidence.border === evidence.canvas && evidence.adjustment === "auto"), id + ": Dialog forced-color border changed");
+  invariant(!evidence.reduced || evidence.animation === "none", id + ": Dialog reduced-motion contract changed");
+  invariant(evidence.background === evidence.expectedBackground, id + ": Dialog theme token changed");
+  const synthetic = await dialog.evaluate((element) => {
+    const close = element.querySelector<HTMLElement>('[data-slot="dialog-close"]')!;
+    const previous = document.documentElement.getAttribute("data-verification-pointer");
+    const previousCompact = close.style.getPropertyValue("--interactive-target-compact");
+    close.style.setProperty("--interactive-target-compact", "16px");
+    document.documentElement.setAttribute("data-verification-pointer", "coarse");
+    const minimum = parseFloat(getComputedStyle(close).minHeight);
+    if (previous === null) document.documentElement.removeAttribute("data-verification-pointer");
+    else document.documentElement.setAttribute("data-verification-pointer", previous);
+    if (previousCompact === "") close.style.removeProperty("--interactive-target-compact");
+    else close.style.setProperty("--interactive-target-compact", previousCompact);
+    return minimum >= 48;
+  });
+  invariant(synthetic, id + ": Dialog synthetic coarse target changed under a compact token override");
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+}
+
 async function verifyMenuInteractions(page: Page, id: string): Promise<void> {
   const trigger = page.getByRole("button", { name: "Open compiled Menu", exact: true });
   await trigger.click();
@@ -13268,6 +13423,8 @@ try {
           );
           await verifyKeyboardPath(page, layout.id, checkboxFocusContract);
           await verifyListBoxInteractions(page, layout.id);
+          await verifyDialogInteractions(page, layout.id);
+          await verifyDialogEnvironment(page, layout.id);
           await verifyLinkNativeFallbackCascadeIsolation(
             page,
             layout.id,
@@ -13282,6 +13439,7 @@ try {
           verifyDataTableEvidence(darkDataTable, `${layout.id} dark`);
           await verifyListBoxPresentation(page, `${layout.id} dark`);
           await verifyMenuEnvironment(page, `${layout.id} dark`);
+          await verifyDialogEnvironment(page, `${layout.id} dark`);
           const darkIndicators = await indicatorKnobEvidence(page);
           verifyIndicatorKnobEvidence(darkIndicators, `${layout.id} dark`);
           const darkSegmented = await segmentedControlEvidence(page);
@@ -13454,6 +13612,7 @@ try {
         await verifyIndicatorKnobCoarsePointer(page);
         await verifyListBoxCoarsePointer(page, true);
         await verifyMenuEnvironment(page, "real coarse pointer");
+        await verifyDialogEnvironment(page, "real coarse pointer");
         invariant(
           failures.length === 0,
           `coarse-pointer action, CheckboxField, Fields, Indicators, and Knob matrix: ${failures.join("; ")}`,
@@ -13558,6 +13717,7 @@ try {
         await verifyContentFamilyForcedColors(page);
         await verifyListBoxForcedColors(page);
         await verifyMenuEnvironment(page, "forced colors and reduced motion");
+        await verifyDialogEnvironment(page, "forced colors and reduced motion");
         await verifyIndicatorKnobForcedColors(page);
 
         await resetKeyboardFocusToDocumentStart(page, "forced colors");
@@ -13692,6 +13852,9 @@ try {
     await server.stop(true);
   }
   invariant(browserClosed, "the primitive gallery browser did not close cleanly");
+  console.log(
+    "Dialog gallery passed: three finite sizes, compiled structural slots, title and description relationships, inner ref, shared close callbacks, close hover and keyboard focus, focus containment and restoration, default outside/Escape dismissal, locked and disabled-close controls, caller recipes and final native styles, gallery collision isolation, light/dark tokens, real and synthetic coarse targets, forced colors, reduced motion, and portal cleanup.",
+  );
   console.log(
     "ListBox gallery passed: static and dynamic collections, inherited orientation and slot-null isolation, direct horizontal sections, caller DOM renderers and refs, StyleX/native-style precedence, hover/focus/selection/disabled states, typeahead, Autocomplete input-owned virtual focus and selection, retained Menu presentation, light/dark tokens, real and synthetic coarse targets under a local compact-token override, forced colors, gallery-only collision controls, SSR/hydration, and cleanup.",
   );

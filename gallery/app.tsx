@@ -28,6 +28,8 @@ import {
   CheckboxGroup,
   DataTable,
   type DataTableColumn,
+  DialogContent,
+  DialogTrigger,
   EmptyState,
   FileField,
   Form,
@@ -347,6 +349,8 @@ const galleryStyles = stylex.create({
   menuHeaderOverride: { fontSize: "15px" },
   menuItemOverride: { backgroundColor: "var(--ui-secondary)", color: "var(--ui-secondary-foreground)" },
   menuSeparatorOverride: { height: "2px" },
+  dialogRootOverride: (width: string) => ({ width, borderRadius: "19px" }),
+  dialogOverlayOverride: (padding: string) => ({ paddingTop: padding, backgroundColor: "color-mix(in oklch, black 35%, transparent)" }),
   linkDynamicLetterSpacing: (letterSpacing: string) => ({ letterSpacing }),
   linkOverride: {
     color: "var(--ui-foreground)",
@@ -616,6 +620,47 @@ function ListBoxGallery() {
           <MenuSeparator xstyle={galleryStyles.menuSeparatorOverride} />
         </Menu>
       </MenuTrigger>
+    </section>
+  );
+}
+
+function DialogGallery() {
+  const bodyClose = useRef<(() => void) | null>(null);
+  return (
+    <section data-gallery-section="dialog" aria-label="Dialog presentation">
+      <h2>Dialog</h2>
+      {(["small", "medium", "large"] as const).map((size) => (
+        <DialogTrigger key={size}>
+          <Button>Open compiled Dialog {size}</Button>
+          <DialogContent title={`Compiled Dialog ${size}`} description="Review project settings" size={size}
+            dialogRef={(element) => { if (element !== null) element.dataset.galleryDialogRef = "true"; }}
+            footer={({ close }) => <Button data-gallery-dialog-close-shared={close === bodyClose.current ? "true" : "false"} onPress={close}>Finish dialog</Button>}
+          >
+            {({ close }) => { bodyClose.current = close; return <><p>Dialog body content</p><Button onPress={close}>Close from body</Button></>; }}
+          </DialogContent>
+        </DialogTrigger>
+      ))}
+      <DialogTrigger>
+        <Button>Open customized Dialog</Button>
+        <DialogContent title="Customized Dialog" size="large" className="gallery-dialog-collision" overlayClassName="gallery-dialog-overlay-collision"
+          xstyle={galleryStyles.dialogRootOverride("min(29rem, 100%)")}
+          overlayXstyle={galleryStyles.dialogOverlayOverride("21px")}
+          style={() => ({ paddingTop: "27px" })}
+          closeIcon="−" closeLabel="Dismiss customized dialog"
+        ><p>Customized body</p></DialogContent>
+      </DialogTrigger>
+      <DialogTrigger>
+        <Button>Open locked Dialog</Button>
+        <DialogContent title="Locked Dialog" isDismissable={false} isKeyboardDismissDisabled
+          style={{ paddingTop: "23px" }}
+        ><p>Explicit dismissal required</p></DialogContent>
+      </DialogTrigger>
+      <DialogTrigger>
+        <Button>Open disabled-close Dialog</Button>
+        <DialogContent title="Disabled-close Dialog" isCloseDisabled
+          footer={({ close }) => <Button onPress={close}>Finish disabled-close dialog</Button>}
+        ><p>The footer can still close this dialog.</p></DialogContent>
+      </DialogTrigger>
     </section>
   );
 }
@@ -2123,6 +2168,7 @@ export function PrimitiveGallery() {
           </div>
         </section>
         <ListBoxGallery />
+        <DialogGallery />
       </QuietSitePage>
       <QuietSiteFooter
         className="gallery-quiet-site-footer"

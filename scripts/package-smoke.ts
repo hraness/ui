@@ -1006,6 +1006,284 @@ function menuDeclarationMatches(body: string, declaration: RegExp): boolean {
   return new RegExp(`^(?:${declaration.source})$`, "u").test(canonical);
 }
 
+const DIALOG_STYLE_KEYS = ["body","close","closeFocusVisible","closeHovered","closeNativeInteraction","content","description","footer","header","heading","overlay","overlayEntering","overlayExiting","root","rootLarge","rootSmall","title"] as const;
+type DialogStyleKey = (typeof DIALOG_STYLE_KEYS)[number];
+const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> = {
+  body: [
+    /min-width:\s*0;/u,
+    /padding-top:\s*0;/u,
+    /padding-right:\s*var\(--space-6\);/u,
+    /padding-bottom:\s*var\(--space-6\);/u,
+    /padding-left:\s*var\(--space-6\);/u,
+    /overflow-y:\s*auto;/u
+  ],
+  close: [
+    /position:\s*absolute;/u,
+    /inset-block-start:\s*var\(--space-3\);/u,
+    /inset-inline-end:\s*var\(--space-3\);/u,
+    /display:\s*inline-grid;/u,
+    /width:\s*var\(--interactive-target-compact\);/u,
+    /min-width:\s*var\(--interactive-target-compact\);/u,
+    /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-dialog-coarse-min,\s*0px\)\);/u,
+    /align-items:\s*center;/u,
+    /justify-items:\s*center;/u,
+    /border-width:\s*0;/u,
+    /border-style:\s*none;/u,
+    /border-color:\s*current[Cc]olor;/u,
+    /border-image-outset:\s*0;/u,
+    /border-image-repeat:\s*stretch;/u,
+    /border-image-slice:\s*100%;/u,
+    /border-image-source:\s*none;/u,
+    /border-image-width:\s*1;/u,
+    /border-radius:\s*var\(--radius-md\);/u,
+    /outline-color:\s*current[Cc]olor;/u,
+    /outline-style:\s*none;/u,
+    /outline-width:\s*medium;/u,
+    /background-attachment:\s*scroll;/u,
+    /background-clip:\s*border-box;/u,
+    /background-color:\s*(?:transparent|#0000);/u,
+    /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u,
+    /background-position:\s*0%?\s+0%?;/u,
+    /background-repeat:\s*repeat;/u,
+    /background-size:\s*auto(?: auto)?;/u,
+    /color:\s*var\(--ui-muted-foreground\);/u
+  ],
+  closeFocusVisible: [
+    /outline-color:\s*var\(--ui-ring\);/u,
+    /outline-style:\s*solid;/u,
+    /outline-width:\s*2px;/u,
+    /outline-offset:\s*2px;/u
+  ],
+  closeHovered: [
+    /background-attachment:\s*scroll;/u,
+    /background-clip:\s*border-box;/u,
+    /background-color:\s*var\(--ui-accent\);/u,
+    /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u,
+    /background-position:\s*0%?\s+0%?;/u,
+    /background-repeat:\s*repeat;/u,
+    /background-size:\s*auto(?: auto)?;/u,
+    /color:\s*var\(--ui-accent-foreground\);/u
+  ],
+  closeNativeInteraction: [],
+  content: [
+    /display:\s*grid;/u,
+    /min-width:\s*0;/u,
+    /min-height:\s*0;/u,
+    /grid-template-rows:\s*auto\s*minmax\(0,\s*1fr\)\s*auto;/u,
+    /outline-color:\s*current[Cc]olor;/u,
+    /outline-style:\s*none;/u,
+    /outline-width:\s*medium;/u
+  ],
+  description: [
+    /color:\s*var\(--ui-muted-foreground\);/u,
+    /font-size:\s*var\(--text-label\);/u,
+    /line-height:\s*1\.5;/u
+  ],
+  footer: [
+    /display:\s*flex;/u,
+    /flex-wrap:\s*wrap;/u,
+    /justify-content:\s*flex-end;/u,
+    /gap:\s*var\(--space-2\);/u,
+    /padding-top:\s*var\(--space-4\);/u,
+    /padding-right:\s*var\(--space-6\);/u,
+    /padding-bottom:\s*var\(--space-4\);/u,
+    /padding-left:\s*var\(--space-6\);/u,
+    /border-block-start-width:\s*1px;/u,
+    /border-block-start-style:\s*solid;/u,
+    /border-block-start-color:\s*var\(--ui-border\);/u,
+    /background-attachment:\s*scroll;/u,
+    /background-clip:\s*border-box;/u,
+    /background-color:\s*var\(--ui-muted\);/u,
+    /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u,
+    /background-position:\s*0%?\s+0%?;/u,
+    /background-repeat:\s*repeat;/u,
+    /background-size:\s*auto(?: auto)?;/u
+  ],
+  header: [
+    /display:\s*grid;/u,
+    /gap:\s*var\(--space-2\);/u,
+    /padding-top:\s*var\(--space-6\);/u,
+    /padding-right:\s*var\(--space-6\);/u,
+    /padding-bottom:\s*var\(--space-4\);/u,
+    /padding-left:\s*var\(--space-6\);/u
+  ],
+  heading: [
+    /display:\s*grid;/u,
+    /min-width:\s*0;/u,
+    /gap:\s*var\(--space-2\);/u,
+    /padding-inline-end:\s*var\(--interactive-target-compact\);/u
+  ],
+  overlay: [
+    /position:\s*fixed;/u,
+    /z-index:\s*var\(--z-modal\);/u,
+    /top:\s*0;/u,
+    /right:\s*0;/u,
+    /bottom:\s*0;/u,
+    /left:\s*0;/u,
+    /display:\s*grid;/u,
+    /padding-top:\s*var\(--space-4\);/u,
+    /padding-right:\s*var\(--space-4\);/u,
+    /padding-bottom:\s*var\(--space-4\);/u,
+    /padding-left:\s*var\(--space-4\);/u,
+    /align-items:\s*center;/u,
+    /justify-items:\s*center;/u,
+    /overflow-y:\s*auto;/u,
+    /background-attachment:\s*scroll;/u,
+    /background-clip:\s*border-box;/u,
+    /background-color:\s*(?:color-mix\(in oklch,\s*(?:black|#000) 55%,\s*(?:transparent|#0000)\)|oklab\(0 0 0\s*\/\s*0?\.55\)|rgba?\(0[ ,]+0[ ,]+0(?:\s*\/\s*|,\s*)0?\.55\));/u,
+    /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u,
+    /background-position:\s*0%?\s+0%?;/u,
+    /background-repeat:\s*repeat;/u,
+    /background-size:\s*auto(?: auto)?;/u,
+    /overscroll-behavior-x:\s*contain;/u,
+    /overscroll-behavior-y:\s*contain;/u
+  ],
+  overlayEntering: [
+    /animation-name:\s*hraness-fade-in;/u,
+    /animation-duration:\s*var\(--motion-duration-standard\);/u,
+    /animation-timing-function:\s*var\(--motion-easing-standard\);/u,
+    /animation-delay:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u,
+    /animation-direction:\s*normal;/u,
+    /animation-fill-mode:\s*none;/u,
+    /animation-play-state:\s*running;/u
+  ],
+  overlayExiting: [
+    /animation-name:\s*hraness-fade-out;/u,
+    /animation-duration:\s*var\(--motion-duration-fast\);/u,
+    /animation-timing-function:\s*var\(--motion-easing-standard\);/u,
+    /animation-delay:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u,
+    /animation-direction:\s*normal;/u,
+    /animation-fill-mode:\s*none;/u,
+    /animation-play-state:\s*running;/u
+  ],
+  root: [
+    /position:\s*relative;/u,
+    /display:\s*grid;/u,
+    /width:\s*min\(32rem,\s*100%\);/u,
+    /max-height:\s*min\(42rem,\s*(?:calc\(100dvh - 2rem\)|100dvh - 2rem)\);/u,
+    /overflow-x:\s*hidden;/u,
+    /overflow-y:\s*hidden;/u,
+    /border-width:\s*1px;/u,
+    /border-style:\s*solid;/u,
+    /border-color:\s*var\(--ui-border\);/u,
+    /border-image-outset:\s*0;/u,
+    /border-image-repeat:\s*stretch;/u,
+    /border-image-slice:\s*100%;/u,
+    /border-image-source:\s*none;/u,
+    /border-image-width:\s*1;/u,
+    /border-radius:\s*var\(--radius-lg\);/u,
+    /outline-color:\s*current[Cc]olor;/u,
+    /outline-style:\s*none;/u,
+    /outline-width:\s*medium;/u,
+    /background-attachment:\s*scroll;/u,
+    /background-clip:\s*border-box;/u,
+    /background-color:\s*var\(--ui-card\);/u,
+    /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u,
+    /background-position:\s*0%?\s+0%?;/u,
+    /background-repeat:\s*repeat;/u,
+    /background-size:\s*auto(?: auto)?;/u,
+    /color:\s*var\(--ui-card-foreground\);/u,
+    /box-shadow:\s*var\(--elevation-overlay\);/u
+  ],
+  rootLarge: [
+    /width:\s*min\(48rem,\s*100%\);/u
+  ],
+  rootSmall: [
+    /width:\s*min\(24rem,\s*100%\);/u
+  ],
+  title: [
+    /color:\s*var\(--ui-card-foreground\);/u,
+    /font-size:\s*var\(--text-heading\);/u,
+    /font-weight:\s*var\(--font-weight-bold\);/u,
+    /line-height:\s*1\.2;/u
+  ],
+};
+const DIALOG_CONDITIONAL_DECLARATIONS: Partial<Record<DialogStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  close: [{ condition: "@media(pointer:coarse)", declaration: /min-height:\s*var\(--interactive-target-min\);/u }],
+  root: [
+    { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
+    { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
+  ],
+  overlayEntering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
+  overlayExiting: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
+};
+const DIALOG_NATIVE_DECLARATIONS = [
+  ...DIALOG_DECLARATIONS.closeHovered.map((declaration) => ({ pseudo: "hover" as const, declaration })),
+  ...DIALOG_DECLARATIONS.closeFocusVisible.map((declaration) => ({ pseudo: "focus-visible" as const, declaration })),
+];
+function dialogDeclarationMatches(body: string, declaration: RegExp): boolean {
+  return new RegExp(`^(?:${declaration.source})$`, "u").test(body.trim());
+}
+
+function requirePackageDialog(javaScript: string, css: string, legacy: string): void {
+  const map = packageNamedStyleMap(javaScript, DIALOG_STYLE_KEYS, "dialogStyles class map");
+  assert.deepEqual(packageTopLevelStyleKeys(map.object, "dialogStyles"), DIALOG_STYLE_KEYS);
+  for (const key of DIALOG_STYLE_KEYS) {
+    const entry = packageNamedStyleEntry(map, key);
+    const bindings = [...entry.matchAll(/(?:^|[,{])\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu)];
+    assert.equal(bindings.length, key === "closeNativeInteraction" ? DIALOG_NATIVE_DECLARATIONS.length : DIALOG_DECLARATIONS[key].length + (key === "root" ? 1 : 0), "packed Dialog " + key + " exact property bindings");
+    const classes = packageEntryClassNames(map, key);
+    const rules = packageStyleRules(css, classes);
+    for (const className of classes) assert.ok(rules.some((rule) => new RegExp("\\." + className + "(?![A-Za-z0-9_-])", "u").test(rule.header)), "packed Dialog " + key + " binds every atom");
+    for (const declaration of DIALOG_DECLARATIONS[key]) {
+      const exactCss = rules.filter((rule) => rule.conditions.length === 0 && dialogDeclarationMatches(rule.body, declaration)).map((rule) => rule.source).join("\n");
+      requirePackageExactBaseDeclaration(exactCss, classes, declaration, "packed Dialog " + key);
+    }
+    const conditional = DIALOG_CONDITIONAL_DECLARATIONS[key] ?? [];
+    for (const { condition, declaration } of conditional) requirePackageExactBaseDeclaration(packageExactConditionalCss(css, condition), classes, declaration, "packed Dialog " + key + " conditional");
+    if (key === "closeNativeInteraction") {
+      for (const { pseudo, declaration } of DIALOG_NATIVE_DECLARATIONS) {
+        const matching = rules.filter((rule) => rule.conditions.length === 0 && dialogDeclarationMatches(rule.body, declaration));
+        assert.ok(matching.length > 0, "packed Dialog native " + pseudo + " declaration");
+        for (const rule of matching) requirePackageExactClassPseudoSelector(rule.header, classes, pseudo, "packed Dialog native interaction");
+      }
+    }
+    for (const rule of rules) assert.ok(rule.conditions.length === 0
+      ? (key === "closeNativeInteraction"
+        ? DIALOG_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) => dialogDeclarationMatches(rule.body, declaration) && rule.header.endsWith(":" + pseudo))
+        : DIALOG_DECLARATIONS[key].some((declaration) => dialogDeclarationMatches(rule.body, declaration)))
+      : rule.conditions.length === 1 && conditional.some(({ condition, declaration }) => normalizedPackageCondition(condition) === rule.conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
+    "packed Dialog " + key + " exact declaration and condition inventory");
+  }
+  assert.doesNotMatch(legacy, /\.hraness-dialog(?:__[A-Za-z0-9_-]+|-overlay)?(?![A-Za-z0-9_-])/u);
+  assert.doesNotMatch(css, /\.hraness-dialog(?:__[A-Za-z0-9_-]+|-overlay)?(?![A-Za-z0-9_-])/u);
+  assert.doesNotMatch(css, /--gallery-dialog-collision/u);
+}
+
+function verifyPackageDialogNegativeControls(javaScript: string, css: string, legacy: string): void {
+  const map = packageNamedStyleMap(javaScript, DIALOG_STYLE_KEYS, "dialogStyles class map");
+  const removeDeclaration = (key: DialogStyleKey, declaration: RegExp, condition?: string): string => {
+    const rules = packageStyleRules(css, packageEntryClassNames(map, key)).filter((rule) => declaration.test(rule.body)
+      && (condition === undefined ? rule.conditions.length === 0 : rule.conditions.length === 1 && rule.conditions[0] === normalizedPackageCondition(condition)));
+    assert.equal(rules.length, 1, "packed Dialog " + key + " negative control owns one rule");
+    const rule = rules[0]!;
+    assert.equal(css.split(rule.source).length - 1, 1);
+    return css.replace(rule.source, "");
+  };
+  const rejects = (changed: string) => assert.throws(() => requirePackageDialog(javaScript, changed, legacy), /Dialog/u);
+  for (const key of DIALOG_STYLE_KEYS) rejects(removeDeclaration(key, key === "closeNativeInteraction" ? DIALOG_NATIVE_DECLARATIONS[0]!.declaration : DIALOG_DECLARATIONS[key][0]!));
+  for (const [key, contracts] of Object.entries(DIALOG_CONDITIONAL_DECLARATIONS)) {
+    for (const { condition, declaration } of contracts ?? []) rejects(removeDeclaration(key as DialogStyleKey, declaration, condition));
+  }
+  for (const { declaration } of DIALOG_NATIVE_DECLARATIONS) rejects(removeDeclaration("closeNativeInteraction", declaration));
+  for (const [key, declaration] of [
+    ["footer", /border-block-start-width:\s*1px;/u], ["close", /inset-inline-end:\s*var\(--space-3\);/u],
+    ["heading", /padding-inline-end:\s*var\(--interactive-target-compact\);/u], ["overlay", /overscroll-behavior-x:\s*contain;/u],
+  ] as const) rejects(removeDeclaration(key, declaration));
+  const entry = packageNamedStyleEntry(map, "title");
+  const extra = entry.replace("{", "{unexpectedDialogBinding: " + JSON.stringify([...packageEntryClassNames(map, "title")][0]) + ",");
+  const extraJavaScript = javaScript.replace(map.object, map.object.replace(entry, extra));
+  assert.notEqual(extraJavaScript, javaScript);
+  assert.throws(() => requirePackageDialog(extraJavaScript, css, legacy), /packed Dialog title exact property bindings/u);
+}
+
 function requirePackageMenu(javaScript: string, css: string, legacy: string): void {
   const keys = MENU_STYLE_KEYS;
   const map = packageNamedStyleMap(javaScript, keys, "menuStyles class map");
@@ -4143,6 +4421,8 @@ import {
   type MenuProps,
   type MenuItemProps,
   type MenuSectionProps,
+  DialogContent,
+  type DialogContentProps,
   EmptyState,
   FileField,
   Form,
@@ -4893,6 +5173,31 @@ const invalidDataTableWrapperXstyle: DataTableProps<PackageDataTableRow> = {
   wrapperXstyle: { overflowX: "scroll" },
 };
 const packageMenuProps: MenuProps = { "aria-label": "Actions", children: null, xstyle: styles.wrapper, popoverXstyle: styles.wrapper, footerXstyle: styles.wrapper, menuRef: createRef<HTMLDivElement>(), matchTriggerWidth: true };
+const packageDialogProps: DialogContentProps = {
+  title: "Settings", size: "small", dialogRef: createRef<HTMLDivElement>(),
+  xstyle: styles.wrapper, overlayXstyle: styles.wrapper,
+  style: ({ isEntering }) => ({ opacity: isEntering ? 0.9 : 1 }),
+  children: ({ close }) => createElement("button", { onClick: close }, "Body close"),
+  footer: ({ close }) => createElement("button", { onClick: close }, "Footer close"),
+};
+void createElement(DialogContent, packageDialogProps);
+const invalidDialogXstyle: DialogContentProps = { ...packageDialogProps,
+  // @ts-expect-error Dialog accepts compiled recipes rather than raw CSS.
+  xstyle: { width: "12rem" },
+};
+const invalidDialogOverlayXstyle: DialogContentProps = { ...packageDialogProps,
+  // @ts-expect-error Dialog overlay accepts compiled recipes rather than raw CSS.
+  overlayXstyle: { paddingTop: "12px" },
+};
+const invalidDialogSize: DialogContentProps = { ...packageDialogProps,
+  // @ts-expect-error Dialog keeps its three finite sizes.
+  size: "full",
+};
+const invalidDialogRef: DialogContentProps = { ...packageDialogProps,
+  // @ts-expect-error Dialog forwards its ref to the inner div.
+  dialogRef: createRef<HTMLButtonElement>(),
+};
+void [invalidDialogXstyle, invalidDialogOverlayXstyle, invalidDialogSize, invalidDialogRef];
 const packageMenuItemProps: MenuItemProps = { id: "save", textValue: "Save", children: "Save", xstyle: styles.wrapper, style: ({ isFocused }) => ({ opacity: isFocused ? 1 : 0.9 }) };
 const packageMenuSectionProps: MenuSectionProps = { children: null, xstyle: styles.wrapper, headerXstyle: styles.wrapper };
 const packageMenuMarkup = createElement(Menu, packageMenuProps, createElement(MenuSection, packageMenuSectionProps, createElement(MenuItem, packageMenuItemProps)), createElement(MenuSeparator, { xstyle: styles.wrapper }));
@@ -5625,6 +5930,7 @@ async function verifyConsumer(
   );
   await access(join(consumer, "node_modules", "@hraness", "ui", "src", "list-box.stylex.ts"));
   await access(join(consumer, "node_modules", "@hraness", "ui", "src", "menu.stylex.ts"));
+  await access(join(consumer, "node_modules", "@hraness", "ui", "src", "dialog.stylex.ts"));
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "data-display.tsx"),
   );
@@ -5704,6 +6010,8 @@ async function verifyConsumer(
   const linkProbe = packageLinkStyleMap(installedJavaScript);
   const listBoxProbe = packageListBoxProbe(installedJavaScript, installedStylexCss);
   requirePackageMenu(installedJavaScript, installedStylexCss, installedComponentsCss);
+  requirePackageDialog(installedJavaScript, installedStylexCss, installedComponentsCss);
+  verifyPackageDialogNegativeControls(installedJavaScript, installedStylexCss, installedComponentsCss);
   verifyPackageMenuNegativeControls(installedJavaScript, installedStylexCss, installedComponentsCss);
   assert.doesNotMatch(installedComponentsCss, /\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
   requirePackageCheckboxStyles(installedJavaScript, installedStylexCss);

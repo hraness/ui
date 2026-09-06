@@ -3017,6 +3017,296 @@ function menuDeclarationMatches(body: string, declaration: RegExp): boolean {
   return new RegExp(`^(?:${declaration.source})$`, "u").test(canonical);
 }
 
+const DIALOG_STYLE_KEYS = ["body","close","closeFocusVisible","closeHovered","closeNativeInteraction","content","description","footer","header","heading","overlay","overlayEntering","overlayExiting","root","rootLarge","rootSmall","title"] as const;
+type DialogStyleKey = (typeof DIALOG_STYLE_KEYS)[number];
+const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> = {
+  body: [
+    /min-width:\s*0;/u,
+    /padding-top:\s*0;/u,
+    /padding-right:\s*var\(--space-6\);/u,
+    /padding-bottom:\s*var\(--space-6\);/u,
+    /padding-left:\s*var\(--space-6\);/u,
+    /overflow-y:\s*auto;/u
+  ],
+  close: [
+    /position:\s*absolute;/u,
+    /inset-block-start:\s*var\(--space-3\);/u,
+    /inset-inline-end:\s*var\(--space-3\);/u,
+    /display:\s*inline-grid;/u,
+    /width:\s*var\(--interactive-target-compact\);/u,
+    /min-width:\s*var\(--interactive-target-compact\);/u,
+    /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-dialog-coarse-min,\s*0px\)\);/u,
+    /align-items:\s*center;/u,
+    /justify-items:\s*center;/u,
+    /border-width:\s*0;/u,
+    /border-style:\s*none;/u,
+    /border-color:\s*current[Cc]olor;/u,
+    /border-image-outset:\s*0;/u,
+    /border-image-repeat:\s*stretch;/u,
+    /border-image-slice:\s*100%;/u,
+    /border-image-source:\s*none;/u,
+    /border-image-width:\s*1;/u,
+    /border-radius:\s*var\(--radius-md\);/u,
+    /outline-color:\s*current[Cc]olor;/u,
+    /outline-style:\s*none;/u,
+    /outline-width:\s*medium;/u,
+    /background-attachment:\s*scroll;/u,
+    /background-clip:\s*border-box;/u,
+    /background-color:\s*(?:transparent|#0000);/u,
+    /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u,
+    /background-position:\s*0%?\s+0%?;/u,
+    /background-repeat:\s*repeat;/u,
+    /background-size:\s*auto(?: auto)?;/u,
+    /color:\s*var\(--ui-muted-foreground\);/u
+  ],
+  closeFocusVisible: [
+    /outline-color:\s*var\(--ui-ring\);/u,
+    /outline-style:\s*solid;/u,
+    /outline-width:\s*2px;/u,
+    /outline-offset:\s*2px;/u
+  ],
+  closeHovered: [
+    /background-attachment:\s*scroll;/u,
+    /background-clip:\s*border-box;/u,
+    /background-color:\s*var\(--ui-accent\);/u,
+    /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u,
+    /background-position:\s*0%?\s+0%?;/u,
+    /background-repeat:\s*repeat;/u,
+    /background-size:\s*auto(?: auto)?;/u,
+    /color:\s*var\(--ui-accent-foreground\);/u
+  ],
+  closeNativeInteraction: [],
+  content: [
+    /display:\s*grid;/u,
+    /min-width:\s*0;/u,
+    /min-height:\s*0;/u,
+    /grid-template-rows:\s*auto\s*minmax\(0,\s*1fr\)\s*auto;/u,
+    /outline-color:\s*current[Cc]olor;/u,
+    /outline-style:\s*none;/u,
+    /outline-width:\s*medium;/u
+  ],
+  description: [
+    /color:\s*var\(--ui-muted-foreground\);/u,
+    /font-size:\s*var\(--text-label\);/u,
+    /line-height:\s*1\.5;/u
+  ],
+  footer: [
+    /display:\s*flex;/u,
+    /flex-wrap:\s*wrap;/u,
+    /justify-content:\s*flex-end;/u,
+    /gap:\s*var\(--space-2\);/u,
+    /padding-top:\s*var\(--space-4\);/u,
+    /padding-right:\s*var\(--space-6\);/u,
+    /padding-bottom:\s*var\(--space-4\);/u,
+    /padding-left:\s*var\(--space-6\);/u,
+    /border-block-start-width:\s*1px;/u,
+    /border-block-start-style:\s*solid;/u,
+    /border-block-start-color:\s*var\(--ui-border\);/u,
+    /background-attachment:\s*scroll;/u,
+    /background-clip:\s*border-box;/u,
+    /background-color:\s*var\(--ui-muted\);/u,
+    /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u,
+    /background-position:\s*0%?\s+0%?;/u,
+    /background-repeat:\s*repeat;/u,
+    /background-size:\s*auto(?: auto)?;/u
+  ],
+  header: [
+    /display:\s*grid;/u,
+    /gap:\s*var\(--space-2\);/u,
+    /padding-top:\s*var\(--space-6\);/u,
+    /padding-right:\s*var\(--space-6\);/u,
+    /padding-bottom:\s*var\(--space-4\);/u,
+    /padding-left:\s*var\(--space-6\);/u
+  ],
+  heading: [
+    /display:\s*grid;/u,
+    /min-width:\s*0;/u,
+    /gap:\s*var\(--space-2\);/u,
+    /padding-inline-end:\s*var\(--interactive-target-compact\);/u
+  ],
+  overlay: [
+    /position:\s*fixed;/u,
+    /z-index:\s*var\(--z-modal\);/u,
+    /top:\s*0;/u,
+    /right:\s*0;/u,
+    /bottom:\s*0;/u,
+    /left:\s*0;/u,
+    /display:\s*grid;/u,
+    /padding-top:\s*var\(--space-4\);/u,
+    /padding-right:\s*var\(--space-4\);/u,
+    /padding-bottom:\s*var\(--space-4\);/u,
+    /padding-left:\s*var\(--space-4\);/u,
+    /align-items:\s*center;/u,
+    /justify-items:\s*center;/u,
+    /overflow-y:\s*auto;/u,
+    /background-attachment:\s*scroll;/u,
+    /background-clip:\s*border-box;/u,
+    /background-color:\s*(?:color-mix\(in oklch,\s*(?:black|#000) 55%,\s*(?:transparent|#0000)\)|oklab\(0 0 0\s*\/\s*0?\.55\)|rgba?\(0[ ,]+0[ ,]+0(?:\s*\/\s*|,\s*)0?\.55\));/u,
+    /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u,
+    /background-position:\s*0%?\s+0%?;/u,
+    /background-repeat:\s*repeat;/u,
+    /background-size:\s*auto(?: auto)?;/u,
+    /overscroll-behavior-x:\s*contain;/u,
+    /overscroll-behavior-y:\s*contain;/u
+  ],
+  overlayEntering: [
+    /animation-name:\s*hraness-fade-in;/u,
+    /animation-duration:\s*var\(--motion-duration-standard\);/u,
+    /animation-timing-function:\s*var\(--motion-easing-standard\);/u,
+    /animation-delay:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u,
+    /animation-direction:\s*normal;/u,
+    /animation-fill-mode:\s*none;/u,
+    /animation-play-state:\s*running;/u
+  ],
+  overlayExiting: [
+    /animation-name:\s*hraness-fade-out;/u,
+    /animation-duration:\s*var\(--motion-duration-fast\);/u,
+    /animation-timing-function:\s*var\(--motion-easing-standard\);/u,
+    /animation-delay:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u,
+    /animation-direction:\s*normal;/u,
+    /animation-fill-mode:\s*none;/u,
+    /animation-play-state:\s*running;/u
+  ],
+  root: [
+    /position:\s*relative;/u,
+    /display:\s*grid;/u,
+    /width:\s*min\(32rem,\s*100%\);/u,
+    /max-height:\s*min\(42rem,\s*(?:calc\(100dvh - 2rem\)|100dvh - 2rem)\);/u,
+    /overflow-x:\s*hidden;/u,
+    /overflow-y:\s*hidden;/u,
+    /border-width:\s*1px;/u,
+    /border-style:\s*solid;/u,
+    /border-color:\s*var\(--ui-border\);/u,
+    /border-image-outset:\s*0;/u,
+    /border-image-repeat:\s*stretch;/u,
+    /border-image-slice:\s*100%;/u,
+    /border-image-source:\s*none;/u,
+    /border-image-width:\s*1;/u,
+    /border-radius:\s*var\(--radius-lg\);/u,
+    /outline-color:\s*current[Cc]olor;/u,
+    /outline-style:\s*none;/u,
+    /outline-width:\s*medium;/u,
+    /background-attachment:\s*scroll;/u,
+    /background-clip:\s*border-box;/u,
+    /background-color:\s*var\(--ui-card\);/u,
+    /background-image:\s*none;/u,
+    /background-origin:\s*padding-box;/u,
+    /background-position:\s*0%?\s+0%?;/u,
+    /background-repeat:\s*repeat;/u,
+    /background-size:\s*auto(?: auto)?;/u,
+    /color:\s*var\(--ui-card-foreground\);/u,
+    /box-shadow:\s*var\(--elevation-overlay\);/u
+  ],
+  rootLarge: [
+    /width:\s*min\(48rem,\s*100%\);/u
+  ],
+  rootSmall: [
+    /width:\s*min\(24rem,\s*100%\);/u
+  ],
+  title: [
+    /color:\s*var\(--ui-card-foreground\);/u,
+    /font-size:\s*var\(--text-heading\);/u,
+    /font-weight:\s*var\(--font-weight-bold\);/u,
+    /line-height:\s*1\.2;/u
+  ],
+};
+const DIALOG_CONDITIONAL_DECLARATIONS: Partial<Record<DialogStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  close: [{ condition: "@media(pointer:coarse)", declaration: /min-height:\s*var\(--interactive-target-min\);/u }],
+  root: [
+    { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
+    { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
+  ],
+  overlayEntering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
+  overlayExiting: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
+};
+const DIALOG_NATIVE_DECLARATIONS = [
+  ...DIALOG_DECLARATIONS.closeHovered.map((declaration) => ({ pseudo: "hover" as const, declaration })),
+  ...DIALOG_DECLARATIONS.closeFocusVisible.map((declaration) => ({ pseudo: "focus-visible" as const, declaration })),
+];
+function dialogDeclarationMatches(body: string, declaration: RegExp): boolean {
+  return new RegExp(`^(?:${declaration.source})$`, "u").test(body.trim());
+}
+
+function requireDialogContract(legacy: string, css: string, js: string, source: string, recipe: string): void {
+  assert.deepEqual(sourceStyleKeys(recipe, "dialogStyles"), DIALOG_STYLE_KEYS);
+  forbid(legacy, /\.hraness-dialog(?:__[A-Za-z0-9_-]+|-overlay)?(?![A-Za-z0-9_-])/u, "a legacy Dialog recipe");
+  forbid(css, /\.hraness-dialog(?:__[A-Za-z0-9_-]+|-overlay)?(?![A-Za-z0-9_-])/u, "a semantic Dialog selector");
+  forbid(css, /--gallery-dialog-collision/u, "a gallery Dialog marker in package output");
+  const map = namedCompiledStyleMap(js, DIALOG_STYLE_KEYS, "dialogStyles class map");
+  assert.deepEqual([...map.properties.keys()], DIALOG_STYLE_KEYS);
+  for (const key of DIALOG_STYLE_KEYS) {
+    const entry = map.properties.get(key)!.value;
+    const classes = generatedClassNames(entry, "dialogStyles." + key);
+    const rules = compiledStyleRules(css, map, key);
+    const bindings = [...compiledObjectProperties(entry, "dialogStyles." + key)].filter(
+      ([property, value]) => property !== "$$css" && /["']x[A-Za-z0-9_-]+/u.test(value.value),
+    );
+    const expectedBindings = key === "closeNativeInteraction" ? DIALOG_NATIVE_DECLARATIONS.length : DIALOG_DECLARATIONS[key].length + (key === "root" ? 1 : 0);
+    assert.equal(bindings.length, expectedBindings, "Dialog " + key + " exact property bindings");
+    for (const className of classes) requireMatch(rules.map((rule) => rule.header).join("\n"), new RegExp("\\." + className + "(?![A-Za-z0-9_-])", "u"), "Dialog " + key + " bound class CSS");
+    for (const declaration of DIALOG_DECLARATIONS[key]) requireExactBaseDeclarations(
+      rules.filter((rule) => dialogDeclarationMatches(rule.body, declaration)), classes, [{ declaration }], "Dialog " + key,
+    );
+    const conditional = DIALOG_CONDITIONAL_DECLARATIONS[key] ?? [];
+    for (const { condition, declaration } of conditional) requireCompiledConditionalDeclaration(rules, condition, declaration, "Dialog " + key);
+    if (key === "closeNativeInteraction") {
+      for (const { pseudo, declaration } of DIALOG_NATIVE_DECLARATIONS) requireExactPseudoDeclarations(
+        rules.filter((rule) => dialogDeclarationMatches(rule.body, declaration)), classes, pseudo, [declaration], "Dialog native close interaction",
+      );
+    }
+    for (const rule of rules) {
+      const conditions = rule.ancestors.map((ancestor) => normalizedHeader(ancestor.header)).filter((header) => /^@(?:container|media|supports)/u.test(header));
+      assert.ok(conditions.length === 0
+        ? (key === "closeNativeInteraction"
+          ? DIALOG_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) => dialogDeclarationMatches(rule.body, declaration) && rule.header.endsWith(":" + pseudo))
+          : DIALOG_DECLARATIONS[key].some((declaration) => dialogDeclarationMatches(rule.body, declaration)))
+        : conditions.length === 1 && conditional.some(({ condition, declaration }) => condition === conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
+      "Dialog " + key + " exact declaration and condition inventory");
+    }
+    requireMatch(js, new RegExp(map.identifier + "\\." + key + "(?![A-Za-z0-9_$])", "u"), "compiled dialogStyles." + key + " composition binding");
+  }
+  requireMatch(legacy, /--hraness-dialog-coarse-min:\s*var\(--interactive-target-min\);/u, "Dialog synthetic coarse minimum");
+  requireExactSourceMatches(source, /dialogStyles\.overlay,\s*state\.isEntering && dialogStyles\.overlayEntering,\s*state\.isExiting && dialogStyles\.overlayExiting,\s*overlayXstyle,/gu, 1, "Dialog overlay state and caller order");
+  requireExactSourceMatches(source, /dialogStyles\.root, size === "small" && dialogStyles\.rootSmall, size === "large" && dialogStyles\.rootLarge, xstyle/gu, 1, "Dialog size and caller order");
+  requireExactSourceMatches(source, /dialogStyles\.close,\s*dialogStyles\.closeNativeInteraction,\s*state\.isHovered && dialogStyles\.closeHovered,\s*state\.isFocusVisible && dialogStyles\.closeFocusVisible,/gu, 1, "Dialog close state order");
+  requireMatch(source, /mergeStylexInlineStyles\(overlayPresentation\(state\)\.style, typeof style === "function" \? style\(state\) : style\)/u, "Dialog final native overlay style");
+}
+
+function verifyDialogNegativeControls(legacy: string, css: string, js: string, source: string, recipe: string): void {
+  const map = namedCompiledStyleMap(js, DIALOG_STYLE_KEYS, "dialogStyles class map");
+  const rejects = (changedCss: string) => assert.throws(() => requireDialogContract(legacy, changedCss, js, source, recipe), /Dialog|dialogStyles/u);
+  for (const key of DIALOG_STYLE_KEYS) {
+    const declaration = key === "closeNativeInteraction" ? DIALOG_NATIVE_DECLARATIONS[0]!.declaration : DIALOG_DECLARATIONS[key][0]!;
+    rejects(mutateCompiledRule(css, map, key, declaration, "remove"));
+  }
+  for (const [key, contracts] of Object.entries(DIALOG_CONDITIONAL_DECLARATIONS)) {
+    for (const { condition, declaration } of contracts ?? []) rejects(mutateCompiledRule(css, map, key, declaration, "remove", condition));
+  }
+  for (const { declaration } of DIALOG_NATIVE_DECLARATIONS) rejects(mutateCompiledRule(css, map, "closeNativeInteraction", declaration, "remove"));
+  for (const [key, declaration] of [
+    ["footer", /border-block-start-width:\s*1px;/u],
+    ["close", /inset-inline-end:\s*var\(--space-3\);/u],
+    ["heading", /padding-inline-end:\s*var\(--interactive-target-compact\);/u],
+    ["overlay", /overscroll-behavior-x:\s*contain;/u],
+  ] as const) rejects(mutateCompiledRule(css, map, key, declaration, "remove"));
+  const entry = map.properties.get("title")!.value;
+  const extraEntry = entry.replace("{", "{unexpectedDialogBinding: " + JSON.stringify([...generatedClassNames(entry, "Dialog title")][0]) + ",");
+  const extraJs = js.replace(map.object, map.object.replace(entry, extraEntry));
+  assert.notEqual(extraJs, js);
+  assert.throws(() => requireDialogContract(legacy, css, extraJs, source, recipe), /Dialog title exact property bindings/u);
+  const disconnected = js.replace(new RegExp(map.identifier + "\\.title(?![A-Za-z0-9_$])", "gu"), "disconnectedDialog.title");
+  assert.notEqual(disconnected, js);
+  assert.throws(() => requireDialogContract(legacy, css, disconnected, source, recipe), /compiled dialogStyles.title composition binding/u);
+  assert.throws(() => requireDialogContract(legacy + "\n.hraness-dialog { color: red; }", css, js, source, recipe), /legacy Dialog/u);
+  assert.throws(() => requireDialogContract(legacy, css, js, source.replace("state.isEntering && dialogStyles.overlayEntering", "false && dialogStyles.overlayEntering"), recipe), /Dialog overlay state and caller order/u);
+}
+
 function requireMenuContract(legacy: string, css: string, js: string, source: string, recipe: string): void {
   assert.deepEqual(sourceStyleKeys(recipe, "menuStyles"), MENU_STYLE_KEYS);
   forbid(legacy, /\.hraness-menu(?:__[A-Za-z0-9_-]+|-popover)?(?![A-Za-z0-9_-])/u, "a legacy Menu recipe");
@@ -5559,6 +5849,7 @@ const [
   listBoxStyleSource,
   menuSource,
   menuStyleSource,
+  dialogStyleSource,
 ] =
   await Promise.all([
     readFile(resolve(repository, "dist/index.js"), "utf8"),
@@ -5592,6 +5883,7 @@ const [
     readFile(resolve(repository, "src/list-box.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/overlays.tsx"), "utf8"),
     readFile(resolve(repository, "src/menu.stylex.ts"), "utf8"),
+    readFile(resolve(repository, "src/dialog.stylex.ts"), "utf8"),
   ]);
 
 const visuallyHiddenSources: VisuallyHiddenSources = {
@@ -5728,6 +6020,8 @@ requireDataTableContract(
 );
 requireLinkContract(legacyComponents, compiledCss, compiledJavaScript);
 requireMenuContract(legacyComponents, compiledCss, compiledJavaScript, menuSource, menuStyleSource);
+requireDialogContract(legacyComponents, compiledCss, compiledJavaScript, menuSource, dialogStyleSource);
+verifyDialogNegativeControls(legacyComponents, compiledCss, compiledJavaScript, menuSource, dialogStyleSource);
 const menuGuardMap = namedCompiledStyleMap(compiledJavaScript, MENU_STYLE_KEYS, "menuStyles class map");
 for (const key of MENU_STYLE_KEYS) {
   assert.throws(

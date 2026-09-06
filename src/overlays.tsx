@@ -33,6 +33,7 @@ import {
 import { cn } from "./lib/utils.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { menuStyles } from "./menu.stylex.js";
+import { dialogStyles } from "./dialog.stylex.js";
 
 export { DialogTrigger, MenuTrigger };
 export type { Placement };
@@ -271,6 +272,8 @@ export type DialogContentProps = Omit<ModalOverlayProps, "children" | "className
   readonly footer?: ReactNode | ((options: DialogCloseOptions) => ReactNode);
   readonly isCloseDisabled?: boolean;
   readonly overlayClassName?: string;
+  readonly xstyle?: StyleXStyles;
+  readonly overlayXstyle?: StyleXStyles;
   readonly size?: "large" | "medium" | "small";
   readonly title: ReactNode;
 };
@@ -287,33 +290,53 @@ export function DialogContent({
   isCloseDisabled = false,
   isDismissable = true,
   overlayClassName,
+  xstyle,
+  overlayXstyle,
+  style,
   size = "medium",
   title,
   ...overlayProps
 }: DialogContentProps) {
+  const presentation = stylex.props(dialogStyles.root, size === "small" && dialogStyles.rootSmall, size === "large" && dialogStyles.rootLarge, xstyle);
+  const overlayPresentation = (state: { isEntering: boolean; isExiting: boolean }) => stylex.props(
+    dialogStyles.overlay,
+    state.isEntering && dialogStyles.overlayEntering,
+    state.isExiting && dialogStyles.overlayExiting,
+    overlayXstyle,
+  );
+  const closePresentation = (state: { isHovered: boolean; isFocusVisible: boolean }) => stylex.props(
+    dialogStyles.close,
+    dialogStyles.closeNativeInteraction,
+    state.isHovered && dialogStyles.closeHovered,
+    state.isFocusVisible && dialogStyles.closeFocusVisible,
+  );
   return (
     <ModalOverlay
       {...overlayProps}
-      className={cn("hraness-dialog-overlay", overlayClassName)}
+      className={(state) => cn("hraness-dialog-overlay", overlayPresentation(state).className, overlayClassName)}
+      style={(state) => mergeStylexInlineStyles(overlayPresentation(state).style, typeof style === "function" ? style(state) : style)}
       data-slot="dialog-overlay"
       isDismissable={isDismissable}
     >
       <AriaModal
-        className={cn("hraness-dialog", className)}
+        className={cn("hraness-dialog", presentation.className, className)}
+        style={presentation.style}
         data-size={dialogSizeAttribute[size]}
         data-slot="dialog"
       >
         <AriaDialog
-          className="hraness-dialog__content"
+          {...stylex.props(dialogStyles.content)}
+          className={cn("hraness-dialog__content", stylex.props(dialogStyles.content).className)}
           data-slot="dialog-content"
           ref={dialogRef}
         >
           {({ close }) => (
             <>
-              <header className="hraness-dialog__header" data-slot="dialog-header">
-                <div className="hraness-dialog__heading" data-slot="dialog-heading">
+              <header {...stylex.props(dialogStyles.header)} className={cn("hraness-dialog__header", stylex.props(dialogStyles.header).className)} data-slot="dialog-header">
+                <div {...stylex.props(dialogStyles.heading)} className={cn("hraness-dialog__heading", stylex.props(dialogStyles.heading).className)} data-slot="dialog-heading">
                   <Heading
-                    className="hraness-dialog__title"
+                    {...stylex.props(dialogStyles.title)}
+                    className={cn("hraness-dialog__title", stylex.props(dialogStyles.title).className)}
                     data-slot="dialog-title"
                     slot="title"
                   >
@@ -321,7 +344,8 @@ export function DialogContent({
                   </Heading>
                   {description === undefined ? null : (
                     <Text
-                      className="hraness-dialog__description"
+                      {...stylex.props(dialogStyles.description)}
+                      className={cn("hraness-dialog__description", stylex.props(dialogStyles.description).className)}
                       data-slot="dialog-description"
                       slot="description"
                     >
@@ -331,7 +355,8 @@ export function DialogContent({
                 </div>
                 <AriaButton
                   aria-label={closeLabel}
-                  className="hraness-dialog__close"
+                  className={(state) => cn("hraness-dialog__close", closePresentation(state).className)}
+                  style={(state) => closePresentation(state).style}
                   data-slot="dialog-close"
                   isDisabled={isCloseDisabled}
                   onPress={close}
@@ -339,11 +364,11 @@ export function DialogContent({
                   <span aria-hidden="true">{closeIcon}</span>
                 </AriaButton>
               </header>
-              <div className="hraness-dialog__body" data-slot="dialog-body">
+              <div {...stylex.props(dialogStyles.body)} className={cn("hraness-dialog__body", stylex.props(dialogStyles.body).className)} data-slot="dialog-body">
                 {typeof children === "function" ? children({ close }) : children}
               </div>
               {footer === undefined ? null : (
-                <footer className="hraness-dialog__footer" data-slot="dialog-footer">
+                <footer {...stylex.props(dialogStyles.footer)} className={cn("hraness-dialog__footer", stylex.props(dialogStyles.footer).className)} data-slot="dialog-footer">
                   {typeof footer === "function" ? footer({ close }) : footer}
                 </footer>
               )}

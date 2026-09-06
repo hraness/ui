@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import * as stylex from "@stylexjs/stylex";
 import { Menu as AriaMenu } from "react-aria-components";
 import { menuStyles } from "./menu.stylex.js";
+import { createRef } from "react";
 
 import {
   Accordion,
@@ -21,6 +22,34 @@ import {
 } from "./toast.js";
 
 const menuOverrides = stylex.create({ item: { color: "rebeccapurple", backgroundColor: "papayawhip" }, section: { gap: "13px" }, header: { fontSize: "17px" } });
+const dialogOverrides = stylex.create({ root: { width: "19rem" }, overlay: { paddingTop: "21px" } });
+
+test("Dialog remains portal-safe for every size with typed caller seams and close render functions", () => {
+  for (const size of ["small", "medium", "large"] as const) {
+    let renderCount = 0;
+    const html = renderToStaticMarkup(
+      <DialogTrigger defaultOpen>
+        <button type="button">Open {size} settings</button>
+        <DialogContent
+          title="Dialog settings" description="Private dialog description" size={size}
+          xstyle={dialogOverrides.root} overlayXstyle={dialogOverrides.overlay}
+          className="caller-dialog" overlayClassName="caller-overlay"
+          style={({ isEntering }) => ({ paddingTop: isEntering ? "23px" : "25px" })}
+          dialogRef={createRef<HTMLDivElement>()} isCloseDisabled isDismissable={false}
+          footer={({ close }) => <button onClick={close}>Footer close</button>}
+        >
+          {({ close }) => { renderCount += 1; return <button onClick={close}>Body close</button>; }}
+        </DialogContent>
+      </DialogTrigger>,
+    );
+    expect(html).toContain(`Open ${size} settings`);
+    expect(html).not.toContain("Private dialog description");
+    expect(html).not.toContain("Body close");
+    expect(html).not.toContain("Footer close");
+    expect(html).not.toContain("xstyle=");
+    expect(renderCount).toBe(0);
+  }
+});
 
 test("Menu retains collection semantics, rich slots, and caller recipes", () => {
   const html = renderToStaticMarkup(
