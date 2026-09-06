@@ -385,6 +385,7 @@ describe("collectBunStylexGraph", () => {
         "export { Button } from '../private/Button.mjs';",
         "export { Breadcrumbs } from '../private/Breadcrumbs.mjs';",
         "export { Collection } from '../private/Collection.mjs';",
+        "export { Dialog } from '../private/Dialog.mjs';",
         "",
       ].join("\n"),
     );
@@ -392,6 +393,8 @@ describe("collectBunStylexGraph", () => {
     await write(join(dependencyRoot, "dist/private/Breadcrumbs.mjs"), "export const Breadcrumbs = 'breadcrumbs';\n");
     const observedCollection = join(dependencyRoot, "dist/private/Collection.mjs");
     await write(observedCollection, "export const Collection = 'collection';\n");
+    const observedDialog = join(dependencyRoot, "dist/private/Dialog.mjs");
+    await write(observedDialog, "export const Dialog = 'dialog';\n");
     const entry = join(context.root, "src/entry.ts");
     await write(
       entry,
@@ -414,6 +417,7 @@ describe("collectBunStylexGraph", () => {
       const javascriptOnLoad = handlers[0];
       assert.ok(javascriptOnLoad !== undefined);
       await javascriptOnLoad({ path: observedCollection });
+      await javascriptOnLoad({ path: observedDialog });
       const result = await buildOriginal(options);
       assert.ok(result.metafile !== undefined);
       const barrelKey = Object.keys(result.metafile.inputs).find((path) =>
@@ -432,6 +436,11 @@ describe("collectBunStylexGraph", () => {
         kind: "import-statement",
         path: "../private/Collection.mjs",
       });
+      expect(result.metafile.inputs[barrelKey]!.imports).toContainEqual({
+        external: true,
+        kind: "import-statement",
+        path: "../private/Dialog.mjs",
+      });
       expect(Object.keys(result.metafile.inputs).some((path) =>
         path.endsWith("/node_modules/@fixture/css-side-effects/dist/private/Breadcrumbs.mjs")
         || path === "node_modules/@fixture/css-side-effects/dist/private/Breadcrumbs.mjs"
@@ -440,6 +449,19 @@ describe("collectBunStylexGraph", () => {
         path.endsWith("/node_modules/@fixture/css-side-effects/dist/private/Collection.mjs")
         || path === "node_modules/@fixture/css-side-effects/dist/private/Collection.mjs"
       )).toBe(false);
+      expect(Object.keys(result.metafile.inputs).some((path) =>
+        path.endsWith("/node_modules/@fixture/css-side-effects/dist/private/Dialog.mjs")
+        || path === "node_modules/@fixture/css-side-effects/dist/private/Dialog.mjs"
+      )).toBe(false);
+      result.metafile.inputs[barrelKey]!.imports = result.metafile.inputs[barrelKey]!.imports.map((imported) =>
+        imported.path === "../private/Dialog.mjs"
+          ? { kind: imported.kind, path: imported.path }
+          : imported
+      ) as never;
+      expect(result.metafile.inputs[barrelKey]!.imports).toContainEqual({
+        kind: "import-statement",
+        path: "../private/Dialog.mjs",
+      });
       return result;
     });
 
@@ -459,9 +481,16 @@ describe("collectBunStylexGraph", () => {
       expect(receipt.inputs.map(({ path }) => path)).not.toContain(
         "node_modules/@fixture/css-side-effects/dist/private/Collection.mjs",
       );
+      expect(receipt.inputs.map(({ path }) => path)).not.toContain(
+        "node_modules/@fixture/css-side-effects/dist/private/Dialog.mjs",
+      );
       expect(receipt.edges.some(({ from, to }) =>
         from === "input:node_modules/@fixture/css-side-effects/dist/exports/index.mjs"
-        && (to.endsWith("/Breadcrumbs.mjs") || to.endsWith("/Collection.mjs"))
+        && (
+          to.endsWith("/Breadcrumbs.mjs")
+          || to.endsWith("/Collection.mjs")
+          || to.endsWith("/Dialog.mjs")
+        )
       )).toBe(false);
     } finally {
       build.mockRestore();
@@ -867,7 +896,7 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
-  test("rejects near-miss elided external dependency edges", async () => {
+  test("rejects near-miss relative elided dependency edges", async () => {
     const variants: readonly Readonly<{
       edge?: Readonly<Record<string, unknown>>;
       id: string;
@@ -885,12 +914,13 @@ describe("collectBunStylexGraph", () => {
       { edge: { external: true, kind: "dynamic-import", path: "./dropped.js" }, id: "dynamic", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "require-call", path: "./dropped.js" }, id: "require", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "import-statement", path: "./dropped.js", with: { type: "javascript" } }, id: "attributes", sideEffects: false, target: "file" },
-      { edge: { external: false, kind: "import-statement", path: "./dropped.js" }, id: "nonexternal", sideEffects: false, target: "file" },
+      { edge: { external: false, kind: "import-statement", path: "./dropped.js" }, id: "unobserved-nonexternal", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "import-statement", path: "./dropped.js?raw" }, id: "query-path", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "import-statement", path: "./dropped%2ejs" }, id: "encoded-path", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "import-statement", path: "./nested/../dropped.js" }, id: "noncanonical-path", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "import-statement", path: "../other/dropped.js" }, id: "cross-package", sideEffects: false, target: "cross-package" },
       { id: "changed-after-observation", sideEffects: false, target: "changed" },
+      { edge: { external: false, kind: "import-statement", path: "./dropped.js" }, id: "changed-after-observation-nonexternal", sideEffects: false, target: "changed" },
       { id: "missing-target", sideEffects: false, target: "missing" },
       { edge: { external: true, kind: "import-statement", path: "./dropped.json" }, id: "non-js-target", sideEffects: false, target: "non-js" },
       { id: "directory-target", sideEffects: false, target: "directory" },
@@ -965,7 +995,7 @@ describe("collectBunStylexGraph", () => {
         entry,
         `import { marker } from '../node_modules/@fixture/runtime/${importerName}'; export const value = marker;\n`,
       );
-      const handle = await generation(context, `elided-external-near-miss-${variant.id}`, [
+      const handle = await generation(context, `relative-elided-near-miss-${variant.id}`, [
         expectation(context.root, "client", "client", entry),
       ]);
       const buildOriginal = Bun.build.bind(Bun);
@@ -1013,7 +1043,7 @@ describe("collectBunStylexGraph", () => {
         assert.match(
           String(rejection),
           variant.target === "changed"
-            ? /Bun observed external package input differs from its completed load/u
+            ? /Bun observed relative elided package input differs from its completed load/u
             : /Bun metafile import.*is unresolved/u,
           `near-miss variant rejected differently: ${variant.id}`,
         );
