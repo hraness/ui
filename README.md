@@ -351,7 +351,7 @@ const styles = stylex.create({
 `AskAiAboutThis`, `Button`, `CopyButton`, `IconButton`, `IconLink`, `ToggleButton`,
 `LinkButton`, `Icon`, `SocialIcon`, `AppearanceIcon`, `Avatar`, `Badge`, `Tag`, `StatusDot`,
 `KeyHint`, `PageIntro`, `EmptyState`, `InlineAlert`, `SettingsCard`, `DataTable`,
-`ListBox`, `ListBoxItem`, `ListBoxSection`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
+`Menu`, `MenuItem`, `MenuSection`, `MenuSeparator`, `ListBox`, `ListBoxItem`, `ListBoxSection`, `Link`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter`, `PressableCard`, `QuietSitePage`, `QuietSiteFooter`,
 `SkipLink`, `Separator`, `Form`, `FieldDescription`, `FieldError`, `TextField`,
 `TextAreaField`, `SearchField`, `NumberField`, `CheckboxField`, `CheckboxGroup`,
@@ -501,6 +501,15 @@ their ordinary grid layout. Focused or hovered items use the accent tokens,
 selection adds medium font weight, and disabled opacity remains independent.
 Items keep their minimum target under both real and verification coarse-pointer
 conditions. Autocomplete continues to own input focus and filtering.
+
+`Menu` compiles its menu, popover, section, rich item slots, separator, and footer
+presentation with StyleX. Use `xstyle`, `popoverXstyle`, and `footerXstyle` on
+`Menu`, `xstyle` on items and separators, and `xstyle` plus `headerXstyle` on
+sections. Caller recipes resolve after focus, hover, selection, disabled, and
+danger recipes. Item native styles remain final; `matchTriggerWidth` retains
+the trigger-owned minimum width. React Aria keeps collection, keyboard,
+typeahead, selection, dismissal, refs, and action behavior. Coarse targets,
+reduced-motion animation, and forced-color borders remain compiled contracts.
 
 `Link` remains an ordinary React Aria destination with a required `href`, stable
 semantic class and slot, optional link ref, native attributes, render-prop

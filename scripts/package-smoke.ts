@@ -896,6 +896,190 @@ function requirePackageDataTableStyles(
   );
 }
 
+const MENU_STYLE_KEYS = [
+  "copy", "description", "footer", "header", "item", "itemDanger", "itemDangerHighlighted",
+  "itemDisabled", "itemHighlighted", "itemSelected", "label", "leading", "popover",
+  "popoverEntering", "popoverExiting", "root", "section", "separator", "shortcut",
+] as const;
+type MenuStyleKey = (typeof MENU_STYLE_KEYS)[number];
+const MENU_BACKGROUND_RESET = [
+  /background-attachment:\s*scroll;/u, /background-clip:\s*border-box;/u,
+  /background-image:\s*none;/u, /background-origin:\s*padding-box;/u,
+  /background-position:\s*0(?:%|px)? 0(?:%|px)?;/u,
+  /background-repeat:\s*repeat;/u, /background-size:\s*auto(?: auto)?;/u,
+] as const;
+const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
+  copy: [/display:\s*grid;/u, /min-width:\s*0;/u, /gap:\s*0?\.125rem;/u],
+  description: [
+    /color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-caption\);/u,
+    /font-weight:\s*var\(--font-weight-regular\);/u, /line-height:\s*1\.4;/u,
+  ],
+  footer: [
+    /padding-bottom:\s*var\(--space-2\);/u, /padding-top:\s*var\(--space-2\);/u,
+    /padding-left:\s*var\(--space-3\);/u, /padding-right:\s*var\(--space-3\);/u,
+    /border-block-start-width:\s*1px;/u, /border-block-start-style:\s*solid;/u,
+    /border-block-start-color:\s*var\(--ui-border\);/u,
+    /color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-caption\);/u,
+  ],
+  header: [
+    /padding-bottom:\s*var\(--space-2\);/u, /padding-top:\s*var\(--space-2\);/u,
+    /padding-left:\s*var\(--space-3\);/u, /padding-right:\s*var\(--space-3\);/u,
+    /color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-caption\);/u,
+    /font-weight:\s*var\(--font-weight-medium\);/u,
+  ],
+  item: [
+    /position:\s*relative;/u, /display:\s*grid;/u,
+    /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-menu-coarse-min,\s*0px\)\);/u,
+    /grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto;/u,
+    /align-items:\s*center;/u, /gap:\s*var\(--space-3\);/u,
+    /padding-bottom:\s*var\(--space-2\);/u, /padding-top:\s*var\(--space-2\);/u,
+    /padding-left:\s*var\(--space-3\);/u, /padding-right:\s*var\(--space-3\);/u,
+    /border-radius:\s*var\(--radius-md\);/u, /outline-color:\s*current[Cc]olor;/u,
+    /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
+    /color:\s*var\(--ui-popover-foreground\);/u, /cursor:\s*default;/u, /user-select:\s*none;/u,
+  ],
+  itemDanger: [/color:\s*var\(--ui-destructive\);/u],
+  itemDangerHighlighted: [
+    ...MENU_BACKGROUND_RESET,
+    /background-color:\s*color-mix\(in oklch,\s*var\(--ui-destructive\) 12%,\s*var\(--ui-popover\)\);/u,
+  ],
+  itemDisabled: [/opacity:\s*0?\.5;/u],
+  itemHighlighted: [
+    ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-accent\);/u,
+    /color:\s*var\(--ui-accent-foreground\);/u,
+  ],
+  itemSelected: [/font-weight:\s*var\(--font-weight-medium\);/u],
+  label: [/overflow-wrap:\s*anywhere;/u],
+  leading: [/display:\s*inline-grid;/u, /align-items:\s*center;/u, /justify-items:\s*center;/u],
+  popover: [
+    /z-index:\s*var\(--z-tooltip\);/u, /max-width:\s*min\(24rem,\s*(?:calc\(100vw - 2rem\)|100vw - 2rem)\);/u,
+    /border-width:\s*1px;/u, /border-style:\s*solid;/u,
+    /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
+    /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
+    /border-color:\s*var\(--ui-border\);/u, /border-radius:\s*var\(--radius-lg\);/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
+    ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-popover\);/u,
+    /color:\s*var\(--ui-popover-foreground\);/u, /box-shadow:\s*var\(--elevation-overlay\);/u,
+  ],
+  popoverEntering: [
+    /animation-name:\s*hraness-overlay-enter;/u, /animation-duration:\s*var\(--motion-duration-standard\);/u,
+    /animation-timing-function:\s*var\(--motion-easing-emphasized\);/u, /animation-delay:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
+    /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
+  ],
+  popoverExiting: [
+    /animation-name:\s*hraness-overlay-exit;/u, /animation-duration:\s*var\(--motion-duration-fast\);/u,
+    /animation-timing-function:\s*var\(--motion-easing-standard\);/u, /animation-delay:\s*0s;/u,
+    /animation-iteration-count:\s*1;/u, /animation-direction:\s*normal;/u,
+    /animation-fill-mode:\s*none;/u, /animation-play-state:\s*running;/u,
+  ],
+  root: [
+    /display:\s*grid;/u, /min-width:\s*12rem;/u,
+    /max-height:\s*min\(24rem,\s*var\(--visual-viewport-height,\s*70vh\)\);/u,
+    /padding-bottom:\s*var\(--space-1\);/u, /padding-top:\s*var\(--space-1\);/u,
+    /padding-left:\s*var\(--space-1\);/u, /padding-right:\s*var\(--space-1\);/u,
+    /overflow-x:\s*auto;/u, /overflow-y:\s*auto;/u,
+    /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
+  ],
+  section: [/display:\s*grid;/u],
+  separator: [
+    /height:\s*1px;/u, /margin-block-start:\s*var\(--space-1\);/u, /margin-block-end:\s*var\(--space-1\);/u,
+    ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-border\);/u,
+  ],
+  shortcut: [
+    /color:\s*var\(--ui-muted-foreground\);/u, /font-family:\s*var\(--ui-font-mono\);/u,
+    /font-size:\s*var\(--text-caption\);/u,
+  ],
+};
+const MENU_CONDITIONAL_DECLARATIONS: Partial<Record<MenuStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  item: [{ condition: "@media(pointer:coarse)", declaration: /min-height:\s*var\(--interactive-target-min\);/u }],
+  popover: [
+    { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
+    { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
+  ],
+  popoverEntering: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
+  popoverExiting: [{ condition: "@media(prefers-reduced-motion:reduce)", declaration: /animation-name:\s*none;/u }],
+};
+
+function menuDeclarationMatches(body: string, declaration: RegExp): boolean {
+  const canonical = body.trim().replace(/^-webkit-user-select:\s*none;\s*(?=user-select:\s*none;\s*$)/u, "");
+  return new RegExp(`^(?:${declaration.source})$`, "u").test(canonical);
+}
+
+function requirePackageMenu(javaScript: string, css: string, legacy: string): void {
+  const keys = MENU_STYLE_KEYS;
+  const map = packageNamedStyleMap(javaScript, keys, "menuStyles class map");
+  assert.deepEqual(packageTopLevelStyleKeys(map.object, "menuStyles"), keys);
+  for (const key of keys) {
+    const entry = packageNamedStyleEntry(map, key);
+    const bindings = [...entry.matchAll(/(?:^|[,{])\s*([A-Za-z_$][\w$]*)\s*:\s*["']((?:x[A-Za-z0-9_-]+)(?:\s+x[A-Za-z0-9_-]+)*)["']/gu)];
+    assert.equal(bindings.length, MENU_DECLARATIONS[key].length + (key === "popover" ? 1 : 0), `packed Menu ${key} exact property bindings`);
+    const classes = packageEntryClassNames(map, key);
+    const rules = packageStyleRules(css, classes);
+    assert.ok(classes.size > 0, `packed Menu ${key} has compiled presentation`);
+    for (const className of classes) assert.ok(rules.some((rule) => new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(rule.header)), `packed Menu ${key} binds every atom`);
+    for (const declaration of MENU_DECLARATIONS[key]) {
+      const exactCss = rules.filter((rule) => rule.conditions.length === 0 && menuDeclarationMatches(rule.body, declaration)).map((rule) => rule.source).join("\n");
+      requirePackageExactBaseDeclaration(exactCss, classes, declaration, `packed Menu ${key}`);
+    }
+    const conditional = MENU_CONDITIONAL_DECLARATIONS[key] ?? [];
+    for (const { condition, declaration } of conditional) {
+      const conditionalCss = packageExactConditionalCss(css, condition);
+      requirePackageExactBaseDeclaration(conditionalCss, classes, declaration, `packed Menu ${key} conditional declaration`);
+    }
+    for (const rule of rules) {
+      assert.ok(
+        rule.conditions.length === 0
+          ? MENU_DECLARATIONS[key].some((expected) => menuDeclarationMatches(rule.body, expected))
+          : rule.conditions.length === 1 && conditional.some((expected) => normalizedPackageCondition(expected.condition) === rule.conditions[0] && menuDeclarationMatches(rule.body, expected.declaration)),
+        `packed Menu ${key} exact declaration and condition inventory`,
+      );
+    }
+  }
+  assert.doesNotMatch(legacy, /\.hraness-menu(?:__[A-Za-z0-9_-]+|-popover)?(?![A-Za-z0-9_-])/u);
+  assert.doesNotMatch(css, /\.hraness-menu(?:__[A-Za-z0-9_-]+|-popover)?(?![A-Za-z0-9_-])/u);
+  assert.doesNotMatch(css, /--gallery-menu-collision/u);
+}
+
+function verifyPackageMenuNegativeControls(javaScript: string, css: string, legacy: string): void {
+  const map = packageNamedStyleMap(javaScript, MENU_STYLE_KEYS, "menuStyles class map");
+  const replaceDeclaration = (key: MenuStyleKey, declaration: RegExp, replacement: string): string => {
+    const rules = packageStyleRules(css, packageEntryClassNames(map, key)).filter((rule) => rule.conditions.length === 0 && declaration.test(rule.body));
+    assert.equal(rules.length, 1, `packed Menu ${key} negative control owns one base rule`);
+    const rule = rules[0]!;
+    assert.equal(css.split(rule.source).length - 1, 1, "packed Menu negative control owns one source occurrence");
+    assert.equal([...rule.body.matchAll(new RegExp(declaration.source, "gu"))].length, 1, "packed Menu negative control replaces one declaration");
+    const altered = rule.source.replace(declaration, replacement);
+    assert.notEqual(altered, rule.source);
+    return css.replace(rule.source, altered);
+  };
+  for (const key of MENU_STYLE_KEYS) {
+    const altered = replaceDeclaration(key, MENU_DECLARATIONS[key][0]!, "--unexpected-menu-declaration: initial;");
+    assert.throws(() => requirePackageMenu(javaScript, altered, legacy), /Menu/u, `packed Menu ${key} rejects a changed declaration`);
+  }
+  for (const [key, declaration, replacement] of [
+    ["leading", /align-items:\s*center;/u, "align-items: start;"],
+    ["leading", /justify-items:\s*center;/u, "justify-items: end;"],
+    ["shortcut", /font-family:\s*var\(--ui-font-mono\);/u, "font-family: serif;"],
+    ["footer", /border-block-start-width:\s*1px;/u, "border-top-width: 1px;"],
+  ] as const) assert.throws(() => requirePackageMenu(javaScript, replaceDeclaration(key, declaration, replacement), legacy), /Menu/u, `packed Menu ${key} rejects non-equivalent presentation`);
+  const entry = packageNamedStyleEntry(map, "leading");
+  const alteredEntry = entry.replace("{", `{unexpectedMenuBinding: ${JSON.stringify([...packageEntryClassNames(map, "leading")][0])},`);
+  const alteredJavaScript = javaScript.replace(map.object, map.object.replace(entry, alteredEntry));
+  assert.notEqual(alteredJavaScript, javaScript);
+  assert.throws(() => requirePackageMenu(alteredJavaScript, css, legacy), /packed Menu leading exact property bindings/u, "packed Menu rejects an extra binding even when its CSS exists");
+  for (const [key, contracts] of Object.entries(MENU_CONDITIONAL_DECLARATIONS)) {
+    if (contracts === undefined) continue;
+    for (const { condition, declaration } of contracts) {
+      const rules = packageStyleRules(css, packageEntryClassNames(map, key)).filter((rule) => rule.conditions.length === 1 && rule.conditions[0] === normalizedPackageCondition(condition) && declaration.test(rule.body));
+      assert.equal(rules.length, 1, `packed Menu ${key} negative control owns one conditional rule`);
+      const rule = rules[0]!;
+      assert.equal(css.split(rule.source).length - 1, 1);
+      assert.throws(() => requirePackageMenu(javaScript, css.replace(rule.source, ""), legacy), /Menu/u, `packed Menu ${key} rejects a missing conditional declaration`);
+    }
+  }
+}
+
 function packageListBoxProbe(javaScript: string, css: string): PackageListBoxProbe {
   const map = packageNamedStyleMap(javaScript, PACKAGE_LIST_BOX_STYLE_KEYS, "listBoxStyles class map");
   assert.deepEqual(packageTopLevelStyleKeys(map.object, "listBoxStyles"), PACKAGE_LIST_BOX_STYLE_KEYS);
@@ -3952,6 +4136,13 @@ import {
   type ListBoxProps,
   type ListBoxItemProps,
   type ListBoxSectionProps,
+  Menu,
+  MenuItem,
+  MenuSection,
+  MenuSeparator,
+  type MenuProps,
+  type MenuItemProps,
+  type MenuSectionProps,
   EmptyState,
   FileField,
   Form,
@@ -4701,6 +4892,44 @@ const invalidDataTableWrapperXstyle: DataTableProps<PackageDataTableRow> = {
   // @ts-expect-error DataTable accepts compiled StyleX recipes, not raw wrapper CSS.
   wrapperXstyle: { overflowX: "scroll" },
 };
+const packageMenuProps: MenuProps = { "aria-label": "Actions", children: null, xstyle: styles.wrapper, popoverXstyle: styles.wrapper, footerXstyle: styles.wrapper, menuRef: createRef<HTMLDivElement>(), matchTriggerWidth: true };
+const packageMenuItemProps: MenuItemProps = { id: "save", textValue: "Save", children: "Save", xstyle: styles.wrapper, style: ({ isFocused }) => ({ opacity: isFocused ? 1 : 0.9 }) };
+const packageMenuSectionProps: MenuSectionProps = { children: null, xstyle: styles.wrapper, headerXstyle: styles.wrapper };
+const packageMenuMarkup = createElement(Menu, packageMenuProps, createElement(MenuSection, packageMenuSectionProps, createElement(MenuItem, packageMenuItemProps)), createElement(MenuSeparator, { xstyle: styles.wrapper }));
+void packageMenuMarkup;
+const invalidMenuXstyle: MenuProps = { ...packageMenuProps,
+  // @ts-expect-error Menu accepts compiled recipes rather than raw CSS.
+  xstyle: { minWidth: "12rem" },
+};
+const invalidMenuPopoverXstyle: MenuProps = { ...packageMenuProps,
+  // @ts-expect-error Menu popovers expose a compiled-only seam.
+  popoverXstyle: { color: "red" },
+};
+const invalidMenuFooterXstyle: MenuProps = { ...packageMenuProps,
+  // @ts-expect-error Menu footers expose a compiled-only seam.
+  footerXstyle: { color: "red" },
+};
+const invalidMenuItemXstyle: MenuItemProps = { ...packageMenuItemProps,
+  // @ts-expect-error Menu items expose a compiled-only seam.
+  xstyle: { color: "red" },
+};
+const invalidMenuHeaderXstyle: MenuSectionProps = { ...packageMenuSectionProps,
+  // @ts-expect-error Menu headers expose a compiled-only seam.
+  headerXstyle: { color: "red" },
+};
+const invalidMenuSectionXstyle: MenuSectionProps = { ...packageMenuSectionProps,
+  // @ts-expect-error Menu sections expose a compiled-only seam.
+  xstyle: { display: "grid" },
+};
+// @ts-expect-error Menu separators expose a compiled-only seam.
+const invalidMenuSeparatorMarkup = createElement(MenuSeparator, { xstyle: { height: "2px" } });
+void invalidMenuXstyle;
+void invalidMenuPopoverXstyle;
+void invalidMenuFooterXstyle;
+void invalidMenuItemXstyle;
+void invalidMenuHeaderXstyle;
+void invalidMenuSectionXstyle;
+void invalidMenuSeparatorMarkup;
 const invalidListBoxXstyle: ListBoxProps<PackageListBoxRow> = {
   // @ts-expect-error ListBox accepts compiled recipes rather than raw CSS.
   xstyle: { minWidth: "12rem" },
@@ -5395,6 +5624,7 @@ async function verifyConsumer(
     join(consumer, "node_modules", "@hraness", "ui", "src", "data-table.stylex.ts"),
   );
   await access(join(consumer, "node_modules", "@hraness", "ui", "src", "list-box.stylex.ts"));
+  await access(join(consumer, "node_modules", "@hraness", "ui", "src", "menu.stylex.ts"));
   await access(
     join(consumer, "node_modules", "@hraness", "ui", "src", "data-display.tsx"),
   );
@@ -5473,6 +5703,8 @@ async function verifyConsumer(
   const indicatorKnobProbe = packageIndicatorKnobProbe(installedJavaScript);
   const linkProbe = packageLinkStyleMap(installedJavaScript);
   const listBoxProbe = packageListBoxProbe(installedJavaScript, installedStylexCss);
+  requirePackageMenu(installedJavaScript, installedStylexCss, installedComponentsCss);
+  verifyPackageMenuNegativeControls(installedJavaScript, installedStylexCss, installedComponentsCss);
   assert.doesNotMatch(installedComponentsCss, /\.hraness-list-box(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
   requirePackageCheckboxStyles(installedJavaScript, installedStylexCss);
   requirePackageFieldSelectStyles(installedJavaScript, installedStylexCss);

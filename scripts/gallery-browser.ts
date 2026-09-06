@@ -9407,22 +9407,104 @@ async function verifyListBoxInteractions(page: Page, id: string): Promise<void> 
     `${id}: highlighted ListBox item lost caller StyleX precedence: ${JSON.stringify(callerWins)}`,
   );
 
-  await page.getByRole("button", { name: "Open Menu compatibility canary" }).click();
-  const menu = page.getByRole("menu", { name: "Menu compatibility canary" });
+  await verifyMenuInteractions(page, id);
+}
+
+async function verifyMenuInteractions(page: Page, id: string): Promise<void> {
+  const trigger = page.getByRole("button", { name: "Open compiled Menu", exact: true });
+  await trigger.click();
+  const menu = page.getByRole("menu", { name: "Compiled Menu", exact: true });
   await menu.waitFor({ state: "visible" });
-  const legacyMenu = await menu.evaluate((element) => {
+  const compiledMenu = await menu.evaluate((element) => {
     const section = element.querySelector<HTMLElement>(".hraness-menu__section");
     const header = element.querySelector<HTMLElement>(".hraness-menu__header");
     const item = element.querySelector<HTMLElement>(".hraness-menu__item");
-    return element.className === "hraness-menu" && getComputedStyle(element).display === "grid"
+    const popover = element.closest<HTMLElement>('[data-slot="menu-popover"]');
+    const description = element.querySelector<HTMLElement>('[data-slot="menu-item-description"]');
+    const footer = popover?.querySelector<HTMLElement>('[data-slot="menu-footer"]');
+    return element.getAttribute("data-gallery-menu-ref") === "true" && element.classList.contains("hraness-menu") && element.classList.length > 1 && getComputedStyle(element).display === "grid"
       && getComputedStyle(element).minWidth === "192px" && getComputedStyle(element).padding === "4px"
       && section !== null && getComputedStyle(section).display === "grid"
       && header !== null && getComputedStyle(header).paddingLeft === "12px"
-      && item !== null && getComputedStyle(item).display === "grid";
+      && item !== null && getComputedStyle(item).display === "grid"
+      && description !== null && Number.parseFloat(getComputedStyle(description).lineHeight) > 0
+      && footer !== null && getComputedStyle(footer).borderBlockStartWidth === "1px"
+      && popover !== null && getComputedStyle(popover).borderTopWidth === "1px";
   });
-  invariant(legacyMenu, `${id}: shared-selector removal changed Menu presentation`);
+  invariant(compiledMenu, `${id}: compiled Menu presentation changed`);
+  const save = menu.getByRole("menuitemradio", { name: "Save document", exact: true });
+  const danger = menu.getByRole("menuitemradio", { name: "Delete document", exact: true });
+  invariant(await save.getAttribute("aria-checked") === "true", `${id}: Menu initial selection lost`);
+  invariant(await menu.getByRole("menuitemradio", { name: "Disabled action", exact: true }).getAttribute("aria-disabled") === "true", `${id}: Menu disabled semantics lost`);
+  await danger.hover();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Compiled Menu"] [data-key="delete"]')?.hasAttribute("data-hovered"));
+  const dangerStyle = await danger.evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-destructive)";
+    probe.style.backgroundColor = "color-mix(in oklch, var(--ui-destructive) 12%, var(--ui-popover))";
+    element.append(probe);
+    const actual = getComputedStyle(element);
+    const expected = getComputedStyle(probe);
+    const matches = actual.color === expected.color && actual.backgroundColor === expected.backgroundColor && actual.backgroundImage === "none";
+    probe.remove();
+    return matches;
+  });
+  invariant(dangerStyle, `${id}: Menu danger highlight changed`);
+  await save.focus();
+  await page.keyboard.press("d");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-key") === "delete");
+  await page.keyboard.press("End");
+  invariant(await danger.evaluate((element) => element === document.activeElement), `${id}: disabled Menu item interrupted keyboard focus`);
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Compiled Menu"] [data-key="delete"]')?.getAttribute("aria-checked") === "true");
+  await page.waitForFunction(() => document.querySelector('[data-gallery-menu-action="true"]')?.textContent === "delete");
+  const previousPointer = await page.evaluate(() => document.documentElement.dataset.verificationPointer);
+  try {
+    await page.evaluate(() => { document.documentElement.dataset.verificationPointer = "coarse"; });
+    await page.waitForFunction(() => {
+      const item = document.querySelector('[aria-label="Compiled Menu"] [data-key="save"]');
+      return item !== null && Number.parseFloat(getComputedStyle(item).minHeight) >= 48;
+    });
+  } finally {
+    await page.evaluate((previous) => {
+      if (previous === undefined) delete document.documentElement.dataset.verificationPointer;
+      else document.documentElement.dataset.verificationPointer = previous;
+    }, previousPointer);
+  }
   await page.keyboard.press("Escape");
   await menu.waitFor({ state: "hidden" });
+  invariant(await trigger.evaluate((element) => element === document.activeElement), `${id}: Menu did not restore trigger focus`);
+  const customTrigger = page.getByRole("button", { name: "Open customized Menu", exact: true });
+  await customTrigger.click();
+  const customized = page.getByRole("menu", { name: "Customized Menu", exact: true });
+  await customized.waitFor({ state: "visible" });
+  await customized.getByRole("menuitem", { name: "Custom action", exact: true }).hover();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Customized Menu"] [data-key="custom"]')?.hasAttribute("data-hovered"));
+  const callerEvidence = await customized.evaluate((element) => {
+    const popover = element.closest<HTMLElement>('[data-slot="menu-popover"]');
+    const item = element.querySelector<HTMLElement>('[data-slot="menu-item"]');
+    const header = element.querySelector<HTMLElement>('[data-slot="menu-header"]');
+    const footer = popover?.querySelector<HTMLElement>('[data-slot="menu-footer"]');
+    const separator = element.querySelector<HTMLElement>('[data-slot="menu-separator"]');
+    if (!popover || !item || !header || !footer || !separator) return false;
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--ui-secondary)";
+    probe.style.color = "var(--ui-secondary-foreground)";
+    item.append(probe);
+    const actual = getComputedStyle(item);
+    const expected = getComputedStyle(probe);
+    const result = getComputedStyle(element).minWidth === "240px"
+      && getComputedStyle(element).getPropertyValue("--gallery-menu-collision").trim() === "active"
+      && getComputedStyle(popover).borderRadius === "17px" && popover.style.minWidth === "var(--trigger-width)"
+      && getComputedStyle(header).fontSize === "15px" && getComputedStyle(footer).fontSize === "15px"
+      && getComputedStyle(separator).height === "2px" && actual.letterSpacing === "2px"
+      && actual.backgroundColor === expected.backgroundColor && actual.color === expected.color;
+    probe.remove();
+    return result;
+  });
+  invariant(callerEvidence, `${id}: Menu caller seams, native styles, or collision precedence changed`);
+  await page.keyboard.press("Escape");
+  await customized.waitFor({ state: "hidden" });
   await page.mouse.move(0, 0);
 }
 
@@ -9440,6 +9522,43 @@ async function verifyListBoxForcedColors(page: Page): Promise<void> {
   });
   invariant(evidence.forced && evidence.focused && evidence.adjustment === "auto"
     && evidence.color !== evidence.background, `ListBox forced-color focus became unreadable: ${JSON.stringify(evidence)}`);
+}
+
+async function verifyMenuEnvironment(page: Page, id: string): Promise<void> {
+  await page.getByRole("button", { name: "Open compiled Menu", exact: true }).click();
+  const menu = page.getByRole("menu", { name: "Compiled Menu", exact: true });
+  await menu.waitFor({ state: "visible" });
+  const evidence = await menu.evaluate((element) => {
+    const popover = element.closest<HTMLElement>('[data-slot="menu-popover"]');
+    const item = element.querySelector<HTMLElement>('[data-slot="menu-item"]');
+    if (!popover || !item) throw new Error("Menu environment fixture is incomplete");
+    const probe = document.createElement("span");
+    probe.style.color = "CanvasText";
+    probe.style.backgroundColor = "var(--ui-popover)";
+    popover.append(probe);
+    const style = getComputedStyle(popover);
+    const expected = getComputedStyle(probe);
+    const result = {
+      coarse: matchMedia("(pointer: coarse)").matches,
+      forced: matchMedia("(forced-colors: active)").matches,
+      reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      minHeight: Number.parseFloat(getComputedStyle(item).minHeight),
+      border: style.borderTopColor,
+      canvasText: expected.color,
+      adjustment: style.forcedColorAdjust,
+      background: style.backgroundColor,
+      expectedBackground: expected.backgroundColor,
+      animation: style.animationName,
+    };
+    probe.remove();
+    return result;
+  });
+  invariant(!evidence.coarse || evidence.minHeight >= 48, `${id}: real coarse Menu target changed`);
+  invariant(!evidence.forced || (evidence.border === evidence.canvasText && evidence.adjustment === "auto"), `${id}: Menu forced-color border changed`);
+  invariant(!evidence.reduced || evidence.animation === "none", `${id}: Menu reduced-motion animation changed`);
+  invariant(evidence.background === evidence.expectedBackground, `${id}: Menu theme tokens changed`);
+  await page.keyboard.press("Escape");
+  await menu.waitFor({ state: "hidden" });
 }
 
 async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
@@ -13162,6 +13281,7 @@ try {
           const darkDataTable = await dataTableEvidence(page);
           verifyDataTableEvidence(darkDataTable, `${layout.id} dark`);
           await verifyListBoxPresentation(page, `${layout.id} dark`);
+          await verifyMenuEnvironment(page, `${layout.id} dark`);
           const darkIndicators = await indicatorKnobEvidence(page);
           verifyIndicatorKnobEvidence(darkIndicators, `${layout.id} dark`);
           const darkSegmented = await segmentedControlEvidence(page);
@@ -13333,6 +13453,7 @@ try {
         await verifyFieldFamilyCoarsePointer(page);
         await verifyIndicatorKnobCoarsePointer(page);
         await verifyListBoxCoarsePointer(page, true);
+        await verifyMenuEnvironment(page, "real coarse pointer");
         invariant(
           failures.length === 0,
           `coarse-pointer action, CheckboxField, Fields, Indicators, and Knob matrix: ${failures.join("; ")}`,
@@ -13436,6 +13557,7 @@ try {
         await verifyFieldFamilyForcedColors(page);
         await verifyContentFamilyForcedColors(page);
         await verifyListBoxForcedColors(page);
+        await verifyMenuEnvironment(page, "forced colors and reduced motion");
         await verifyIndicatorKnobForcedColors(page);
 
         await resetKeyboardFocusToDocumentStart(page, "forced colors");

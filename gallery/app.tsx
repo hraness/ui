@@ -45,6 +45,7 @@ import {
   Menu,
   MenuItem,
   MenuSection,
+  MenuSeparator,
   MenuTrigger,
   Meter,
   NativeSelectField,
@@ -339,6 +340,13 @@ const galleryStyles = stylex.create({
     gap: "var(--space-4)",
     width: "14rem",
   },
+  menuRootOverride: { minWidth: "15rem" },
+  menuPopoverOverride: { borderRadius: "17px" },
+  menuFooterOverride: { fontSize: "15px" },
+  menuSectionOverride: { gap: "3px" },
+  menuHeaderOverride: { fontSize: "15px" },
+  menuItemOverride: { backgroundColor: "var(--ui-secondary)", color: "var(--ui-secondary-foreground)" },
+  menuSeparatorOverride: { height: "2px" },
   linkDynamicLetterSpacing: (letterSpacing: string) => ({ letterSpacing }),
   linkOverride: {
     color: "var(--ui-foreground)",
@@ -445,6 +453,7 @@ const galleryListBoxItems = [
 ] as const;
 
 function ListBoxGallery() {
+  const [menuAction, setMenuAction] = useState("");
   const [selection, setSelection] = useState("beta");
   const [instrument, setInstrument] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -587,11 +596,24 @@ function ListBoxGallery() {
         </div>
       </div>
       <MenuTrigger>
-        <Button>Open Menu compatibility canary</Button>
-        <Menu aria-label="Menu compatibility canary">
-          <MenuSection title="Unmigrated menu section">
-            <MenuItem id="menu-canary" textValue="Menu item canary">Menu item canary</MenuItem>
+        <Button>Open compiled Menu</Button>
+        <Menu aria-label="Compiled Menu" footer="Menu footer" selectionMode="single" defaultSelectedKeys={["save"]} disabledKeys={["disabled"]} shouldCloseOnSelect={false} onAction={setMenuAction} menuRef={(element) => { if (element !== null) element.dataset.galleryMenuRef = "true"; }}>
+          <MenuSection title="Document actions">
+            <MenuItem id="save" textValue="Save document" leading="+" description="Keep your changes" shortcut="⌘S">Save document</MenuItem>
+            <MenuItem id="delete" textValue="Delete document" variant="danger">Delete document</MenuItem>
+            <MenuItem id="disabled" textValue="Disabled action">Disabled action</MenuItem>
           </MenuSection>
+          <MenuSeparator />
+        </Menu>
+      </MenuTrigger>
+      <output data-gallery-menu-action="true">{menuAction}</output>
+      <MenuTrigger>
+        <Button>Open customized Menu</Button>
+        <Menu aria-label="Customized Menu" className="gallery-menu-collision" matchTriggerWidth footer="Custom footer" xstyle={galleryStyles.menuRootOverride} popoverXstyle={galleryStyles.menuPopoverOverride} footerXstyle={galleryStyles.menuFooterOverride}>
+          <MenuSection title="Custom actions" xstyle={galleryStyles.menuSectionOverride} headerXstyle={galleryStyles.menuHeaderOverride}>
+            <MenuItem id="custom" textValue="Custom action" variant="danger" xstyle={galleryStyles.menuItemOverride} style={() => ({ letterSpacing: "2px" })}>Custom action</MenuItem>
+          </MenuSection>
+          <MenuSeparator xstyle={galleryStyles.menuSeparatorOverride} />
         </Menu>
       </MenuTrigger>
     </section>
