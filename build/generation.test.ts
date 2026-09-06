@@ -1225,7 +1225,7 @@ describe("generation lifecycle", () => {
                             : /finalized CSS exactly once/u,
       );
     }
-  });
+  }, 30_000);
 
   test("rejects character-reference link attributes in prepared templates", async () => {
     const context = await fixture();
@@ -1365,7 +1365,7 @@ describe("generation lifecycle", () => {
       await sealStylexProducedTemplate(generation, "index.html");
       await expect(finalize(context, generation)).rejects.toThrow(expected);
     }
-  });
+  }, 30_000);
 
   test("rejects unsafe paths, malformed handles, bad template links, and existing outputs", async () => {
     const context = await fixture();

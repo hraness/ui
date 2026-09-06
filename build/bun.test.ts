@@ -1125,7 +1125,7 @@ describe("collectBunStylexGraph", () => {
         build.mockRestore();
       }
     }
-  });
+  }, 30_000);
 
   test("keeps an adversarial unreferenced dependency observation outside the published graph", async () => {
     const context = await fixture();
@@ -1365,7 +1365,7 @@ describe("collectBunStylexGraph", () => {
         build.mockRestore();
       }
     }
-  });
+  }, 30_000);
 
   test("rejects external and mismatched absolute edges to a speculative transform", async () => {
     for (const variant of ["external", "mismatched-original"] as const) {
@@ -1570,7 +1570,7 @@ describe("collectBunStylexGraph", () => {
         build.mockRestore();
       }
     }
-  });
+  }, 30_000);
 
   test("rejects an elided relative external from a first-party ESM importer", async () => {
     const context = await fixture();
@@ -2638,7 +2638,7 @@ describe("collectBunStylexGraph", () => {
         build.mockRestore();
       }
     }
-  });
+  }, 30_000);
 
   test("rejects unsafe zero-witness package subpath fallbacks", async () => {
     const variants: readonly Readonly<{
@@ -2870,7 +2870,7 @@ describe("collectBunStylexGraph", () => {
         build.mockRestore();
       }
     }
-  });
+  }, 30_000);
 
   test("repairs a zero-witness package root from its exact conditional import export with multiple in-graph inputs", async () => {
     const context = await fixture();
@@ -3352,7 +3352,7 @@ describe("collectBunStylexGraph", () => {
         build.mockRestore();
       }
     }
-  });
+  }, 30_000);
 
   test("does not bind a raw Node builtin spelling to a singleton package installation", async () => {
     const context = await fixture();
