@@ -498,6 +498,7 @@ describe("collectBunStylexGraph", () => {
   });
 
   test("settles one external barrel edge when its target has an independent authoritative import", async () => {
+    for (const witnessShape of ["resolved", "raw-relative"] as const) {
     const context = await fixture();
     const dependencyRoot = join(context.root, "node_modules/@fixture/shared-target");
     await write(
@@ -531,7 +532,7 @@ describe("collectBunStylexGraph", () => {
       entry,
       "import { ListBox } from '@fixture/shared-target'; export const value = ListBox;\n",
     );
-    const handle = await generation(context, "authoritative-shared-elided-barrel-target", [
+    const handle = await generation(context, `authoritative-shared-elided-barrel-target-${witnessShape}`, [
       expectation(context.root, "client", "client", entry),
     ]);
     const buildOriginal = Bun.build.bind(Bun);
@@ -558,6 +559,17 @@ describe("collectBunStylexGraph", () => {
         original: "./Collection.mjs",
         path: join(dependencyRoot, "dist/private/Collection.mjs"),
       });
+      if (witnessShape === "raw-relative") {
+        result.metafile.inputs[listBoxKey]!.imports = result.metafile.inputs[listBoxKey]!.imports.map((imported) =>
+          imported.original === "./Collection.mjs"
+            ? { kind: "import-statement", path: "./Collection.mjs" }
+            : imported
+        ) as never;
+        expect(result.metafile.inputs[listBoxKey]!.imports).toContainEqual({
+          kind: "import-statement",
+          path: "./Collection.mjs",
+        });
+      }
       result.metafile.inputs[barrelKey]!.imports = result.metafile.inputs[barrelKey]!.imports.map((imported) =>
         imported.original === "../private/Collection.mjs"
           ? { external: true, kind: "import-statement", path: "../private/Collection.mjs" }
@@ -595,10 +607,22 @@ describe("collectBunStylexGraph", () => {
     } finally {
       build.mockRestore();
     }
+    }
   });
 
   test("rejects malformed independent witnesses for an authoritative barrel target", async () => {
-    for (const variant of ["external", "attributes", "wrong-original", "cross-package"] as const) {
+    for (const variant of [
+      "external",
+      "attributes",
+      "wrong-original",
+      "cross-package",
+      "raw-external",
+      "raw-attributes",
+      "raw-dynamic",
+      "raw-noncanonical",
+      "raw-wrong-target",
+      "raw-cross-package",
+    ] as const) {
       const context = await fixture();
       const dependencyRoot = join(context.root, "node_modules/@fixture/shared-target");
       const otherRoot = join(context.root, "node_modules/@fixture/other-witness");
@@ -628,7 +652,7 @@ describe("collectBunStylexGraph", () => {
         join(dependencyRoot, "dist/private/ListBox.mjs"),
         "import { Collection } from './Collection.mjs'; export const ListBox = ['listbox', Collection];\n",
       );
-      if (variant === "cross-package") {
+      if (variant === "cross-package" || variant === "raw-cross-package") {
         await write(
           join(otherRoot, "package.json"),
           `${JSON.stringify({
@@ -647,7 +671,7 @@ describe("collectBunStylexGraph", () => {
       const entry = join(context.root, "src/entry.ts");
       await write(
         entry,
-        variant === "cross-package"
+        variant === "cross-package" || variant === "raw-cross-package"
           ? "import { ListBox } from '@fixture/shared-target'; import { Other } from '@fixture/other-witness'; export const value = [ListBox, Other];\n"
           : "import { ListBox } from '@fixture/shared-target'; export const value = ListBox;\n",
       );
@@ -680,7 +704,7 @@ describe("collectBunStylexGraph", () => {
         const witness = result.metafile.inputs[listBoxKey]!.imports.find(({ original, path }) =>
           original === "./Collection.mjs" || path.endsWith("/Collection.mjs")
         );
-        if (variant === "cross-package") {
+        if (variant === "cross-package" || variant === "raw-cross-package") {
           assert.ok(otherKey !== undefined, `${variant}: missing cross-package witness input`);
           result.metafile.inputs[listBoxKey]!.imports = result.metafile.inputs[listBoxKey]!.imports.filter(
             (imported) => imported !== witness,
@@ -693,6 +717,11 @@ describe("collectBunStylexGraph", () => {
               case "external": return { ...imported, external: true };
               case "attributes": return { ...imported, with: { type: "javascript" } };
               case "wrong-original": return { ...imported, original: "./Different.mjs" };
+              case "raw-external": return { external: true, kind: "import-statement", path: "./Collection.mjs" };
+              case "raw-attributes": return { kind: "import-statement", path: "./Collection.mjs", with: { type: "javascript" } };
+              case "raw-dynamic": return { kind: "dynamic-import", path: "./Collection.mjs" };
+              case "raw-noncanonical": return { kind: "import-statement", path: "./nested/../Collection.mjs" };
+              case "raw-wrong-target": return { kind: "import-statement", path: "./ListBox.mjs" };
             }
           }) as never;
         }
@@ -701,13 +730,21 @@ describe("collectBunStylexGraph", () => {
             ? { external: true, kind: "import-statement", path: "../private/Collection.mjs" }
             : imported
         ) as never;
-        if (variant === "cross-package") {
+        if (variant === "cross-package" || variant === "raw-cross-package") {
           assert.ok(otherKey !== undefined);
-          expect(result.metafile.inputs[otherKey]!.imports).toContainEqual({
+          const otherWitness = {
             kind: "import-statement",
             original: "../shared-target/dist/private/Collection.mjs",
             path: join(dependencyRoot, "dist/private/Collection.mjs"),
-          });
+          } as const;
+          expect(result.metafile.inputs[otherKey]!.imports).toContainEqual(otherWitness);
+          if (variant === "raw-cross-package") {
+            result.metafile.inputs[otherKey]!.imports = result.metafile.inputs[otherKey]!.imports.map((imported) =>
+              imported.original === otherWitness.original
+                ? { kind: "import-statement", path: "../shared-target/dist/private/Collection.mjs" }
+                : imported
+            ) as never;
+          }
         }
         return result;
       });
