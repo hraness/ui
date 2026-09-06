@@ -42,31 +42,7 @@
     display: none;
   }
 
-  .hraness-progress__label-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-3);
-    font-size: var(--text-label);
-  }
-
-  .hraness-progress {
-    display: grid;
-    min-width: 0;
-    gap: var(--space-2);
-  }
-
-  .hraness-progress__control {
-    width: 100%;
-    height: 0.5rem;
-    overflow: hidden;
-    appearance: none;
-    border: 0;
-    border-radius: var(--radius-round);
-    background: var(--ui-muted);
-    color: var(--ui-primary);
-  }
-
+  /* Native progress value and track pseudo-elements remain CSS seams. */
   .hraness-progress__control::-webkit-progress-bar {
     background: var(--ui-muted);
   }
@@ -203,11 +179,6 @@
     .hraness-segmented-control__item[data-selected]) {
     background: ButtonFace;
     color: ButtonText;
-  }
-
-  .hraness-progress__control {
-    color: Highlight;
-    forced-color-adjust: none;
   }
 
 }

@@ -29,12 +29,14 @@ import {
 } from "./data-display.js";
 import {
   Progress,
+  type ProgressProps,
   Skeleton,
   type SkeletonProps,
   Spinner,
   type SpinnerProps,
   normalizeProgress,
 } from "./feedback.js";
+import { feedbackStyles } from "./feedback.stylex.js";
 import {
   ListBox,
   ListBoxItem,
@@ -175,6 +177,11 @@ void rawInlineAlertXstyle;
 void rawSettingsCardXstyle;
 
 const feedbackTestStyles = stylex.create({
+  progressOverride: {
+    display: "flex",
+    gap: "var(--space-4)",
+  },
+  progressWidth: (width: string) => ({ width }),
   skeletonMinimum: (minimum: string) => ({ minHeight: minimum }),
   skeletonOverride: {
     backgroundColor: "var(--ui-primary)",
@@ -195,11 +202,25 @@ const typedSkeleton: SkeletonProps = {
   isText: true,
   xstyle: feedbackTestStyles.skeletonOverride,
 };
+const typedProgress: ProgressProps = {
+  label: "Upload",
+  value: 50,
+  xstyle: feedbackTestStyles.progressOverride,
+};
 // @ts-expect-error Feedback primitives accept compiled StyleX recipes rather than raw CSS objects.
 const rawSpinnerXstyle: SpinnerProps = { xstyle: { display: "flex" } };
 // @ts-expect-error Feedback primitives accept compiled StyleX recipes rather than raw CSS objects.
 const rawSkeletonXstyle: SkeletonProps = { xstyle: { minHeight: "2rem" } };
-void [rawSkeletonXstyle, rawSpinnerXstyle, typedSkeleton, typedSpinner];
+// @ts-expect-error Feedback primitives accept compiled StyleX recipes rather than raw CSS objects.
+const rawProgressXstyle: ProgressProps = { label: "Upload", value: 50, xstyle: { display: "flex" } };
+void [
+  rawProgressXstyle,
+  rawSkeletonXstyle,
+  rawSpinnerXstyle,
+  typedProgress,
+  typedSkeleton,
+  typedSpinner,
+];
 
 type KeyHintTestElement = ReactElement<{
   ref: Ref<HTMLElement>;
@@ -253,6 +274,47 @@ test("feedback components expose decorative and labelled semantics", () => {
   expect(html).toContain("50%");
   expect(html).toMatch(/<span[^>]+id="([^"]+)-label"[^>]*>Upload<\/span>/u);
   expect(html).toMatch(/<progress[^>]+aria-labelledby="[^"]+-label"/u);
+});
+
+test("Progress compiles owned parts before caller presentation and native root styles", () => {
+  const html = renderToStaticMarkup(
+    <Progress
+      className="consumer-progress"
+      data-product="upload"
+      label="Upload"
+      style={{ width: "15rem" }}
+      value={50}
+      xstyle={[
+        feedbackTestStyles.progressOverride,
+        feedbackTestStyles.progressWidth("14rem"),
+      ]}
+    />,
+  );
+  const root = html.match(/^<div[^>]*>/u)?.[0] ?? "";
+  const labelRow = html.match(/<div[^>]*data-slot="progress-label-row"[^>]*>/u)?.[0] ?? "";
+  const control = html.match(/<progress[^>]*data-slot="progress-control"[^>]*>/u)?.[0] ?? "";
+  const classes = (tag: string) => tag.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+  const expectedRoot = stylex.props(
+    feedbackStyles.progressRoot,
+    feedbackTestStyles.progressOverride,
+    feedbackTestStyles.progressWidth("14rem"),
+  );
+
+  expect(classes(root)).toEqual([
+    "hraness-progress",
+    ...(expectedRoot.className?.split(" ") ?? []),
+    "consumer-progress",
+  ]);
+  expect(root).toContain('data-product="upload"');
+  expect(root).toMatch(/style="--[^:]+:14rem;width:15rem"/u);
+  expect(classes(labelRow)).toEqual([
+    "hraness-progress__label-row",
+    ...(stylex.props(feedbackStyles.progressLabelRow).className?.split(" ") ?? []),
+  ]);
+  expect(classes(control)).toEqual([
+    "hraness-progress__control",
+    ...(stylex.props(feedbackStyles.progressControl).className?.split(" ") ?? []),
+  ]);
 });
 
 test("Spinner and Skeleton compile their recipes before caller presentation", async () => {

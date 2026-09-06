@@ -155,6 +155,8 @@ export interface ProgressProps extends Omit<
   readonly max?: number;
   readonly showValue?: boolean;
   readonly value: number;
+  /** Typed StyleX presentation applied after the Progress root recipe. */
+  readonly xstyle?: StyleXStyles;
 }
 
 /** A labelled native progress indicator with an optional visible percentage. */
@@ -165,23 +167,40 @@ export const Progress = forwardRef<HTMLDivElement, ProgressProps>(
       label,
       max = 100,
       showValue = false,
+      style,
       value,
+      xstyle,
       ...props
     },
     ref,
   ) => {
     const normalized = normalizeProgress(value, max);
     const labelId = `${useId()}-label`;
+    const rootPresentation = stylex.props(feedbackStyles.progressRoot, xstyle);
+    const labelRowPresentation = stylex.props(
+      feedbackStyles.progressLabelRow,
+    );
+    const controlPresentation = stylex.props(feedbackStyles.progressControl);
 
     return (
       <div
         {...props}
-        className={cn("hraness-progress", className)}
+        {...rootPresentation}
+        className={cn(
+          "hraness-progress",
+          rootPresentation.className,
+          className,
+        )}
         data-slot="progress"
         ref={ref}
+        style={mergeStylexInlineStyles(rootPresentation.style, style)}
       >
         <div
-          className="hraness-progress__label-row"
+          {...labelRowPresentation}
+          className={cn(
+            "hraness-progress__label-row",
+            labelRowPresentation.className,
+          )}
           data-slot="progress-label-row"
         >
           <span data-slot="progress-label" id={labelId}>{label}</span>
@@ -192,8 +211,12 @@ export const Progress = forwardRef<HTMLDivElement, ProgressProps>(
           ) : null}
         </div>
         <progress
+          {...controlPresentation}
           aria-labelledby={labelId}
-          className="hraness-progress__control"
+          className={cn(
+            "hraness-progress__control",
+            controlPresentation.className,
+          )}
           data-slot="progress-control"
           max={normalized.maximum}
           value={normalized.value}
