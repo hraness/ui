@@ -1263,19 +1263,19 @@ function hasIndependentAuthoritativePackageInputEdge(
       || importerManifest.path !== candidateManifest.path
     ) continue;
     for (const imported of metadata.imports) {
+      const witnessSpecifier = imported.original ?? imported.path;
       if (
         imported.external
         || imported.hasAttributes
         || imported.kind !== "import-statement"
-        || imported.original === undefined
-        || (!imported.original.startsWith("./") && !imported.original.startsWith("../"))
+        || (!witnessSpecifier.startsWith("./") && !witnessSpecifier.startsWith("../"))
       ) continue;
       const canonicalOriginal = posix.relative(posix.dirname(from), candidate);
       const explicitCanonicalOriginal = canonicalOriginal.startsWith("../")
         ? canonicalOriginal
         : `./${canonicalOriginal}`;
       if (
-        imported.original === explicitCanonicalOriginal
+        witnessSpecifier === explicitCanonicalOriginal
         && observedPathLikeInputTarget(imported, from, knownInputs, inputAliases, buildTarget) === candidate
       ) return true;
     }
