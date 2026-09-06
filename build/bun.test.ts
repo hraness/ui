@@ -366,31 +366,31 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
-  test("settles Bun's exact unused re-export records from a side-effect-free dependency barrel", async () => {
+  test("settles Bun's exact unused nested re-export records from a CSS-side-effect-only dependency barrel", async () => {
     const context = await fixture();
-    const dependencyRoot = join(context.root, "node_modules/@fixture/side-effect-free");
+    const dependencyRoot = join(context.root, "node_modules/@fixture/css-side-effects");
     await write(
       join(dependencyRoot, "package.json"),
       `${JSON.stringify({
-        exports: "./index.js",
-        name: "@fixture/side-effect-free",
-        sideEffects: false,
+        exports: "./dist/exports/index.mjs",
+        name: "@fixture/css-side-effects",
+        sideEffects: ["*.css"],
         type: "module",
         version: "1.0.0",
       })}\n`,
     );
     await write(
-      join(dependencyRoot, "index.js"),
-      "export { retained } from './retained.js'; export { dropped } from './dropped.js';\n",
+      join(dependencyRoot, "dist/exports/index.mjs"),
+      "export { Button } from '../private/Button.mjs'; export { Breadcrumbs } from '../private/Breadcrumbs.mjs';\n",
     );
-    await write(join(dependencyRoot, "retained.js"), "export const retained = 'retained';\n");
-    await write(join(dependencyRoot, "dropped.js"), "export const dropped = 'dropped';\n");
+    await write(join(dependencyRoot, "dist/private/Button.mjs"), "export const Button = 'button';\n");
+    await write(join(dependencyRoot, "dist/private/Breadcrumbs.mjs"), "export const Breadcrumbs = 'breadcrumbs';\n");
     const entry = join(context.root, "src/entry.ts");
     await write(
       entry,
-      "import { retained } from '@fixture/side-effect-free'; export const value = retained;\n",
+      "import { Button } from '@fixture/css-side-effects'; export const value = Button;\n",
     );
-    const handle = await generation(context, "side-effect-free-elided-reexport", [
+    const handle = await generation(context, "css-side-effect-only-elided-reexport", [
       expectation(context.root, "client", "client", entry),
     ]);
     const buildOriginal = Bun.build.bind(Bun);
@@ -398,19 +398,19 @@ describe("collectBunStylexGraph", () => {
       const result = await buildOriginal(options);
       assert.ok(result.metafile !== undefined);
       const barrelKey = Object.keys(result.metafile.inputs).find((path) =>
-        path.endsWith("/node_modules/@fixture/side-effect-free/index.js")
-        || path === "node_modules/@fixture/side-effect-free/index.js"
+        path.endsWith("/node_modules/@fixture/css-side-effects/dist/exports/index.mjs")
+        || path === "node_modules/@fixture/css-side-effects/dist/exports/index.mjs"
       );
       assert.ok(barrelKey !== undefined);
       expect(result.metafile.inputs[barrelKey]!.format).toBe("esm");
       expect(result.metafile.inputs[barrelKey]!.imports).toContainEqual({
         external: true,
         kind: "import-statement",
-        path: "./dropped.js",
+        path: "../private/Breadcrumbs.mjs",
       });
       expect(Object.keys(result.metafile.inputs).some((path) =>
-        path.endsWith("/node_modules/@fixture/side-effect-free/dropped.js")
-        || path === "node_modules/@fixture/side-effect-free/dropped.js"
+        path.endsWith("/node_modules/@fixture/css-side-effects/dist/private/Breadcrumbs.mjs")
+        || path === "node_modules/@fixture/css-side-effects/dist/private/Breadcrumbs.mjs"
       )).toBe(false);
       return result;
     });
@@ -423,14 +423,14 @@ describe("collectBunStylexGraph", () => {
       });
       expect(build).toHaveBeenCalledTimes(1);
       expect(receipt.inputs.map(({ path }) => path)).toContain(
-        "node_modules/@fixture/side-effect-free/retained.js",
+        "node_modules/@fixture/css-side-effects/dist/private/Button.mjs",
       );
       expect(receipt.inputs.map(({ path }) => path)).not.toContain(
-        "node_modules/@fixture/side-effect-free/dropped.js",
+        "node_modules/@fixture/css-side-effects/dist/private/Breadcrumbs.mjs",
       );
       expect(receipt.edges.some(({ from, to }) =>
-        from === "input:node_modules/@fixture/side-effect-free/index.js"
-        && to.endsWith("/dropped.js")
+        from === "input:node_modules/@fixture/css-side-effects/dist/exports/index.mjs"
+        && to.endsWith("/Breadcrumbs.mjs")
       )).toBe(false);
     } finally {
       build.mockRestore();
@@ -648,7 +648,14 @@ describe("collectBunStylexGraph", () => {
       { id: "missing-snapshot-and-scope", observe: false, sideEffects: false },
       { id: "missing-side-effects" },
       { id: "true-side-effects", sideEffects: true },
-      { id: "array-side-effects", sideEffects: ["./dropped.js"] },
+      { id: "empty-side-effects", sideEffects: [] },
+      { id: "non-string-side-effects", sideEffects: [42] },
+      { id: "negated-side-effects", sideEffects: ["!*.css"] },
+      { id: "broad-side-effects-glob", sideEffects: ["**/*"] },
+      { id: "matching-mjs-side-effects", sideEffects: ["*.mjs"] },
+      { id: "matching-js-side-effects", sideEffects: ["./dropped.js"] },
+      { id: "mixed-css-and-js-side-effects", sideEffects: ["*.css", "./dropped.js"] },
+      { id: "ambiguous-side-effects-glob", sideEffects: ["*.{css,js}"] },
       { id: "wrong-package-name", name: "@fixture/other", sideEffects: false },
       { id: "commonjs-importer", importer: "cjs", sideEffects: false },
       { id: "changed-after-load", sideEffects: false, target: "changed" },
@@ -836,11 +843,13 @@ describe("collectBunStylexGraph", () => {
       importer?: "cjs" | "esm";
       name?: string;
       sideEffects?: unknown;
-      target: "closer-scope" | "cross-package" | "directory" | "file" | "known" | "missing" | "non-js" | "symlink";
+      target: "closer-scope" | "cross-package" | "directory" | "file" | "known" | "missing" | "non-js" | "parent-symlink" | "symlink";
     }>[] = [
       { id: "missing-side-effects", target: "file" },
       { id: "true-side-effects", sideEffects: true, target: "file" },
-      { id: "array-side-effects", sideEffects: ["./dropped.js"], target: "file" },
+      { id: "matching-js-side-effects", sideEffects: ["./dropped.js"], target: "file" },
+      { id: "mixed-css-and-js-side-effects", sideEffects: ["*.css", "./dropped.js"], target: "file" },
+      { id: "ambiguous-side-effects-glob", sideEffects: ["*.{css,js}"], target: "file" },
       { edge: { external: true, kind: "import-statement", original: "./dropped.js", path: "./dropped.js" }, id: "original", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "dynamic-import", path: "./dropped.js" }, id: "dynamic", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "require-call", path: "./dropped.js" }, id: "require", sideEffects: false, target: "file" },
@@ -848,11 +857,13 @@ describe("collectBunStylexGraph", () => {
       { edge: { external: false, kind: "import-statement", path: "./dropped.js" }, id: "nonexternal", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "import-statement", path: "./dropped.js?raw" }, id: "query-path", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "import-statement", path: "./dropped%2ejs" }, id: "encoded-path", sideEffects: false, target: "file" },
+      { edge: { external: true, kind: "import-statement", path: "./nested/../dropped.js" }, id: "noncanonical-path", sideEffects: false, target: "file" },
       { edge: { external: true, kind: "import-statement", path: "../other/dropped.js" }, id: "cross-package", sideEffects: false, target: "cross-package" },
       { id: "missing-target", sideEffects: false, target: "missing" },
       { edge: { external: true, kind: "import-statement", path: "./dropped.json" }, id: "non-js-target", sideEffects: false, target: "non-js" },
       { id: "directory-target", sideEffects: false, target: "directory" },
       { id: "symlink-target", sideEffects: false, target: "symlink" },
+      { edge: { external: true, kind: "import-statement", path: "./nested/dropped.js" }, id: "parent-symlink-target", sideEffects: false, target: "parent-symlink" },
       { edge: { external: true, kind: "import-statement", path: "./nested/dropped.js" }, id: "closer-package-scope", sideEffects: false, target: "closer-scope" },
       { id: "wrong-package-name", name: "@fixture/other", sideEffects: false, target: "file" },
       { id: "known-target", sideEffects: false, target: "known" },
@@ -902,6 +913,10 @@ describe("collectBunStylexGraph", () => {
         case "symlink":
           await write(join(dependencyRoot, "actual.js"), "export const dropped = true;\n");
           await symlink(join(dependencyRoot, "actual.js"), join(dependencyRoot, "dropped.js"));
+          break;
+        case "parent-symlink":
+          await write(join(dependencyRoot, "actual/dropped.js"), "export const dropped = true;\n");
+          await symlink(join(dependencyRoot, "actual"), join(dependencyRoot, "nested"));
           break;
         case "closer-scope":
           await write(

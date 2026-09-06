@@ -1083,6 +1083,35 @@ function retainResolutionFileSnapshot(
   else assert.deepEqual(snapshot, previous, `Bun elided package scope ${snapshot.path} changed between edges`);
 }
 
+function packageDeclaresJavaScriptSideEffectFree(manifest: Record<string, unknown>): boolean {
+  const sideEffects = manifest.sideEffects;
+  if (sideEffects === false) return true;
+  if (!Array.isArray(sideEffects) || sideEffects.length === 0) return false;
+  return sideEffects.every((pattern) => {
+    if (
+      typeof pattern !== "string"
+      || pattern.length === 0
+      || pattern.startsWith("/")
+      || pattern.includes("\\")
+      || pattern.includes("?")
+      || pattern.includes("#")
+      || pattern.includes("%")
+      || /[\u0000-\u001f\u007f]/u.test(pattern)
+    ) return false;
+    const relativePattern = pattern.startsWith("./") ? pattern.slice(2) : pattern;
+    const segments = relativePattern.split("/");
+    if (
+      segments.length === 0
+      || segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")
+    ) return false;
+    return segments.every((segment, index) =>
+      index < segments.length - 1
+        ? segment === "**" || /^[A-Za-z0-9@._-]+$/u.test(segment)
+        : /^(?:\*|[A-Za-z0-9@_-][A-Za-z0-9@._-]*)\.css$/u.test(segment)
+    );
+  });
+}
+
 async function captureElidedExternalPackageInput(
   imported: ParsedImport,
   from: string,
@@ -1118,10 +1147,15 @@ async function captureElidedExternalPackageInput(
   const packageName = packageBelowNodeModules(from);
   if (installationRoot === undefined || packageName === undefined) return false;
   const candidate = posix.normalize(posix.join(posix.dirname(from), imported.path));
+  const canonicalRelative = posix.relative(posix.dirname(from), candidate);
+  const explicitCanonicalRelative = canonicalRelative.startsWith("../")
+    ? canonicalRelative
+    : `./${canonicalRelative}`;
   if (
     candidate === "."
     || candidate === ".."
     || candidate.startsWith("../")
+    || imported.path !== explicitCanonicalRelative
     || !candidate.startsWith(`${installationRoot}/`)
     || packageInstallationRoot(candidate) !== installationRoot
     || packageBelowNodeModules(candidate) !== packageName
@@ -1156,7 +1190,7 @@ async function captureElidedExternalPackageInput(
     || parsedManifest.record === undefined
     || parsedManifest.record.name !== packageName
     || !Object.hasOwn(parsedManifest.record, "sideEffects")
-    || parsedManifest.record.sideEffects !== false
+    || !packageDeclaresJavaScriptSideEffectFree(parsedManifest.record)
     || !await exactOrdinaryDirectory(rootDirectory, installationRoot)
   ) return false;
 
@@ -1301,7 +1335,7 @@ async function captureObservedElidedPackageInput(
     || parsedManifest.record === undefined
     || parsedManifest.record.name !== packageName
     || !Object.hasOwn(parsedManifest.record, "sideEffects")
-    || parsedManifest.record.sideEffects !== false
+    || !packageDeclaresJavaScriptSideEffectFree(parsedManifest.record)
     || !await exactOrdinaryDirectory(rootDirectory, installationRoot)
   ) return false;
 
