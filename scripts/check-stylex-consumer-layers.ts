@@ -14,6 +14,17 @@ import {
 } from "../build/index.js";
 
 const PREFIX = "components.hraness-ui";
+const PACKAGE_LAYER_SEQUENCE = [
+  `${PREFIX}.legacy.base`,
+  `${PREFIX}.legacy`,
+  `${PREFIX}.priority1`,
+  `${PREFIX}.priority2`,
+  `${PREFIX}.priority3`,
+  `${PREFIX}.priority4`,
+  `${PREFIX}.priority5`,
+  `${PREFIX}.priority6`,
+  `${PREFIX}.priority7`,
+] as const;
 const COMMAND_TIMEOUT_MS = 120_000;
 const EVALUATOR_TIMEOUT_MS = 15_000;
 const TERMINATION_GRACE_MS = 2_000;
@@ -562,7 +573,11 @@ async function main(): Promise<void> {
           () => assert.equal(winner(sheet, classes(snapshot.inventory), "border-radius", 900), "13px", "The intermediate inventory bucket must retain its own rendered atom"),
           () => assert.equal(/@property\s+--/u.test(css), variant.dynamic, "Dynamic inventory must add its priority-zero custom-property registration"),
           () => assert.equal(/(?:^|[;{])\s*padding:\s*19px\s*[;}]/u.test(css), variant.padding, "Shorthand inventory must add its own padding atom"),
-          () => assert.equal(sheet.layers.includes(`${PREFIX}.priority5`), variant.dynamic, "The complete union must retain priority5 exactly when a priority-zero dynamic registration shifts the four occupied positive buckets"),
+          () => assert.deepEqual(
+            sheet.layers.filter((name) => name === PREFIX || name.startsWith(`${PREFIX}.`)),
+            PACKAGE_LAYER_SEQUENCE,
+            "The complete union must retain the exact package layer sequence after shared motion and consumer registrations",
+          ),
         ]) {
           try { check(); } catch (error) { failures.push(String(error)); }
         }
