@@ -21,7 +21,7 @@ import {
   sha256,
   stylexRulesSha256,
 } from "./compiler.js";
-import { createStylexGeneration, finalizeStylexGeneration } from "./generation.js";
+import { createStylexGeneration } from "./generation.js";
 import { stylexVite } from "./vite.js";
 
 const roots: string[] = [];
@@ -30,12 +30,6 @@ const packageRuntimeSource = `import { create } from "@stylexjs/stylex";
 export const packageRuntime = typeof create === "function";
 `;
 const packageStylesheetSource = ".fixture-foundation{display:block}\n";
-const packageTailwindSource = [
-  '@source "./";',
-  '@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *):not(:where([data-theme="light"], [data-theme="light"] *)));',
-  "@theme inline { --color-background: var(--fixture-background); }",
-  "",
-].join("\n");
 
 type ConfigHook = (
   this: object,
@@ -119,7 +113,6 @@ async function fixture(): Promise<Fixture> {
       "./build": "./build/index.js",
       "./compiler-foundation.css": "./src/compiler-foundation.css",
       "./stylex.css": "./dist/stylex.css",
-      "./tailwind.css": "./src/tailwind.css",
       "./unmanifested.css": "./src/unmanifested.css",
     },
     name: "@fixture/ui",
@@ -130,7 +123,6 @@ async function fixture(): Promise<Fixture> {
   await write(join(packageRoot, "build/index.js"), packageBuildSource);
   await write(join(packageRoot, "dist/stylex.css"), ".x-package{color:red}\n");
   await write(join(packageRoot, "src/compiler-foundation.css"), packageStylesheetSource);
-  await write(join(packageRoot, "src/tailwind.css"), packageTailwindSource);
   await write(join(packageRoot, "src/unmanifested.css"), ".unmanifested{display:block}\n");
   const rules: readonly StylexRuleV1[] = [["x-package", { ltr: ".x-package{color:red}" }, 1000]];
   const manifest: StylexPackageManifestV1 = {
@@ -144,10 +136,7 @@ async function fixture(): Promise<Fixture> {
     runtime: [await artifactForFile(packageRoot, "dist/runtime.js")],
     schemaVersion: 1,
     standaloneCss: await artifactForFile(packageRoot, "dist/stylex.css"),
-    stylesheets: await Promise.all([
-      artifactForFile(packageRoot, "src/compiler-foundation.css"),
-      artifactForFile(packageRoot, "src/tailwind.css"),
-    ]),
+    stylesheets: [await artifactForFile(packageRoot, "src/compiler-foundation.css")],
   };
   const manifestPath = join(packageRoot, "dist/stylex-manifest.json");
   await write(manifestPath, `${canonicalJson(manifest)}\n`);
@@ -334,38 +323,26 @@ describe("stylexVite", () => {
     expect(await Bun.file(join(generationValue.directory, "payload/stylex.css")).exists()).toBe(false);
   });
 
-  test("preserves one manifest-bound Tailwind bridge through graph sealing and finalization", async () => {
-    const context = await fixture();
-    const entry = join(context.root, "src/tailwind-entry.ts");
-    await write(entry, "import '@fixture/ui/tailwind.css'; export const value = true;\n");
-    const graph = graphExpectation(context, "tailwind-bridge", "client", [entry]);
-    const generationValue = await generation(context, graph);
-    await viteBuild({
-      configFile: false,
-      logLevel: "silent",
-      plugins: [stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root })],
-    });
+  test("rejects obsolete Tailwind directives before publishing a graph receipt", async () => {
+    for (const [name, directive] of [
+      ["source", '@source "./";'],
+      ["custom-variant", "@custom-variant dark (&:hover);"],
+      ["theme", "@theme inline { --color-background: red; }"],
+    ] as const) {
+      const context = await fixture();
+      const entry = join(context.root, `src/unsupported-${name}.ts`);
+      await write(join(context.root, `src/unsupported-${name}.css`), `${directive}\n`);
+      await write(entry, `import './unsupported-${name}.css'; export const value = true;\n`);
+      const graph = graphExpectation(context, `unsupported-${name}`, "client", [entry]);
+      const generationValue = await generation(context, graph);
 
-    const receipt = await readReceipt(generationValue, graph.id);
-    expect(receipt.inputs.map(({ path }) => path)).toContain(
-      "node_modules/@fixture/ui/src/tailwind.css",
-    );
-    const stylesheet = receipt.outputs.find(({ path }) => path.endsWith(".css"));
-    assert.ok(stylesheet !== undefined);
-    const stagedCss = await readFile(
-      join(generationValue.directory, ".stylex-generation/graphs/tailwind-bridge/output", stylesheet.path),
-      "utf8",
-    );
-    expect(stagedCss).toContain('@source "./"');
-    expect(stagedCss).toContain("@custom-variant dark");
-    expect(stagedCss).toContain("@theme inline");
-
-    const output = await finalizeStylexGeneration({
-      generation: generationValue,
-      outputDirectory: context.generationOutput,
-      rootDirectory: context.root,
-    });
-    expect(await readFile(join(output, "graphs/tailwind-bridge", stylesheet.path), "utf8")).toBe(stagedCss);
+      await expect(viteBuild({
+        configFile: false,
+        logLevel: "silent",
+        plugins: [stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root })],
+      })).rejects.toThrow(`unsupported @${name} directive`);
+      expect(await receiptExists(generationValue, graph.id)).toBe(false);
+    }
   });
 
   test("collects an independent SSR graph receipt", async () => {
@@ -805,36 +782,6 @@ export const className = stylex.props(styles.local).className;
       ],
     })).rejects.toThrow(/settled graph output.*standalone recipe|standalone recipe.*settled graph output/iu);
     expect(await receiptExists(cssGeneration, cssGraph.id)).toBe(false);
-  });
-
-  test("rejects a post-order plugin that removes the verified Tailwind bridge", async () => {
-    const context = await fixture();
-    const entry = join(context.root, "src/tailwind-entry.ts");
-    await write(entry, "import '@fixture/ui/tailwind.css'; export const value = true;\n");
-    const graph = graphExpectation(context, "tailwind-post-order-mutation", "client", [entry]);
-    const generationValue = await generation(context, graph);
-
-    await expect(viteBuild({
-      configFile: false,
-      logLevel: "silent",
-      plugins: [
-        stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root }),
-        {
-          name: "remove-tailwind-bridge-after-stylex-audit",
-          generateBundle: {
-            order: "post",
-            handler(_options, bundle) {
-              const stylesheet = Object.values(bundle).find(
-                (output) => output.type === "asset" && output.fileName.endsWith(".css"),
-              );
-              assert.ok(stylesheet !== undefined && stylesheet.type === "asset");
-              stylesheet.source = ".mutated{display:block}";
-            },
-          },
-        },
-      ],
-    })).rejects.toThrow(/Tailwind bridge directives differ from its verified graph inputs/u);
-    expect(await receiptExists(generationValue, graph.id)).toBe(false);
   });
 
   test("rejects absolute file modules outside the declared root", async () => {

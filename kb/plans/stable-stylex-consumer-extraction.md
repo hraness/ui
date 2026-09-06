@@ -218,33 +218,34 @@ and all published artifacts without timestamps or machine paths.
 
 ### Compiler-adopter stylesheets and package surface
 
-Proposed `@hraness/ui/compiler-foundation.css` exports
+The implemented `@hraness/ui/compiler-foundation.css` exports
 `src/compiler-foundation.css`. It declares `base` before `components` and legacy
 before compiled recipes, and imports `tokens.css`, package-internal
 `compiler-reset.css`, and `components.css` exactly once. The internal reset is
 byte-identical to the public `reset.css` except for removing its one fixed
 legacy-through-priority4 prelude; a regression check binds that exact relation.
-The foundation contains no StyleX recipe CSS, fixed four-layer prelude, Tailwind
-directives, or import of `dist/stylex.css`.
+The foundation contains no StyleX recipe CSS, fixed four-layer prelude, utility
+CSS directives, or import of `dist/stylex.css`.
 
-Proposed `@hraness/ui/compiler-foundation-tailwind.css` exports
-`src/compiler-foundation-tailwind.css`. It imports that foundation once and
-`tailwind.css` once. It does not import Tailwind itself. A Tailwind v4 application
-imports Tailwind, this bridge foundation, and the one finalized recipe asset.
-A standards-only application imports the standards foundation and that same
-finalized asset, without the bridge. Both recipes must be documented and built
-as real consumer fixtures.
+A prior transition proposed a second
+`@hraness/ui/compiler-foundation-tailwind.css` export backed by
+`src/compiler-foundation-tailwind.css` and `src/tailwind.css`. That decision is
+superseded: the completed component migration no longer needs a first-party
+Tailwind bridge. The package removes both files, their export and package-file
+entries, the `tailwind-merge` dependency, and all adapter receipt machinery that
+existed only to preserve those directives. Compiler inputs now reject direct
+`@source`, `@custom-variant`, and `@theme` directives.
 
-The ordinary `@hraness/ui/styles.css` export and bytes remain unchanged for
-plugin-free consumers, as do direct tokens/reset/components/stylex imports.
-Compiler adopters must not combine that ordinary recipe path with their finalized
-asset. `package.json` must explicitly update `exports`, `files`, and `sideEffects`
-for both public foundation paths and include the internal reset in `files` and
-`sideEffects` without exporting it; publish the metadata export and separate
-build-tool entry points without changing the UI runtime import graph. Optional
-compiler peers and local development dependencies must declare every direct
-compiler import. Keep the low-level Babel configuration private because options
-alone cannot enforce the safe extraction contract.
+The ordinary `@hraness/ui/styles.css` export remains the complete precompiled
+route for plugin-free consumers, while direct tokens/reset/components/stylex
+imports remain available as narrower standards-based inputs. Compiler adopters
+must not combine that ordinary recipe path with their finalized asset.
+`package.json` explicitly publishes the one public compiler foundation, includes
+the internal reset in `files` and `sideEffects` without exporting it, and keeps
+the metadata and build-tool entry points outside the UI runtime graph. Optional
+compiler peers and local development dependencies declare every direct compiler
+import. The low-level Babel configuration stays private because options alone
+cannot enforce the safe extraction contract.
 
 ### Enforceable import and asset boundary
 
@@ -283,11 +284,12 @@ Before publication, enforce and test these cases:
   Refuse a preexisting asset collision or ambiguous output ownership; do not
   overwrite product files or accept a prior combined sheet as this run's result.
 
-Positive controls cover ordinary plugin-free consumers and standards-only and
-Tailwind compiler adopters. Negative controls exercise each direct, nested,
-copied, template, stale-output, and collision boundary on both supported build
-paths. Reverse foundation/combined asset arrival order where allowed and require
-the same layer precedence; do not assert that two partial recipe sheets commute.
+Positive controls cover ordinary plugin-free consumers and standards-only
+compiler adopters. Negative controls exercise each direct, nested, copied,
+template, stale-output, unsupported utility-CSS directive, and collision boundary
+on both supported build paths. Reverse foundation/combined asset arrival order
+where allowed and require the same layer precedence; do not assert that two
+partial recipe sheets commute.
 
 ### All-graph lifecycle and finalization
 
@@ -515,18 +517,28 @@ shipping a partial prefix, mode, or fixture workaround.
   standalone CSS inventory now records `dist/...` paths. The guarded build and
   compiler-artifact verification are green; regenerated artifacts still require
   a separate byte/scope review and commit before the canonical full gate.
+- 2026-09-06: The final component-family join moved navigation, native Progress,
+  collection coarse-pointer and forced-color fallbacks, and shared motion into
+  compiled StyleX recipes while retaining only reviewed native pseudo-element,
+  card-variable, and synthetic-verification seams in `components.css`. The same
+  candidate removed the first-party Tailwind bridge, exports, dependency, and
+  adapter-specific preservation machinery. Focused collection/style tests pass
+  37 tests with 662 assertions; focused compiler adapters pass 139 tests with 943
+  assertions; and coordinated typecheck is green. Independent review found no
+  source or compiler defect and required this plan correction plus a fresh
+  generated-artifact seal and canonical gate before delivery.
 
 ## Current validation phase
 
 The combined-metadata direction, bounded implementation join, public API,
-package surface, dependency boundary, generated inventory, and both adapters
-have completed independent static review, including the final browser-tokenizer
-and whole-candidate reviews above. Focused compiler, generation, Bun, Vite,
+standards-based package surface, dependency boundary, generated inventory, and
+both adapters have completed independent static review, including the final
+browser-tokenizer and whole-candidate reviews above. The remaining component
+families and temporary Tailwind compatibility surface are removed in the local
+current-main candidate. Focused compiler, generation, Bun, Vite, component,
 README, portfolio-inventory, package-lifecycle, and child-reaping controls are
-green. The isolated complete unit suite and current-candidate typecheck are
-green. Terminal package/Vite/browser fixtures, canonical full
-gate, generated-artifact seal, current-main pull request, and protected merge
-remain. The immutable release follows the remaining component-family migrations
-and removal of the temporary Tailwind compatibility surface. Those steps must
+green, as is current-candidate typecheck. A fresh generated-artifact seal,
+terminal package/Vite/browser fixtures, canonical full gate, current-main pull
+request, protected merge, and immutable release remain. Those steps must
 preserve the retained failing matrix, the ordinary precompiled stylesheet route,
 and the transactional all-graph contract above.

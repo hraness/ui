@@ -30,12 +30,6 @@ import {
 } from "./bun.js";
 
 const roots: string[] = [];
-const packageTailwindSource = [
-  '@source "./";',
-  '@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *):not(:where([data-theme="light"], [data-theme="light"] *)));',
-  "@theme inline { --color-background: var(--fixture-background); }",
-  "",
-].join("\n");
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
@@ -84,7 +78,7 @@ async function fixture(): Promise<{
   await write(
     join(packageRoot, "package.json"),
     `${JSON.stringify({
-      exports: { ".": "./dist/runtime.js", "./build": "./build/index.js", "./compiler-foundation.css": "./src/compiler-foundation.css", "./stylex.css": "./dist/stylex.css", "./tailwind.css": "./src/tailwind.css" },
+      exports: { ".": "./dist/runtime.js", "./build": "./build/index.js", "./compiler-foundation.css": "./src/compiler-foundation.css", "./stylex.css": "./dist/stylex.css" },
       name: "@fixture/ui",
       type: "module",
       version: "1.0.0",
@@ -94,7 +88,6 @@ async function fixture(): Promise<{
   await write(join(packageRoot, "build/index.js"), "export const packageBuildTool = true;\n");
   await write(join(packageRoot, "dist/stylex.css"), ".x-package{color:red}\n");
   await write(join(packageRoot, "src/compiler-foundation.css"), ".foundation{display:block}\n");
-  await write(join(packageRoot, "src/tailwind.css"), packageTailwindSource);
   const rules: readonly StylexRuleV1[] = [["x-package", { ltr: ".x-package{color:red}" }, 1000]];
   const manifest: StylexPackageManifestV1 = {
     buildTools: [await artifactForFile(packageRoot, "build/index.js")],
@@ -107,10 +100,7 @@ async function fixture(): Promise<{
     runtime: [await artifactForFile(packageRoot, "dist/runtime.js")],
     schemaVersion: 1,
     standaloneCss: await artifactForFile(packageRoot, "dist/stylex.css"),
-    stylesheets: await Promise.all([
-      artifactForFile(packageRoot, "src/compiler-foundation.css"),
-      artifactForFile(packageRoot, "src/tailwind.css"),
-    ]),
+    stylesheets: [await artifactForFile(packageRoot, "src/compiler-foundation.css")],
   };
   const manifestPath = join(packageRoot, "dist/stylex-manifest.json");
   await write(manifestPath, `${canonicalJson(manifest)}\n`);
@@ -224,60 +214,28 @@ describe("collectBunStylexGraph", () => {
     expect(await receiptExists(firstGeneration, "client")).toBe(true);
   });
 
-  test("preserves one manifest-bound Tailwind bridge through graph sealing and finalization", async () => {
-    for (const minify of [false, true]) {
+  test("rejects obsolete Tailwind directives before publishing a graph receipt", async () => {
+    for (const [name, directive] of [
+      ["source", '@source "./";'],
+      ["custom-variant", "@custom-variant dark (&:hover);"],
+      ["theme", "@theme inline { --color-background: red; }"],
+    ] as const) {
       const context = await fixture();
-      const entry = join(context.root, "src/tailwind-entry.ts");
-      await write(entry, "import '@fixture/ui/tailwind.css'; export const value = true;\n");
-      const handle = await generation(context, `tailwind-bridge-${String(minify)}`, [
+      const entry = join(context.root, `src/unsupported-${name}.ts`);
+      const stylesheet = join(context.root, `src/unsupported-${name}.css`);
+      await write(stylesheet, `${directive}\n`);
+      await write(entry, `import './unsupported-${name}.css'; export const value = true;\n`);
+      const handle = await generation(context, `unsupported-${name}`, [
         expectation(context.root, "client", "client", entry),
       ]);
-      const receipt = await collectBunStylexGraph({
-        build: { minify },
+
+      await expect(collectBunStylexGraph({
         generation: handle,
         graphId: "client",
         rootDirectory: context.root,
-      });
-
-      expect(receipt.inputs.map(({ path }) => path)).toContain(
-        "node_modules/@fixture/ui/src/tailwind.css",
-      );
-      const stylesheet = receipt.outputs.find(({ path }) => path.endsWith(".css"));
-      assert.ok(stylesheet !== undefined);
-      const stagedCss = await readFile(
-        join(handle.directory, ...receipt.outputRoot.split("/"), ...stylesheet.path.split("/")),
-        "utf8",
-      );
-      expect(stagedCss).toContain('@source "./"');
-      expect(stagedCss).toContain(packageTailwindSource.split("\n")[1]!);
-      expect(stagedCss).toContain("@theme inline");
-      expect(stagedCss).not.toContain("stylex-tailwind-bridge-");
-
-      const output = await finalizeStylexGeneration({
-        generation: handle,
-        outputDirectory: context.generationOutput,
-        rootDirectory: context.root,
-      });
-      expect(await readFile(join(output, "graphs/client", stylesheet.path), "utf8")).toBe(stagedCss);
+      })).rejects.toThrow(`unsupported @${name} directive`);
+      expect(await receiptExists(handle, "client")).toBe(false);
     }
-  });
-
-  test("reserves the private Tailwind restoration marker from graph inputs", async () => {
-    const context = await fixture();
-    const entry = join(context.root, "src/reserved-marker-entry.ts");
-    const stylesheet = join(context.root, "src/reserved-marker.css");
-    await write(stylesheet, '.reserved{--value:"stylex-tailwind-bridge-"}\n');
-    await write(entry, "import './reserved-marker.css'; export const value = true;\n");
-    const handle = await generation(context, "reserved-tailwind-marker", [
-      expectation(context.root, "client", "client", entry),
-    ]);
-
-    await expect(collectBunStylexGraph({
-      generation: handle,
-      graphId: "client",
-      rootDirectory: context.root,
-    })).rejects.toThrow(/reserved Bun Tailwind bridge marker/u);
-    expect(await receiptExists(handle, "client")).toBe(false);
   });
 
   test("collects a separate SSR-only graph and its lazy module", async () => {
@@ -4678,23 +4636,6 @@ describe("collectBunStylexGraph", () => {
         expect(artifact).toMatchObject({ bytes: bytes.byteLength, sha256: sha256(bytes) });
       }
     }
-  });
-
-  test("rejects an inline sourcemap when restoring a verified Tailwind bridge", async () => {
-    const context = await fixture();
-    const entry = join(context.root, "src/tailwind-inline-sourcemap.ts");
-    await write(entry, "import '@fixture/ui/tailwind.css'; export const value = true;\n");
-    const handle = await generation(context, "tailwind-inline-sourcemap", [
-      expectation(context.root, "client", "client", entry),
-    ]);
-
-    await expect(collectBunStylexGraph({
-      build: { sourcemap: "inline" },
-      generation: handle,
-      graphId: "client",
-      rootDirectory: context.root,
-    })).rejects.toThrow(/cannot restore a verified Tailwind bridge into an inline-sourcemapped CSS output/u);
-    expect(await receiptExists(handle, "client")).toBe(false);
   });
 
   test("rejects malformed metafiles and output topology without publishing a receipt", async () => {

@@ -2,6 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 
 const coarsePointer = "@media(pointer: coarse)";
 const forcedColors = "@media(forced-colors: active)";
+const syntheticCoarseMinimum = "var(--hraness-collection-coarse-min, 0px)";
 
 export const collectionStyles = stylex.create({
   accordionRoot: {
@@ -57,7 +58,7 @@ export const collectionStyles = stylex.create({
     gap: "var(--space-4)",
     justifyContent: "space-between",
     minHeight: {
-      default: "var(--interactive-target-min)",
+      default: `max(var(--interactive-target-min), ${syntheticCoarseMinimum})`,
       [coarsePointer]: "var(--interactive-target-min)",
     },
     outlineStyle: "none",
@@ -66,7 +67,10 @@ export const collectionStyles = stylex.create({
     width: "100%",
   },
   disclosureTriggerCompact: {
-    minHeight: "var(--interactive-target-compact)",
+    minHeight: {
+      default: `max(var(--interactive-target-compact), ${syntheticCoarseMinimum})`,
+      [coarsePointer]: "var(--interactive-target-min)",
+    },
     paddingBlock: "var(--space-2)",
   },
   disclosureTriggerFocusVisible: {
@@ -77,7 +81,10 @@ export const collectionStyles = stylex.create({
   },
   disclosureTriggerLarge: {
     fontSize: "var(--text-body)",
-    minHeight: "var(--control-height-primary)",
+    minHeight: {
+      default: `max(var(--control-height-primary), ${syntheticCoarseMinimum})`,
+      [coarsePointer]: "max(var(--control-height-primary), var(--interactive-target-min))",
+    },
   },
   disclosureTriggerNativeFocusFallback: {
     ":focus-visible": {
@@ -128,11 +135,11 @@ export const collectionStyles = stylex.create({
     display: "inline-flex",
     justifyContent: "center",
     minHeight: {
-      default: "var(--interactive-target-compact)",
+      default: `max(var(--interactive-target-compact), ${syntheticCoarseMinimum})`,
       [coarsePointer]: "var(--interactive-target-min)",
     },
     minWidth: {
-      default: null,
+      default: "var(--hraness-collection-coarse-min)",
       [coarsePointer]: "var(--interactive-target-min)",
     },
     outlineStyle: "none",
@@ -145,7 +152,10 @@ export const collectionStyles = stylex.create({
   },
   segmentedItemCompact: {
     borderRadius: "var(--radius-sm)",
-    minHeight: "2rem",
+    minHeight: {
+      default: `max(2rem, ${syntheticCoarseMinimum})`,
+      [coarsePointer]: "var(--interactive-target-min)",
+    },
     paddingInline: "var(--space-2)",
   },
   segmentedItemDisabled: {
@@ -204,7 +214,7 @@ export const collectionStyles = stylex.create({
     fontWeight: "var(--font-weight-medium)",
     justifyContent: "center",
     minHeight: {
-      default: "var(--interactive-target-compact)",
+      default: `max(var(--interactive-target-compact), ${syntheticCoarseMinimum})`,
       [coarsePointer]: "var(--interactive-target-min)",
     },
     outlineStyle: "none",
@@ -212,7 +222,10 @@ export const collectionStyles = stylex.create({
     whiteSpace: "nowrap",
   },
   tabCompact: {
-    minHeight: "2rem",
+    minHeight: {
+      default: `max(2rem, ${syntheticCoarseMinimum})`,
+      [coarsePointer]: "var(--interactive-target-min)",
+    },
     paddingInline: "var(--space-2)",
   },
   tabFocusVisible: {
@@ -375,7 +388,7 @@ export const collectionStyles = stylex.create({
     display: "inline-flex",
     justifyContent: "center",
     minHeight: {
-      default: "var(--interactive-target-compact)",
+      default: `max(var(--interactive-target-compact), ${syntheticCoarseMinimum})`,
       [coarsePointer]: "var(--interactive-target-min)",
     },
     outlineStyle: "none",

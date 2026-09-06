@@ -9,9 +9,9 @@ test("combines conditional class inputs", () => {
   })).toBe("inline-flex items-center opacity-50");
 });
 
-test("lets consumer Tailwind utilities override primitive defaults", () => {
+test("preserves caller class source order", () => {
   expect(cn("h-9 rounded-md px-3", "h-12 px-6")).toBe(
-    "rounded-md h-12 px-6",
+    "h-9 rounded-md px-3 h-12 px-6",
   );
 });
 
