@@ -130,6 +130,7 @@
     "src/surfaces.stylex.ts",
     "src/surfaces.tsx",
     "src/tailwind.css",
+    "src/toast.stylex.ts",
     "src/toast.tsx",
     "src/tokens.css",
     "src/toolbar.stylex.ts",

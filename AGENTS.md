@@ -21,8 +21,11 @@
 - `src/menu.stylex.ts` – package-compiled Menu, MenuItem, MenuSection, MenuSeparator, footer, and menu-popover presentation.
 - `src/dialog.stylex.ts` – package-compiled Dialog overlay, modal, structural slots, close interactions, and finite size recipes.
 - `src/overlays.stylex.ts` – package-compiled Popover and Tooltip surfaces, content, and Popover animation states.
+- `src/toast.stylex.ts` – package-compiled Toast region, surface, tones, content, mount arrival, and close interactions.
 
 # Guidelines
+
+- Keep Toast presentation in `src/toast.stylex.ts`. Apply the region and toast surface recipes before their separate `regionXstyle` and `toastXstyle` seams. Apply the supported mount-arrival recipe, finite tone, and caller Toast recipe without changing queue timing or React Aria state. React Aria Components 1.19 exposes no Toast exit render state, so do not invent one or delay queue closure to simulate one. Apply the close base, conditional native hover and focus fallbacks, explicit React Aria states, then `closeXstyle`. Preserve request-local queues, portal and live-region semantics, content slots, close behavior, real and synthetic coarse targets, compact viewport placement, reduced motion, and forced-color borders. Keep shared Toast keyframes as an independent legacy boundary until the cross-cutting keyframe migration.
 
 - Keep Popover and Tooltip presentation in `src/overlays.stylex.ts`. Compose the shared surface, component base, Popover entering/exiting states, then caller `xstyle`; native `style` remains final. Preserve Popover labels, inner AriaDialog, trigger/portal/ref/dismissal/offsets and Tooltip supplementary linkage, delays, placement, controlled state, and disabled behavior. Keep Menu, Dialog, Toast, shared overlay keyframes, and SelectField's keyframe dependency independent. Preserve forced-color borders and Popover reduced-motion behavior.
 

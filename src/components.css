@@ -108,31 +108,6 @@
     color: var(--ui-primary-foreground);
   }
 
-  .hraness-toast__close {
-    display: inline-grid;
-    width: var(--interactive-target-compact);
-    min-width: var(--interactive-target-compact);
-    min-height: var(--interactive-target-compact);
-    place-items: center;
-    border: 0;
-    border-radius: var(--radius-md);
-    outline: none;
-    background: transparent;
-    color: var(--ui-muted-foreground);
-  }
-
-  :where(.hraness-toast__close):where([data-hovered], :hover) {
-    background: var(--ui-accent);
-    color: var(--ui-accent-foreground);
-  }
-
-  :where(.hraness-toast__close):where(
-    [data-focus-visible], :focus-visible
-  ) {
-    outline: 2px solid var(--ui-ring);
-    outline-offset: 2px;
-  }
-
   .hraness-progress__label-row {
     display: flex;
     align-items: baseline;
@@ -170,94 +145,6 @@
   .hraness-progress__control::-moz-progress-bar {
     border-radius: inherit;
     background: var(--ui-primary);
-  }
-
-  .hraness-toast-region {
-    position: fixed;
-    z-index: var(--z-modal);
-    inset-block-end: max(var(--space-4), env(safe-area-inset-bottom));
-    inset-inline-end: max(var(--space-4), env(safe-area-inset-right));
-    display: flex;
-    width: min(26rem, calc(100vw - 2rem));
-    max-height: calc(100dvh - 2rem);
-    flex-direction: column;
-    gap: var(--space-2);
-    outline: none;
-    pointer-events: none;
-  }
-
-  .hraness-toast {
-    position: relative;
-    display: grid;
-    min-width: 0;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-3);
-    padding: var(--space-4);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-lg);
-    outline: none;
-    background: var(--ui-popover);
-    color: var(--ui-popover-foreground);
-    box-shadow: var(--elevation-overlay);
-    pointer-events: auto;
-  }
-
-  .hraness-toast[data-entering] {
-    animation: hraness-toast-enter var(--motion-duration-standard) var(--motion-easing-emphasized);
-  }
-
-  .hraness-toast[data-exiting] {
-    animation: hraness-toast-exit var(--motion-duration-fast) var(--motion-easing-standard);
-  }
-
-  .hraness-toast[data-tone="danger"] {
-    border-color: color-mix(in oklch, var(--ui-destructive) 55%, var(--ui-border));
-  }
-
-  .hraness-toast[data-tone="success"] {
-    border-color: color-mix(in oklch, var(--ui-success) 55%, var(--ui-border));
-  }
-
-  .hraness-toast[data-tone="warning"] {
-    border-color: color-mix(in oklch, var(--ui-warning) 55%, var(--ui-border));
-  }
-
-  .hraness-toast[data-tone="info"] {
-    border-color: color-mix(in oklch, var(--ui-info) 55%, var(--ui-border));
-  }
-
-  .hraness-toast__content {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .hraness-toast__copy {
-    display: grid;
-    min-width: 0;
-    flex: 1 1 12rem;
-    gap: var(--space-1);
-  }
-
-  .hraness-toast__title {
-    font-weight: var(--font-weight-bold);
-    line-height: 1.3;
-  }
-
-  .hraness-toast__description {
-    color: var(--ui-muted-foreground);
-    font-size: var(--text-label);
-    line-height: 1.5;
-  }
-
-  .hraness-toast__action {
-    flex: 0 0 auto;
-  }
-
-  .hraness-toast__close {
-    align-self: start;
   }
 
   .hraness-pagination {
@@ -372,7 +259,6 @@
     .hraness-disclosure__trigger,
     .hraness-toggle-group__item,
     .hraness-segmented-control__item,
-    .hraness-toast__close,
     .hraness-pagination a,
     .hraness-pagination__boundary
   ) {
@@ -392,6 +278,7 @@
   --hraness-list-box-coarse-min: var(--interactive-target-min);
   --hraness-menu-coarse-min: var(--interactive-target-min);
   --hraness-dialog-coarse-min: var(--interactive-target-min);
+  --hraness-toast-coarse-min: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
@@ -399,7 +286,6 @@
   .hraness-disclosure__trigger,
   .hraness-toggle-group__item,
   .hraness-segmented-control__item,
-  .hraness-toast__close,
   .hraness-pagination a,
   .hraness-pagination__boundary
 ) {
@@ -410,18 +296,7 @@
   min-width: var(--interactive-target-min);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :where(.hraness-toast) {
-    animation: none;
-  }
-}
-
 @media (max-width: 40rem) {
-  .hraness-toast-region {
-    inset-inline: max(var(--space-3), env(safe-area-inset-left));
-    width: auto;
-  }
-
   .hraness-pagination {
     justify-content: center;
   }
@@ -434,13 +309,6 @@
   .hraness-field__input::placeholder {
     color: CanvasText;
     opacity: 1;
-  }
-
-  :where(
-    .hraness-toast
-  ) {
-    border-color: CanvasText;
-    forced-color-adjust: auto;
   }
 
   :where(.hraness-tabs__tab[data-selected], .hraness-toggle-group__item[data-selected],

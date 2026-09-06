@@ -1928,6 +1928,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     /\.hraness-data-table(?:__table|__empty)?(?![A-Za-z0-9_-])/u,
     "the packed default stylesheet must not retain legacy DataTable selectors",
   );
+  assert.doesNotMatch(
+    css,
+    /\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u,
+    "the packed default stylesheet must not retain legacy Toast selectors",
+  );
   assert.equal(
     css.match(CARD_DESCRIPTION_BRIDGE_PATTERN)?.length,
     1,
@@ -1982,6 +1987,11 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
     css,
     /data-gallery-data-table-layer-conflict/u,
     "the harness bundle must include its DataTable legacy conflicts",
+  );
+  assert.match(
+    css,
+    /--gallery-toast-collision/u,
+    "the harness bundle must include its Toast legacy conflicts",
   );
   const dataTableWrapperConflict = css.match(
     /\[data-gallery-data-table-layer-conflict=(?:"true"|true)\]\s+\[data-slot=(?:"data-table-wrapper"|data-table-wrapper)\]\{[^}]*\}/u,
@@ -9510,6 +9520,175 @@ async function verifyPopoverTooltipEnvironment(page: Page, id: string): Promise<
   invariant(await page.locator('[data-slot="tooltip"]').count() === 0, id + ": Tooltip portal remained after controlled close");
 }
 
+async function verifyToastInteractions(page: Page, id: string): Promise<void> {
+  const clear = async (kind: "compiled" | "customized") => {
+    await page.getByRole("button", { name: `Clear ${kind} Toasts`, exact: true }).click();
+    await page.locator(`[data-slot="toast-region"][aria-label="${kind === "compiled" ? "Compiled" : "Customized"} notifications"] [data-slot="toast"]`).waitFor({ state: "detached" });
+  };
+  await clear("compiled");
+  for (const tone of ["danger", "info", "success", "warning"] as const) {
+    await page.getByRole("button", { name: `Show ${tone} compiled Toast`, exact: true }).click();
+    const region = page.locator('[data-slot="toast-region"][aria-label="Compiled notifications"]');
+    const toast = region.locator(`[data-slot="toast"][data-tone="${tone}"]`).filter({ hasText: `${tone} compiled Toast` });
+    await toast.waitFor({ state: "visible" });
+    const evidence = await toast.evaluate((element, tone) => {
+      const region = element.closest<HTMLElement>('[data-slot="toast-region"]')!;
+      const slots = ["content", "copy", "title", "description", "close"];
+      const hasAtoms = (node: Element) => Array.from(node.classList).some((name) => /^x[A-Za-z0-9_-]+$/u.test(name));
+      const probe = document.createElement("span");
+      const toneVariable = ({ danger: "--ui-destructive", info: "--ui-info", success: "--ui-success", warning: "--ui-warning" } as const)[tone];
+      probe.style.borderColor = `color-mix(in oklch, var(${toneVariable}) 55%, var(--ui-border))`;
+      element.append(probe);
+      const expectedBorder = getComputedStyle(probe).borderTopColor;
+      probe.remove();
+      const style = getComputedStyle(element);
+      const close = element.querySelector<HTMLElement>('[data-slot="toast-close"]')!;
+      return {
+        atoms: hasAtoms(region) && hasAtoms(element) && slots.every((slot) => hasAtoms(element.querySelector(`[data-slot="toast-${slot}"]`)!)),
+        border: style.borderTopColor,
+        closeLabel: close.getAttribute("aria-label"),
+        collision: style.getPropertyValue("--gallery-toast-collision").trim(),
+        expectedBorder,
+        regionCollision: getComputedStyle(region).getPropertyValue("--gallery-toast-collision").trim(),
+        regionPointerEvents: getComputedStyle(region).pointerEvents,
+        rootPointerEvents: style.pointerEvents,
+        rootBackgroundImage: style.backgroundImage,
+        semanticOrder: region.classList[0] === "hraness-toast-region" && element.classList[0] === "hraness-toast" && close.classList[0] === "hraness-toast__close",
+      };
+    }, tone);
+    const customizedCount = await page.locator('[data-slot="toast-region"][aria-label="Customized notifications"] [data-slot="toast"]').count();
+    invariant(evidence.atoms && evidence.semanticOrder && evidence.collision === "active" && evidence.regionCollision === "active" && evidence.regionPointerEvents === "none" && evidence.rootPointerEvents === "auto" && evidence.rootBackgroundImage === "none" && evidence.closeLabel === "Dismiss compiled notification" && evidence.border === evidence.expectedBorder && customizedCount === 0, `${id}: ${tone} Toast recipe, tone, semantics, queue isolation, or collision precedence changed: ${JSON.stringify({ ...evidence, customizedCount })}`);
+    if (tone === "success") {
+      invariant(await toast.getByRole("button", { name: "Undo compiled change", exact: true }).count() === 1, `${id}: Toast action slot changed`);
+      const close = toast.getByRole("button", { name: "Dismiss compiled notification", exact: true });
+      const closedBefore = Number(await page.locator('[data-gallery-toast-closed="compiled"]').textContent());
+      await close.hover();
+      invariant(await close.evaluate((element) => {
+        const probe = document.createElement("span"); probe.style.backgroundColor = "var(--ui-accent)"; probe.style.color = "var(--ui-accent-foreground)"; element.append(probe);
+        const actual = getComputedStyle(element); const expected = getComputedStyle(probe);
+        const pass = actual.backgroundColor === expected.backgroundColor && actual.color === expected.color; probe.remove(); return pass;
+      }), `${id}: Toast native or React Aria hover fallback changed`);
+      await page.keyboard.press("Tab");
+      await close.focus();
+      invariant(await close.evaluate((element) => {
+        const probe = document.createElement("span"); probe.style.color = "var(--ui-ring)"; element.append(probe);
+        const expected = getComputedStyle(probe).color; const style = getComputedStyle(element); probe.remove();
+        return element.hasAttribute("data-focus-visible") && style.outlineColor === expected && style.outlineStyle === "solid" && style.outlineWidth === "2px" && style.outlineOffset === "2px";
+      }), `${id}: Toast default keyboard focus recipe or collision precedence changed`);
+      await close.click();
+      await toast.waitFor({ state: "detached" });
+      await page.waitForFunction((before) => Number(document.querySelector('[data-gallery-toast-closed="compiled"]')?.textContent) === before + 1, closedBefore);
+    } else {
+      await clear("compiled");
+    }
+  }
+
+  await clear("customized");
+  await page.getByRole("button", { name: "Show warning customized Toast", exact: true }).click();
+  const customRegion = page.locator('[data-slot="toast-region"][aria-label="Customized notifications"]');
+  const custom = customRegion.locator('[data-slot="toast"][data-tone="warning"]');
+  await custom.waitFor({ state: "visible" });
+  invariant(await page.locator('[data-slot="toast-region"][aria-label="Compiled notifications"] [data-slot="toast"]').count() === 0, `${id}: customized Toast leaked into the compiled queue`);
+  const customEvidence = await custom.evaluate((element) => {
+    const region = element.closest<HTMLElement>('[data-slot="toast-region"]')!;
+    const close = element.querySelector<HTMLElement>('[data-slot="toast-close"]')!;
+    const regionStyle = getComputedStyle(region); const style = getComputedStyle(element); const closeStyle = getComputedStyle(close);
+    const hasDynamicValue = (node: HTMLElement, value: string) => [...node.style].some((property) => property.startsWith("--") && node.style.getPropertyValue(property).trim() === value);
+    return {
+      closeBackground: closeStyle.backgroundColor,
+      closeDynamicInlineValue: hasDynamicValue(close, "3rem"),
+      closeWidth: close.getBoundingClientRect().width,
+      expectedCloseBackground: (() => { const probe = document.createElement("span"); probe.style.backgroundColor = "var(--ui-secondary)"; element.append(probe); const value = getComputedStyle(probe).backgroundColor; probe.remove(); return value; })(),
+      gap: regionStyle.gap,
+      paddingTop: style.paddingTop,
+      radius: style.borderRadius,
+      regionDynamicInlineValue: hasDynamicValue(region, "21rem"),
+      rootDynamicInlineValue: hasDynamicValue(element, "21px"),
+      width: regionStyle.width,
+    };
+  });
+  invariant(customEvidence.gap === "19px" && customEvidence.paddingTop === "21px" && customEvidence.radius === "19px" && customEvidence.width === "336px" && customEvidence.closeWidth === 48 && customEvidence.regionDynamicInlineValue && customEvidence.rootDynamicInlineValue && customEvidence.closeDynamicInlineValue && customEvidence.closeBackground === customEvidence.expectedCloseBackground, `${id}: Toast caller recipes or dynamic inline bindings changed: ${JSON.stringify(customEvidence)}`);
+  const customClose = custom.getByRole("button", { name: "Dismiss customized notification", exact: true });
+  await customClose.hover();
+  invariant(await customClose.evaluate((element) => {
+    const probe = document.createElement("span"); probe.style.backgroundColor = "var(--ui-primary)"; probe.style.color = "var(--ui-primary-foreground)"; element.append(probe);
+    const actual = getComputedStyle(element); const expected = getComputedStyle(probe); const pass = actual.backgroundColor === expected.backgroundColor && actual.color === expected.color; probe.remove(); return pass;
+  }), `${id}: Toast caller hover recipe did not remain final`);
+  await page.keyboard.press("Tab");
+  await customClose.focus();
+  invariant(await customClose.evaluate((element) => {
+    const style = getComputedStyle(element); return element.hasAttribute("data-focus-visible") && style.outlineStyle === "dashed" && style.outlineWidth === "3px" && style.outlineOffset === "5px";
+  }), `${id}: Toast caller focus recipe did not remain final`);
+  await customClose.click();
+  await custom.waitFor({ state: "detached" });
+
+  for (const tone of ["danger", "info", "success"] as const) {
+    await page.getByRole("button", { name: `Show ${tone} customized Toast`, exact: true }).click();
+  }
+  await page.waitForFunction(() => document.querySelectorAll('[data-slot="toast-region"][aria-label="Customized notifications"] [data-slot="toast"]').length === 2);
+  invariant(await customRegion.locator('[data-slot="toast"]').count() === 2, `${id}: customized Toast maximum-visible limit changed`);
+  await clear("customized");
+
+  const previousPointer = await page.evaluate(() => document.documentElement.dataset.verificationPointer);
+  try {
+    await page.evaluate(() => { document.documentElement.dataset.verificationPointer = "coarse"; });
+    await page.getByRole("button", { name: "Show info compiled Toast", exact: true }).click();
+    const syntheticClose = page.getByRole("button", { name: "Dismiss compiled notification", exact: true });
+    await syntheticClose.waitFor({ state: "visible" });
+    const syntheticMinHeight = await syntheticClose.evaluate((element) => Number.parseFloat(getComputedStyle(element).minHeight));
+    invariant(syntheticMinHeight >= 48, `${id}: synthetic coarse Toast close target is ${String(syntheticMinHeight)}px`);
+  } finally {
+    await clear("compiled");
+    await page.evaluate((previous) => {
+      if (previous === undefined) delete document.documentElement.dataset.verificationPointer;
+      else document.documentElement.dataset.verificationPointer = previous;
+    }, previousPointer);
+  }
+}
+
+async function verifyToastEnvironment(page: Page, id: string): Promise<void> {
+  await page.getByRole("button", { name: "Clear compiled Toasts", exact: true }).click();
+  await page.getByRole("button", { name: "Show info compiled Toast", exact: true }).click();
+  const region = page.locator('[data-slot="toast-region"][aria-label="Compiled notifications"]');
+  const toast = region.locator('[data-slot="toast"][data-tone="info"]');
+  await toast.waitFor({ state: "visible" });
+  const evidence = await toast.evaluate((element) => {
+    const region = element.closest<HTMLElement>('[data-slot="toast-region"]')!;
+    const close = element.querySelector<HTMLElement>('[data-slot="toast-close"]')!;
+    const style = getComputedStyle(element); const regionStyle = getComputedStyle(region); const closeStyle = getComputedStyle(close);
+    const probe = document.createElement("span"); probe.style.backgroundColor = "var(--ui-popover)"; probe.style.color = "CanvasText"; element.append(probe);
+    const expected = getComputedStyle(probe);
+    const regionRect = region.getBoundingClientRect();
+    const compactProbe = document.createElement("span");
+    compactProbe.style.position = "fixed";
+    compactProbe.style.setProperty("inset-inline", "max(var(--space-3), env(safe-area-inset-left))");
+    compactProbe.style.width = "auto";
+    document.body.append(compactProbe);
+    const compactRect = compactProbe.getBoundingClientRect();
+    const snapshot = {
+      animation: style.animationName,
+      background: style.backgroundColor,
+      canvas: expected.color,
+      closeMinHeight: Number.parseFloat(closeStyle.minHeight),
+      compact: matchMedia("(max-width: 40rem)").matches,
+      forced: matchMedia("(forced-colors: active)").matches,
+      forcedAdjust: style.forcedColorAdjust,
+      expectedBackground: expected.backgroundColor,
+      compactGeometry: Math.abs(regionRect.left - compactRect.left) < 1 && Math.abs(regionRect.right - compactRect.right) < 1 && Math.abs(regionRect.width - compactRect.width) < 1,
+      left: regionRect.left,
+      reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      right: window.innerWidth - regionRect.right,
+      border: style.borderTopColor,
+      width: regionStyle.width,
+    };
+    probe.remove(); compactProbe.remove(); return snapshot;
+  });
+  invariant(evidence.background === evidence.expectedBackground && (!evidence.forced || (evidence.border === evidence.canvas && evidence.forcedAdjust === "auto")) && (evidence.reduced ? evidence.animation === "none" : evidence.animation === "hraness-toast-enter") && (!evidence.compact || (evidence.left >= 11 && evidence.right >= 11 && evidence.compactGeometry)) && evidence.closeMinHeight >= 40, `${id}: Toast environment contract changed: ${JSON.stringify(evidence)}`);
+  if (await page.evaluate(() => matchMedia("(pointer: coarse)").matches)) invariant(evidence.closeMinHeight >= 48, `${id}: real coarse Toast close target is ${String(evidence.closeMinHeight)}px`);
+  await page.getByRole("button", { name: "Clear compiled Toasts", exact: true }).click();
+  await toast.waitFor({ state: "detached" });
+}
+
 async function verifyDialogInteractions(page: Page, id: string): Promise<void> {
   for (const size of ["small", "medium", "large"] as const) {
     const trigger = page.getByRole("button", { name: "Open compiled Dialog " + size, exact: true });
@@ -12521,6 +12700,7 @@ try {
     access(resolve(installedRoot, "src/skip-link.stylex.ts")),
     access(resolve(installedRoot, "src/visually-hidden.stylex.ts")),
     access(resolve(installedRoot, "src/form.stylex.ts")),
+    access(resolve(installedRoot, "src/toast.stylex.ts")),
   ]);
   await assert.rejects(
     access(resolve(installedRoot, "gallery/styles.css")),
@@ -12614,6 +12794,16 @@ try {
     /--gallery-list-box-layer-conflict/u,
     "the ListBox collision marker must stay outside the packed package",
   );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /\.hraness-toast(?:-region|__(?:action|close|content|copy|description|title))?(?![A-Za-z0-9_-])/u,
+    "the packed package must not duplicate Toast declarations in legacy CSS",
+  );
+  assert.doesNotMatch(
+    installedPackageCss,
+    /--gallery-toast-collision/u,
+    "the Toast collision marker must stay outside the packed package",
+  );
 
   const negativeDirectory = resolve(consumer, "dist/unstyled-negative-control");
   const production = await buildGalleryGeneration(consumer, installedRoot, environment);
@@ -12671,6 +12861,11 @@ try {
     production.combinedCss,
     /--gallery-list-box-layer-conflict:\s*legacy/u,
     "the packed gallery must include its ListBox collision control",
+  );
+  assert.match(
+    production.combinedCss,
+    /--gallery-toast-collision:\s*active/u,
+    "the packed gallery must include its Toast collision control",
   );
   const checkboxFocusContract = requirePackedCheckboxFocusContract(
     production.javaScript,
@@ -13526,6 +13721,8 @@ try {
           await verifyDialogInteractions(page, layout.id);
           await verifyPopoverTooltipInteractions(page, layout.id);
           await verifyPopoverTooltipEnvironment(page, layout.id);
+          await verifyToastInteractions(page, layout.id);
+          await verifyToastEnvironment(page, layout.id);
           await verifyDialogEnvironment(page, layout.id);
           await verifyLinkNativeFallbackCascadeIsolation(
             page,
@@ -13543,6 +13740,7 @@ try {
           await verifyMenuEnvironment(page, `${layout.id} dark`);
           await verifyDialogEnvironment(page, `${layout.id} dark`);
           await verifyPopoverTooltipEnvironment(page, `${layout.id} dark`);
+          await verifyToastEnvironment(page, `${layout.id} dark`);
           const darkIndicators = await indicatorKnobEvidence(page);
           verifyIndicatorKnobEvidence(darkIndicators, `${layout.id} dark`);
           const darkSegmented = await segmentedControlEvidence(page);
@@ -13717,6 +13915,7 @@ try {
         await verifyMenuEnvironment(page, "real coarse pointer");
         await verifyDialogEnvironment(page, "real coarse pointer");
         await verifyPopoverTooltipEnvironment(page, "real coarse pointer");
+        await verifyToastEnvironment(page, "real coarse pointer");
         invariant(
           failures.length === 0,
           `coarse-pointer action, CheckboxField, Fields, Indicators, and Knob matrix: ${failures.join("; ")}`,
@@ -13823,6 +14022,7 @@ try {
         await verifyMenuEnvironment(page, "forced colors and reduced motion");
         await verifyDialogEnvironment(page, "forced colors and reduced motion");
         await verifyPopoverTooltipEnvironment(page, "forced colors and reduced motion");
+        await verifyToastEnvironment(page, "forced colors and reduced motion");
         await verifyIndicatorKnobForcedColors(page);
 
         await resetKeyboardFocusToDocumentStart(page, "forced colors");
@@ -13960,6 +14160,7 @@ try {
   console.log(
     "Dialog gallery passed: three finite sizes, compiled structural slots, title and description relationships, inner ref, shared close callbacks, close hover and keyboard focus, focus containment and restoration, default outside/Escape dismissal, locked and disabled-close controls, caller recipes and final native styles, gallery collision isolation, light/dark tokens, real and synthetic coarse targets, forced colors, reduced motion, and portal cleanup.",
     "Popover/Tooltip gallery passed: compiled surfaces and content, named dialog/ref, outside and Escape dismissal, locked controls, focus restoration, tooltip hover and keyboard linkage, disabled and controlled state, caller recipes and final object/render native styles, placement/offsets, collision isolation, light/dark and coarse environments, forced-color borders, reduced-motion Popover, and portal cleanup.",
+    "Toast gallery passed: request-local queues, all four finite tones, semantic content and action slots, close callbacks, caller recipes, hover and keyboard focus, collision isolation, compact safe-area placement, light and dark tokens, real and synthetic coarse targets, forced colors, reduced motion, and portal cleanup.",
   );
   console.log(
     "ListBox gallery passed: static and dynamic collections, inherited orientation and slot-null isolation, direct horizontal sections, caller DOM renderers and refs, StyleX/native-style precedence, hover/focus/selection/disabled states, typeahead, Autocomplete input-owned virtual focus and selection, retained Menu presentation, light/dark tokens, real and synthetic coarse targets under a local compact-token override, forced colors, gallery-only collision controls, SSR/hydration, and cleanup.",
