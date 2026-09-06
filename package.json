@@ -112,6 +112,7 @@
     "src/list-box.tsx",
     "src/list-box.stylex.ts",
     "src/menu.stylex.ts",
+    "src/dialog.stylex.ts",
     "src/navigation.tsx",
     "src/overlays.tsx",
     "src/quiet-site.stylex.ts",

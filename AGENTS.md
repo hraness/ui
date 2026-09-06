@@ -19,9 +19,11 @@
 - `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `LICENSE` – public usage, project policy, and terms.
 
 - `src/menu.stylex.ts` – package-compiled Menu, MenuItem, MenuSection, MenuSeparator, footer, and menu-popover presentation.
+- `src/dialog.stylex.ts` – package-compiled Dialog overlay, modal, structural slots, close interactions, and finite size recipes.
 
 # Guidelines
 
+- Keep Dialog presentation in `src/dialog.stylex.ts`. Apply overlay base, entering, exiting, then `overlayXstyle`, with native overlay `style` final. Apply modal base, finite size, then `xstyle`. Keep the internal close control's native hover/focus fallbacks before React Aria states. Preserve portals, dismissal defaults, focus containment/restoration, title and description relationships, inner dialog ref, and shared close callbacks for body/footer render functions. Keep Toast, Popover, Tooltip, and shared overlay keyframes independent. Preserve real and synthetic coarse close targets, reduced motion, and forced-color modal borders.
 - Keep Menu presentation in `src/menu.stylex.ts`, including all rich item slots and the menu popover. Apply focused-or-hovered, selected, disabled, danger, danger-highlighted, then caller recipes in order. Preserve React Aria semantics, final native item styles, trigger minimum width, reduced motion, forced-color borders, and independent real and synthetic coarse targets. Shared overlay keyframes remain a separate boundary.
 - Use Bun 1.3.14 for repository commands. Keep @hraness/ui ESM-only, publish package-compiled JavaScript with source TypeScript types, and remain compatible with React and React DOM 18 through 19.
 - Follow `WRITING.md` for internal prose and `STYLE.md` for public prose.
