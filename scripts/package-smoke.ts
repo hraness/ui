@@ -36,6 +36,85 @@ const reactReleases: readonly ReactRelease[] = [
   },
 ];
 
+const PACKAGE_GENERATED_LAYER_PREFIX =
+  "@layer base, components;\n@layer components.hraness-ui.legacy.base, components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4, components.hraness-ui.priority5, components.hraness-ui.priority6, components.hraness-ui.priority7;\n";
+const PACKAGE_GENERATED_STYLEX_LAYERS = [
+  "components.hraness-ui.priority2",
+  "components.hraness-ui.priority3",
+  "components.hraness-ui.priority4",
+  "components.hraness-ui.priority5",
+  "components.hraness-ui.priority6",
+  "components.hraness-ui.priority7",
+] as const;
+const PACKAGE_GENERATED_LAYER_AT_RULES = [
+  { block: false, names: ["base", "components"] },
+  {
+    block: false,
+    names: [
+      "components.hraness-ui.legacy.base",
+      "components.hraness-ui.legacy",
+      "components.hraness-ui.priority1",
+      ...PACKAGE_GENERATED_STYLEX_LAYERS,
+    ],
+  },
+  ...PACKAGE_GENERATED_STYLEX_LAYERS.map((name) => ({
+    block: true,
+    names: [name],
+  })),
+] as const;
+
+function requirePackageGeneratedLayerContract(css: string): void {
+  assert.ok(
+    css.startsWith(PACKAGE_GENERATED_LAYER_PREFIX),
+    "packed StyleX CSS must begin with the exact complete priority1 through priority7 inventory",
+  );
+  assert.deepEqual(
+    packageLayerAtRules(css),
+    PACKAGE_GENERATED_LAYER_AT_RULES,
+    "packed StyleX CSS must contain exactly the declared and occupied layer inventory in order",
+  );
+}
+
+function verifyPackageGeneratedLayerNegativeControls(css: string): void {
+  const indented = PACKAGE_GENERATED_STYLEX_LAYERS.reduce(
+    (source, name) => source.replace(`@layer ${name} {`, `  @layer ${name} {`),
+    css,
+  );
+  assert.notEqual(indented, css);
+  requirePackageGeneratedLayerContract(indented);
+
+  const rejects = (changed: string, description: string): void => {
+    assert.throws(
+      () => requirePackageGeneratedLayerContract(changed),
+      /packed StyleX CSS/u,
+      description,
+    );
+  };
+  rejects(
+    `${css}\n  @layer components.hraness-ui.priority9 {}\n`,
+    "packed StyleX CSS rejects an indented extra priority layer",
+  );
+  rejects(
+    `${css}\n@layer components.hraness-ui.priority2 {}\n`,
+    "packed StyleX CSS rejects a duplicate priority layer",
+  );
+  const swapped = css
+    .replace(
+      "@layer components.hraness-ui.priority2 {",
+      "@layer components.hraness-ui.priority-swap {",
+    )
+    .replace(
+      "@layer components.hraness-ui.priority3 {",
+      "@layer components.hraness-ui.priority2 {",
+    )
+    .replace(
+      "@layer components.hraness-ui.priority-swap {",
+      "@layer components.hraness-ui.priority3 {",
+    );
+  assert.notEqual(swapped, css);
+  rejects(swapped, "packed StyleX CSS rejects out-of-order priority layers");
+}
+
 async function run(command: string[], cwd: string): Promise<void> {
   const process = Bun.spawn(command, {
     cwd,
@@ -156,6 +235,83 @@ function balancedBlock(source: string, open: number, description: string): strin
     }
   }
   throw new Error(`${description} contains an unterminated block`);
+}
+
+type PackageLayerAtRule = Readonly<{
+  block: boolean;
+  names: readonly string[];
+}>;
+
+function packageLayerAtRules(css: string): PackageLayerAtRule[] {
+  const atRules: PackageLayerAtRule[] = [];
+  const visit = (source: string): void => {
+    let statementStart = 0;
+    let index = 0;
+    while (index < source.length) {
+      const character = source[index];
+      const nextCharacter = source[index + 1];
+      if (character === "/" && nextCharacter === "*") {
+        const end = source.indexOf("*/", index + 2);
+        assert.notEqual(end, -1, "packed CSS contains an unterminated comment");
+        index = end + 2;
+        continue;
+      }
+      if (character === "\"" || character === "'") {
+        const quote = character;
+        index += 1;
+        let escaped = false;
+        while (index < source.length) {
+          const quotedCharacter = source[index];
+          if (escaped) escaped = false;
+          else if (quotedCharacter === "\\") escaped = true;
+          else if (quotedCharacter === quote) {
+            index += 1;
+            break;
+          }
+          index += 1;
+        }
+        continue;
+      }
+      if (character === ";") {
+        const header = source
+          .slice(statementStart, index)
+          .replace(/\/\*[\s\S]*?\*\//gu, " ")
+          .trim();
+        const layer = /^@layer(?:\s+([\s\S]+))?$/u.exec(header);
+        if (layer !== null) {
+          atRules.push({
+            block: false,
+            names: (layer[1] ?? "").split(",").map((name) => name.trim()),
+          });
+        }
+        statementStart = index + 1;
+        index += 1;
+        continue;
+      }
+      if (character !== "{") {
+        index += 1;
+        continue;
+      }
+
+      const header = source
+        .slice(statementStart, index)
+        .replace(/\/\*[\s\S]*?\*\//gu, " ")
+        .trim();
+      const block = balancedBlock(source, index, `packed CSS block ${header}`);
+      const layer = /^@layer(?:\s+([\s\S]+))?$/u.exec(header);
+      if (layer !== null) {
+        atRules.push({
+          block: true,
+          names: (layer[1] ?? "").split(",").map((name) => name.trim()),
+        });
+      }
+      visit(block.slice(1, -1));
+      index += block.length;
+      statementStart = index;
+    }
+  };
+  visit(css);
+  return atRules;
 }
 
 interface CheckboxPrecedenceProbe {
@@ -1021,7 +1177,8 @@ const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
   ],
   section: [/display:\s*grid;/u],
   separator: [
-    /height:\s*1px;/u, /margin-block-start:\s*var\(--space-1\);/u, /margin-block-end:\s*var\(--space-1\);/u,
+    /height:\s*1px;/u, /(?:margin-block-start|margin-top):\s*var\(--space-1\);/u,
+    /(?:margin-block-end|margin-bottom):\s*var\(--space-1\);/u,
     ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-border\);/u,
   ],
   shortcut: [
@@ -1169,7 +1326,7 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /overflow-y:\s*auto;/u,
     /background-attachment:\s*scroll;/u,
     /background-clip:\s*border-box;/u,
-    /background-color:\s*(?:color-mix\(in oklch,\s*(?:black|#000) 55%,\s*(?:transparent|#0000)\)|oklab\(0 0 0\s*\/\s*0?\.55\)|rgba?\(0[ ,]+0[ ,]+0(?:\s*\/\s*|,\s*)0?\.55\));/u,
+    /background-color:\s*(?:color-mix\(in oklch,\s*(?:black|#000) 55%,\s*(?:transparent|#0000)\)|oklab\(0 0 0\s*\/\s*0?\.55\)|rgba?\(0[ ,]+0[ ,]+0(?:\s*\/\s*|,\s*)0?\.55\)|#0000008c;\s*background-color:\s*lab\(0% 0 0\s*\/\s*0?\.55\));/u,
     /background-image:\s*none;/u,
     /background-origin:\s*padding-box;/u,
     /background-position:\s*0%?\s+0%?;/u,
@@ -1300,10 +1457,9 @@ function verifyPackageOverlayNegativeControls(javaScript: string, css: string, l
     const rules = packageStyleRules(css, packageEntryClassNames(map, key)).filter((rule) => dialogDeclarationMatches(rule.body, declaration) && (condition === undefined ? rule.conditions.length === 0 : rule.conditions.length === 1 && rule.conditions[0] === normalizedPackageCondition(condition)));
     assert.equal(rules.length, 1, "packed Popover/Tooltip negative control owns one rule");
     const rule = rules[0]!;
-    assert.equal(css.split(rule.source).length - 1, 1);
-    return css.replace(rule.source, "");
+    return replacePackageStyleRule(css, rule, null, "packed Popover/Tooltip negative control");
   };
-  const rejects = (changed: string) => assert.throws(() => requirePackageOverlay(javaScript, changed, legacy), /Popover|Tooltip/u);
+  const rejects = (changed: string) => assert.throws(() => requirePackageOverlay(javaScript, changed, legacy), /Popover|Tooltip|StyleX entry/u);
   for (const key of OVERLAY_STYLE_KEYS) for (const declaration of OVERLAY_DECLARATIONS[key]) rejects(remove(key, declaration));
   for (const key of OVERLAY_STYLE_KEYS) for (const { condition, declaration } of OVERLAY_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(remove(key, declaration, condition));
   const entry = packageNamedStyleEntry(map, "tooltip");
@@ -1359,10 +1515,10 @@ const TOAST_DECLARATIONS: Readonly<Record<ToastStyleKey, readonly RegExp[]>> = {
   toneSuccess: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-success\) 55%,\s*var\(--ui-border\)\);/u],
   toneWarning: [/border-color:\s*color-mix\(in oklch,\s*var\(--ui-warning\) 55%,\s*var\(--ui-border\)\);/u],
   content: [/display:\s*flex;/u, /min-width:\s*0;/u, /flex-wrap:\s*wrap;/u, /align-items:\s*center;/u, /gap:\s*var\(--space-3\);/u],
-  copy: [/display:\s*grid;/u, /min-width:\s*0;/u, /flex:\s*1 1 12rem;/u, /gap:\s*var\(--space-1\);/u],
+  copy: [/display:\s*grid;/u, /min-width:\s*0;/u, /flex:\s*(?:1 1 )?12rem;/u, /gap:\s*var\(--space-1\);/u],
   title: [/font-weight:\s*var\(--font-weight-bold\);/u, /line-height:\s*1\.3;/u],
   description: [/color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-label\);/u, /line-height:\s*1\.5;/u],
-  action: [/flex:\s*0 0 auto;/u],
+  action: [/flex:\s*(?:0 0 auto|none);/u],
   close: [
     /display:\s*inline-grid;/u, /width:\s*var\(--interactive-target-compact\);/u,
     /min-width:\s*var\(--interactive-target-compact\);/u,
@@ -1431,7 +1587,9 @@ function requirePackageToast(javaScript: string, css: string, legacy: string): v
     }
     for (const rule of rules) assert.ok(rule.conditions.length === 0
       ? (key === "closeNativeInteractionFallbacks"
-        ? TOAST_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) => dialogDeclarationMatches(rule.body, declaration) && rule.header.endsWith(":" + pseudo))
+        ? TOAST_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) =>
+          dialogDeclarationMatches(rule.body, declaration)
+          && packageSelectorList(rule.header).some((selector) => selector.endsWith(":" + pseudo)))
         : TOAST_DECLARATIONS[key].some((declaration) => dialogDeclarationMatches(rule.body, declaration)))
       : rule.conditions.length === 1 && conditional.some(({ condition, declaration }) => normalizedPackageCondition(condition) === rule.conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
     "packed Toast " + key + " exact declaration and condition inventory");
@@ -1453,10 +1611,9 @@ function verifyPackageToastNegativeControls(javaScript: string, css: string, leg
     const rules = packageStyleRules(css, packageEntryClassNames(map, key)).filter((rule) => dialogDeclarationMatches(rule.body, declaration) && (condition === undefined ? rule.conditions.length === 0 : rule.conditions.length === 1 && rule.conditions[0] === normalizedPackageCondition(condition)));
     assert.equal(rules.length, 1, "packed Toast negative control owns one rule");
     const rule = rules[0]!;
-    assert.equal(css.split(rule.source).length - 1, 1);
-    return css.replace(rule.source, "");
+    return replacePackageStyleRule(css, rule, null, "packed Toast negative control");
   };
-  const rejects = (changed: string) => assert.throws(() => requirePackageToast(javaScript, changed, legacy), /Toast|toastStyles/u);
+  const rejects = (changed: string) => assert.throws(() => requirePackageToast(javaScript, changed, legacy), /Toast|toastStyles|StyleX entry/u);
   for (const key of TOAST_STYLE_KEYS) for (const declaration of TOAST_DECLARATIONS[key]) rejects(remove(key, declaration));
   for (const key of TOAST_STYLE_KEYS) for (const { condition, declaration } of TOAST_CONDITIONAL_DECLARATIONS[key] ?? []) rejects(remove(key, declaration, condition));
   for (const { declaration } of TOAST_NATIVE_DECLARATIONS) rejects(remove("closeNativeInteractionFallbacks", declaration));
@@ -1465,7 +1622,7 @@ function verifyPackageToastNegativeControls(javaScript: string, css: string, leg
   assert.throws(() => requirePackageToast(javaScript.replace(map.object, map.object.replace(entry, extra)), css, legacy), /Toast title exact property bindings/u);
   const identifier = javaScript.slice(0, javaScript.indexOf(map.object)).match(/([A-Za-z_$][\w$]*)\s*=\s*$/u)?.[1];
   assert.ok(identifier);
-  const disconnected = javaScript.replace(new RegExp(identifier + "\\.description(?![A-Za-z0-9_$])", "gu"), "disconnectedToast.description");
+  const disconnected = javaScript.replace(new RegExp(identifier + "\\.description(?![A-Za-z0-9_$])", "gu"), 'disconnectedToast["description"]');
   assert.notEqual(disconnected, javaScript);
   assert.throws(() => requirePackageToast(disconnected, css, legacy), /packed toastStyles composition binding/u);
   assert.throws(() => requirePackageToast(javaScript, css, legacy + "\n.hraness-toast { color: red; }"), /Toast legacy/u);
@@ -1496,7 +1653,9 @@ function requirePackageDialog(javaScript: string, css: string, legacy: string): 
     }
     for (const rule of rules) assert.ok(rule.conditions.length === 0
       ? (key === "closeNativeInteraction"
-        ? DIALOG_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) => dialogDeclarationMatches(rule.body, declaration) && rule.header.endsWith(":" + pseudo))
+        ? DIALOG_NATIVE_DECLARATIONS.some(({ pseudo, declaration }) =>
+          dialogDeclarationMatches(rule.body, declaration)
+          && packageSelectorList(rule.header).some((selector) => selector.endsWith(":" + pseudo)))
         : DIALOG_DECLARATIONS[key].some((declaration) => dialogDeclarationMatches(rule.body, declaration)))
       : rule.conditions.length === 1 && conditional.some(({ condition, declaration }) => normalizedPackageCondition(condition) === rule.conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
     "packed Dialog " + key + " exact declaration and condition inventory");
@@ -1513,10 +1672,9 @@ function verifyPackageDialogNegativeControls(javaScript: string, css: string, le
       && (condition === undefined ? rule.conditions.length === 0 : rule.conditions.length === 1 && rule.conditions[0] === normalizedPackageCondition(condition)));
     assert.equal(rules.length, 1, "packed Dialog " + key + " negative control owns one rule");
     const rule = rules[0]!;
-    assert.equal(css.split(rule.source).length - 1, 1);
-    return css.replace(rule.source, "");
+    return replacePackageStyleRule(css, rule, null, "packed Dialog " + key + " negative control");
   };
-  const rejects = (changed: string) => assert.throws(() => requirePackageDialog(javaScript, changed, legacy), /Dialog/u);
+  const rejects = (changed: string) => assert.throws(() => requirePackageDialog(javaScript, changed, legacy), /Dialog|StyleX entry/u);
   for (const key of DIALOG_STYLE_KEYS) rejects(removeDeclaration(key, key === "closeNativeInteraction" ? DIALOG_NATIVE_DECLARATIONS[0]!.declaration : DIALOG_DECLARATIONS[key][0]!));
   for (const [key, contracts] of Object.entries(DIALOG_CONDITIONAL_DECLARATIONS)) {
     for (const { condition, declaration } of contracts ?? []) rejects(removeDeclaration(key as DialogStyleKey, declaration, condition));
@@ -1574,11 +1732,10 @@ function verifyPackageMenuNegativeControls(javaScript: string, css: string, lega
     const rules = packageStyleRules(css, packageEntryClassNames(map, key)).filter((rule) => rule.conditions.length === 0 && declaration.test(rule.body));
     assert.equal(rules.length, 1, `packed Menu ${key} negative control owns one base rule`);
     const rule = rules[0]!;
-    assert.equal(css.split(rule.source).length - 1, 1, "packed Menu negative control owns one source occurrence");
     assert.equal([...rule.body.matchAll(new RegExp(declaration.source, "gu"))].length, 1, "packed Menu negative control replaces one declaration");
-    const altered = rule.source.replace(declaration, replacement);
-    assert.notEqual(altered, rule.source);
-    return css.replace(rule.source, altered);
+    const alteredBody = rule.body.replace(declaration, replacement);
+    assert.notEqual(alteredBody, rule.body);
+    return replacePackageStyleRule(css, rule, alteredBody, `packed Menu ${key} negative control`);
   };
   for (const key of MENU_STYLE_KEYS) {
     const altered = replaceDeclaration(key, MENU_DECLARATIONS[key][0]!, "--unexpected-menu-declaration: initial;");
@@ -1601,8 +1758,8 @@ function verifyPackageMenuNegativeControls(javaScript: string, css: string, lega
       const rules = packageStyleRules(css, packageEntryClassNames(map, key)).filter((rule) => rule.conditions.length === 1 && rule.conditions[0] === normalizedPackageCondition(condition) && declaration.test(rule.body));
       assert.equal(rules.length, 1, `packed Menu ${key} negative control owns one conditional rule`);
       const rule = rules[0]!;
-      assert.equal(css.split(rule.source).length - 1, 1);
-      assert.throws(() => requirePackageMenu(javaScript, css.replace(rule.source, ""), legacy), /Menu/u, `packed Menu ${key} rejects a missing conditional declaration`);
+      const altered = replacePackageStyleRule(css, rule, null, `packed Menu ${key} conditional negative control`);
+      assert.throws(() => requirePackageMenu(javaScript, altered, legacy), /Menu/u, `packed Menu ${key} rejects a missing conditional declaration`);
     }
   }
 }
@@ -2005,6 +2162,47 @@ function packageSelectorList(header: string): readonly string[] {
   return selectors.filter((selector) => selector.length > 0);
 }
 
+function replacePackageStyleRule(
+  css: string,
+  rule: PackageStyleRule,
+  replacementBody: string | null,
+  description: string,
+): string {
+  const matches: {
+    block: string;
+    open: number;
+    start: number;
+  }[] = [];
+  let searchStart = 0;
+  while (searchStart < css.length) {
+    const start = css.indexOf(rule.header, searchStart);
+    if (start === -1) break;
+    const open = css.indexOf("{", start + rule.header.length);
+    if (
+      open !== -1
+      && css.slice(start + rule.header.length, open).trim().length === 0
+    ) {
+      const block = balancedBlock(css, open, description);
+      if (block.slice(1, -1) === rule.body) {
+        matches.push({ block, open, start });
+      }
+    }
+    searchStart = start + rule.header.length;
+  }
+  assert.equal(
+    matches.length,
+    1,
+    `${description} must resolve exactly one parsed CSS rule span`,
+  );
+  const match = matches[0]!;
+  const replacement = replacementBody === null
+    ? ""
+    : `${rule.header} {${replacementBody}}`;
+  return css.slice(0, match.start)
+    + replacement
+    + css.slice(match.open + match.block.length);
+}
+
 function packageStyleRules(
   css: string,
   classNames: ReadonlySet<string>,
@@ -2055,7 +2253,7 @@ function requirePackagePositivePseudoSelector(
 }
 
 function requirePackageExactClassPseudoSelector(
-  selector: string,
+  selectorHeader: string,
   classNames: ReadonlySet<string>,
   pseudo:
     | "focus-visible"
@@ -2064,6 +2262,17 @@ function requirePackageExactClassPseudoSelector(
     | "hover",
   description: string,
 ): void {
+  const ownedSelectors = packageSelectorList(selectorHeader).filter((selector) =>
+    [...classNames].some((className) =>
+      new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
+    )
+  );
+  assert.equal(
+    ownedSelectors.length,
+    1,
+    `${description} must have exactly one selector for its owning generated class`,
+  );
+  const selector = ownedSelectors[0]!;
   const owners = [...classNames].filter((className) =>
     new RegExp(`\\.${className}(?![A-Za-z0-9_-])`, "u").test(selector)
   );
@@ -2424,10 +2633,16 @@ function requirePackageIndicatorKnobStyles(
     /animation-name\s*:/u,
     "packed indeterminate ProgressBar must compose its name from shared motionStyles",
   );
-  assert.doesNotMatch(
-    css,
-    /@layer\s+components\.hraness-ui\.priority5/u,
-    "packed StyleX CSS must stay inside the priority1 through priority4 envelope",
+  assert.deepEqual(
+    packageLayerAtRules(css)
+      .filter((rule) =>
+        rule.block
+        && rule.names.length === 1
+        && /^components\.hraness-ui\.priority\d+$/u.test(rule.names[0] ?? "")
+      )
+      .map((rule) => rule.names[0]),
+    PACKAGE_GENERATED_STYLEX_LAYERS,
+    "packed or bundled StyleX CSS must retain exactly the occupied priority2 through priority7 blocks",
   );
 }
 
@@ -2504,7 +2719,7 @@ function requirePackageFinalMigrationStyles(
 
   for (const [key, declaration, description] of [
     ["breadcrumbCurrent", /min-width:\s*0/u, "current Breadcrumbs shrink boundary"],
-    ["breadcrumbCurrentItem", /flex:\s*1 1 auto/u, "current Breadcrumbs flexible item"],
+    ["breadcrumbCurrentItem", /flex:\s*(?:1 1 )?auto/u, "current Breadcrumbs flexible item"],
     ["breadcrumbList", /overflow:\s*hidden/u, "Breadcrumbs clipping"],
     ["paginationBoundary", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-pagination-coarse-min,\s*0px\)\)/u, "synthetic coarse Pagination boundary"],
     ["paginationLink", /min-height:\s*max\(var\(--interactive-target-compact\),\s*var\(--hraness-pagination-coarse-min,\s*0px\)\)/u, "synthetic coarse Pagination link"],
@@ -3507,7 +3722,10 @@ for (const requestedOpen of [false, true]) {
     }, React.createElement(Button, { id: "package-tooltip-trigger" }, "Package Tooltip trigger")),
   ));
   assert.match(overlayMarkup, /id="package-popover-trigger"/u);
-  assert.match(overlayMarkup, /aria-haspopup="dialog"/u);
+  assert.match(overlayMarkup, new RegExp('aria-expanded="' + String(requestedOpen) + '"', 'u'));
+  assert.doesNotMatch(overlayMarkup, /aria-haspopup=/u);
+  if (requestedOpen) assert.match(overlayMarkup, /aria-controls=/u);
+  else assert.doesNotMatch(overlayMarkup, /aria-controls=/u);
   assert.match(overlayMarkup, />Package Popover trigger</u);
   assert.match(overlayMarkup, /id="package-tooltip-trigger"/u);
   assert.match(overlayMarkup, />Package Tooltip trigger</u);
@@ -3710,9 +3928,12 @@ const stylexCssUrl = import.meta.resolve("@hraness/ui/stylex.css");
 assert.equal(new URL(stylexCssUrl).protocol, "file:");
 const stylexCss = await readFile(new URL(stylexCssUrl), "utf8");
 assert.ok(stylexCss.trim().length > 0, "@hraness/ui/stylex.css must not be empty");
-assert.match(stylexCss, /@layer components\.hraness-ui\.priority3/u);
-assert.match(stylexCss, /@layer components\.hraness-ui\.priority4/u);
-assert.doesNotMatch(stylexCss, /@layer components\.hraness-ui\.priority5/u);
+assert.ok(stylexCss.startsWith(${JSON.stringify(PACKAGE_GENERATED_LAYER_PREFIX)}));
+assert.deepEqual(
+  [...stylexCss.matchAll(/^[\t ]*@layer\s+(components\.hraness-ui\.priority[^\s,{]+)\s*\{/gmu)]
+    .map((match) => match[1]),
+  ${JSON.stringify(PACKAGE_GENERATED_STYLEX_LAYERS)},
+);
 assert.match(stylexCss, /max-inline-size:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
 assert.doesNotMatch(stylexCss, /max-width:\s*var\(--hraness-quiet-site-measure,\s*34rem\)/u);
 assert.match(stylexCss, /gap:\s*var\(--space-3\)/u);
@@ -4000,7 +4221,10 @@ const breadcrumbsMarkup = renderToStaticMarkup(React.createElement(Breadcrumbs, 
   style: { width: "15rem" },
   xstyle: { packageRoot: "package-breadcrumbs-xstyle", $$css: true },
 }));
-assert.match(breadcrumbsMarkup, /<nav[^>]*aria-label="Breadcrumbs"[^>]*class="hraness-breadcrumbs [^"]*package-breadcrumbs-xstyle consumer-breadcrumbs"/u);
+const breadcrumbsRootTag = breadcrumbsMarkup.match(/^<nav[^>]*>/u)?.[0];
+assert.ok(breadcrumbsRootTag, "Breadcrumbs must render a nav root");
+assert.match(breadcrumbsRootTag, /aria-label="Breadcrumbs"/u);
+assert.match(breadcrumbsRootTag, /class="hraness-breadcrumbs [^"]*package-breadcrumbs-xstyle consumer-breadcrumbs"/u);
 assert.match(breadcrumbsMarkup, /aria-current="page"[^>]*data-slot="breadcrumbs-current"/u);
 assert.match(breadcrumbsMarkup, /style="width:15rem"/u);
 
@@ -4011,7 +4235,10 @@ const paginationMarkup = renderToStaticMarkup(React.createElement(Pagination, {
   totalPages: 8,
   xstyle: { packageRoot: "package-pagination-xstyle", $$css: true },
 }));
-assert.match(paginationMarkup, /<nav[^>]*aria-label="Pagination"[^>]*class="hraness-pagination [^"]*package-pagination-xstyle consumer-pagination"/u);
+const paginationRootTag = paginationMarkup.match(/^<nav[^>]*>/u)?.[0];
+assert.ok(paginationRootTag, "Pagination must render a nav root");
+assert.match(paginationRootTag, /aria-label="Pagination"/u);
+assert.match(paginationRootTag, /class="hraness-pagination [^"]*package-pagination-xstyle consumer-pagination"/u);
 assert.match(paginationMarkup, /data-slot="pagination-previous"[^>]*href="\/page\/3"[^>]*rel="prev"/u);
 assert.match(paginationMarkup, /aria-current="page"[^>]*href="\/page\/4"/u);
 assert.match(paginationMarkup, /data-slot="pagination-next"[^>]*href="\/page\/5"[^>]*rel="next"/u);
@@ -6209,7 +6436,7 @@ flushSync(() => reactRoot.render(React.createElement(React.Fragment, null,
 const contentRoot = root.querySelector('[data-slot="page-intro"]');
 const popoverTrigger = root.querySelector("#vite-popover-trigger");
 const tooltipTrigger = root.querySelector("#vite-tooltip-trigger");
-if (!(popoverTrigger instanceof HTMLButtonElement) || popoverTrigger.textContent !== "Vite Popover trigger" || popoverTrigger.getAttribute("aria-haspopup") !== "dialog" || popoverTrigger.getAttribute("aria-expanded") !== "false") {
+if (!(popoverTrigger instanceof HTMLButtonElement) || popoverTrigger.textContent !== "Vite Popover trigger" || popoverTrigger.hasAttribute("aria-haspopup") || popoverTrigger.getAttribute("aria-expanded") !== "false") {
   throw new Error("Vite client closed Popover trigger semantics changed");
 }
 if (!(tooltipTrigger instanceof HTMLButtonElement) || tooltipTrigger.textContent !== "Vite Tooltip trigger" || tooltipTrigger.hasAttribute("aria-describedby")) {
@@ -6778,6 +7005,8 @@ async function verifyConsumer(
   const indicatorKnobProbe = packageIndicatorKnobProbe(installedJavaScript);
   const linkProbe = packageLinkStyleMap(installedJavaScript);
   const listBoxProbe = packageListBoxProbe(installedJavaScript, installedStylexCss);
+  requirePackageGeneratedLayerContract(installedStylexCss);
+  verifyPackageGeneratedLayerNegativeControls(installedStylexCss);
   requirePackageMenu(installedJavaScript, installedStylexCss, installedComponentsCss);
   requirePackageDialog(installedJavaScript, installedStylexCss, installedComponentsCss);
   requirePackageOverlay(installedJavaScript, installedStylexCss, installedComponentsCss);
