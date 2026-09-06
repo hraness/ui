@@ -320,8 +320,8 @@ export function DialogContent({
       isDismissable={isDismissable}
     >
       <AriaModal
+        {...presentation}
         className={cn("hraness-dialog", presentation.className, className)}
-        style={presentation.style}
         data-size={dialogSizeAttribute[size]}
         data-slot="dialog"
       >
@@ -418,9 +418,9 @@ export function Popover({
       ref={popoverRef}
     >
       <AriaDialog
+        {...contentPresentation}
         aria-label={ariaLabel}
         className={cn("hraness-popover__content", contentPresentation.className)}
-        style={contentPresentation.style}
         data-slot="popover-content"
       >
         {children}
