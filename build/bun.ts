@@ -1112,12 +1112,76 @@ function packageDeclaresJavaScriptSideEffectFree(manifest: Record<string, unknow
   });
 }
 
+function hasIndependentAuthoritativePackageInputEdge(
+  candidate: string,
+  elidedFrom: string,
+  inputMetadata: ReadonlyMap<string, ParsedInput>,
+  knownInputs: ReadonlySet<string>,
+  inputAliases: ReadonlyMap<string, string>,
+  packageScopes: ReadonlyMap<string, PackageScope>,
+  buildTarget: "browser" | "bun",
+): boolean {
+  const installationRoot = packageInstallationRoot(candidate);
+  const packageName = packageBelowNodeModules(candidate);
+  const candidateScope = packageScopes.get(candidate);
+  const candidateManifest = candidateScope?.files.at(-1);
+  if (
+    installationRoot === undefined
+    || packageName === undefined
+    || candidateScope === undefined
+    || !candidateScope.valid
+    || candidateScope.name !== packageName
+    || candidateManifest === undefined
+    || candidateManifest.kind !== "file"
+  ) return false;
+
+  for (const [from, metadata] of inputMetadata) {
+    if (
+      from === elidedFrom
+      || from === candidate
+      || metadata.format !== "esm"
+      || packageInstallationRoot(from) !== installationRoot
+      || packageBelowNodeModules(from) !== packageName
+    ) continue;
+    const importerScope = packageScopes.get(from);
+    const importerManifest = importerScope?.files.at(-1);
+    if (
+      importerScope === undefined
+      || !importerScope.valid
+      || importerScope.name !== packageName
+      || importerManifest === undefined
+      || importerManifest.kind !== "file"
+      || importerManifest.path !== candidateManifest.path
+    ) continue;
+    for (const imported of metadata.imports) {
+      if (
+        imported.external
+        || imported.hasAttributes
+        || imported.kind !== "import-statement"
+        || imported.original === undefined
+        || (!imported.original.startsWith("./") && !imported.original.startsWith("../"))
+      ) continue;
+      const canonicalOriginal = posix.relative(posix.dirname(from), candidate);
+      const explicitCanonicalOriginal = canonicalOriginal.startsWith("../")
+        ? canonicalOriginal
+        : `./${canonicalOriginal}`;
+      if (
+        imported.original === explicitCanonicalOriginal
+        && observedPathLikeInputTarget(imported, from, knownInputs, inputAliases, buildTarget) === candidate
+      ) return true;
+    }
+  }
+  return false;
+}
+
 async function captureRelativeElidedPackageInput(
   imported: ParsedImport,
   from: string,
   importerMetadata: ParsedInput,
   rootDirectory: string,
+  inputMetadata: ReadonlyMap<string, ParsedInput>,
   knownInputs: ReadonlySet<string>,
+  inputAliases: ReadonlyMap<string, string>,
   knownOutputs: ReadonlySet<string>,
   observedAliases: ReadonlyMap<string, string>,
   observedSnapshots: ReadonlyMap<string, Readonly<{ bytes: number; sha256: string }>>,
@@ -1128,6 +1192,7 @@ async function captureRelativeElidedPackageInput(
   capturedTargets: Map<string, ElidedPackageInputSnapshot>,
   capturedScopeSnapshots: Map<string, ResolutionFileSnapshot>,
   capturedInstallationRoots: Set<string>,
+  buildTarget: "browser" | "bun",
 ): Promise<boolean> {
   if (
     importerMetadata.format !== "esm"
@@ -1150,6 +1215,12 @@ async function captureRelativeElidedPackageInput(
   const explicitCanonicalRelative = canonicalRelative.startsWith("../")
     ? canonicalRelative
     : `./${canonicalRelative}`;
+  const authoritativeTarget = knownInputs.has(candidate);
+  const candidateAliases = [
+    imported.path,
+    candidate,
+    resolve(rootDirectory, ...candidate.split("/")),
+  ];
   if (
     candidate === "."
     || candidate === ".."
@@ -1159,19 +1230,35 @@ async function captureRelativeElidedPackageInput(
     || packageInstallationRoot(candidate) !== installationRoot
     || packageBelowNodeModules(candidate) !== packageName
     || !/\.(?:c|m)?js$/u.test(candidate)
-    || knownInputs.has(candidate)
     || speculativeInputs.has(candidate)
     || knownOutputs.has(candidate)
     || outputTarget(imported.path, from, knownOutputs) !== undefined
-    || observedAliases.has(imported.path)
-    || observedAliases.has(candidate)
-    || observedAliases.has(resolve(rootDirectory, ...candidate.split("/")))
+    || candidateAliases.some((alias) => {
+      const target = observedAliases.get(alias);
+      return authoritativeTarget ? target !== undefined && target !== candidate : target !== undefined;
+    })
   ) return false;
 
   const manifestPath = posix.join(installationRoot, "package.json");
   const importerScope = packageScopes.get(from);
   const observedSnapshot = observedSnapshots.get(candidate);
   if (!imported.external && observedSnapshot === undefined) return false;
+  if (
+    authoritativeTarget
+    && (
+      !imported.external
+      || observedSnapshot === undefined
+      || !hasIndependentAuthoritativePackageInputEdge(
+        candidate,
+        from,
+        inputMetadata,
+        knownInputs,
+        inputAliases,
+        packageScopes,
+        buildTarget,
+      )
+    )
+  ) return false;
   const observedTargetScope = observedSnapshot === undefined ? undefined : packageScopes.get(candidate);
   const importerManifest = importerScope?.files.at(-1);
   const capturedManifest = packageScopeSnapshots.get(manifestPath);
@@ -1992,7 +2079,9 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
           from,
           metadata,
           rootDirectory,
+          inputMetadata,
           inputSet,
+          inputAliases,
           outputSet,
           observedInputAliases,
           inputSnapshots,
@@ -2003,6 +2092,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
           relativeElidedPackageInputs,
           relativeElidedPackageScopeSnapshots,
           relativeElidedPackageInstallationRoots,
+          target,
         )
       ) continue;
       if (

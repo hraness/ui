@@ -497,6 +497,232 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
+  test("settles one external barrel edge when its target has an independent authoritative import", async () => {
+    const context = await fixture();
+    const dependencyRoot = join(context.root, "node_modules/@fixture/shared-target");
+    await write(
+      join(dependencyRoot, "package.json"),
+      `${JSON.stringify({
+        exports: "./dist/exports/index.mjs",
+        name: "@fixture/shared-target",
+        sideEffects: ["*.css"],
+        type: "module",
+        version: "1.0.0",
+      })}\n`,
+    );
+    await write(
+      join(dependencyRoot, "dist/exports/index.mjs"),
+      [
+        "export { Collection } from '../private/Collection.mjs';",
+        "export { ListBox } from '../private/ListBox.mjs';",
+        "",
+      ].join("\n"),
+    );
+    await write(
+      join(dependencyRoot, "dist/private/Collection.mjs"),
+      "export const Collection = 'collection';\n",
+    );
+    await write(
+      join(dependencyRoot, "dist/private/ListBox.mjs"),
+      "import { Collection } from './Collection.mjs'; export const ListBox = ['listbox', Collection];\n",
+    );
+    const entry = join(context.root, "src/entry.ts");
+    await write(
+      entry,
+      "import { ListBox } from '@fixture/shared-target'; export const value = ListBox;\n",
+    );
+    const handle = await generation(context, "authoritative-shared-elided-barrel-target", [
+      expectation(context.root, "client", "client", entry),
+    ]);
+    const buildOriginal = Bun.build.bind(Bun);
+    const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+      const result = await buildOriginal(options);
+      assert.ok(result.metafile !== undefined);
+      const barrelKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/node_modules/@fixture/shared-target/dist/exports/index.mjs")
+        || path === "node_modules/@fixture/shared-target/dist/exports/index.mjs"
+      );
+      const listBoxKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/node_modules/@fixture/shared-target/dist/private/ListBox.mjs")
+        || path === "node_modules/@fixture/shared-target/dist/private/ListBox.mjs"
+      );
+      const collectionKey = Object.keys(result.metafile.inputs).find((path) =>
+        path.endsWith("/node_modules/@fixture/shared-target/dist/private/Collection.mjs")
+        || path === "node_modules/@fixture/shared-target/dist/private/Collection.mjs"
+      );
+      assert.ok(barrelKey !== undefined);
+      assert.ok(listBoxKey !== undefined);
+      assert.ok(collectionKey !== undefined);
+      expect(result.metafile.inputs[listBoxKey]!.imports).toContainEqual({
+        kind: "import-statement",
+        original: "./Collection.mjs",
+        path: join(dependencyRoot, "dist/private/Collection.mjs"),
+      });
+      result.metafile.inputs[barrelKey]!.imports = result.metafile.inputs[barrelKey]!.imports.map((imported) =>
+        imported.original === "../private/Collection.mjs"
+          ? { external: true, kind: "import-statement", path: "../private/Collection.mjs" }
+          : imported
+      ) as never;
+      expect(result.metafile.inputs[barrelKey]!.imports).toContainEqual({
+        external: true,
+        kind: "import-statement",
+        path: "../private/Collection.mjs",
+      });
+      return result;
+    });
+
+    try {
+      const receipt = await collectBunStylexGraph({
+        generation: handle,
+        graphId: "client",
+        rootDirectory: context.root,
+      });
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(receipt.inputs.map(({ path }) => path)).toEqual(expect.arrayContaining([
+        "node_modules/@fixture/shared-target/dist/private/Collection.mjs",
+        "node_modules/@fixture/shared-target/dist/private/ListBox.mjs",
+      ]));
+      expect(receipt.edges).toContainEqual({
+        external: false,
+        from: "input:node_modules/@fixture/shared-target/dist/private/ListBox.mjs",
+        kind: "import-statement",
+        to: "input:node_modules/@fixture/shared-target/dist/private/Collection.mjs",
+      });
+      expect(receipt.edges.filter(({ from, to }) =>
+        from === "input:node_modules/@fixture/shared-target/dist/exports/index.mjs"
+        && to.endsWith("/Collection.mjs")
+      )).toHaveLength(0);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  test("rejects malformed independent witnesses for an authoritative barrel target", async () => {
+    for (const variant of ["external", "attributes", "wrong-original", "cross-package"] as const) {
+      const context = await fixture();
+      const dependencyRoot = join(context.root, "node_modules/@fixture/shared-target");
+      const otherRoot = join(context.root, "node_modules/@fixture/other-witness");
+      await write(
+        join(dependencyRoot, "package.json"),
+        `${JSON.stringify({
+          exports: "./dist/exports/index.mjs",
+          name: "@fixture/shared-target",
+          sideEffects: ["*.css"],
+          type: "module",
+          version: "1.0.0",
+        })}\n`,
+      );
+      await write(
+        join(dependencyRoot, "dist/exports/index.mjs"),
+        [
+          "export { Collection } from '../private/Collection.mjs';",
+          "export { ListBox } from '../private/ListBox.mjs';",
+          "",
+        ].join("\n"),
+      );
+      await write(
+        join(dependencyRoot, "dist/private/Collection.mjs"),
+        "export const Collection = 'collection';\n",
+      );
+      await write(
+        join(dependencyRoot, "dist/private/ListBox.mjs"),
+        "import { Collection } from './Collection.mjs'; export const ListBox = ['listbox', Collection];\n",
+      );
+      if (variant === "cross-package") {
+        await write(
+          join(otherRoot, "package.json"),
+          `${JSON.stringify({
+            exports: "./index.mjs",
+            name: "@fixture/other-witness",
+            sideEffects: false,
+            type: "module",
+            version: "1.0.0",
+          })}\n`,
+        );
+        await write(
+          join(otherRoot, "index.mjs"),
+          "import { Collection } from '../shared-target/dist/private/Collection.mjs'; export const Other = Collection;\n",
+        );
+      }
+      const entry = join(context.root, "src/entry.ts");
+      await write(
+        entry,
+        variant === "cross-package"
+          ? "import { ListBox } from '@fixture/shared-target'; import { Other } from '@fixture/other-witness'; export const value = [ListBox, Other];\n"
+          : "import { ListBox } from '@fixture/shared-target'; export const value = ListBox;\n",
+      );
+      const handle = await generation(context, `authoritative-shared-target-near-miss-${variant}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.metafile !== undefined);
+        const barrelKey = Object.keys(result.metafile.inputs).find((path) =>
+          path.endsWith("/node_modules/@fixture/shared-target/dist/exports/index.mjs")
+          || path === "node_modules/@fixture/shared-target/dist/exports/index.mjs"
+        );
+        const listBoxKey = Object.keys(result.metafile.inputs).find((path) =>
+          path.endsWith("/node_modules/@fixture/shared-target/dist/private/ListBox.mjs")
+          || path === "node_modules/@fixture/shared-target/dist/private/ListBox.mjs"
+        );
+        const collectionKey = Object.keys(result.metafile.inputs).find((path) =>
+          path.endsWith("/node_modules/@fixture/shared-target/dist/private/Collection.mjs")
+          || path === "node_modules/@fixture/shared-target/dist/private/Collection.mjs"
+        );
+        const otherKey = Object.keys(result.metafile.inputs).find((path) =>
+          path.endsWith("/node_modules/@fixture/other-witness/index.mjs")
+          || path === "node_modules/@fixture/other-witness/index.mjs"
+        );
+        assert.ok(barrelKey !== undefined, `${variant}: missing authoritative barrel input`);
+        assert.ok(listBoxKey !== undefined, `${variant}: missing authoritative ListBox input`);
+        assert.ok(collectionKey !== undefined, `${variant}: missing authoritative Collection input`);
+        const witness = result.metafile.inputs[listBoxKey]!.imports.find(({ original, path }) =>
+          original === "./Collection.mjs" || path.endsWith("/Collection.mjs")
+        );
+        if (variant === "cross-package") {
+          assert.ok(otherKey !== undefined, `${variant}: missing cross-package witness input`);
+          result.metafile.inputs[listBoxKey]!.imports = result.metafile.inputs[listBoxKey]!.imports.filter(
+            (imported) => imported !== witness,
+          );
+        } else {
+          assert.ok(witness !== undefined, `${variant}: missing baseline ListBox to Collection witness`);
+          result.metafile.inputs[listBoxKey]!.imports = result.metafile.inputs[listBoxKey]!.imports.map((imported) => {
+            if (imported !== witness) return imported;
+            switch (variant) {
+              case "external": return { ...imported, external: true };
+              case "attributes": return { ...imported, with: { type: "javascript" } };
+              case "wrong-original": return { ...imported, original: "./Different.mjs" };
+            }
+          }) as never;
+        }
+        result.metafile.inputs[barrelKey]!.imports = result.metafile.inputs[barrelKey]!.imports.map((imported) =>
+          imported.original === "../private/Collection.mjs"
+            ? { external: true, kind: "import-statement", path: "../private/Collection.mjs" }
+            : imported
+        ) as never;
+        if (variant === "cross-package") {
+          assert.ok(otherKey !== undefined);
+          expect(result.metafile.inputs[otherKey]!.imports).toContainEqual({
+            kind: "import-statement",
+            original: "../shared-target/dist/private/Collection.mjs",
+            path: join(dependencyRoot, "dist/private/Collection.mjs"),
+          });
+        }
+        return result;
+      });
+
+      try {
+        await expect(
+          collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }),
+        ).rejects.toThrow(/Bun metafile import.*is unresolved/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally {
+        build.mockRestore();
+      }
+    }
+  });
+
   test("settles Bun's resolved dependency load that is elided after an intermediate export is tree-shaken", async () => {
     const context = await fixture();
     const dependencyRoot = join(context.root, "node_modules/@fixture/icons");
@@ -928,7 +1154,7 @@ describe("collectBunStylexGraph", () => {
       { edge: { external: true, kind: "import-statement", path: "./nested/dropped.js" }, id: "parent-symlink-target", sideEffects: false, target: "parent-symlink" },
       { edge: { external: true, kind: "import-statement", path: "./nested/dropped.js" }, id: "closer-package-scope", sideEffects: false, target: "closer-scope" },
       { id: "wrong-package-name", name: "@fixture/other", sideEffects: false, target: "file" },
-      { id: "known-target", sideEffects: false, target: "known" },
+      { id: "known-target-without-independent-witness", sideEffects: false, target: "known" },
       { id: "commonjs-importer", importer: "cjs", sideEffects: false, target: "file" },
     ];
 
