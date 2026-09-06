@@ -4225,7 +4225,10 @@ const breadcrumbsRootTag = breadcrumbsMarkup.match(/^<nav[^>]*>/u)?.[0];
 assert.ok(breadcrumbsRootTag, "Breadcrumbs must render a nav root");
 assert.match(breadcrumbsRootTag, /aria-label="Breadcrumbs"/u);
 assert.match(breadcrumbsRootTag, /class="hraness-breadcrumbs [^"]*package-breadcrumbs-xstyle consumer-breadcrumbs"/u);
-assert.match(breadcrumbsMarkup, /aria-current="page"[^>]*data-slot="breadcrumbs-current"/u);
+assert.match(
+  breadcrumbsMarkup,
+  /<span\b(?=[^>]*\baria-current="page")(?=[^>]*\bdata-slot="breadcrumbs-current")[^>]*>/u,
+);
 assert.match(breadcrumbsMarkup, /style="width:15rem"/u);
 
 const paginationMarkup = renderToStaticMarkup(React.createElement(Pagination, {

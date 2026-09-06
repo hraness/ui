@@ -185,6 +185,15 @@ test("toggle and segmented collections expose controlled selection semantics", (
         selectionMode="multiple"
         value={["bold"]}
       />
+      <ToggleGroup
+        aria-label="Collection density"
+        items={[
+          { id: "primary", label: "Primary" },
+          { id: "secondary", label: "Secondary" },
+        ]}
+        onChange={() => undefined}
+        value="primary"
+      />
       <SegmentedControl
         aria-label="Density"
         items={[
@@ -202,6 +211,21 @@ test("toggle and segmented collections expose controlled selection semantics", (
   expect(html).toContain('aria-label="Text formatting"');
   expect(html).toContain('aria-pressed="true"');
   expect(html).toContain('aria-label="Sparkles"');
+  const singleToggleGroup = html.match(
+    /<div\b(?=[^>]*\brole="radiogroup")(?=[^>]*\baria-label="Collection density")[^>]*>[\s\S]*?<\/div>/u,
+  )?.[0] ?? "";
+  const singleToggleItems = singleToggleGroup.match(/<button\b[^>]*>/gu) ?? [];
+  expect(singleToggleGroup).toContain('data-slot="toggle-group"');
+  expect(singleToggleGroup).toContain("Primary");
+  expect(singleToggleGroup).toContain("Secondary");
+  expect(singleToggleItems).toHaveLength(2);
+  for (const item of singleToggleItems) {
+    expect(item).toContain('data-slot="toggle-group-item"');
+    expect(item).toContain('role="radio"');
+    expect(item).not.toContain("aria-pressed");
+  }
+  expect(singleToggleItems[0]).toContain('aria-checked="true"');
+  expect(singleToggleItems[1]).toContain('aria-checked="false"');
   expect(html).toContain('role="radiogroup"');
   expect(html).toContain('aria-label="Density"');
   expect(html).toContain('type="radio"');
