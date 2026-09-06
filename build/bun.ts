@@ -111,14 +111,14 @@ type ResolutionFileSnapshot = Readonly<
   | { kind: "symlink"; path: string; target: string }
 >;
 
-type ElidedExternalPackageInputSnapshot = Readonly<{
+type ElidedPackageInputSnapshot = Readonly<{
   bytes: number;
   mode: number;
   path: string;
   sha256: string;
 }>;
 
-type ObservedElidedPackageInputSnapshot = ElidedExternalPackageInputSnapshot;
+type ObservedElidedPackageInputSnapshot = ElidedPackageInputSnapshot;
 
 const javascriptFilter = /\.[cm]?[jt]sx?$/u;
 const outputNaming = {
@@ -1047,7 +1047,7 @@ async function exactOrdinaryDirectory(rootDirectory: string, path: string): Prom
 async function exactOrdinaryFileSnapshot(
   rootDirectory: string,
   path: string,
-): Promise<ElidedExternalPackageInputSnapshot | undefined> {
+): Promise<ElidedPackageInputSnapshot | undefined> {
   const absolute = resolve(rootDirectory, ...path.split("/"));
   const before = await lstat(absolute).catch(() => undefined);
   if (
@@ -1063,9 +1063,9 @@ async function exactOrdinaryFileSnapshot(
       ? undefined
       : { dev: after.dev, ino: after.ino, mode: after.mode, size: after.size },
     { dev: before.dev, ino: before.ino, mode: before.mode, size: before.size },
-    `Bun elided external package input changed while it was captured: ${path}`,
+    `Bun elided package input changed while it was captured: ${path}`,
   );
-  assert.equal(source.byteLength, before.size, `Bun elided external package input size changed while it was captured: ${path}`);
+  assert.equal(source.byteLength, before.size, `Bun elided package input size changed while it was captured: ${path}`);
   return {
     bytes: source.byteLength,
     mode: before.mode,
@@ -1112,7 +1112,7 @@ function packageDeclaresJavaScriptSideEffectFree(manifest: Record<string, unknow
   });
 }
 
-async function captureElidedExternalPackageInput(
+async function captureRelativeElidedPackageInput(
   imported: ParsedImport,
   from: string,
   importerMetadata: ParsedInput,
@@ -1125,13 +1125,12 @@ async function captureElidedExternalPackageInput(
   packageScopes: ReadonlyMap<string, PackageScope>,
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
   targetScopeCaptures: Map<string, Promise<PackageScope>>,
-  capturedTargets: Map<string, ElidedExternalPackageInputSnapshot>,
+  capturedTargets: Map<string, ElidedPackageInputSnapshot>,
   capturedScopeSnapshots: Map<string, ResolutionFileSnapshot>,
   capturedInstallationRoots: Set<string>,
 ): Promise<boolean> {
   if (
     importerMetadata.format !== "esm"
-    || !imported.external
     || imported.hasAttributes
     || imported.original !== undefined
     || imported.kind !== "import-statement"
@@ -1172,6 +1171,7 @@ async function captureElidedExternalPackageInput(
   const manifestPath = posix.join(installationRoot, "package.json");
   const importerScope = packageScopes.get(from);
   const observedSnapshot = observedSnapshots.get(candidate);
+  if (!imported.external && observedSnapshot === undefined) return false;
   const observedTargetScope = observedSnapshot === undefined ? undefined : packageScopes.get(candidate);
   const importerManifest = importerScope?.files.at(-1);
   const capturedManifest = packageScopeSnapshots.get(manifestPath);
@@ -1216,7 +1216,7 @@ async function captureElidedExternalPackageInput(
     assert.deepEqual(
       observedTargetScope,
       targetScope,
-      `Bun observed external target package scope changed after its completed load: ${candidate}`,
+      `Bun observed relative elided target package scope changed after its completed load: ${candidate}`,
     );
   }
 
@@ -1226,12 +1226,12 @@ async function captureElidedExternalPackageInput(
     assert.deepEqual(
       { bytes: targetSnapshot.bytes, sha256: targetSnapshot.sha256 },
       observedSnapshot,
-      `Bun observed external package input differs from its completed load: ${candidate}`,
+      `Bun observed relative elided package input differs from its completed load: ${candidate}`,
     );
   }
   const previousTarget = capturedTargets.get(candidate);
   if (previousTarget === undefined) capturedTargets.set(candidate, targetSnapshot);
-  else assert.deepEqual(targetSnapshot, previousTarget, `Bun elided external package input changed between edges: ${candidate}`);
+  else assert.deepEqual(targetSnapshot, previousTarget, `Bun relative elided package input changed between edges: ${candidate}`);
   for (const snapshot of importerScope.files) retainResolutionFileSnapshot(capturedScopeSnapshots, snapshot);
   for (const snapshot of targetScope.files) retainResolutionFileSnapshot(capturedScopeSnapshots, snapshot);
   capturedInstallationRoots.add(installationRoot);
@@ -1922,10 +1922,10 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     );
     observedInputAliases.set(alias, path);
   }
-  const elidedTargetScopeCaptures = new Map<string, Promise<PackageScope>>();
-  const elidedExternalPackageInputs = new Map<string, ElidedExternalPackageInputSnapshot>();
-  const elidedPackageScopeSnapshots = new Map<string, ResolutionFileSnapshot>();
-  const elidedPackageInstallationRoots = new Set<string>();
+  const relativeElidedTargetScopeCaptures = new Map<string, Promise<PackageScope>>();
+  const relativeElidedPackageInputs = new Map<string, ElidedPackageInputSnapshot>();
+  const relativeElidedPackageScopeSnapshots = new Map<string, ResolutionFileSnapshot>();
+  const relativeElidedPackageInstallationRoots = new Set<string>();
   const observedElidedPackageInputs = new Map<string, ObservedElidedPackageInputSnapshot>();
   const observedElidedPackageScopeSnapshots = new Map<string, ResolutionFileSnapshot>();
   const observedElidedPackageInstallationRoots = new Set<string>();
@@ -1987,7 +1987,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
         input === undefined
         && output === undefined
         && speculativeInput === undefined
-        && await captureElidedExternalPackageInput(
+        && await captureRelativeElidedPackageInput(
           imported,
           from,
           metadata,
@@ -1999,10 +1999,10 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
           speculativeInputSet,
           settledPackageScopes,
           packageScopeSnapshots,
-          elidedTargetScopeCaptures,
-          elidedExternalPackageInputs,
-          elidedPackageScopeSnapshots,
-          elidedPackageInstallationRoots,
+          relativeElidedTargetScopeCaptures,
+          relativeElidedPackageInputs,
+          relativeElidedPackageScopeSnapshots,
+          relativeElidedPackageInstallationRoots,
         )
       ) continue;
       if (
@@ -2083,28 +2083,28 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
     );
   }
 
-  for (const installationRoot of [...elidedPackageInstallationRoots].sort()) {
+  for (const installationRoot of [...relativeElidedPackageInstallationRoots].sort()) {
     assert.ok(
       await exactOrdinaryDirectory(rootDirectory, installationRoot),
-      `Bun elided package installation changed during edge settlement: ${installationRoot}`,
+      `Bun relative elided package installation changed during edge settlement: ${installationRoot}`,
     );
   }
-  for (const [path, before] of [...elidedPackageScopeSnapshots].sort(([left], [right]) =>
+  for (const [path, before] of [...relativeElidedPackageScopeSnapshots].sort(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0
   )) {
     assert.deepEqual(
       await resolutionFileSnapshot(rootDirectory, path),
       before,
-      `Bun elided package scope changed during edge settlement: ${path}`,
+      `Bun relative elided package scope changed during edge settlement: ${path}`,
     );
   }
-  for (const [path, before] of [...elidedExternalPackageInputs].sort(([left], [right]) =>
+  for (const [path, before] of [...relativeElidedPackageInputs].sort(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0
   )) {
     assert.deepEqual(
       await exactOrdinaryFileSnapshot(rootDirectory, path),
       before,
-      `Bun elided external package input changed during edge settlement: ${path}`,
+      `Bun relative elided package input changed during edge settlement: ${path}`,
     );
   }
   for (const installationRoot of [...observedElidedPackageInstallationRoots].sort()) {
