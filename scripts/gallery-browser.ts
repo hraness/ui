@@ -9593,7 +9593,7 @@ async function verifyToastInteractions(page: Page, id: string): Promise<void> {
     const region = element.closest<HTMLElement>('[data-slot="toast-region"]')!;
     const close = element.querySelector<HTMLElement>('[data-slot="toast-close"]')!;
     const regionStyle = getComputedStyle(region); const style = getComputedStyle(element); const closeStyle = getComputedStyle(close);
-    const hasDynamicValue = (node: HTMLElement, value: string) => [...node.style].some((property) => property.startsWith("--") && node.style.getPropertyValue(property).trim() === value);
+    const hasDynamicValue = (node: HTMLElement | SVGElement, value: string) => [...node.style].some((property) => property.startsWith("--") && node.style.getPropertyValue(property).trim() === value);
     return {
       closeBackground: closeStyle.backgroundColor,
       closeDynamicInlineValue: hasDynamicValue(close, "3rem"),

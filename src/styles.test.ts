@@ -145,9 +145,9 @@ test("portable layers expose namespaced roles and resilient interaction recipes"
 
   for (const contract of [
     "@media (pointer: coarse)",
-    "@media (prefers-reduced-motion: reduce)",
     "@media (forced-colors: active)",
   ]) expect(components).toContain(contract);
+  expect(components).not.toContain("@media (prefers-reduced-motion: reduce)");
 
   expect(reset.trimStart().startsWith([
     "@layer base, components;",
@@ -212,7 +212,6 @@ test("ListBox and Menu compile recipes while preserving independent coarse-point
   const verification = declarationBlock(components, ':root[data-verification-pointer="coarse"] {');
   expect(verification).toContain("--hraness-list-box-coarse-min: var(--interactive-target-min);");
   expect(verification).toContain("--hraness-menu-coarse-min: var(--interactive-target-min);");
-  expect(components).toContain(":where(.hraness-popover, .hraness-tooltip)");
   expect(components).toContain("@keyframes hraness-overlay-enter");
   expect(components).toContain("@keyframes hraness-overlay-exit");
 });

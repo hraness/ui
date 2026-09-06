@@ -111,11 +111,11 @@ export function ToastProvider({
     <ToastContext.Provider value={controller}>
       {children}
       <AriaToastRegion
+        {...regionPresentation}
         aria-label={label}
         className={cn("hraness-toast-region", regionPresentation.className)}
         data-slot="toast-region"
         queue={queue}
-        style={regionPresentation.style}
       >
         {({ toast }) => {
           const tone = toast.content.tone ?? "info";
@@ -138,10 +138,10 @@ export function ToastProvider({
             closeXstyle,
           );
           return <AriaToast
+            {...toastPresentation}
             className={cn("hraness-toast", toastPresentation.className)}
             data-slot="toast"
             data-tone={tone}
-            style={toastPresentation.style}
             toast={(
               // These props describe the same object. A duplicate react-stately
               // tree makes only their private Timer types nominal.
