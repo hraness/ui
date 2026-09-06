@@ -9421,7 +9421,7 @@ async function verifyMenuInteractions(page: Page, id: string): Promise<void> {
     const item = element.querySelector<HTMLElement>(".hraness-menu__item");
     const popover = element.closest<HTMLElement>('[data-slot="menu-popover"]');
     const description = element.querySelector<HTMLElement>('[data-slot="menu-item-description"]');
-    const footer = popover?.querySelector<HTMLElement>('[data-slot="menu-footer"]');
+    const footer = popover?.querySelector<HTMLElement>('[data-slot="menu-footer"]') ?? null;
     return element.getAttribute("data-gallery-menu-ref") === "true" && element.classList.contains("hraness-menu") && element.classList.length > 1 && getComputedStyle(element).display === "grid"
       && getComputedStyle(element).minWidth === "192px" && getComputedStyle(element).padding === "4px"
       && section !== null && getComputedStyle(section).display === "grid"

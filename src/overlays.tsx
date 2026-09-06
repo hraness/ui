@@ -104,7 +104,7 @@ export function Menu({
       <AriaMenu
         aria-label={ariaLabel}
         className={cn("hraness-menu", presentation.className, className)}
-        style={presentation.style}
+        {...(presentation.style === undefined ? {} : { style: presentation.style })}
         data-slot="menu"
         {...(defaultSelectedKeys === undefined ? {} : { defaultSelectedKeys })}
         {...(disabledKeys === undefined ? {} : { disabledKeys })}
