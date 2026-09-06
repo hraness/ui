@@ -573,10 +573,82 @@ describe("compiler boundary", () => {
       [manifest],
       stylexTailwindBridgeAuditSource("src/copied-tailwind.css", [manifest]),
     )).toThrow(/unverified Tailwind bridge/u);
+    for (const nestedPath of [
+      "nested/node_modules/@fixture/ui/src/tailwind.css",
+      "node_modules/.pnpm/@fixture+ui@1.0.0/node_modules/@fixture/ui/src/tailwind.css",
+    ]) {
+      const nestedSource = stylexTailwindBridgeAuditSource(nestedPath, [manifest]);
+      expect(nestedSource).toBeDefined();
+      expect(() => auditCssWithoutStandaloneRecipes(
+        bridgeCss,
+        [manifest],
+        nestedSource,
+      )).not.toThrow();
+    }
+    const unscopedManifest = validateStylexPackageManifest({
+      ...manifest,
+      package: { ...manifest.package, name: "fixture-ui" },
+    });
+    const unscopedSource = stylexTailwindBridgeAuditSource(
+      "nested/node_modules/fixture-ui/src/tailwind.css",
+      [unscopedManifest],
+    );
+    expect(unscopedSource).toBeDefined();
+    expect(() => auditCssWithoutStandaloneRecipes(
+      bridgeCss,
+      [unscopedManifest],
+      unscopedSource,
+    )).not.toThrow();
+    for (const nearMiss of [
+      "nested/node_modules-lookalike/@fixture/ui/src/tailwind.css",
+      "nested/node_modules/@fixture/ui-copy/src/tailwind.css",
+      "nested/node_modules/@fixture/src/tailwind.css",
+      "nested/node_modules/@fixture/ui/dist/tailwind.css",
+      "nested/node_modules/@fixture/ui/src/tailwind.css.copy",
+      "nested/node_modules/@fixture/ui/src/tailwind.css/extra",
+      "node_modules/.pnpm/@fixture+ui@1.0.0/node_modules-copy/@fixture/ui/src/tailwind.css",
+    ]) expect(stylexTailwindBridgeAuditSource(nearMiss, [manifest])).toBeUndefined();
+    for (const malformed of [
+      "nested/node_modules/@fixture//ui/src/tailwind.css",
+      "nested/node_modules/@fixture/ui/../ui/src/tailwind.css",
+      "nested/node_modules/@fixture/ui/src/./tailwind.css",
+      "nested\\node_modules\\@fixture\\ui\\src\\tailwind.css",
+    ]) expect(() => stylexTailwindBridgeAuditSource(malformed, [manifest])).toThrow(/normalized|forbidden/u);
+
+    const wrongPackageManifest = validateStylexPackageManifest({
+      ...manifest,
+      package: { ...manifest.package, name: "@fixture/ui-copy" },
+    });
     expect(stylexTailwindBridgeAuditSource(
       "nested/node_modules/@fixture/ui/src/tailwind.css",
-      [manifest],
+      [wrongPackageManifest],
     )).toBeUndefined();
+    expect(() => auditCssWithoutStandaloneRecipes(
+      bridgeCss,
+      [wrongPackageManifest],
+      source,
+    )).toThrow(/unverified Tailwind bridge/u);
+
+    const tailwindArtifact = manifest.stylesheets[0]!;
+    for (const wrongArtifact of [
+      { ...tailwindArtifact, sha256: sha256("wrong Tailwind bridge") },
+      { ...tailwindArtifact, bytes: tailwindArtifact.bytes + 1 },
+    ]) {
+      const wrongArtifactManifest = validateStylexPackageManifest({
+        ...manifest,
+        stylesheets: [wrongArtifact],
+      });
+      const nestedSource = stylexTailwindBridgeAuditSource(
+        "nested/node_modules/@fixture/ui/src/tailwind.css",
+        [wrongArtifactManifest],
+      );
+      expect(nestedSource).toBeDefined();
+      expect(() => auditCssWithoutStandaloneRecipes(
+        bridgeCss,
+        [wrongArtifactManifest],
+        nestedSource,
+      )).toThrow(/unverified Tailwind bridge/u);
+    }
     expect(() => auditCssWithoutStandaloneRecipes(`${bridgeCss}\n`, [manifest], source)).toThrow(/unverified Tailwind bridge/u);
     const replayedCss = `${bridgeCss}/* changed after the source capability was issued */\n`;
     expect(() => auditCssWithoutStandaloneRecipes(

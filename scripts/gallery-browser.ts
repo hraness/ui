@@ -7,6 +7,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -318,7 +319,7 @@ interface ArtifactSet {
 interface CheckboxFocusRuleEvidence {
   readonly className: string;
   readonly declaration: string;
-  readonly layer: "components.hraness-ui.priority3";
+  readonly layer: `components.hraness-ui.priority${number}`;
   readonly selector: string;
 }
 
@@ -1277,7 +1278,6 @@ function requirePackedCheckboxFocusContract(
   javaScript: string,
   css: string,
 ): CheckboxFocusContract {
-  const layer = "components.hraness-ui.priority3" as const;
   const classNames = packedCheckboxStyleClassNames(javaScript, "focusVisible");
   const expectedDeclarations = [
     "outline-color:var(--ui-ring)",
@@ -1290,19 +1290,37 @@ function requirePackedCheckboxFocusContract(
     expectedDeclarations.length,
     "the packed CheckboxField focus recipe must contain one class per declaration",
   );
-  const layerCss = exactLayerCss(css, layer);
+  const priorityLayers = [...new Set(
+    [...css.matchAll(
+      /@layer\s+(components\.hraness-ui\.priority[1-9]\d*)\s*\{/gu,
+    )].map((match) => match[1] as `components.hraness-ui.priority${number}`),
+  )];
+  assert.notEqual(
+    priorityLayers.length,
+    0,
+    "the final bundle must contain at least one finite package priority layer",
+  );
   const rules = classNames.map((className) => {
     const finalRules = exactAtomicClassRules(css, className);
-    const layerRules = exactAtomicClassRules(layerCss, className);
     assert.equal(
       finalRules.length,
       1,
       `the final bundle must contain exactly one .${className} rule`,
     );
+    const matchingLayers = priorityLayers.filter(
+      (layer) => exactAtomicClassRules(exactLayerCss(css, layer), className).length > 0,
+    );
+    assert.equal(
+      matchingLayers.length,
+      1,
+      `the final bundle must place .${className} in exactly one finite package priority layer`,
+    );
+    const layer = matchingLayers[0]!;
+    const layerRules = exactAtomicClassRules(exactLayerCss(css, layer), className);
     assert.equal(
       layerRules.length,
       1,
-      `the final bundle must place .${className} in ${layer}`,
+      `the final bundle must contain exactly one .${className} rule in ${layer}`,
     );
     const finalRule = finalRules[0];
     const layerRule = layerRules[0];
@@ -1314,6 +1332,11 @@ function requirePackedCheckboxFocusContract(
     );
     return { className, layer, ...finalRule };
   });
+  assert.equal(
+    new Set(rules.map(({ layer }) => layer)).size,
+    1,
+    "the final CheckboxField focus recipe must remain within one finite package priority layer",
+  );
   for (const declaration of expectedDeclarations) {
     assert.equal(
       rules.filter((rule) => rule.declaration === declaration).length,
@@ -2644,29 +2667,82 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
   }
 }
 
-function placePriority4BeforeLegacy(css: string): string {
+interface QuietSiteFooterLayerCounterfactual {
+  readonly css: string;
+  readonly targetPriority: `priority${number}`;
+}
+
+function placeQuietSiteFooterPriorityBeforeLegacy(
+  css: string,
+): QuietSiteFooterLayerCounterfactual {
   const priorities = [...new Set([...css.matchAll(
     /components\.hraness-ui\.(priority[1-9]\d*)/gu,
-  )].map((match) => match[1]!))]
+  )].map((match) => match[1] as `priority${number}`))]
     .sort((left, right) => Number(left.slice("priority".length)) - Number(right.slice("priority".length)));
-  assert.ok(priorities.includes("priority4"), "the packed stylesheet priority4 layer is missing");
-  const counterfactualPrelude = [
-    "priority4",
+  const footerPaddingRule =
+    /\.[A-Za-z0-9_-]+\s*\{\s*padding-top:\s*var\(--space-5,\s*1\.25rem\)\s*;?\s*\}/gu;
+  const targetRules: Array<{
+    readonly priority: `priority${number}`;
+    readonly rule: string;
+  }> = [];
+  for (const match of css.matchAll(
+    /@layer\s+components\.hraness-ui\.(priority[1-9]\d*)\s*\{/gu,
+  )) {
+    const priority = match[1] as `priority${number}`;
+    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
+    const layerCss = balancedBlock(
+      css,
+      open,
+      `packed components.hraness-ui.${priority} CSS`,
+    );
+    for (const rule of layerCss.matchAll(footerPaddingRule)) {
+      targetRules.push({ priority, rule: rule[0] });
+    }
+  }
+  assert.equal(
+    targetRules.length,
+    1,
+    `the packed gallery union must contain exactly one finite-layer quiet-site footer padding atom; got ${JSON.stringify(targetRules)}`,
+  );
+  const targetPriority = targetRules[0]!.priority;
+  assert.equal(
+    targetPriority,
+    "priority5",
+    "the gallery priority-zero registration must shift the package footer padding atom into priority5",
+  );
+  const targetIndex = priorities.indexOf(targetPriority);
+  assert.notEqual(targetIndex, -1);
+  const counterfactualLayers = [
+    ...priorities.slice(0, targetIndex + 1),
     "legacy",
-    ...priorities.filter((priority) => priority !== "priority4"),
-  ].map((layer) => `components.hraness-ui.${layer}`).join(", ");
+    ...priorities.slice(targetIndex + 1),
+  ];
+  assert.deepEqual(
+    counterfactualLayers.filter((layer) => layer !== "legacy"),
+    priorities,
+    "the browser counterfactual must preserve the complete finite priority order",
+  );
+  assert.equal(
+    counterfactualLayers.indexOf("legacy"),
+    targetIndex + 1,
+    "the browser counterfactual must place legacy immediately after the footer priority",
+  );
+  const counterfactualPrelude = counterfactualLayers
+    .map((layer) => `components.hraness-ui.${layer}`)
+    .join(", ");
   const counterfactual = [
     "@layer base, components;",
     `@layer ${counterfactualPrelude};`,
     css,
   ].join("\n");
   assert.notEqual(counterfactual, css);
-  assert.match(
-    counterfactual,
-    /@layer\s+components\.hraness-ui\.priority4\s*,\s*components\.hraness-ui\.legacy/u,
-    "the browser counterfactual must create legacy after priority4",
+  assert.ok(
+    counterfactual.startsWith(
+      `@layer base, components;\n@layer ${counterfactualPrelude};\n`,
+    ),
+    "the browser counterfactual must create legacy immediately after the exact footer priority while preserving every other finite priority's order",
   );
-  return counterfactual;
+  return { css: counterfactual, targetPriority };
 }
 
 function attachDiagnostics(page: Page): string[] {
@@ -9164,31 +9240,108 @@ async function verifyListBoxCoarsePointer(page: Page, real: boolean): Promise<vo
 }
 
 async function verifyListBoxInteractions(page: Page, id: string): Promise<void> {
+  async function settledHighlightEvidence(
+    target: ReturnType<Page["locator"]>,
+    selector: string,
+    state: "focus" | "hover",
+    background: string,
+    color: string,
+  ) {
+    const expected = { background, color, selector, state } as const;
+    let settled = false;
+    try {
+      await page.waitForFunction(
+        (contract) => {
+          const elements = document.querySelectorAll(contract.selector);
+          const element = elements.length === 1 ? elements[0] : undefined;
+          if (!(element instanceof HTMLElement)) return false;
+          const stateReady = contract.state === "hover"
+            ? element.matches(":hover") && element.hasAttribute("data-hovered")
+            : element.hasAttribute("data-focused");
+          if (!stateReady) return false;
+          const probe = document.createElement("span");
+          probe.style.backgroundColor = contract.background;
+          probe.style.color = contract.color;
+          document.body.append(probe);
+          const expectedStyle = getComputedStyle(probe);
+          const expectedBackground = expectedStyle.backgroundColor;
+          const expectedColor = expectedStyle.color;
+          probe.remove();
+          const actual = getComputedStyle(element);
+          const transitionActive = element.getAnimations().some(
+            (animation) => animation instanceof CSSTransition
+              && (animation.pending || animation.playState === "running"),
+          );
+          return !transitionActive
+            && actual.backgroundColor === expectedBackground
+            && actual.color === expectedColor;
+        },
+        expected,
+        { polling: "raf", timeout: 2_000 },
+      );
+      settled = true;
+    } catch (error) {
+      if (!(error instanceof Error) || error.name !== "TimeoutError") throw error;
+    }
+    const evidence = await target.evaluate((element, contract) => {
+      const probe = document.createElement("span");
+      probe.style.backgroundColor = contract.background;
+      probe.style.color = contract.color;
+      document.body.append(probe);
+      const expectedStyle = getComputedStyle(probe);
+      const expectedBackground = expectedStyle.backgroundColor;
+      const expectedColor = expectedStyle.color;
+      probe.remove();
+      const actual = getComputedStyle(element);
+      return {
+        actual: actual.backgroundColor,
+        classNames: [...element.classList],
+        color: actual.color,
+        dataFocused: element.hasAttribute("data-focused"),
+        dataHovered: element.hasAttribute("data-hovered"),
+        expected: expectedBackground,
+        expectedColor,
+        focused: element === document.activeElement,
+        hovered: element.matches(":hover"),
+        selectorCount: document.querySelectorAll(contract.selector).length,
+        transitionDuration: actual.transitionDuration,
+        transitionProperty: actual.transitionProperty,
+        transitions: element.getAnimations()
+          .filter((animation) => animation instanceof CSSTransition)
+          .map((animation) => ({
+            pending: animation.pending,
+            playState: animation.playState,
+            property: (animation as CSSTransition).transitionProperty,
+          })),
+      };
+    }, expected);
+    return { ...evidence, settled };
+  }
+
   const list = page.getByRole("listbox", { name: "Static sound list" });
   const alpha = list.getByRole("option", { name: "Alpha", exact: true });
   const beta = list.getByRole("option", { name: "Beta", exact: true });
   const gamma = list.getByRole("option", { name: "Gamma", exact: true });
   await alpha.hover();
-  await page.waitForFunction(() => document.querySelector('[data-gallery-list-box="static"] [data-key="alpha"]')?.hasAttribute("data-hovered"));
-  const highlighted = await alpha.evaluate((element) => {
-    const probe = document.createElement("span");
-    probe.style.backgroundColor = "var(--ui-accent)";
-    probe.style.color = "var(--ui-accent-foreground)";
-    element.append(probe);
-    const expected = getComputedStyle(probe);
-    const actual = getComputedStyle(element);
-    const result = { actual: actual.backgroundColor, expected: expected.backgroundColor,
-      color: actual.color, expectedColor: expected.color };
-    probe.remove();
-    return result;
-  });
-  invariant(highlighted.actual === highlighted.expected && highlighted.color === highlighted.expectedColor,
+  const highlighted = await settledHighlightEvidence(
+    alpha,
+    '[data-gallery-list-box="static"] [data-key="alpha"]',
+    "hover",
+    "var(--ui-accent)",
+    "var(--ui-accent-foreground)",
+  );
+  invariant(
+    highlighted.settled
+    && highlighted.dataHovered
+    && highlighted.hovered
+    && highlighted.actual === highlighted.expected
+    && highlighted.color === highlighted.expectedColor,
     `${id}: ListBox hover recipes changed: ${JSON.stringify(highlighted)}`);
   await alpha.click();
   await page.waitForFunction(() => document.querySelector('[data-gallery-list-box-render="item"]')?.getAttribute("data-gallery-list-box-focused") === "true");
   await page.keyboard.press("g");
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-key") === "gamma");
-  await page.keyboard.press("Space");
+  await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.querySelector('[data-gallery-list-box-selection="true"]')?.textContent === "gamma");
   invariant(await gamma.getAttribute("data-focused") !== null, `${id}: ListBox typeahead did not expose focused state`);
   await page.keyboard.press("ArrowDown");
@@ -9215,15 +9368,20 @@ async function verifyListBoxInteractions(page: Page, id: string): Promise<void> 
       && document.getElementById(active)?.textContent === "Warm pad"
       && document.getElementById(active)?.hasAttribute("data-focused");
   });
-  const virtualHighlight = await filtered.getByRole("option", { name: "Warm pad" }).evaluate((element) => {
-    const probe = document.createElement("span");
-    probe.style.backgroundColor = "var(--ui-accent)";
-    element.append(probe);
-    const result = getComputedStyle(element).backgroundColor === getComputedStyle(probe).backgroundColor;
-    probe.remove();
-    return result;
-  });
-  invariant(virtualHighlight, `${id}: Autocomplete virtual focus did not activate the ListBox highlight recipe`);
+  const virtualHighlight = await settledHighlightEvidence(
+    filtered.getByRole("option", { name: "Warm pad" }),
+    '[data-gallery-list-box="autocomplete"] [role="option"]',
+    "focus",
+    "var(--ui-accent)",
+    "var(--ui-accent-foreground)",
+  );
+  invariant(
+    virtualHighlight.settled
+    && virtualHighlight.dataFocused
+    && virtualHighlight.actual === virtualHighlight.expected
+    && virtualHighlight.color === virtualHighlight.expectedColor,
+    `${id}: Autocomplete virtual focus did not activate the ListBox highlight recipe: ${JSON.stringify(virtualHighlight)}`,
+  );
   await input.press("Enter");
   await page.waitForFunction(() => document.querySelector('[data-gallery-list-box-instrument="true"]')?.textContent === "pad");
   invariant(await filtered.getByRole("option", { name: "Warm pad" }).getAttribute("aria-selected") === "true",
@@ -9233,16 +9391,21 @@ async function verifyListBoxInteractions(page: Page, id: string): Promise<void> 
 
   const override = page.getByRole("option", { name: "Caller item", exact: true });
   await override.hover();
-  await page.waitForFunction(() => document.querySelector('.gallery-list-box-item-override')?.hasAttribute("data-hovered"));
-  const callerWins = await override.evaluate((element) => {
-    const probe = document.createElement("span");
-    probe.style.backgroundColor = "var(--ui-secondary)";
-    element.append(probe);
-    const matches = getComputedStyle(element).backgroundColor === getComputedStyle(probe).backgroundColor;
-    probe.remove();
-    return matches;
-  });
-  invariant(callerWins, `${id}: highlighted ListBox item lost caller StyleX precedence`);
+  const callerWins = await settledHighlightEvidence(
+    override,
+    ".gallery-list-box-item-override",
+    "hover",
+    "var(--ui-secondary)",
+    "var(--ui-secondary-foreground)",
+  );
+  invariant(
+    callerWins.settled
+    && callerWins.dataHovered
+    && callerWins.hovered
+    && callerWins.actual === callerWins.expected
+    && callerWins.color === callerWins.expectedColor,
+    `${id}: highlighted ListBox item lost caller StyleX precedence: ${JSON.stringify(callerWins)}`,
+  );
 
   await page.getByRole("button", { name: "Open Menu compatibility canary" }).click();
   const menu = page.getByRole("menu", { name: "Menu compatibility canary" });
@@ -11866,7 +12029,9 @@ assert.equal(
 );
 
 const repository = process.cwd();
-const work = await mkdtemp(join(tmpdir(), "hraness-ui-primitive-gallery-"));
+const work = await realpath(
+  await mkdtemp(join(tmpdir(), "hraness-ui-primitive-gallery-")),
+);
 const temporary = resolve(work, "tmp");
 const consumer = resolve(work, "consumer");
 const environment = {
@@ -12112,8 +12277,8 @@ try {
       expected: /must not place rules or nested layers directly in a components parent layer/u,
     },
     {
-      css: "@layer components.hraness-ui.priority1 { .early-priority-block-negative-control { display: block; } }",
-      description: "a priority block before the canonical statement",
+      css: "@layer base, components; @layer components.hraness-ui.priority1 { .early-priority-block-negative-control { display: block; } }",
+      description: "a priority block after the base prelude but before the canonical statement",
       expected: /must be the first declaration/u,
     },
     {
@@ -12571,8 +12736,8 @@ try {
   );
   assert.ok(html.includes(`<script type="module" src="${clientHref}"></script>`));
 
-  const counterfactualDocumentName = "priority4-before-legacy.html";
-  const counterfactualStylesheetName = "priority4-before-legacy.css";
+  const counterfactualDocumentName = "footer-priority-before-legacy.html";
+  const counterfactualStylesheetName = "footer-priority-before-legacy.css";
   const counterfactualStylesheetLink =
     `<link data-gallery-default-stylesheet="true" rel="stylesheet" href="/${counterfactualStylesheetName}">`;
   const counterfactualHtml = html.replace(
@@ -12580,6 +12745,8 @@ try {
     counterfactualStylesheetLink,
   );
   assert.notEqual(counterfactualHtml, html);
+  const footerPriorityCounterfactual =
+    placeQuietSiteFooterPriorityBeforeLegacy(production.combinedCss);
 
   const requestedPaths = new Set<string>();
   const server = startGalleryServer(productionDirectory, requestedPaths, new Map([
@@ -12588,7 +12755,7 @@ try {
       type: "text/html" as const,
     }],
     [`/${counterfactualStylesheetName}`, {
-      body: placePriority4BeforeLegacy(production.combinedCss),
+      body: footerPriorityCounterfactual.css,
       type: "text/css" as const,
     }],
   ]));
@@ -12615,7 +12782,7 @@ try {
     });
     try {
       const origin = `http://${server.hostname}:${String(server.port)}`;
-      let productionPriority4PaddingTop: number | undefined;
+      let productionFooterPaddingTop: number | undefined;
       for (const layout of layouts) {
         const context = await browser.newContext(layout.context);
         try {
@@ -12839,12 +13006,12 @@ try {
             && light.toolbarOverrideContract,
             `${layout.id}: Toolbar parity failed: ${light.toolbarDiagnostics}`,
           );
-          if (productionPriority4PaddingTop === undefined) {
-            productionPriority4PaddingTop = light.footerPaddingTop;
+          if (productionFooterPaddingTop === undefined) {
+            productionFooterPaddingTop = light.footerPaddingTop;
           } else {
             invariant(
-              nearlyEqual(light.footerPaddingTop, productionPriority4PaddingTop),
-              `${layout.id}: production priority4 padding changed across layouts`,
+              nearlyEqual(light.footerPaddingTop, productionFooterPaddingTop),
+              `${layout.id}: production footer priority padding changed across layouts`,
             );
           }
           const vertical = await verticalWritingEvidence(page);
@@ -13189,21 +13356,21 @@ try {
           page,
           failures,
           requestedPaths,
-          "priority4-before-legacy counterfactual",
+          "footer-priority-before-legacy counterfactual",
         );
         const counterfactual = await browserEvidence(page);
         invariant(
           counterfactual.hydrationStarted
           && counterfactual.rootHydrated
           && counterfactual.recoverableErrors.length === 0,
-          "priority4-before-legacy counterfactual: hydration did not settle cleanly",
+          "footer-priority-before-legacy counterfactual: hydration did not settle cleanly",
         );
         invariant(
-          productionPriority4PaddingTop !== undefined
-          && nearlyEqual(productionPriority4PaddingTop, 1.25 * 16)
+          productionFooterPaddingTop !== undefined
+          && nearlyEqual(productionFooterPaddingTop, 1.25 * 16)
           && counterfactual.quietSitePriority4LayerSentinel === "legacy"
           && nearlyEqual(counterfactual.footerPaddingTop, 9 * 16),
-          `priority4-before-legacy counterfactual: production ${String(productionPriority4PaddingTop)}, counterfactual ${String(counterfactual.footerPaddingTop)}, sentinel ${counterfactual.quietSitePriority4LayerSentinel}`,
+          `footer-priority-before-legacy counterfactual (${footerPriorityCounterfactual.targetPriority}): production ${String(productionFooterPaddingTop)}, counterfactual ${String(counterfactual.footerPaddingTop)}, sentinel ${counterfactual.quietSitePriority4LayerSentinel}`,
         );
         invariant(
           counterfactual.stylesheetCount === 1
@@ -13212,11 +13379,11 @@ try {
           && counterfactual.stylesheetHrefs.length === 1
           && counterfactual.stylesheetHrefs[0] === `/${counterfactualStylesheetName}`
           && counterfactual.stylexRuntimeStyleCount === 0,
-          "priority4-before-legacy counterfactual: stylesheet delivery is ambiguous",
+          "footer-priority-before-legacy counterfactual: stylesheet delivery is ambiguous",
         );
         invariant(
           failures.length === 0,
-          `priority4-before-legacy counterfactual: ${failures.join("; ")}`,
+          `footer-priority-before-legacy counterfactual: ${failures.join("; ")}`,
         );
       } finally {
         await counterfactualContext.close();
@@ -13407,7 +13574,7 @@ try {
     "ListBox gallery passed: static and dynamic collections, inherited orientation and slot-null isolation, direct horizontal sections, caller DOM renderers and refs, StyleX/native-style precedence, hover/focus/selection/disabled states, typeahead, Autocomplete input-owned virtual focus and selection, retained Menu presentation, light/dark tokens, real and synthetic coarse targets under a local compact-token override, forced colors, gallery-only collision controls, SSR/hydration, and cleanup.",
   );
   console.log(
-    "Primitive gallery browser passed: compiler foundation plus one finalized finite StyleX priority union, matched gallery-only conflicts losing to StyleX in production, a served priority4-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, PageIntro wide/compact layout and heading hierarchy, EmptyState composition, all four InlineAlert tone/live-region contracts, both SettingsCard shapes, Content-family semantic/generated/caller ordering, native-style precedence, light/dark tokens, forced colors, collision, SSR, and cleanup, DataTable native semantics, finite alignment, overflow, logical dividers, empty-state, caller precedence, light/dark, legacy-layer collision, vertical writing, SSR, and hydration contracts, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, 3 ProgressBar, 4 Meter, 4 Slider, and 4 Knob packed specimens with semantic/generated/caller ordering, determinate and indeterminate motion, tone, LTR/RTL/vertical keyboard and form behavior, 20px Slider visuals inside 48px real and synthetic coarse hit targets, Knob density, pointer gesture, disabled, caller xstyle/controlXstyle/native-style precedence, forced-color SVG, collision, SSR, and hydration contracts, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
+    "Primitive gallery browser passed: compiler foundation plus one finalized finite StyleX priority union, matched gallery-only conflicts losing to StyleX in production, a served footer-priority-before-legacy counterfactual flipping footer padding to the legacy value, SSR/hydration, semantic StyleX glyph, wrapper, quiet-site landmarks, horizontal and vertical structural-surface layout behavior, viewport height fallbacks, centered compact SelectField indicator geometry, PageIntro wide/compact layout and heading hierarchy, EmptyState composition, all four InlineAlert tone/live-region contracts, both SettingsCard shapes, Content-family semantic/generated/caller ordering, native-style precedence, light/dark tokens, forced colors, collision, SSR, and cleanup, DataTable native semantics, finite alignment, overflow, logical dividers, empty-state, caller precedence, light/dark, legacy-layer collision, vertical writing, SSR, and hydration contracts, every themed-surface tone and shape, caller-last texture composition, SegmentedControl compact geometry and interaction, 3 ProgressBar, 4 Meter, 4 Slider, and 4 Knob packed specimens with semantic/generated/caller ordering, determinate and indeterminate motion, tone, LTR/RTL/vertical keyboard and form behavior, 20px Slider visuals inside 48px real and synthetic coarse hit targets, Knob density, pointer gesture, disabled, caller xstyle/controlXstyle/native-style precedence, forced-color SVG, collision, SSR, and hydration contracts, Avatar fallback sizes, data-URI image cropping, Badge, Tag, StatusDot, KeyHint, Form native submission/render/ref and caller presentation contracts, TextAreaField and CheckboxGroup structure, caller-last presentation, keyboard selection, and native submission, Fields and Select native submission/ref/state, caller-last, native-focus, React Aria focus/hover, background-reset, arrow/SVG, disabled-option, RTL, real and synthetic coarse, reduced-motion, and forced-colors contracts, CheckboxField, Card, PressableCard, Toolbar, and action-family finite recipes, public Tag accent, public Card description overrides and nested tone resets, caller and native interaction precedence, action wrapper and control caller precedence at rest, hover, and keyboard focus, a real touch/coarse action-size matrix, inline IconLink exclusion, CheckboxField native form, keyboard focus, hidden-label, and coarse-pointer contracts, Toolbar native and caller keyboard focus, compact/short layouts, light/dark, reduced motion, forced colors, network/console diagnostics, and cleanup.",
   );
 } finally {
   await removeTemporaryTree(work);
