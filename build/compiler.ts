@@ -152,6 +152,8 @@ function requiredString(value: unknown, description: string): string {
   return value;
 }
 
+const packageNamePattern = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u;
+
 function optionalString(value: unknown, description: string): string | undefined {
   return value === undefined ? undefined : requiredString(value, description);
 }
@@ -379,7 +381,7 @@ export function validateStylexPackageManifest(value: unknown): StylexPackageMani
   const packageRecord = plainObject(record.package, "package manifest package");
   exactKeys(packageRecord, ["name", "version"], [], "package manifest package");
   const packageName = requiredString(packageRecord.name, "package name");
-  assert.ok(/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u.test(packageName), "Package name is invalid");
+  assert.ok(packageNamePattern.test(packageName), "Package name is invalid");
   const packageVersionValue = requiredString(packageRecord.version, "package version");
   const buildTools = parseArtifacts(record.buildTools, "package manifest buildTools");
   const runtime = parseArtifacts(record.runtime, "package manifest runtime");
@@ -527,6 +529,32 @@ function assertStylexCssAuditSource(source: StylexCssAuditSource): void {
   );
 }
 
+function nodeModulesPackageArtifact(
+  logicalPath: string,
+): Readonly<{ packageName: string; packagePath: string }> | undefined {
+  const parts = logicalPath.split("/");
+  const nodeModulesIndex = parts.lastIndexOf("node_modules");
+  if (nodeModulesIndex < 0) return undefined;
+
+  const packageStart = nodeModulesIndex + 1;
+  const packageHead = parts[packageStart];
+  if (packageHead === undefined) return undefined;
+  const scoped = packageHead.startsWith("@");
+  let packageName = packageHead;
+  let packagePathStart = packageStart + 1;
+  if (scoped) {
+    const packageTail = parts[packagePathStart];
+    if (packageTail === undefined) return undefined;
+    packageName = `${packageHead}/${packageTail}`;
+    packagePathStart += 1;
+  }
+  if (!packageNamePattern.test(packageName)) return undefined;
+
+  const packagePathParts = parts.slice(packagePathStart);
+  if (packagePathParts.length === 0) return undefined;
+  return { packageName, packagePath: packagePathParts.join("/") };
+}
+
 export const stylexCssAuditAtRules = {
   "custom-variant": { body: null, prelude: "*" },
   source: { body: null, prelude: "<string>" },
@@ -543,7 +571,12 @@ function isManifestBoundTailwindBridge(
   if (source === undefined) return false;
   assertStylexCssAuditSource(source);
   if (source.packagePath !== "src/tailwind.css") return false;
-  if (source.logicalPath !== `node_modules/${source.packageName}/src/tailwind.css`) return false;
+  const installed = nodeModulesPackageArtifact(source.logicalPath);
+  if (
+    installed === undefined
+    || installed.packageName !== source.packageName
+    || installed.packagePath !== source.packagePath
+  ) return false;
   const candidates = manifests
     .filter((manifest) => manifest.package.name === source.packageName)
     .flatMap((manifest) => manifest.stylesheets)
@@ -561,12 +594,14 @@ export function stylexTailwindBridgeAuditSource(
   packageManifests: readonly StylexPackageManifestV1[],
 ): StylexCssAuditSource | undefined {
   const logicalPath = normalizeLogicalPath(path, "CSS audit source path");
-  const candidates = packageManifests
-    .map(validateStylexPackageManifest)
+  const manifests = packageManifests.map(validateStylexPackageManifest);
+  const installed = nodeModulesPackageArtifact(logicalPath);
+  if (installed?.packagePath !== "src/tailwind.css") return undefined;
+  const candidates = manifests
     .flatMap((manifest) => manifest.stylesheets
       .filter((artifact) => artifact.path === "src/tailwind.css")
       .map((artifact) => ({ artifact, manifest })))
-    .filter(({ manifest }) => logicalPath === `node_modules/${manifest.package.name}/src/tailwind.css`);
+    .filter(({ manifest }) => installed.packageName === manifest.package.name);
   assert.ok(candidates.length <= 1, `CSS input matches multiple registered Tailwind bridges: ${path}`);
   const candidate = candidates[0];
   return candidate === undefined

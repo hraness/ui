@@ -537,6 +537,7 @@ function ListBoxGallery() {
             aria-label="Caller list presentation"
             className="gallery-list-box-root-override"
             data-gallery-list-box="overrides"
+            selectionMode="single"
             style={() => ({ padding: "10px" })}
             xstyle={galleryStyles.listBoxRootOverride}
           >

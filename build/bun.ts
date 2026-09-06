@@ -784,26 +784,38 @@ function jsonRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function packageRootExportBranch(value: unknown): unknown {
+type PackageRootExportBranch = Readonly<
+  | { kind: "invalid" }
+  | { branch: unknown; kind: "match" }
+  | { kind: "no-match" }
+>;
+
+function validPackageExportSubpathKey(key: string): boolean {
+  return key === "."
+    || (
+      key.startsWith("./")
+      && !key.includes("\\")
+      && !key.includes("?")
+      && !key.includes("#")
+      && !key.includes("%")
+      && !/[\u0000-\u001f\u007f]/u.test(key)
+      && (key.match(/\*/gu)?.length ?? 0) <= 1
+    );
+}
+
+function packageRootExportBranch(value: unknown): PackageRootExportBranch {
   const record = jsonRecord(value);
-  if (record === undefined) return value;
+  if (record === undefined) return { branch: value, kind: "match" };
   const keys = Object.keys(record);
   const subpaths = keys.filter((key) => key.startsWith("."));
-  if (subpaths.length === 0) return value;
+  if (subpaths.length === 0) return { branch: value, kind: "match" };
   if (
     subpaths.length !== keys.length
-    || !Object.hasOwn(record, ".")
-    || keys.some((key) =>
-      key !== "."
-      && (
-        !key.startsWith("./")
-        || key.includes("*")
-        || key.includes("\\")
-        || /[\u0000-\u001f\u007f]/u.test(key)
-      )
-    )
-  ) return undefined;
-  return record["."];
+    || keys.some((key) => !validPackageExportSubpathKey(key))
+  ) return { kind: "invalid" };
+  return Object.hasOwn(record, ".")
+    ? { branch: record["."], kind: "match" }
+    : { kind: "no-match" };
 }
 
 type ConditionalPackageExportResolution = Readonly<
@@ -839,10 +851,39 @@ function conditionalPackageExportTarget(
   return { kind: "no-match" };
 }
 
+function canonicalPackageRootTarget(
+  installationRoot: string,
+  target: string,
+  allowLegacyBareTarget = false,
+): string | undefined {
+  if (!allowLegacyBareTarget && !target.startsWith("./")) return undefined;
+  const relativeTarget = target.startsWith("./") ? target : `./${target}`;
+  if (
+    !relativeTarget.startsWith("./")
+    || relativeTarget.includes("\\")
+    || relativeTarget.includes("*")
+    || relativeTarget.includes("?")
+    || relativeTarget.includes("#")
+    || relativeTarget.includes("%")
+    || /[\u0000-\u001f\u007f]/u.test(relativeTarget)
+  ) return undefined;
+  const segments = relativeTarget.slice(2).split("/");
+  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
+    return undefined;
+  }
+  const candidate = posix.join(installationRoot, ...segments);
+  return candidate.startsWith(`${installationRoot}/`)
+      && packageInstallationRoot(candidate) === installationRoot
+    ? candidate
+    : undefined;
+}
+
 function capturedPackageRootExportTarget(
   packageName: string,
   installationRoot: string,
   known: ReadonlySet<string>,
+  rootDirectory: string,
+  inputFileSnapshots: ReadonlyMap<string, LoadedInputFileSnapshot>,
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
   buildConditions: readonly string[],
   buildTarget: "browser" | "bun",
@@ -850,43 +891,79 @@ function capturedPackageRootExportTarget(
   const manifest = packageScopeSnapshots.get(posix.join(installationRoot, "package.json"));
   if (manifest === undefined) return undefined;
   const parsed = strictJsonObjectFromSnapshot(manifest);
+  const record = parsed.record;
   if (
     !parsed.valid
-    || parsed.record === undefined
-    || parsed.record.name !== packageName
-    || !Object.hasOwn(parsed.record, "exports")
+    || record === undefined
+    || record.name !== packageName
   ) return undefined;
-  const activeConditions = new Set([
-    ...buildConditions,
-    "import",
-    ...(buildTarget === "browser" ? ["browser"] : ["bun", "node-addons", "node"]),
-  ]);
-  const resolution = conditionalPackageExportTarget(
-    packageRootExportBranch(parsed.record.exports),
-    activeConditions,
-  );
-  const target = resolution.kind === "match" ? resolution.target : undefined;
-  if (
-    target === undefined
-    || !target.startsWith("./")
-    || target.includes("\\")
-    || target.includes("*")
-    || target.includes("?")
-    || target.includes("#")
-    || target.includes("%")
-    || /[\u0000-\u001f\u007f]/u.test(target)
-  ) return undefined;
-  const segments = target.slice(2).split("/");
-  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
-    return undefined;
+  if (buildTarget === "browser" && Object.hasOwn(record, "browser")) return undefined;
+
+  let candidate: string | undefined;
+  if (Object.hasOwn(record, "exports")) {
+    const rootBranch = packageRootExportBranch(record.exports);
+    if (rootBranch.kind !== "match") return undefined;
+    const activeConditions = new Set([
+      ...buildConditions,
+      "import",
+      ...(buildTarget === "browser" ? ["browser"] : ["bun", "node-addons", "node"]),
+    ]);
+    const resolution = conditionalPackageExportTarget(rootBranch.branch, activeConditions);
+    candidate = resolution.kind === "match"
+      ? canonicalPackageRootTarget(installationRoot, resolution.target)
+      : undefined;
+  } else {
+    const declaredFields = (["module", "main"] as const).filter((field) =>
+      Object.hasOwn(record, field)
+    );
+    const declaredCandidates: string[] = [];
+    for (const field of declaredFields) {
+      const value = record[field];
+      if (typeof value !== "string") return undefined;
+      const declared = canonicalPackageRootTarget(installationRoot, value, true);
+      if (declared === undefined || !javascriptFilter.test(declared)) return undefined;
+      declaredCandidates.push(declared);
+    }
+    if (declaredCandidates.length === 0) {
+      const implicit = canonicalPackageRootTarget(installationRoot, "./index.js");
+      assert.ok(implicit !== undefined);
+      declaredCandidates.push(implicit);
+    }
+    const distinctCandidates = [...new Set(declaredCandidates)];
+    const knownCandidates = distinctCandidates.filter((target) => known.has(target));
+    if (knownCandidates.length !== 1) return undefined;
+    candidate = knownCandidates[0];
+    if (
+      candidate === undefined
+      || capturedJavascriptInputFileSnapshot(candidate, rootDirectory, inputFileSnapshots) === undefined
+      || distinctCandidates.some((target) =>
+        target !== candidate
+        && capturedJavascriptInputFileSnapshot(target, rootDirectory, inputFileSnapshots) !== undefined
+      )
+    ) return undefined;
   }
-  const candidate = posix.join(installationRoot, ...segments);
   if (
-    !candidate.startsWith(`${installationRoot}/`)
+    candidate === undefined
+    || !candidate.startsWith(`${installationRoot}/`)
     || packageInstallationRoot(candidate) !== installationRoot
     || !known.has(candidate)
   ) return undefined;
   return candidate;
+}
+
+function capturedJavascriptInputFileSnapshot(
+  target: string,
+  rootDirectory: string,
+  inputFileSnapshots: ReadonlyMap<string, LoadedInputFileSnapshot>,
+): LoadedInputFileSnapshot | undefined {
+  if (!javascriptFilter.test(target)) return undefined;
+  const captured = inputFileSnapshots.get(target);
+  return captured !== undefined
+      && captured.snapshot.kind === "file"
+      && captured.snapshot.path === target
+      && captured.resolvedPath === resolve(rootDirectory, ...target.split("/"))
+    ? captured
+    : undefined;
 }
 
 function capturedPackageSubpathExportTarget(
@@ -1420,29 +1497,31 @@ async function resolvedInputTarget(
       selector?.fileSnapshots,
     );
   }
-  const installationInputs = [...known]
-    .filter((path) => packageInstallationRoot(path) === installationRoot)
-    .sort();
-  const rawTarget = installationInputs.length <= 1
-    ? installationInputs[0]
-    : capturedPackageRootExportTarget(
-      packageName,
-      installationRoot,
-      known,
-      packageScopeSnapshots,
-      buildConditions,
-      buildTarget,
-    );
+  const rawTarget = capturedPackageRootExportTarget(
+    packageName,
+    installationRoot,
+    known,
+    rootDirectory,
+    inputFileSnapshots,
+    packageScopeSnapshots,
+    buildConditions,
+    buildTarget,
+  );
+  const rawTargetSnapshot = rawTarget === undefined
+    ? undefined
+    : capturedJavascriptInputFileSnapshot(rawTarget, rootDirectory, inputFileSnapshots);
   return retainRawBareInputFallbackUse(
     rawFallbackUses,
     imported,
     from,
-    rawTarget,
+    rawTargetSnapshot === undefined ? undefined : rawTarget,
     packageName,
     installationRoot,
     importerScopeSnapshots,
     packageScopes,
     packageScopeSnapshots,
+    [],
+    rawTargetSnapshot === undefined ? [] : [rawTargetSnapshot],
   );
 }
 
