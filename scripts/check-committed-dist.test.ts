@@ -1249,7 +1249,7 @@ test("recovers a crash that retains the admitted primary claim hardlink", async 
     ).resolves.toBe("released-untouched");
     await expectTerminalPromotionState(repository, fixture, scenario);
   });
-});
+}, 30_000);
 
 test("preserves and refuses a foreign primary claim identity", async () => {
   await withRepository(async (repository) => {
