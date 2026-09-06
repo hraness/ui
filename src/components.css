@@ -42,72 +42,6 @@
     display: none;
   }
 
-  .hraness-breadcrumbs {
-    min-width: 0;
-  }
-
-  .hraness-breadcrumbs ol,
-  .hraness-pagination {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: var(--space-1);
-    padding: 0;
-    list-style: none;
-  }
-
-  .hraness-breadcrumbs ol {
-    flex-wrap: nowrap;
-    margin: 0;
-    overflow: hidden;
-  }
-
-  .hraness-breadcrumbs li {
-    display: inline-flex;
-    min-width: 0;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: var(--space-1);
-  }
-
-  .hraness-breadcrumbs li:last-child {
-    flex: 1 1 auto;
-  }
-
-  .hraness-breadcrumbs li + li::before {
-    flex: 0 0 auto;
-    color: var(--ui-muted-foreground);
-    content: "/";
-  }
-
-  .hraness-breadcrumbs [aria-current="page"] {
-    display: block;
-    min-width: 0;
-    overflow: hidden;
-    color: var(--ui-muted-foreground);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .hraness-pagination {
-    flex-wrap: wrap;
-  }
-
-  .hraness-pagination a {
-    display: inline-flex;
-    min-width: var(--interactive-target-compact);
-    min-height: var(--interactive-target-compact);
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-md);
-    text-decoration: none;
-  }
-
-  .hraness-pagination [aria-current="page"] {
-    background: var(--ui-primary);
-    color: var(--ui-primary-foreground);
-  }
-
   .hraness-progress__label-row {
     display: flex;
     align-items: baseline;
@@ -145,43 +79,6 @@
   .hraness-progress__control::-moz-progress-bar {
     border-radius: inherit;
     background: var(--ui-primary);
-  }
-
-  .hraness-pagination {
-    justify-content: space-between;
-    gap: var(--space-3);
-  }
-
-  .hraness-pagination ol {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-1);
-    padding: 0;
-    list-style: none;
-  }
-
-  :where(.hraness-pagination__boundary, .hraness-pagination__ellipsis) {
-    display: inline-flex;
-    min-height: var(--interactive-target-compact);
-    align-items: center;
-    justify-content: center;
-    padding-inline: var(--space-3);
-    border-radius: var(--radius-md);
-  }
-
-  .hraness-pagination__boundary[aria-disabled="true"] {
-    color: var(--ui-muted-foreground);
-    cursor: not-allowed;
-    opacity: 0.6;
-  }
-
-  .hraness-pagination__ellipsis {
-    min-width: var(--interactive-target-compact);
-    padding-inline: 0;
-    color: var(--ui-muted-foreground);
   }
 
   @keyframes hraness-spin {
@@ -258,9 +155,7 @@
     .hraness-tabs__tab,
     .hraness-disclosure__trigger,
     .hraness-toggle-group__item,
-    .hraness-segmented-control__item,
-    .hraness-pagination a,
-    .hraness-pagination__boundary
+    .hraness-segmented-control__item
   ) {
     min-height: var(--interactive-target-min);
   }
@@ -279,27 +174,20 @@
   --hraness-menu-coarse-min: var(--interactive-target-min);
   --hraness-dialog-coarse-min: var(--interactive-target-min);
   --hraness-toast-coarse-min: var(--interactive-target-min);
+  --hraness-pagination-coarse-min: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] :where(
   .hraness-tabs__tab,
   .hraness-disclosure__trigger,
   .hraness-toggle-group__item,
-  .hraness-segmented-control__item,
-  .hraness-pagination a,
-  .hraness-pagination__boundary
+  .hraness-segmented-control__item
 ) {
   min-height: var(--interactive-target-min);
 }
 
 :root[data-verification-pointer="coarse"] .hraness-segmented-control__item {
   min-width: var(--interactive-target-min);
-}
-
-@media (max-width: 40rem) {
-  .hraness-pagination {
-    justify-content: center;
-  }
 }
 
 @media (forced-colors: active) {

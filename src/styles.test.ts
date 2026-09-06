@@ -684,34 +684,22 @@ test("SkipLink owns its offscreen and native focus presentation in StyleX", asyn
 });
 
 test("breadcrumbs keep the current page on one shrinkable line", async () => {
-  const components = await stylesheet("./components.css");
-  const breadcrumbs = declarationBlock(
-    components,
-    ".hraness-breadcrumbs ol {",
-  );
-  const item = declarationBlock(components, ".hraness-breadcrumbs li {");
-  const currentItem = declarationBlock(
-    components,
-    ".hraness-breadcrumbs li:last-child {",
-  );
-  const separator = declarationBlock(
-    components,
-    ".hraness-breadcrumbs li + li::before {",
-  );
-  const current = declarationBlock(
-    components,
-    '.hraness-breadcrumbs [aria-current="page"] {',
-  );
+  const [components, navigation] = await Promise.all([
+    stylesheet("./components.css"),
+    stylesheet("./navigation.stylex.ts"),
+  ]);
 
-  expect(breadcrumbs).toContain("flex-wrap: nowrap;");
-  expect(breadcrumbs).toContain("overflow: hidden;");
-  expect(item).toContain("display: inline-flex;");
-  expect(item).toContain("min-width: 0;");
-  expect(currentItem).toContain("flex: 1 1 auto;");
-  expect(separator).toContain('content: "/";');
-  expect(current).toContain("overflow: hidden;");
-  expect(current).toContain("text-overflow: ellipsis;");
-  expect(current).toContain("white-space: nowrap;");
+  expect(components).not.toMatch(/\.hraness-(?:breadcrumbs|pagination)(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u);
+  expect(components).toContain("--hraness-pagination-coarse-min: var(--interactive-target-min);");
+  expect(navigation).toContain("breadcrumbList: {");
+  expect(navigation).toContain('flexWrap: "nowrap"');
+  expect(navigation).toContain('overflow: "hidden"');
+  expect(navigation).toContain("breadcrumbCurrentItem: {");
+  expect(navigation).toContain('flex: "1 1 auto"');
+  expect(navigation).toContain('"::before": {');
+  expect(navigation).toContain("content: '\"/\"'");
+  expect(navigation).toContain('textOverflow: "ellipsis"');
+  expect(navigation).toContain('whiteSpace: "nowrap"');
 });
 
 test("collapsed disclosure panels do not retain their expanded inset", async () => {
