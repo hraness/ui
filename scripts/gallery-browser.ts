@@ -23,13 +23,14 @@ import {
 } from "playwright-core";
 
 import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
+import { placeQuietSiteFooterPriorityBeforeLegacy } from "./gallery-layer-counterfactual.ts";
 
 const BUN_VERSION = "1.3.14";
 const CARD_DESCRIPTION_BRIDGE_PATTERN =
   /:where\(\s*\.hraness-card\s*,\s*\.hraness-pressable-card\s*\)\s*\{\s*--hraness-card-description\s*:\s*var\(--_hraness-card-description\)\s*;?\s*\}/gu;
 const HUGEICONS_VERSION = "4.2.2";
 const PACKAGE_LAYER_NAME =
-  /^components\.hraness-ui\.(?:legacy(?:\.[A-Za-z0-9_-]+)*|priority[1-9]\d*)$/u;
+  /^components\.(?:hraness-ui\.legacy(?:\.[A-Za-z0-9_-]+)*|hraness-stylex\.priority[1-9]\d*)$/u;
 const REACT_VERSION = "19.2.3";
 
 interface BrowserEvidence {
@@ -321,7 +322,7 @@ interface ArtifactSet {
 interface CheckboxFocusRuleEvidence {
   readonly className: string;
   readonly declaration: string;
-  readonly layer: `components.hraness-ui.priority${number}`;
+  readonly layer: `components.hraness-stylex.priority${number}`;
   readonly selector: string;
 }
 
@@ -550,6 +551,9 @@ async function buildGalleryGeneration(
   environment: Record<string, string | undefined>,
 ): Promise<GalleryGenerationArtifacts> {
   const { build, bun } = await loadPackedStylexBuild(consumer, installedRoot);
+  assert.equal(build.STYLEX_GENERATION_SCHEMA_VERSION, 2);
+  assert.equal(build.STYLEX_COMPLETE_RECORD_SCHEMA_VERSION, 2);
+  assert.equal(build.stylexUnionPolicySha256, "1ceced1f1bf6359413ca6425ede61e1fdae272b897f4455c2347e2431d75caa1");
   const outputDirectory = resolve(consumer, "dist/stylex-generations");
   await mkdir(outputDirectory, { recursive: true });
   const generation = await build.createStylexGeneration({
@@ -655,6 +659,7 @@ async function buildGalleryGeneration(
     readFile(compilerFoundationPath, "utf8"),
     readFile(cssPath, "utf8"),
   ]);
+  build.auditCssWithoutStylexUnionNamespace(foundationCss, "packed gallery compiler foundation");
   return {
     combinedCss: `${foundationCss}\n${finalizedCss}`,
     compilerFoundationPath,
@@ -1111,15 +1116,16 @@ function requireFinalBundleLayerOrder(css: string): void {
     assert.ok(
       !isBlock
         || !names.some((name) =>
-          name === "components" || name === "components.hraness-ui"
+          name === "components" || name === "components.hraness-ui" || name === "components.hraness-stylex"
         ),
       "the final styled gallery bundle must not place rules or nested layers directly in a components parent layer",
     );
     const packageNames = names.filter((name) =>
       name === "components.hraness-ui" || name.startsWith("components.hraness-ui.")
+        || name === "components.hraness-stylex" || name.startsWith("components.hraness-stylex.")
     );
     for (const name of names) {
-      if (name === "components.hraness-ui" || name.startsWith("components.hraness-ui.")) {
+      if (packageNames.includes(name)) {
         assert.match(
           name,
           PACKAGE_LAYER_NAME,
@@ -1128,7 +1134,7 @@ function requireFinalBundleLayerOrder(css: string): void {
         const rootLayer = name === "components.hraness-ui.legacy"
           || name.startsWith("components.hraness-ui.legacy.")
           ? "legacy"
-          : name.slice("components.hraness-ui.".length);
+          : name.slice("components.hraness-stylex.".length);
         if (!firstLayerPositions.has(rootLayer)) {
           firstLayerPositions.set(rootLayer, header.index ?? -1);
         }
@@ -1139,7 +1145,7 @@ function requireFinalBundleLayerOrder(css: string): void {
     }
     if (
       header[0].endsWith(";")
-      && packageNames.some((name) => /^components\.hraness-ui\.priority[1-9]\d*$/u.test(name))
+      && packageNames.some((name) => /^components\.hraness-stylex\.priority[1-9]\d*$/u.test(name))
     ) {
       priorityStatements.push({
         names,
@@ -1151,7 +1157,7 @@ function requireFinalBundleLayerOrder(css: string): void {
   assert.ok(basePrelude !== null, "the final styled gallery bundle must declare base below components");
   const basePreludeEnd = (basePrelude.index ?? -1) + basePrelude[0].length;
   const firstNamedLayerBlock = css.search(
-    /@layer\s+(?:base|components\.hraness-ui\.[A-Za-z0-9_.-]+)\s*\{/u,
+    /@layer\s+(?:base|components\.hraness-(?:ui|stylex)\.[A-Za-z0-9_.-]+)\s*\{/u,
   );
   assert.notEqual(
     firstNamedLayerBlock,
@@ -1179,19 +1185,19 @@ function requireFinalBundleLayerOrder(css: string): void {
   );
   const priorityNames = priorityStatement.names.slice(finalizedBeforeNames.length);
   const highestPriority = Number(
-    priorityNames.at(-1)?.slice("components.hraness-ui.priority".length),
+    priorityNames.at(-1)?.slice("components.hraness-stylex.priority".length),
   );
   assert.ok(Number.isSafeInteger(highestPriority) && highestPriority > 0);
   assert.deepEqual(
     priorityNames,
     Array.from(
       { length: highestPriority },
-      (_, index) => `components.hraness-ui.priority${String(index + 1)}`,
+      (_, index) => `components.hraness-stylex.priority${String(index + 1)}`,
     ),
     "the finalized StyleX priority statement must enumerate its complete finite union",
   );
   for (const priorityName of priorityNames) {
-    const priority = priorityName.slice("components.hraness-ui.".length);
+    const priority = priorityName.slice("components.hraness-stylex.".length);
     assert.equal(
       firstLayerPositions.get(priority),
       priorityStatement.position,
@@ -1210,7 +1216,7 @@ function requireFinalBundleLayerOrder(css: string): void {
   );
   for (const priority of priorities) {
     assert.ok(
-      priorityNames.includes(`components.hraness-ui.${priority}`),
+      priorityNames.includes(`components.hraness-stylex.${priority}`),
       `the ${priority} block is missing from the finalized finite priority statement`,
     );
     assert.ok(
@@ -1294,8 +1300,8 @@ function requirePackedCheckboxFocusContract(
   );
   const priorityLayers = [...new Set(
     [...css.matchAll(
-      /@layer\s+(components\.hraness-ui\.priority[1-9]\d*)\s*\{/gu,
-    )].map((match) => match[1] as `components.hraness-ui.priority${number}`),
+      /@layer\s+(components\.hraness-stylex\.priority[1-9]\d*)\s*\{/gu,
+    )].map((match) => match[1] as `components.hraness-stylex.priority${number}`),
   )];
   assert.notEqual(
     priorityLayers.length,
@@ -1598,13 +1604,13 @@ function requirePackedFormStyles(javaScript: string, css: string): void {
   );
 }
 
-function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
+function requireCompiledGalleryStylesheet(css: string, javaScript: string): void {
   requirePackedDataTableStyles(javaScript, css);
   requirePackedFormStyles(javaScript, css);
   assert.match(
     css,
-    /@layer components\.hraness-ui\.priority[1-9]\d*/u,
-    "the packed default stylesheet must include the package StyleX layer",
+    /@layer components\.hraness-stylex\.priority[1-9]\d*/u,
+    "the compiled gallery must include the shared StyleX union layer",
   );
   assert.match(
     css,
@@ -2687,84 +2693,6 @@ function requirePackedDefaultStylesheet(css: string, javaScript: string): void {
       "the gallery visually-hidden conflict must carry every important counterexample",
     );
   }
-}
-
-interface QuietSiteFooterLayerCounterfactual {
-  readonly css: string;
-  readonly targetPriority: `priority${number}`;
-}
-
-function placeQuietSiteFooterPriorityBeforeLegacy(
-  css: string,
-): QuietSiteFooterLayerCounterfactual {
-  const priorities = [...new Set([...css.matchAll(
-    /components\.hraness-ui\.(priority[1-9]\d*)/gu,
-  )].map((match) => match[1] as `priority${number}`))]
-    .sort((left, right) => Number(left.slice("priority".length)) - Number(right.slice("priority".length)));
-  const footerPaddingRule =
-    /\.[A-Za-z0-9_-]+\s*\{\s*padding-top:\s*var\(--space-5,\s*1\.25rem\)\s*;?\s*\}/gu;
-  const targetRules: Array<{
-    readonly priority: `priority${number}`;
-    readonly rule: string;
-  }> = [];
-  for (const match of css.matchAll(
-    /@layer\s+components\.hraness-ui\.(priority[1-9]\d*)\s*\{/gu,
-  )) {
-    const priority = match[1] as `priority${number}`;
-    const open = (match.index ?? 0) + match[0].lastIndexOf("{");
-    const layerCss = balancedBlock(
-      css,
-      open,
-      `packed components.hraness-ui.${priority} CSS`,
-    );
-    for (const rule of layerCss.matchAll(footerPaddingRule)) {
-      targetRules.push({ priority, rule: rule[0] });
-    }
-  }
-  assert.equal(
-    targetRules.length,
-    1,
-    `the packed gallery union must contain exactly one finite-layer quiet-site footer padding atom; got ${JSON.stringify(targetRules)}`,
-  );
-  const targetPriority = targetRules[0]!.priority;
-  assert.equal(
-    targetPriority,
-    "priority5",
-    "the gallery priority-zero registration must shift the package footer padding atom into priority5",
-  );
-  const targetIndex = priorities.indexOf(targetPriority);
-  assert.notEqual(targetIndex, -1);
-  const counterfactualLayers = [
-    ...priorities.slice(0, targetIndex + 1),
-    "legacy",
-    ...priorities.slice(targetIndex + 1),
-  ];
-  assert.deepEqual(
-    counterfactualLayers.filter((layer) => layer !== "legacy"),
-    priorities,
-    "the browser counterfactual must preserve the complete finite priority order",
-  );
-  assert.equal(
-    counterfactualLayers.indexOf("legacy"),
-    targetIndex + 1,
-    "the browser counterfactual must place legacy immediately after the footer priority",
-  );
-  const counterfactualPrelude = counterfactualLayers
-    .map((layer) => `components.hraness-ui.${layer}`)
-    .join(", ");
-  const counterfactual = [
-    "@layer base, components;",
-    `@layer ${counterfactualPrelude};`,
-    css,
-  ].join("\n");
-  assert.notEqual(counterfactual, css);
-  assert.ok(
-    counterfactual.startsWith(
-      `@layer base, components;\n@layer ${counterfactualPrelude};\n`,
-    ),
-    "the browser counterfactual must create legacy immediately after the exact footer priority while preserving every other finite priority's order",
-  );
-  return { css: counterfactual, targetPriority };
 }
 
 function attachDiagnostics(page: Page): string[] {
@@ -13858,10 +13786,13 @@ try {
     "gallery/unstyled-client.tsx",
     negativeDirectory,
   );
-  requirePackedDefaultStylesheet(production.combinedCss, production.javaScript);
+  requireCompiledGalleryStylesheet(production.combinedCss, production.javaScript);
   for (const unknownLayer of [
     "@layer components.hraness-ui.priority0;",
     "@layer components.hraness-ui.unbounded { .layer-negative-control { display: block; } }",
+    "@layer components.hraness-ui.priority1;",
+    "@layer components.hraness-stylex.priority0;",
+    "@layer components.hraness-stylex.unbounded { .layer-negative-control { display: block; } }",
   ]) {
     assert.throws(
       () => requireFinalBundleLayerOrder(`${production.combinedCss}\n${unknownLayer}`),
@@ -13886,12 +13817,17 @@ try {
       expected: /must not place rules or nested layers directly in a components parent layer/u,
     },
     {
-      css: "@layer base, components; @layer components.hraness-ui.priority1 { .early-priority-block-negative-control { display: block; } }",
+      css: "@layer components.hraness-stylex { @layer priority1 { .nested-union-parent-negative-control { display: block; } } }",
+      description: "nested union parent layers",
+      expected: /must not place rules or nested layers directly in a components parent layer/u,
+    },
+    {
+      css: "@layer base, components; @layer components.hraness-stylex.priority1 { .early-priority-block-negative-control { display: block; } }",
       description: "a priority block after the base prelude but before the canonical statement",
       expected: /must be the first declaration/u,
     },
     {
-      css: "@layer components.hraness-ui.priority4, consumer-overrides;",
+      css: "@layer components.hraness-stylex.priority4, consumer-overrides;",
       description: "a mixed priority statement before the canonical statement",
       expected: /exactly one finite StyleX priority statement/u,
     },
@@ -13927,7 +13863,7 @@ try {
   );
   assert.doesNotMatch(
     negativeControl.css,
-    /@layer\s+components\.hraness-ui\.priority[1-9]\d*/u,
+    /@layer\s+components\.hraness-(?:ui|stylex)\.priority[1-9]\d*/u,
     "the plugin-free negative control must omit finalized StyleX priority rules",
   );
   assert.match(production.javaScript, /__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__/u);
