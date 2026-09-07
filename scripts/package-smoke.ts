@@ -7137,6 +7137,10 @@ async function verifyConsumer(
     types: "./build/bun.ts",
     import: "./dist/build/bun.js",
   });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/next"], {
+    types: "./build/next.ts",
+    import: "./dist/build/next.js",
+  });
   assert.deepEqual(installedManifest.exports?.["./stylex-build/vite"], {
     types: "./build/vite.ts",
     import: "./dist/build/vite.js",
@@ -7157,9 +7161,20 @@ async function verifyConsumer(
     "build/contracts.ts",
     "build/generation.ts",
     "build/index.ts",
+    "build/next-contracts.ts",
+    "build/next-generation.ts",
+    "build/next-loader.cjs",
+    "build/next-loader.ts",
+    "build/next-plugin.ts",
+    "build/next-ssg.ts",
+    "build/next-auxiliary.ts",
+    "build/next.ts",
     "build/vite.ts",
     "dist/build/bun.js",
     "dist/build/index.js",
+    "dist/build/next-loader.cjs",
+    "dist/build/next-loader.js",
+    "dist/build/next.js",
     "dist/build/vite.js",
     "dist/stylex.css",
     "dist/stylex-manifest.json",

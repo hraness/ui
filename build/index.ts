@@ -13,6 +13,7 @@ import {
   compilerContract as compilerContractValue,
   compilerSha256 as compilerSha256Value,
   createStylexTransformCollector as createStylexTransformCollectorImplementation,
+  parseStylexSourceMap as parseStylexSourceMapImplementation,
   readStylexPackageManifest as readStylexPackageManifestImplementation,
   serializeStylexPackageRules as serializeStylexPackageRulesImplementation,
   serializeStylexRuleUnionV1 as serializeStylexRuleUnionV1Implementation,
@@ -42,6 +43,7 @@ export const compilerContract = compilerContractValue;
 export const compilerSha256 = compilerSha256Value;
 export const createStylexGeneration: typeof createStylexGenerationImplementation = (...arguments_) => createStylexGenerationImplementation(...arguments_);
 export const createStylexTransformCollector: typeof createStylexTransformCollectorImplementation = (...arguments_) => createStylexTransformCollectorImplementation(...arguments_);
+export const parseStylexSourceMap: typeof parseStylexSourceMapImplementation = (...arguments_) => parseStylexSourceMapImplementation(...arguments_);
 export const finalizeStylexGeneration: typeof finalizeStylexGenerationImplementation = (...arguments_) => finalizeStylexGenerationImplementation(...arguments_);
 export const prepareStylexProducedTemplate: typeof prepareStylexProducedTemplateImplementation = (...arguments_) => prepareStylexProducedTemplateImplementation(...arguments_);
 export const readStylexPackageManifest: typeof readStylexPackageManifestImplementation = (...arguments_) => readStylexPackageManifestImplementation(...arguments_);
@@ -76,5 +78,12 @@ export type {
   StylexStandaloneSerializerV1,
   StylexTemplateV1,
 } from "./contracts.js";
-export type { StylexRuleUnionPolicyV1, StylexTransformCollector, StylexTransformResult } from "./compiler.js";
+export type {
+  StylexMappedTransformOptions,
+  StylexMappedTransformResult,
+  StylexSourceMapV1,
+  StylexRuleUnionPolicyV1,
+  StylexTransformCollector,
+  StylexTransformResult,
+} from "./compiler.js";
 export type { PreparedStylexProducedTemplate } from "./generation.js";

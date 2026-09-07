@@ -1,0 +1,7 @@
+@layer base, components;
+
+@layer components.fixture-site {
+  body {
+    margin: 0;
+  }
+}

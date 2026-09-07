@@ -13622,6 +13622,10 @@ try {
     types: "./build/bun.ts",
     import: "./dist/build/bun.js",
   });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/next"], {
+    types: "./build/next.ts",
+    import: "./dist/build/next.js",
+  });
   assert.equal(
     installedManifest.exports?.["./stylex-manifest.json"],
     "./dist/stylex-manifest.json",
@@ -13640,6 +13644,9 @@ try {
     access(resolve(installedRoot, "dist/stylex-manifest.json")),
     access(resolve(installedRoot, "dist/build/index.js")),
     access(resolve(installedRoot, "dist/build/bun.js")),
+    access(resolve(installedRoot, "dist/build/next-loader.cjs")),
+    access(resolve(installedRoot, "dist/build/next-loader.js")),
+    access(resolve(installedRoot, "dist/build/next.js")),
     access(resolve(installedRoot, "src/actions.stylex.ts")),
     access(resolve(installedRoot, "src/checkbox-field.stylex.ts")),
     access(resolve(installedRoot, "src/collections.stylex.ts")),

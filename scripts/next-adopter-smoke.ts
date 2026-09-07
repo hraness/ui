@@ -1,0 +1,675 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
+
+import { chromium } from "playwright-core";
+
+import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
+import {
+  assertNextAuthoredSourceEmbedding,
+  assertNextSourceMapOutputLink,
+  nextSourceMapEntries,
+  type NextSourceMapEntry,
+} from "./next-source-map.ts";
+
+const BUN_VERSION = "1.3.14";
+const NODE_VERSION_PREFIX = "24.";
+const NEXT_VERSION = "16.2.12";
+const PORT = 39_154;
+const NEXT_TARGETS = ["client", "edge-rsc", "node-rsc"] as const;
+type NextTarget = (typeof NEXT_TARGETS)[number];
+const FIXTURE_REQUIRED_SOURCES: Readonly<Record<NextTarget, readonly string[]>> = {
+  client: ["app/client.tsx", "app/global-error.tsx", "app/lazy.tsx"],
+  "edge-rsc": ["app/edge/page.tsx", "app/global-error.tsx", "app/layout.tsx"],
+  "node-rsc": [
+    "app/client.tsx",
+    "app/global-error-proof/page.tsx",
+    "app/global-error.tsx",
+    "app/index/[manifestProof]/page.tsx",
+    "app/layout.tsx",
+    "app/lazy.tsx",
+    "app/page.tsx",
+  ],
+};
+const FIXTURE_AUTHORED_SOURCES = [...new Set(NEXT_TARGETS.flatMap((target) => FIXTURE_REQUIRED_SOURCES[target]))].sort();
+
+function resolveNode24(): string {
+  const executableName = process.platform === "win32" ? "node.exe" : "node";
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    if (directory.length === 0) continue;
+    const executable = resolve(directory, executableName);
+    try {
+      const probe = Bun.spawnSync([
+        executable,
+        "--input-type=commonjs",
+        "--eval",
+        `if (typeof Bun !== "undefined" || !process.versions.node.startsWith(${JSON.stringify(NODE_VERSION_PREFIX)})) process.exit(1)`,
+      ], { stderr: "ignore", stdin: "ignore", stdout: "ignore" });
+      if (probe.exitCode === 0) return executable;
+    } catch {
+      // Keep searching PATH for a genuine Node 24 executable.
+    }
+  }
+  throw new Error("Packed Next adopter smoke requires a genuine Node 24 executable on PATH");
+}
+
+async function run(command: readonly string[], cwd: string, environment: NodeJS.ProcessEnv, timeoutMs = 900_000): Promise<void> {
+  const child = Bun.spawn([...command], { cwd, env: environment, stdin: "ignore", stderr: "pipe", stdout: "pipe" });
+  const stdout = new Response(child.stdout).text();
+  const stderr = new Response(child.stderr).text();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const outcome = await Promise.race([
+    child.exited.then((code) => ({ code, timeout: false as const })),
+    new Promise<{ timeout: true }>((resolveTimeout) => {
+      timeout = setTimeout(() => resolveTimeout({ timeout: true }), timeoutMs);
+    }),
+  ]);
+  if (timeout !== undefined) clearTimeout(timeout);
+  if (outcome.timeout) {
+    child.kill("SIGTERM");
+    await Promise.race([child.exited, new Promise((resolveWait) => setTimeout(resolveWait, 2_000))]);
+    if (child.exitCode === null) child.kill("SIGKILL");
+  }
+  const exitCode = await child.exited;
+  const [stdoutText, stderrText] = await Promise.all([stdout, stderr]);
+  if (stdoutText.length > 0) process.stdout.write(stdoutText);
+  if (stderrText.length > 0) process.stderr.write(stderrText);
+  assert.equal(outcome.timeout, false, `Command timed out: ${command.join(" ")}`);
+  assert.equal(child.signalCode, null, `Command exited by signal: ${command.join(" ")}`);
+  assert.equal(exitCode, 0, `Command failed: ${command.join(" ")}`);
+}
+
+async function filesBelow(root: string, directory = root): Promise<readonly string[]> {
+  const output: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    assert.ok(!entry.isSymbolicLink(), `Next smoke output contains a symlink: ${path}`);
+    if (entry.isDirectory()) output.push(...await filesBelow(root, path));
+    else {
+      assert.ok(entry.isFile(), `Next smoke output contains a non-file: ${path}`);
+      output.push(relative(root, path).split(sep).join("/"));
+    }
+  }
+  return output.sort();
+}
+
+function sha256(value: Uint8Array | string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function exactUtf8(value: Buffer, description: string): string {
+  const source = value.toString("utf8");
+  assert.ok(Buffer.from(source, "utf8").equals(value), `${description} is not exact UTF-8`);
+  return source;
+}
+
+function object(value: unknown, description: string): Record<string, unknown> {
+  assert.ok(typeof value === "object" && value !== null && !Array.isArray(value), `${description} must be an object`);
+  const prototype = Object.getPrototypeOf(value) as unknown;
+  assert.ok(prototype === Object.prototype || prototype === null, `${description} must be a plain object`);
+  return value as Record<string, unknown>;
+}
+
+function exactKeys(record: Record<string, unknown>, names: readonly string[], description: string): void {
+  assert.deepEqual(Object.keys(record).sort(), [...names].sort(), `${description} has an unexpected shape`);
+}
+
+function digest(value: unknown, description: string): string {
+  assert.ok(typeof value === "string" && /^[a-f0-9]{64}$/u.test(value), `${description} must be a lowercase SHA-256`);
+  return value;
+}
+
+function logicalPath(value: unknown, description: string): string {
+  assert.ok(
+    typeof value === "string"
+      && value.length > 0
+      && value.length <= 4096
+      && !value.startsWith("/")
+      && !value.includes("\\")
+      && !/[\u0000-\u001f\u007f]/u.test(value)
+      && !value.split("/").some((segment) => segment.length === 0 || segment === "." || segment === ".."),
+    `${description} must be a bounded normalized relative path`,
+  );
+  return value;
+}
+
+function orderedLogicalPaths(value: unknown, description: string): readonly string[] {
+  assert.ok(Array.isArray(value) && value.length <= 100_000, `${description} must be a bounded array`);
+  for (let index = 0; index < value.length; index += 1) assert.ok(Object.hasOwn(value, index), `${description} must not be sparse`);
+  const paths = value.map((path, index) => logicalPath(path, `${description}[${String(index)}]`));
+  assert.deepEqual(paths, [...new Set(paths)].sort(), `${description} must be sorted and unique`);
+  return paths;
+}
+
+function nextTarget(value: unknown, description: string): NextTarget {
+  assert.ok(NEXT_TARGETS.includes(value as NextTarget), `${description} is not a supported target`);
+  return value as NextTarget;
+}
+
+type Artifact = Readonly<{ bytes: number; path: string; sha256: string }>;
+
+function artifact(value: unknown, description: string): Artifact {
+  const record = object(value, description);
+  exactKeys(record, ["bytes", "path", "sha256"], description);
+  assert.ok(Number.isSafeInteger(record.bytes) && (record.bytes as number) >= 0, `${description}.bytes is invalid`);
+  return {
+    bytes: record.bytes as number,
+    path: logicalPath(record.path, `${description}.path`),
+    sha256: digest(record.sha256, `${description}.sha256`),
+  };
+}
+
+function orderedArtifacts(value: unknown, description: string): readonly Artifact[] {
+  assert.ok(Array.isArray(value) && value.length <= 100_000, `${description} must be a bounded array`);
+  const output = value.map((item, index) => artifact(item, `${description}[${String(index)}]`));
+  assert.deepEqual(output.map(({ path }) => path), [...new Set(output.map(({ path }) => path))].sort(), `${description} must be path sorted and unique`);
+  return output;
+}
+
+type GraphIdentity = Readonly<{ graphId: string; receiptSha256: string; target: NextTarget }>;
+
+function graphIdentities(value: unknown, description: string): readonly GraphIdentity[] {
+  assert.ok(Array.isArray(value) && value.length === NEXT_TARGETS.length, `${description} must contain every target`);
+  const output = value.map((item, index) => {
+    const record = object(item, `${description}[${String(index)}]`);
+    exactKeys(record, ["graphId", "receiptSha256", "target"], `${description}[${String(index)}]`);
+    assert.ok(typeof record.graphId === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(record.graphId), `${description}[${String(index)}].graphId is invalid`);
+    return {
+      graphId: record.graphId,
+      receiptSha256: digest(record.receiptSha256, `${description}[${String(index)}].receiptSha256`),
+      target: nextTarget(record.target, `${description}[${String(index)}].target`),
+    };
+  });
+  assert.deepEqual(output.map(({ target }) => target), NEXT_TARGETS, `${description} targets differ from the exact target order`);
+  assert.equal(new Set(output.map(({ graphId }) => graphId)).size, output.length, `${description} graph IDs must be unique`);
+  return output;
+}
+
+function moduleIdentities(value: unknown, description: string): readonly Readonly<{ path: string; receiptSha256: string }>[] {
+  assert.ok(Array.isArray(value) && value.length <= 100_000, `${description} must be a bounded array`);
+  const output = value.map((item, index) => {
+    const module = object(item, `${description}[${String(index)}]`);
+    exactKeys(module, ["path", "receiptSha256"], `${description}[${String(index)}]`);
+    return {
+      path: logicalPath(module.path, `${description}[${String(index)}].path`),
+      receiptSha256: digest(module.receiptSha256, `${description}[${String(index)}].receiptSha256`),
+    };
+  });
+  assert.deepEqual(output.map(({ path }) => path), [...new Set(output.map(({ path }) => path))].sort(), `${description} must be path sorted and unique`);
+  return output;
+}
+
+async function readArtifact(root: string, expected: Artifact, description: string): Promise<Buffer> {
+  const path = resolve(root, ...expected.path.split("/"));
+  const containment = relative(root, path).split(sep).join("/");
+  assert.ok(containment === expected.path && !containment.startsWith("../"), `${description} escapes its root`);
+  const stat = await lstat(path);
+  assert.ok(stat.isFile() && !stat.isSymbolicLink(), `${description} must be an ordinary nonsymlink file`);
+  assert.equal(await realpath(path), path, `${description} must not traverse a symlink`);
+  const source = await readFile(path);
+  assert.deepEqual(
+    { bytes: source.byteLength, sha256: sha256(source) },
+    { bytes: expected.bytes, sha256: expected.sha256 },
+    `${description} differs from its receipt`,
+  );
+  return source;
+}
+
+const themeSetup = String.raw`import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import {
+  STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION,
+  artifactForFile,
+  canonicalJson,
+  compilerContract,
+  compilerSha256,
+  createStylexTransformCollector,
+  serializeStylexPackageRules,
+  stylexRulesSha256,
+  validateStylexPackageManifest,
+} from "@hraness/ui/stylex-build";
+
+const root = join(process.cwd(), "node_modules/@fixture/theme");
+const sourcePath = join(root, "src/index.ts");
+const source = await readFile(sourcePath, "utf8");
+const collector = createStylexTransformCollector(root);
+const transformed = await collector.transform(source, sourcePath);
+const rules = collector.seal();
+await mkdir(join(root, "dist"));
+await writeFile(join(root, "dist/index.js"), transformed.code + "\n", { flag: "wx" });
+const serializer = { before: ["components.fixture-theme.legacy"], prefix: "components.fixture-theme" };
+await writeFile(join(root, "dist/stylex.css"), serializeStylexPackageRules(rules, serializer), { flag: "wx" });
+await writeFile(join(root, "src/fixture.woff2"), Buffer.alloc(70_000, 17), { flag: "wx" });
+const manifest = validateStylexPackageManifest({
+  buildTools: [],
+  compiler: compilerContract,
+  compilerFoundation: "src/compiler-foundation.css",
+  compilerSha256,
+  kind: "hraness-stylex-package-manifest",
+  package: { name: "@fixture/theme", version: "1.0.0" },
+  rules,
+  rulesSha256: stylexRulesSha256(rules),
+  runtime: [await artifactForFile(root, "dist/index.js")],
+  schemaVersion: STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION,
+  standaloneCss: await artifactForFile(root, "dist/stylex.css"),
+  standaloneSerializer: serializer,
+  stylesheets: [await artifactForFile(root, "src/compiler-foundation.css")],
+});
+await writeFile(join(root, "dist/stylex-manifest.json"), canonicalJson(manifest) + "\n", { flag: "wx" });
+`;
+
+async function waitForServer(url: string, child: Readonly<{ exited: Promise<number> }>): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const outcome = await Promise.race([
+      fetch(url).then((response) => response.ok ? "ready" as const : "wait" as const, () => "wait" as const),
+      child.exited.then(() => "exit" as const),
+      new Promise<"wait">((resolveWait) => setTimeout(() => resolveWait("wait"), 100)),
+    ]);
+    if (outcome === "ready") return;
+    assert.notEqual(outcome, "exit", "Next server exited before becoming ready");
+    assert.ok(Date.now() < deadline, "Next server did not become ready in 30 seconds");
+  }
+}
+
+assert.equal(Bun.version, BUN_VERSION, `Next adopter smoke requires Bun ${BUN_VERSION}`);
+const repository = await realpath(process.cwd());
+const fixtureRoot = resolve(repository, ".stylex-fixtures");
+await mkdir(fixtureRoot, { recursive: true });
+const fixtureRootStat = await lstat(fixtureRoot);
+assert.ok(fixtureRootStat.isDirectory() && !fixtureRootStat.isSymbolicLink());
+const work = await realpath(await mkdtemp(join(fixtureRoot, "next-adopter-smoke-")));
+const consumer = resolve(work, "consumer");
+const temporary = resolve(work, "tmp");
+const environment = { ...process.env, BUN_TMPDIR: temporary, NODE_ENV: "production", TMPDIR: temporary };
+let successful = false;
+
+try {
+  const node = resolveNode24();
+  await mkdir(consumer);
+  await mkdir(temporary, { mode: 0o700 });
+  const archive = resolve(work, "hraness-ui.tgz");
+  await run([process.execPath, "pm", "pack", "--filename", archive, "--ignore-scripts", "--quiet"], repository, environment);
+  await writeFile(resolve(consumer, "package.json"), `${JSON.stringify({
+    dependencies: {
+      "@babel/core": "7.29.7",
+      "@hraness/ui": `file:${archive}`,
+      "@stylexjs/babel-plugin": "0.19.0",
+      "@stylexjs/stylex": "0.19.0",
+      "@types/node": "24.13.3",
+      "@types/react": "19.2.14",
+      "@types/react-dom": "19.2.3",
+      lightningcss: "1.33.0",
+      next: NEXT_VERSION,
+      react: "19.2.3",
+      "react-dom": "19.2.3",
+      typescript: "6.0.3",
+    },
+    name: "hraness-packed-next-adopter-smoke",
+    private: true,
+    scripts: { build: "node ./build.mjs" },
+    type: "module",
+  }, null, 2)}\n`);
+  await run([process.execPath, "install", "--ignore-scripts"], consumer, environment);
+  const nextManifest = JSON.parse(await readFile(resolve(consumer, "node_modules/next/package.json"), "utf8")) as { version?: unknown };
+  assert.equal(nextManifest.version, NEXT_VERSION);
+  await cp(resolve(repository, "fixtures/next-adopter/app"), resolve(consumer, "app"), { recursive: true });
+  await cp(resolve(repository, "fixtures/next-adopter/next.config.mjs"), resolve(consumer, "next.config.mjs"));
+  await cp(resolve(repository, "fixtures/next-adopter/build.mjs"), resolve(consumer, "build.mjs"));
+  await cp(resolve(repository, "fixtures/next-adopter/build-no-edge.mjs"), resolve(consumer, "build-no-edge.mjs"));
+  await mkdir(resolve(consumer, "node_modules/@fixture"), { recursive: true });
+  await cp(resolve(repository, "fixtures/next-adopter/theme-package"), resolve(consumer, "node_modules/@fixture/theme"), { recursive: true });
+  await writeFile(resolve(consumer, "setup-theme.mjs"), themeSetup, { flag: "wx" });
+  await run([node, "./setup-theme.mjs"], consumer, environment);
+  await run([node, "./build.mjs"], consumer, environment);
+
+  const attemptRoot = resolve(consumer, ".stylex-next/packed-next-adopter");
+  const completePath = resolve(attemptRoot, "complete.json");
+  const completeSource = await readFile(completePath);
+  const complete = object(JSON.parse(exactUtf8(completeSource, "Next complete record")) as unknown, "Next complete record");
+  assert.equal(complete.kind, "hraness-stylex-next-build");
+  assert.equal(complete.state, "complete");
+  assert.equal(complete.attemptId, "packed-next-adopter");
+  assert.equal(complete.outputDirectory, ".next");
+  const discoveryIdentities = graphIdentities(complete.discovery, "Next complete discovery");
+  const deliveryIdentities = graphIdentities(complete.delivery, "Next complete delivery");
+
+  const planPath = resolve(attemptRoot, "plan.json");
+  const planSource = await readFile(planPath);
+  const plan = object(JSON.parse(exactUtf8(planSource, "Next attempt plan")) as unknown, "Next attempt plan");
+  assert.equal(plan.attemptId, complete.attemptId, "Next plan and complete record name different attempts");
+  assert.equal(plan.outputDirectory, complete.outputDirectory, "Next plan and complete record name different outputs");
+  const graphMap = object(plan.graphMap, "Next attempt graph map");
+  exactKeys(graphMap, ["client", "edgeRsc", "nodeRsc"], "Next attempt graph map");
+  const expectedGraphIds: Readonly<Record<NextTarget, unknown>> = {
+    client: graphMap.client,
+    "edge-rsc": graphMap.edgeRsc,
+    "node-rsc": graphMap.nodeRsc,
+  };
+  assert.deepEqual(
+    deliveryIdentities.map(({ graphId, target }) => ({ graphId, target })),
+    NEXT_TARGETS.map((target) => ({ graphId: expectedGraphIds[target], target })),
+    "Next delivery graph identities differ from the fresh plan",
+  );
+  assert.deepEqual(
+    discoveryIdentities.map(({ graphId, target }) => ({ graphId, target })),
+    deliveryIdentities.map(({ graphId, target }) => ({ graphId, target })),
+    "Next discovery and delivery graph identities differ",
+  );
+  const requiredRecord = object(plan.requiredSources, "Next attempt required sources");
+  exactKeys(requiredRecord, NEXT_TARGETS, "Next attempt required sources");
+  const requiredSources = Object.fromEntries(NEXT_TARGETS.map((target) => [
+    target,
+    orderedLogicalPaths(requiredRecord[target], `Next attempt required sources ${target}`),
+  ])) as Readonly<Record<NextTarget, readonly string[]>>;
+  assert.deepEqual(requiredSources, FIXTURE_REQUIRED_SOURCES, "Next attempt changed the fixture's exact target source census");
+  const physicalFixtureSources = (await filesBelow(resolve(consumer, "app")))
+    .filter((path) => path.endsWith(".tsx"))
+    .map((path) => `app/${path}`);
+  assert.deepEqual(
+    [...new Set(NEXT_TARGETS.flatMap((target) => requiredSources[target]))].sort(),
+    physicalFixtureSources,
+    "Next attempt omitted or invented a fixture-authored production source",
+  );
+
+  const postprocessingRecord = object(complete.postprocessing, "Next complete postprocessing");
+  exactKeys(postprocessingRecord, ["delivery", "discovery"], "Next complete postprocessing");
+  const deliveryPostprocessingArtifact = artifact(postprocessingRecord.delivery, "Next delivery postprocessing artifact");
+  assert.equal(
+    deliveryPostprocessingArtifact.path,
+    ".stylex-next/packed-next-adopter/delivery/postprocessing.json",
+    "Next delivery postprocessing artifact belongs to a different attempt or mode",
+  );
+  const deliveryPostprocessingSource = await readArtifact(consumer, deliveryPostprocessingArtifact, "Next delivery postprocessing artifact");
+  const deliveryPostprocessing = object(
+    JSON.parse(exactUtf8(deliveryPostprocessingSource, "Next delivery postprocessing receipt")) as unknown,
+    "Next delivery postprocessing receipt",
+  );
+  assert.equal(deliveryPostprocessing.mode, "delivery");
+  assert.equal(deliveryPostprocessing.attemptId, complete.attemptId);
+  assert.equal(deliveryPostprocessing.outputDirectory, complete.outputDirectory);
+  assert.equal(deliveryPostprocessing.planSha256, sha256(planSource), "Next delivery postprocessing is not bound to the fresh plan bytes");
+  assert.deepEqual(
+    graphIdentities(deliveryPostprocessing.graphs, "Next delivery postprocessing graphs"),
+    deliveryIdentities,
+    "Next delivery postprocessing is not bound to the complete graph identities",
+  );
+  const discoveryPostprocessingArtifact = artifact(postprocessingRecord.discovery, "Next discovery postprocessing artifact");
+  assert.equal(
+    discoveryPostprocessingArtifact.path,
+    ".stylex-next/packed-next-adopter/discovery/postprocessing.json",
+    "Next discovery postprocessing artifact belongs to a different attempt or mode",
+  );
+  const discoveryPostprocessingSource = await readArtifact(consumer, discoveryPostprocessingArtifact, "Next discovery postprocessing artifact");
+  const discoveryPostprocessing = object(
+    JSON.parse(exactUtf8(discoveryPostprocessingSource, "Next discovery postprocessing receipt")) as unknown,
+    "Next discovery postprocessing receipt",
+  );
+  assert.equal(discoveryPostprocessing.mode, "discovery");
+  assert.equal(discoveryPostprocessing.attemptId, complete.attemptId);
+  const discoveryOutputDirectory = logicalPath(discoveryPostprocessing.outputDirectory, "Next discovery output directory");
+  assert.equal(discoveryPostprocessing.planSha256, sha256(planSource), "Next discovery postprocessing is not bound to the fresh plan bytes");
+  assert.deepEqual(
+    graphIdentities(discoveryPostprocessing.graphs, "Next discovery postprocessing graphs"),
+    discoveryIdentities,
+    "Next discovery postprocessing is not bound to the complete graph identities",
+  );
+  for (const identity of discoveryIdentities) {
+    const description = `Next discovery ${identity.target} graph receipt`;
+    const graphPath = resolve(attemptRoot, "discovery", identity.target, "graph.json");
+    const graphStat = await lstat(graphPath);
+    assert.ok(graphStat.isFile() && !graphStat.isSymbolicLink(), `${description} must be an ordinary file`);
+    assert.equal(await realpath(graphPath), graphPath, `${description} must not traverse a symlink`);
+    const graphSource = await readFile(graphPath);
+    assert.equal(sha256(graphSource), identity.receiptSha256, `${description} differs from complete.json`);
+    const graph = object(JSON.parse(exactUtf8(graphSource, description)) as unknown, description);
+    assert.equal(graph.attemptId, complete.attemptId);
+    assert.equal(graph.mode, "discovery");
+    assert.equal(graph.target, identity.target);
+    assert.equal(graph.graphId, identity.graphId);
+    assert.equal(graph.outputDirectory, discoveryOutputDirectory);
+    const modules = moduleIdentities(graph.modules, `Next discovery ${identity.target} modules`);
+    assert.deepEqual(modules.map(({ path }) => path), requiredSources[identity.target], `Next discovery ${identity.target} graph differs from the planned source census`);
+    assert.equal(graph.sourcesSha256, sha256(JSON.stringify(modules)), `Next discovery ${identity.target} source inventory hash is stale`);
+    const outputs = orderedArtifacts(graph.outputs, `Next discovery ${identity.target} outputs`);
+    const sourceMaps = orderedArtifacts(graph.sourceMaps, `Next discovery ${identity.target} source maps`);
+    assert.deepEqual(
+      sourceMaps,
+      outputs.filter(({ path }) => path.endsWith(".map")),
+      `Next discovery ${identity.target} graph does not bind its complete map inventory`,
+    );
+    orderedLogicalPaths(graph.javascriptChunks, `Next discovery ${identity.target} JavaScript chunks`);
+  }
+
+  const outputFiles = await filesBelow(resolve(consumer, ".next"));
+  assert.ok(
+    outputFiles.includes("server/app/index/[manifestProof]/page_client-reference-manifest.js"),
+    "Next must retain the working dynamic /index route client-reference manifest identity",
+  );
+  assert.ok(
+    !outputFiles.includes("server/app/index/index/[manifestProof]/page_client-reference-manifest.js"),
+    "Next must not receive a copied or doubled alias for the dynamic /index route manifest",
+  );
+  const indexManifest = await readFile(
+    resolve(consumer, ".next/server/app/index/[manifestProof]/page_client-reference-manifest.js"),
+    "utf8",
+  );
+  assert.ok(
+    indexManifest.includes(JSON.stringify("/index/[manifestProof]/page")),
+    "Next dynamic /index manifest lost its exact route identity",
+  );
+  const mapFiles = outputFiles.filter((path) => path.endsWith(".map"));
+  assert.ok(mapFiles.length > 0, "Next delivery must retain output source maps");
+  const outputRoot = resolve(consumer, ".next");
+  const receiptMapArtifacts = new Map<string, Artifact>();
+  const mappedSourcesByTarget = new Map<NextTarget, NextSourceMapEntry[]>(
+    NEXT_TARGETS.map((target) => [target, []]),
+  );
+  for (const identity of deliveryIdentities) {
+    const graphPath = resolve(attemptRoot, "delivery", identity.target, "graph.json");
+    const graphStat = await lstat(graphPath);
+    assert.ok(graphStat.isFile() && !graphStat.isSymbolicLink(), `Next ${identity.target} graph receipt must be an ordinary file`);
+    assert.equal(await realpath(graphPath), graphPath, `Next ${identity.target} graph receipt must not traverse a symlink`);
+    const graphSource = await readFile(graphPath);
+    assert.equal(sha256(graphSource), identity.receiptSha256, `Next ${identity.target} graph receipt differs from complete.json`);
+    const graph = object(JSON.parse(exactUtf8(graphSource, `Next ${identity.target} graph receipt`)) as unknown, `Next ${identity.target} graph receipt`);
+    assert.equal(graph.attemptId, complete.attemptId);
+    assert.equal(graph.mode, "delivery");
+    assert.equal(graph.target, identity.target);
+    assert.equal(graph.graphId, identity.graphId);
+    assert.equal(graph.outputDirectory, complete.outputDirectory);
+    const modules = moduleIdentities(graph.modules, `Next ${identity.target} modules`);
+    assert.deepEqual(modules.map(({ path }) => path), requiredSources[identity.target], `Next ${identity.target} graph differs from the planned source census`);
+    assert.equal(graph.sourcesSha256, sha256(JSON.stringify(modules)), `Next ${identity.target} source inventory hash is stale`);
+    const outputs = orderedArtifacts(graph.outputs, `Next ${identity.target} outputs`);
+    const sourceMaps = orderedArtifacts(graph.sourceMaps, `Next ${identity.target} source maps`);
+    assert.deepEqual(
+      sourceMaps,
+      outputs.filter(({ path }) => path.endsWith(".map")),
+      `Next ${identity.target} graph does not bind its complete map inventory`,
+    );
+    const javascriptChunks = orderedLogicalPaths(graph.javascriptChunks, `Next ${identity.target} JavaScript chunks`);
+    for (const sourceMap of sourceMaps) {
+      const prior = receiptMapArtifacts.get(sourceMap.path);
+      if (prior === undefined) receiptMapArtifacts.set(sourceMap.path, sourceMap);
+      else assert.deepEqual(sourceMap, prior, `Next delivery graphs disagree about source map ${sourceMap.path}`);
+      const outputPath = sourceMap.path.slice(0, -".map".length);
+      const outputArtifact = outputs.find(({ path }) => path === outputPath);
+      assert.ok(outputArtifact !== undefined, `Next source map ${sourceMap.path} has no same-graph output owner`);
+      const [mapSource, outputSource] = await Promise.all([
+        readArtifact(outputRoot, sourceMap, `Next source map ${sourceMap.path}`),
+        readArtifact(outputRoot, outputArtifact, `Next mapped output ${outputPath}`),
+      ]);
+      const outputText = exactUtf8(outputSource, `Next mapped output ${outputPath}`);
+      assertNextSourceMapOutputLink(outputText, outputPath, sourceMap.path);
+      const entries = nextSourceMapEntries(
+        JSON.parse(exactUtf8(mapSource, `Next source map ${sourceMap.path}`)) as unknown,
+        `Next ${identity.target} source map ${sourceMap.path}`,
+        FIXTURE_AUTHORED_SOURCES,
+        outputPath,
+      );
+      if (javascriptChunks.includes(outputPath)) mappedSourcesByTarget.get(identity.target)!.push(...entries);
+    }
+  }
+  assert.deepEqual(
+    [...receiptMapArtifacts.keys()].sort(),
+    mapFiles,
+    "Next delivery graph receipts do not own the complete physical source-map census",
+  );
+  for (const target of NEXT_TARGETS) {
+    for (const source of requiredSources[target]) {
+      assertNextAuthoredSourceEmbedding(
+        mappedSourcesByTarget.get(target)!,
+        source,
+        await readFile(resolve(consumer, source), "utf8"),
+      );
+    }
+  }
+  const fontFiles = outputFiles.filter((path) => path.endsWith(".woff2"));
+  assert.equal(fontFiles.length, 1, "Next delivery must emit exactly the registered fixture font URL asset");
+  assert.equal(
+    sha256(await readFile(resolve(consumer, ".next", fontFiles[0]!))),
+    sha256(Buffer.alloc(70_000, 17)),
+    "Next emitted font URL asset bytes differ from the registered fixture",
+  );
+  const cssFiles = outputFiles.filter((path) => path.endsWith(".css"));
+  assert.ok(cssFiles.length > 0, "Next delivery must emit CSS assets");
+  const css = (await Promise.all(cssFiles.map((path) => readFile(resolve(consumer, ".next", path), "utf8")))).join("\n");
+  for (const value of ["13px", "17px", "19px", "29px", "31px"]) assert.ok(css.includes(value), `Next CSS union omitted ${value}`);
+  assert.ok(
+    css.includes(fontFiles[0]!.split("/").at(-1)!),
+    "Next CSS does not link the exact emitted font URL asset",
+  );
+
+  const server = Bun.spawn([node, "./node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(PORT)], {
+    cwd: consumer,
+    env: environment,
+    stdin: "ignore",
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+  const stdout = new Response(server.stdout).text();
+  const stderr = new Response(server.stderr).text();
+  try {
+    const base = `http://127.0.0.1:${String(PORT)}`;
+    await waitForServer(base, server);
+    for (const path of ["/", "/edge", "/index/manifest-proof"]) {
+      const response = await fetch(`${base}${path}`);
+      assert.equal(response.status, 200);
+      const csp = response.headers.get("content-security-policy") ?? "";
+      assert.match(csp, /style-src 'self'(?:;|$)/u);
+      assert.doesNotMatch(csp, /style-src[^;]*'unsafe-inline'/u);
+      assert.doesNotMatch(await response.text(), /<style(?:\s|>)/iu, "Next response must not use inline style elements");
+    }
+    const browserExecutable = await resolveFirstBrowserExecutable(
+      [
+        ...(process.env.CHROMIUM_EXECUTABLE_PATH === undefined ? [] : [process.env.CHROMIUM_EXECUTABLE_PATH]),
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        chromium.executablePath(),
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+      ],
+      "No ordinary Chromium executable found. Set CHROMIUM_EXECUTABLE_PATH to run the packed Next browser smoke.",
+    );
+    const browser = await chromium.launch({ args: ["--no-sandbox"], executablePath: browserExecutable, headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.goto(base, { waitUntil: "networkidle" });
+      await page.locator('[data-next-hydrated="true"]').waitFor();
+      await page.locator('[data-next-lazy="ready"]').waitFor();
+      const evidence = await page.evaluate(() => {
+        const node = document.querySelector<HTMLElement>("[data-next-node-rsc]");
+        const client = document.querySelector<HTMLElement>("[data-next-client]");
+        const lazy = document.querySelector<HTMLElement>('[data-next-lazy="ready"]');
+        if (node === null || client === null || lazy === null) throw new Error("Next hydration proof is incomplete");
+        return {
+          client: getComputedStyle(client).scrollMarginBottom,
+          lazy: getComputedStyle(lazy).scrollPaddingInlineStart,
+          node: getComputedStyle(node).outlineOffset,
+          theme: getComputedStyle(node).paddingBlockEnd,
+        };
+      });
+      assert.deepEqual(evidence, { client: "17px", lazy: "19px", node: "13px", theme: "31px" });
+      await page.goto(`${base}/edge`, { waitUntil: "networkidle" });
+      assert.equal(await page.locator("[data-next-edge-rsc]").evaluate((element) => getComputedStyle(element).marginInlineEnd), "29px");
+      await page.goto(`${base}/index/manifest-proof`, { waitUntil: "networkidle" });
+      assert.equal(
+        await page.locator('[data-next-index-manifest="true"]').evaluate((element) => getComputedStyle(element).borderBlockEndWidth),
+        "31px",
+        "Next /index route did not receive its compiled StyleX rule",
+      );
+      const globalErrorPage = await browser.newPage({
+        extraHTTPHeaders: { "x-stylex-global-error-proof": "true" },
+      });
+      try {
+        await globalErrorPage.goto(`${base}/global-error-proof`, { waitUntil: "networkidle" });
+        const globalError = globalErrorPage.locator('[data-next-global-error="true"]');
+        await globalError.waitFor();
+        assert.equal(
+          await globalError.evaluate((element) => getComputedStyle(element).borderBlockStartWidth),
+          "23px",
+          "Next global-error boundary did not receive its compiled StyleX rule",
+        );
+      } finally {
+        await globalErrorPage.close();
+      }
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    server.kill("SIGTERM");
+    await Promise.race([server.exited, new Promise((resolveWait) => setTimeout(resolveWait, 2_000))]);
+    if (server.exitCode === null) server.kill("SIGKILL");
+    await server.exited;
+    const [stdoutText, stderrText] = await Promise.all([stdout, stderr]);
+    if (stdoutText.length > 0) process.stdout.write(stdoutText);
+    if (stderrText.length > 0) process.stderr.write(stderrText);
+  }
+  assert.match(sha256(await readFile(completePath)), /^[a-f0-9]{64}$/u);
+
+  await rm(resolve(consumer, "app/edge"), { recursive: true });
+  await run([node, "./build-no-edge.mjs"], consumer, environment);
+  const noEdgeAttempt = resolve(consumer, ".stylex-next/packed-next-adopter-no-edge");
+  const noEdgePlan = JSON.parse(await readFile(resolve(noEdgeAttempt, "plan.json"), "utf8")) as {
+    requiredSources?: Record<string, unknown>;
+  };
+  assert.deepEqual(noEdgePlan.requiredSources?.["edge-rsc"], []);
+  const noEdgeComplete = JSON.parse(await readFile(resolve(noEdgeAttempt, "complete.json"), "utf8")) as {
+    delivery?: { target?: unknown }[];
+    discovery?: { target?: unknown }[];
+    state?: unknown;
+  };
+  assert.equal(noEdgeComplete.state, "complete");
+  assert.deepEqual(noEdgeComplete.discovery?.map(({ target }) => target), ["client", "edge-rsc", "node-rsc"]);
+  assert.deepEqual(noEdgeComplete.delivery?.map(({ target }) => target), ["client", "edge-rsc", "node-rsc"]);
+  for (const mode of ["discovery", "delivery"] as const) {
+    const graph = JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "edge-rsc/graph.json"), "utf8")) as {
+      entrypoints?: unknown[];
+      modules?: unknown[];
+      sourcesSha256?: unknown;
+      target?: unknown;
+    };
+    assert.equal(graph.target, "edge-rsc");
+    assert.deepEqual(graph.modules, []);
+    assert.deepEqual(graph.entrypoints, []);
+    assert.equal(graph.sourcesSha256, sha256("[]"));
+  }
+  successful = true;
+  console.log("Packed Next client, Node RSC, edge RSC, exact target/output source-map receipts, explicit no-edge graph, dynamic /index route, lazy, exercised global-error, package union, font-URL asset linkage, CSP, and hydration proof passed");
+} finally {
+  if (successful) await rm(work, { force: true, recursive: true });
+  else process.stderr.write(`Retained failed Next adopter fixture: ${work}\n`);
+}
