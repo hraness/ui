@@ -101,14 +101,33 @@ export function deriveStylexNextSsgRoutes(prerenderValue: unknown, routesValue: 
   return { locales, routes: [...new Set(selected.sort())] };
 }
 
-async function readBounded(root: string, logical: string): Promise<Readonly<{ artifact: StylexArtifactV1; source: string }>> {
+type ReadRole = "installed-creator" | "installed-package" | "generated-output";
+
+async function readBounded(root: string, logical: string, role: ReadRole): Promise<Readonly<{ artifact: StylexArtifactV1; source: string }>> {
   const path = normalizeLogicalPath(logical);
+  const creator = role === "installed-creator"
+    ? STYLEX_NEXT_SSG_INPUTS.find(([input]) => path === `node_modules/next/${input}`)
+    : undefined;
+  if (role === "installed-creator") assert.ok(creator !== undefined, "Next SSG installed creator path is not a pinned input");
+  if (role === "installed-package") assert.equal(path, "node_modules/next/package.json", "Next SSG installed package path changed");
   const absolute = resolve(root, ...path.split("/"));
   assert.equal(await realpath(absolute), absolute, `Next SSG input traverses a symlink: ${path}`);
-  const handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const beforeOpen = await lstat(absolute);
+  const regular = (stat: typeof beforeOpen) => {
+    // Installed package-manager files can have stable hardlinks. Their exact
+    // finite roles retain creator hashes or the checked Next package identity.
+    const validLinks = role === "generated-output" ? stat.nlink === 1 : Number.isSafeInteger(stat.nlink) && stat.nlink >= 1;
+    assert.ok(stat.isFile() && validLinks && stat.size <= MAX_BYTES, role === "generated-output"
+      ? `Next SSG input must be a bounded ordinary single-link file: ${path}`
+      : `Next SSG ${role} must be a bounded ordinary file: ${path}`);
+  };
+  const identity = (stat: typeof beforeOpen) => [stat.dev, stat.ino, stat.mode, stat.nlink, stat.size, stat.mtimeMs, stat.ctimeMs];
+  regular(beforeOpen);
+  const handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await handle.stat();
-    assert.ok(before.isFile() && before.nlink === 1 && before.size <= MAX_BYTES, `Next SSG input must be a bounded ordinary single-link file: ${path}`);
+    regular(before);
+    assert.deepEqual(identity(before), identity(beforeOpen), `Next SSG input changed before open: ${path}`);
     const buffer = Buffer.alloc(before.size + 1);
     let length = 0;
     while (length < buffer.length) {
@@ -116,7 +135,6 @@ async function readBounded(root: string, logical: string): Promise<Readonly<{ ar
       if (bytesRead === 0) break;
       length += bytesRead;
     }
-    const identity = (stat: typeof before) => [stat.dev, stat.ino, stat.mode, stat.nlink, stat.size, stat.mtimeMs, stat.ctimeMs];
     assert.equal(length, before.size, `Next SSG input changed while reading: ${path}`);
     assert.deepEqual(identity(await handle.stat()), identity(before), `Next SSG input changed while reading: ${path}`);
     assert.deepEqual(identity(await lstat(absolute)), identity(before), `Next SSG input was replaced while reading: ${path}`);
@@ -124,7 +142,9 @@ async function readBounded(root: string, logical: string): Promise<Readonly<{ ar
     const bytes = buffer.subarray(0, length);
     const source = bytes.toString("utf8");
     assert.ok(Buffer.from(source).equals(bytes), `Next SSG input has invalid UTF-8: ${path}`);
-    return { artifact: { bytes: length, path, sha256: sha256(bytes) }, source };
+    const artifact = { bytes: length, path, sha256: sha256(bytes) };
+    if (creator !== undefined) assert.equal(artifact.sha256, creator[1], `Next SSG creator differs from pinned original bytes: ${path}`);
+    return { artifact, source };
   } finally { await handle.close(); }
 }
 
@@ -142,25 +162,24 @@ export async function proveStylexNextSsgPostprocessing(
   initial: StylexNextFrameworkAssetV1,
 ): Promise<StylexNextSsgPostprocessingV1> {
   assert.equal(initial.role, "ssg-manifest", "Next postprocessing only owns the SSG role");
-  const nextPackage = await readBounded(root, "node_modules/next/package.json");
+  const nextPackage = await readBounded(root, "node_modules/next/package.json", "installed-package");
   const packageMetadata = object(JSON.parse(nextPackage.source) as unknown, "Next package metadata");
   assert.equal(packageMetadata.name, "next");
   assert.equal(packageMetadata.version, STYLEX_NEXT_REQUIRED_VERSION, "Next SSG package version changed");
   const creators: StylexArtifactV1[] = [];
-  for (const [path, expected] of STYLEX_NEXT_SSG_INPUTS) {
-    const input = await readBounded(root, `node_modules/next/${path}`);
-    assert.equal(input.artifact.sha256, expected, `Next SSG creator differs from pinned original bytes: ${path}`);
+  for (const [path] of STYLEX_NEXT_SSG_INPUTS) {
+    const input = await readBounded(root, `node_modules/next/${path}`, "installed-creator");
     creators.push(input.artifact);
   }
   assert.deepEqual(initial.input, creators.find(({ path }) => path === initial.input.path), "Next SSG original creator changed");
-  const buildId = await readBounded(outputRoot, "BUILD_ID");
+  const buildId = await readBounded(outputRoot, "BUILD_ID", "generated-output");
   assert.ok(buildId.source.length <= 128 && /^[A-Za-z0-9_-]+$/u.test(buildId.source), "Next SSG BUILD_ID must be one safe segment");
   const path = `static/${buildId.source}/_ssgManifest.js`;
   assert.deepEqual(initial.output, { bytes: Buffer.byteLength(STYLEX_NEXT_SSG_INITIAL_SOURCE), path, sha256: sha256(STYLEX_NEXT_SSG_INITIAL_SOURCE) }, "Next SSG compiled asset differs from its original pinned source or BUILD_ID");
-  const prerender = await readBounded(outputRoot, "prerender-manifest.json");
-  const routes = await readBounded(outputRoot, "routes-manifest.json");
+  const prerender = await readBounded(outputRoot, "prerender-manifest.json", "generated-output");
+  const routes = await readBounded(outputRoot, "routes-manifest.json", "generated-output");
   const derived = deriveStylexNextSsgRoutes(parseNativeManifest(prerender.source), parseNativeManifest(routes.source));
-  const output = await readBounded(outputRoot, path);
+  const output = await readBounded(outputRoot, path, "generated-output");
   assert.equal(output.source, serializeStylexNextSsgRoutes(derived.routes), "Next SSG postprocessed bytes differ from the exact pinned native derivation");
   return {
     buildId: buildId.source,

@@ -392,6 +392,34 @@ describe("Next adapter contracts", () => {
     );
   });
 
+  test("rejects private or ambiguous source-map paths in module receipts", () => {
+    const receipt = moduleReceipt();
+    for (const path of [
+      "/Users/example/private/page.tsx", "C:/private/page.tsx", "C:\\private\\page.tsx",
+      "C:private/page.tsx", "\\\\server\\share\\page.tsx", "//server/share/page.tsx",
+      "file:///private/page.tsx", "https://example.invalid/private/page.tsx", "http://example.invalid/page.tsx",
+      "data:text/plain,private", "../page.tsx", "src/../page.tsx", "./src/page.tsx",
+      "src//page.tsx", "src/%2e%2e/page.tsx", "%2Fprivate/page.tsx", "src/page.tsx?private",
+      "src/page.tsx#private", "src/pa\nge.tsx", " src/page.tsx",
+    ]) {
+      assert.throws(() => validateStylexNextModuleReceipt({
+        ...receipt, sourceMap: { ...receipt.sourceMap, sources: [path] },
+      }), `accepted ${JSON.stringify(path)}`);
+    }
+    const sources = ["authored/nested/z.tsx", "authored/a.tsx", "authored/nested/z.tsx"];
+    assert.deepEqual(validateStylexNextModuleReceipt({
+      ...receipt, sourceMap: { ...receipt.sourceMap, sources },
+    }).sourceMap.sources, sources);
+    assert.throws(() => validateStylexNextModuleReceipt({
+      ...receipt, sourceMap: { ...receipt.sourceMap, sources: [] },
+    }), /nonempty/u);
+    assert.throws(() => validateStylexNextModuleReceipt({
+      ...receipt,
+      input: { ...receipt.input, path: "file:private/fixture.tsx" },
+      sourceMap: { ...receipt.sourceMap, logicalSourceFileName: "file:private/fixture.tsx" },
+    }), /repository-logical/u);
+  });
+
   test("rejects unlinked maps and incomplete graph outputs", () => {
     const module = moduleReceipt();
     const modules = [{ path: module.input.path, receiptSha256: sha256("module\n") }];

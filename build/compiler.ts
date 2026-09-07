@@ -404,7 +404,7 @@ export function createStylexTransformCollector(rootDirectory: string): StylexTra
     normalizeLogicalPath(logical, "transform id");
     const logicalSourceFileName = mapOptions === undefined
       ? undefined
-      : normalizeLogicalPath(
+      : validateStylexSourceMapPath(
           mapOptions.logicalSourceFileName,
           "mapped transform logicalSourceFileName",
         );
@@ -451,10 +451,13 @@ export function createStylexTransformCollector(rootDirectory: string): StylexTra
     const metadata = plainObject(result.metadata, `${logical} metadata`);
     exactKeys(metadata, ["stylex"], [], `${logical} metadata`);
     const rules = [...parseStylexRules(metadata.stylex, `${logical} metadata.stylex`)];
-    inventories.push(rules);
-    if (mapOptions === undefined) return { code: result.code, rules };
+    if (mapOptions === undefined) {
+      inventories.push(rules);
+      return { code: result.code, rules };
+    }
     assert.ok(result.map !== null && result.map !== undefined, `Babel returned no source map for ${logical}`);
     const map = parseStylexSourceMap(result.map, `${logical} output source map`);
+    inventories.push(rules);
     return {
       code: result.code,
       inputMapSha256: inputSourceMap === undefined ? null : sha256(canonicalJson(inputSourceMap)),
@@ -479,6 +482,15 @@ export function createStylexTransformCollector(rootDirectory: string): StylexTra
   };
 }
 
+/** Map paths are repository-logical paths, not URLs or encoded URL references.
+ * Validate without rewriting so source indexes, mappings and input hashes keep
+ * the caller's exact accepted provenance. */
+export function validateStylexSourceMapPath(value: unknown, description = "StyleX source-map path"): string {
+  const path = normalizeLogicalPath(value, description);
+  assert.ok(path.trim() === path && !/[:%?#]/u.test(path), `${description} must be an unencoded repository-logical path, not a URL`);
+  return path;
+}
+
 export function parseStylexSourceMap(
   value: unknown,
   description = "StyleX source map",
@@ -498,10 +510,7 @@ export function parseStylexSourceMap(
     `${description}.names must contain only strings`,
   );
   assert.ok(Array.isArray(record.sources) && record.sources.length > 0, `${description}.sources must be a nonempty array`);
-  assert.ok(
-    record.sources.every((source) => typeof source === "string" && source.length > 0 && !source.includes("\0")),
-    `${description}.sources must contain only nonempty strings`,
-  );
+  const sources = record.sources.map((source, index) => validateStylexSourceMapPath(source, `${description}.sources[${String(index)}]`));
   const output: {
     file?: string;
     ignoreList?: readonly number[];
@@ -515,10 +524,10 @@ export function parseStylexSourceMap(
   } = {
     mappings: record.mappings,
     names: [...record.names] as string[],
-    sources: [...record.sources] as string[],
+    sources,
     version: 3,
   };
-  if (record.file !== undefined) output.file = requiredString(record.file, `${description}.file`);
+  if (record.file !== undefined) output.file = validateStylexSourceMapPath(record.file, `${description}.file`);
   for (const key of ["ignoreList", "x_google_ignoreList"] as const) {
     const value = record[key];
     if (value === undefined) continue;
@@ -532,6 +541,11 @@ export function parseStylexSourceMap(
   }
   if (record.sourceRoot !== undefined) {
     assert.ok(typeof record.sourceRoot === "string", `${description}.sourceRoot must be a string`);
+    // An empty root and an optional trailing directory separator are standard
+    // relative forms. Retain their bytes after checking the directory itself.
+    if (record.sourceRoot !== "") {
+      validateStylexSourceMapPath(record.sourceRoot.replace(/\/$/u, ""), `${description}.sourceRoot`);
+    }
     output.sourceRoot = record.sourceRoot;
   }
   if (record.sourcesContent !== undefined) {

@@ -44,16 +44,24 @@ export function validateStylexNextAuxiliaryTraceSource(value: string | Uint8Arra
   assert.equal(source, JSON.stringify(parsed), "Next auxiliary trace JSON differs from the native compact format");
 }
 
-async function readOrdinary(root: string, logical: string): Promise<Readonly<{ artifact: StylexArtifactV1; bytes: Buffer }>> {
+async function readOrdinary(root: string, logical: string, role: "installed-creator" | "generated-output"): Promise<Readonly<{ artifact: StylexArtifactV1; bytes: Buffer }>> {
   assert.ok(isAbsolute(root) && resolve(root) === root, "Next auxiliary trace root must be an absolute normalized path");
   assert.equal(await realpath(root), root, "Next auxiliary trace root traverses a symlink");
   assert.ok((await lstat(root)).isDirectory(), "Next auxiliary trace root must be a directory");
   const path = normalizeLogicalPath(logical, "Next auxiliary trace artifact path");
+  if (role === "installed-creator") {
+    assert.equal(path, `node_modules/next/${STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]}`, "Next auxiliary trace installed creator path differs from its pinned owner");
+  }
   const absolute = resolve(root, ...path.split("/"));
   assert.equal(await realpath(absolute), absolute, "Next auxiliary trace artifact traverses a symlink");
   const beforeOpen = await lstat(absolute);
   const regular = (stat: typeof beforeOpen) => {
-    assert.ok(stat.isFile() && stat.nlink === 1 && stat.size <= MAX_BYTES, "Next auxiliary trace artifact must be a bounded ordinary single-link file");
+    // Linux package installations may hardlink immutable installed bytes. Only
+    // this exact hash-pinned creator has that policy; generated outputs do not.
+    const validLinks = role === "installed-creator" ? Number.isSafeInteger(stat.nlink) && stat.nlink >= 1 : stat.nlink === 1;
+    assert.ok(stat.isFile() && validLinks && stat.size <= MAX_BYTES, role === "installed-creator"
+      ? "Next auxiliary trace installed creator must be a bounded ordinary file"
+      : "Next auxiliary trace artifact must be a bounded ordinary single-link file");
   };
   const identity = (stat: typeof beforeOpen) => [stat.dev, stat.ino, stat.mode, stat.nlink, stat.size, stat.mtimeMs, stat.ctimeMs];
   regular(beforeOpen);
@@ -75,16 +83,19 @@ async function readOrdinary(root: string, logical: string): Promise<Readonly<{ a
     assert.deepEqual(identity(await lstat(absolute)), identity(before), "Next auxiliary trace artifact was replaced while reading");
     assert.equal(await realpath(absolute), absolute, "Next auxiliary trace artifact path changed while reading");
     const bytes = buffer.subarray(0, length);
-    return { artifact: { bytes: length, path, sha256: sha256(bytes) }, bytes };
+    const artifact = { bytes: length, path, sha256: sha256(bytes) };
+    if (role === "installed-creator") {
+      assert.equal(artifact.sha256, STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[1], "Next auxiliary trace creator differs from its pinned source bytes");
+    }
+    return { artifact, bytes };
   } finally {
     await handle.close();
   }
 }
 
 async function readCreator(root: string): Promise<StylexArtifactV1> {
-  const [path, expectedHash] = STYLEX_NEXT_AUXILIARY_TRACE_CREATOR;
-  const creator = await readOrdinary(root, `node_modules/next/${path}`);
-  assert.equal(creator.artifact.sha256, expectedHash, "Next auxiliary trace creator differs from its pinned source bytes");
+  const [path] = STYLEX_NEXT_AUXILIARY_TRACE_CREATOR;
+  const creator = await readOrdinary(root, `node_modules/next/${path}`, "installed-creator");
   return creator.artifact;
 }
 
@@ -115,7 +126,7 @@ export async function observeStylexNextAuxiliaryTraceSnapshot(
 ): Promise<StylexNextAuxiliaryTraceSnapshotV1> {
   const asset = validateStylexNextAuxiliaryTraceAsset(value);
   assert.deepEqual(await readCreator(rootDirectory), asset.creator, "Next auxiliary trace captured creator changed");
-  const output = await readOrdinary(outputRoot, asset.initial.path);
+  const output = await readOrdinary(outputRoot, asset.initial.path, "generated-output");
   validateStylexNextAuxiliaryTraceSource(output.bytes);
   assert.deepEqual(await readCreator(rootDirectory), asset.creator, "Next auxiliary trace creator changed during observation");
   return validateStylexNextAuxiliaryTraceSnapshot({ asset, output: output.artifact, semantics: "observation-only" });

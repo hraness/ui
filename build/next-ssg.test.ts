@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { link, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -22,17 +22,27 @@ afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root,
 const prerender = (routes: Record<string, unknown> = {}, dynamicRoutes: Record<string, unknown> = {}) => ({ version: 4, routes, dynamicRoutes, notFoundRoutes: [], preview: {} });
 const manifest = (locales?: readonly string[]) => ({ version: 3, appType: "app", staticRoutes: [], dynamicRoutes: [], ...(locales === undefined ? {} : { i18n: { locales, defaultLocale: locales[0] } }) });
 
-async function fixture() {
+async function fixture(options: Readonly<{ linkCreators?: boolean; linkPackage?: boolean }> = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "ui-next-ssg-")));
   roots.push(root);
+  const installedAliases: { alias: string; path: string; source: Buffer }[] = [];
+  const hardlinkInstalled = async (path: string, source: Buffer) => {
+    const alias = join(root, "installed-aliases", path);
+    await mkdir(dirname(alias), { recursive: true });
+    await link(join(root, "node_modules/next", path), alias);
+    installedAliases.push({ alias, path: join(root, "node_modules/next", path), source });
+  };
   for (const [path, expected] of STYLEX_NEXT_SSG_INPUTS) {
     const source = await readFile(new URL(`../node_modules/next/${path}`, import.meta.url));
     assert.equal(sha256(source), expected);
     const destination = join(root, "node_modules/next", path);
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, source);
+    if (options.linkCreators) await hardlinkInstalled(path, source);
   }
-  await writeFile(join(root, "node_modules/next/package.json"), JSON.stringify({ name: "next", version: STYLEX_NEXT_REQUIRED_VERSION }));
+  const packageSource = Buffer.from(JSON.stringify({ name: "next", version: STYLEX_NEXT_REQUIRED_VERSION }));
+  await writeFile(join(root, "node_modules/next/package.json"), packageSource);
+  if (options.linkPackage) await hardlinkInstalled("package.json", packageSource);
   const outputRoot = join(root, ".next");
   const path = "static/build/_ssgManifest.js";
   await mkdir(dirname(join(outputRoot, path)), { recursive: true });
@@ -45,10 +55,80 @@ async function fixture() {
     output: { bytes: Buffer.byteLength(STYLEX_NEXT_SSG_INITIAL_SOURCE), path, sha256: sha256(STYLEX_NEXT_SSG_INITIAL_SOURCE) },
     role: "ssg-manifest" as const,
   };
-  return { initial, outputRoot, path, root };
+  return { initial, installedAliases, outputRoot, path, root };
 }
 
 describe("Next native SSG postprocessing", () => {
+  test("keeps a nonblocking no-follow descriptor fence after pre-open validation", async () => {
+    // A source contract checks the flags without creating a FIFO or launching
+    // a process that could hang if this protective boundary regresses.
+    const implementation = await readFile(new URL("./next-ssg.ts", import.meta.url), "utf8");
+    const preflight = implementation.indexOf("regular(beforeOpen);");
+    const descriptorOpen = implementation.indexOf("open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)");
+    const identityCheck = implementation.indexOf("identity(before), identity(beforeOpen)");
+    const read = implementation.indexOf("await handle.read(");
+    assert.ok(preflight >= 0 && descriptorOpen > preflight && identityCheck > descriptorOpen && read > identityCheck);
+  });
+
+  test("accepts hardlinked installed creators while rejecting mutation through every alias", async () => {
+    const context = await fixture({ linkCreators: true });
+    const prove = () => proveStylexNextSsgPostprocessing(context.root, context.outputRoot, context.initial);
+    const before = await prove();
+    assert.equal(context.installedAliases.length, STYLEX_NEXT_SSG_INPUTS.length);
+    for (const { alias, path, source } of context.installedAliases) {
+      const stat = await lstat(path);
+      const aliasStat = await lstat(alias);
+      assert.equal(stat.nlink, 2);
+      assert.equal(stat.ino, aliasStat.ino);
+      assert.equal(stat.dev, aliasStat.dev);
+      const changed = Buffer.from(source);
+      changed[0] = changed[0]! ^ 1;
+      await writeFile(alias, changed);
+      assert.equal((await lstat(path)).nlink, 2);
+      await assert.rejects(prove(), /pinned original bytes/u);
+      await writeFile(alias, source);
+      assert.deepEqual(await prove(), before);
+      await unlink(path);
+      await symlink(alias, path);
+      await assert.rejects(prove(), /symlink/u);
+      await unlink(path);
+      await link(alias, path);
+    }
+    assert.deepEqual(await prove(), before);
+  });
+
+  test("accepts hardlinked package metadata only with the existing exact package identity", async () => {
+    const context = await fixture({ linkPackage: true });
+    const prove = () => proveStylexNextSsgPostprocessing(context.root, context.outputRoot, context.initial);
+    const before = await prove();
+    const { alias, path, source } = context.installedAliases[0]!;
+    assert.equal((await lstat(path)).nlink, 2);
+    assert.equal((await lstat(path)).ino, (await lstat(alias)).ino);
+    assert.equal(before.package.sha256, sha256(source));
+    for (const metadata of [{ name: "not-next", version: STYLEX_NEXT_REQUIRED_VERSION }, { name: "next", version: "16.2.13" }]) {
+      await writeFile(alias, JSON.stringify(metadata));
+      await assert.rejects(prove());
+    }
+    await writeFile(alias, source);
+    assert.deepEqual(await prove(), before);
+    await unlink(path);
+    await symlink(alias, path);
+    await assert.rejects(prove(), /symlink/u);
+  });
+
+  test("retains single-link requirements for every generated input and output", async () => {
+    const context = await fixture({ linkCreators: true, linkPackage: true });
+    const prove = () => proveStylexNextSsgPostprocessing(context.root, context.outputRoot, context.initial);
+    const before = await prove();
+    const alias = join(context.root, "generated-alias");
+    for (const path of ["BUILD_ID", "prerender-manifest.json", "routes-manifest.json", context.path]) {
+      await link(join(context.outputRoot, path), alias);
+      await assert.rejects(prove(), /single-link/u);
+      await unlink(alias);
+      assert.deepEqual(await prove(), before);
+    }
+  });
+
   test("matches the actual empty rewrite without rebinding the compiled artifact", async () => {
     const context = await fixture();
     const proof = await proveStylexNextSsgPostprocessing(context.root, context.outputRoot, context.initial);

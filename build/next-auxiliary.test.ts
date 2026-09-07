@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { link, mkdir, mkdtemp, readFile, realpath, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readFile, realpath, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "bun:test";
@@ -21,7 +21,7 @@ const source = '{"version":1,"files":["first.js"]}';
 const path = "server/app/page.js.nft.json";
 const initial = { bytes: Buffer.byteLength(source), path, sha256: sha256(source) };
 
-async function fixture() {
+async function fixture(hardlinkedCreator = false) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "ui-next-auxiliary-")));
   roots.push(root);
   const creatorPath = join(root, "node_modules/next", STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]);
@@ -29,15 +29,47 @@ async function fixture() {
   assert.equal(sha256(creatorSource), STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[1]);
   await mkdir(dirname(creatorPath), { recursive: true });
   await writeFile(creatorPath, creatorSource);
+  const creatorAlias = join(root, "installed-creator-alias.js");
+  if (hardlinkedCreator) await link(creatorPath, creatorAlias);
   const outputRoot = join(root, ".next");
   const outputPath = join(outputRoot, path);
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, source);
   const asset = await captureStylexNextAuxiliaryTraceAsset(root, "app/page", initial, source);
-  return { asset, creatorPath, creatorSource, outputPath, outputRoot, root };
+  return { asset, creatorAlias, creatorPath, creatorSource, outputPath, outputRoot, root };
 }
 
 describe("Next framework auxiliary trace observations", () => {
+  test("accepts stable hardlinked installed creators only at the pinned source hash", async () => {
+    const context = await fixture(true);
+    const creator = await lstat(context.creatorPath);
+    const alias = await lstat(context.creatorAlias);
+    assert.equal(creator.nlink, 2);
+    assert.equal(creator.ino, alias.ino);
+    assert.equal(creator.dev, alias.dev);
+    const observe = () => observeStylexNextAuxiliaryTraceSnapshot(context.root, context.outputRoot, context.asset);
+    assert.deepEqual(await observe(), { asset: context.asset, output: initial, semantics: "observation-only" });
+    const changed = Buffer.from(context.creatorSource);
+    changed[0] = changed[0]! ^ 1;
+    await writeFile(context.creatorAlias, changed);
+    assert.equal((await lstat(context.creatorPath)).nlink, 2);
+    assert.equal(sha256(await readFile(context.creatorPath)), sha256(changed));
+    await assert.rejects(captureStylexNextAuxiliaryTraceAsset(context.root, "app/page", initial, source), /pinned source bytes/u);
+    await assert.rejects(observe(), /pinned source bytes/u);
+    await writeFile(context.creatorAlias, context.creatorSource);
+    assert.deepEqual(await observe(), { asset: context.asset, output: initial, semantics: "observation-only" });
+    await unlink(context.creatorPath);
+    await symlink(context.creatorAlias, context.creatorPath);
+    await assert.rejects(captureStylexNextAuxiliaryTraceAsset(context.root, "app/page", initial, source), /symlink/u);
+    await assert.rejects(observe(), /symlink/u);
+  });
+
+  test("still rejects hardlinked outputs with a valid hardlinked installed creator", async () => {
+    const context = await fixture(true);
+    await link(context.outputPath, join(context.root, "output-alias.json"));
+    await assert.rejects(observeStylexNextAuxiliaryTraceSnapshot(context.root, context.outputRoot, context.asset), /single-link/u);
+  });
+
   test("retains initial bytes while observing unsorted final names without following them", async () => {
     const context = await fixture();
     const before = await observeStylexNextAuxiliaryTraceSnapshot(context.root, context.outputRoot, context.asset);

@@ -16,6 +16,7 @@ import {
   sha256,
   stylexRulesSha256,
   stylexUnionPolicySha256,
+  validateStylexSourceMapPath,
 } from "./compiler.js";
 
 export const STYLEX_NEXT_ADAPTER_VERSION = "hraness-stylex-next-v2" as const;
@@ -918,10 +919,12 @@ export function validateStylexNextModuleReceipt(value: unknown): StylexNextModul
   const inputSha256 = map.inputSha256 === null ? null : digest(map.inputSha256, "Next module sourceMap.inputSha256");
   const sourceMap: StylexNextMapReceiptV1 = {
     inputSha256,
-    logicalSourceFileName: normalizeLogicalPath(map.logicalSourceFileName, "Next module sourceMap.logicalSourceFileName"),
+    logicalSourceFileName: validateStylexSourceMapPath(map.logicalSourceFileName, "Next module sourceMap.logicalSourceFileName"),
     output: bytes(map.output, "Next module sourceMap.output"),
-    sources: orderedStrings(map.sources, "Next module sourceMap.sources"),
+    sources: orderedStrings(map.sources, "Next module sourceMap.sources")
+      .map((source, index) => validateStylexSourceMapPath(source, `Next module sourceMap.sources[${String(index)}]`)),
   };
+  assert.ok(sourceMap.sources.length > 0, "Next module sourceMap.sources must be nonempty");
   assert.equal(sourceMap.logicalSourceFileName, input.path, "Next module logical source filename must equal its input path");
   return {
     adapterVersion: STYLEX_NEXT_ADAPTER_VERSION,
