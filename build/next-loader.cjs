@@ -1,6 +1,10 @@
 "use strict";
 
 module.exports = function hranessStylexNextLoader(source, inputSourceMap) {
+  // Every compilation must produce receipts in its own attempt directory.
+  // A cached module would reuse JavaScript without replaying those effects.
+  // Leave webpack's dependency and other-loader caches intact.
+  this.cacheable(false);
   const done = this.async();
   import("./next-loader.js").then(
     ({ transformStylexNextModule }) => transformStylexNextModule({

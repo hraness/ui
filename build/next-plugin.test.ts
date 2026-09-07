@@ -13,6 +13,7 @@ import {
   stylexCssFilesForEntrypoint,
   stylexNextEntrypointReceipts,
   stylexNextExtractedCssChunks,
+  stylexNextCssInputPaths,
   validateStylexNextCompilationCoverage,
   validateStylexNextPluginPlan,
   validateStylexNextSourceCensus,
@@ -21,6 +22,54 @@ import {
 } from "./next-plugin.js";
 
 describe("StyleX Next output provenance", () => {
+  test("CSS input identities survive cached extraction without ordinary nested modules", () => {
+    const root = "/fixture";
+    const foundation = "/fixture/node_modules/public-ui/compiler-foundation.css";
+    const nested = ["compiler-reset.css", "components.css", "tokens.css"]
+      .map((name) => `/fixture/node_modules/public-ui/${name}`);
+    const extracted = (source: string) => ({
+      type: "css/mini-extract", nameForCondition: () => source,
+      getSourceTypes: () => new Set(["css/mini-extract"]),
+    });
+    const shared = [{ resource: foundation }, extracted(foundation), ...nested.map(extracted)];
+    const cold = [...shared, ...nested.map((resource) => ({ resource }))];
+    const expected = [foundation, ...nested].map((path) => path.slice(root.length + 1)).sort();
+    assert.deepEqual(stylexNextCssInputPaths(root, cold), expected);
+    assert.deepEqual(stylexNextCssInputPaths(root, shared), expected);
+    assert.deepEqual(stylexNextCssInputPaths(root, [...shared].reverse()), expected);
+    assert.deepEqual(stylexNextCssInputPaths(root, [...shared, extracted(nested[0]!)]), expected);
+  });
+
+  test("CSS input census rejects malformed extracted identities and ignores unrelated naming methods", () => {
+    const root = "/fixture";
+    const source = "/fixture/app/site.css";
+    const extracted = {
+      type: "css/mini-extract", nameForCondition: () => source,
+      getSourceTypes: () => new Set(["css/mini-extract"]),
+    };
+    for (const invalid of [
+      { ...extracted, nameForCondition: undefined },
+      { ...extracted, nameForCondition: () => null },
+      { ...extracted, nameForCondition: () => "app/site.css" },
+      { ...extracted, nameForCondition: () => "/other/site.css" },
+      { ...extracted, nameForCondition: () => "/fixture/app/../site.css" },
+      { ...extracted, nameForCondition: () => "/fixture/app/site.css?different" },
+      { ...extracted, nameForCondition: () => "/fixture/app/site.css#different" },
+      { ...extracted, nameForCondition: () => "/fixture/app/si\0te.css" },
+      { ...extracted, nameForCondition: () => "/fixture/app/site.js" },
+      { ...extracted, getSourceTypes: undefined },
+      { ...extracted, getSourceTypes: () => new Set(["css/mini-extract", "javascript"]) },
+      { ...extracted, resource: "/fixture/app/other.css" },
+    ]) assert.throws(() => stylexNextCssInputPaths(root, [invalid] as never), /extracted CSS/);
+    const unrelated = {
+      type: "javascript/auto",
+      nameForCondition(): never { throw new Error("An unrelated module is not CSS input authority"); },
+    };
+    assert.deepEqual(stylexNextCssInputPaths(root, [unrelated]), []);
+    assert.deepEqual(stylexNextCssInputPaths(root, [{ ...unrelated, resource: source }]), ["app/site.css"]);
+    assert.deepEqual(stylexNextCssInputPaths(root, [{ type: "css/unknown", nameForCondition: () => source }]), []);
+  });
+
   test("auxiliary dependency traces cannot relabel synchronous, lazy, or module-linked resources", () => {
     const output = "/fixture/.next/server/chunks";
     const name = "../app/page.js.nft.json";

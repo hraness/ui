@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -31,6 +30,15 @@ import {
   type StylexNextAttemptHandle,
 } from "./next-generation.js";
 import { StylexNextWebpackPlugin } from "./next-plugin.js";
+import { runOwnedStylexNextProcess, UncollectedNextProcessError } from "./next-process.js";
+import {
+  beginStylexNextTypeScriptLifecycle,
+  endStylexNextTypeScriptLifecycle,
+  observeStylexNextTypeScriptInputs,
+  projectStylexNextTypeScript,
+  settleStylexNextTypeScriptPass,
+  type StylexNextTypeScriptLifecycle,
+} from "./next-typescript.js";
 
 const ENV_ATTEMPT_DIRECTORY = "HRANESS_STYLEX_NEXT_ATTEMPT_DIRECTORY";
 const ENV_MODE = "HRANESS_STYLEX_NEXT_MODE";
@@ -280,12 +288,19 @@ export function withStylexNext<T extends NextConfig>(config: T, rawOptions: Styl
   const distDir = pass.mode === "discovery"
     ? normalizeLogicalPath(relative(options.rootDirectory, resolve(pass.attempt.directory, "next-discovery")).split(sep).join("/"), "StyleX Next discovery distDir")
     : options.outputDirectory;
+  const tsconfigPath = projectStylexNextTypeScript({
+    attempt: pass.attempt, config, distDir, mode: pass.mode,
+    root: options.rootDirectory, stateDirectory: options.stateDirectory,
+  });
+  const originalTypeScript = config.typescript === undefined ? {} : object(config.typescript, "Next TypeScript configuration");
   return {
     ...config,
     distDir,
     productionBrowserSourceMaps: true,
+    typescript: { ...originalTypeScript, ignoreBuildErrors: false, tsconfigPath },
     webpack: (webpackConfig: NextWebpackConfig, context: NextWebpackCallbackContext) => {
       assert.equal(context.dev, false, "StyleX Next production adapter rejects dev/HMR; no production receipt is emitted for development");
+      observeStylexNextTypeScriptInputs(options.rootDirectory, pass.attempt, pass.mode);
       const prior = originalWebpack === undefined ? webpackConfig : originalWebpack(webpackConfig, context);
       assert.ok(
         typeof prior === "object" && prior !== null && typeof (prior as { then?: unknown }).then !== "function",
@@ -315,9 +330,13 @@ async function runNextPass(
   nextBin: string,
   attempt: StylexNextAttemptHandle,
   mode: StylexNextProductionMode,
+  lifecycle: StylexNextTypeScriptLifecycle,
 ): Promise<void> {
-  await new Promise<void>((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [nextBin, "build", "--webpack"], {
+  let failure: unknown;
+  try {
+    await runOwnedStylexNextProcess({
+      command: process.execPath,
+      args: [nextBin, "build", "--webpack"],
       cwd: root,
       env: {
         ...process.env,
@@ -326,18 +345,21 @@ async function runNextPass(
         [ENV_PLAN_SHA256]: attempt.planSha256,
         NODE_ENV: "production",
       },
-      shell: false,
-      stdio: "inherit",
     });
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (code === 0 && signal === null) resolvePromise();
-      else reject(new Error(`Next ${mode} build failed (code ${String(code)}, signal ${String(signal)})`));
-    });
-  });
+  } catch (error) {
+    failure = error;
+  }
+  if (failure instanceof UncollectedNextProcessError) throw failure;
+  try {
+    await settleStylexNextTypeScriptPass(lifecycle, mode);
+  } catch (error) {
+    failure = failure === undefined ? error : new AggregateError([failure, error], `Next ${mode} child and TypeScript settlement both failed`);
+  }
+  if (failure !== undefined) throw failure;
 }
 
 export async function runStylexNextBuild(rawOptions: RunStylexNextBuildOptions): Promise<StylexNextBuildRecordV2> {
+  assert.ok(process.platform === "darwin" || process.platform === "linux", "StyleX Next process custody supports macOS and Linux only");
   const runRecord = object(rawOptions, "StyleX Next build options");
   assert.deepEqual(
     Object.keys(runRecord).sort(),
@@ -382,13 +404,29 @@ export async function runStylexNextBuild(rawOptions: RunStylexNextBuildOptions):
   const plan = await readStylexNextAttemptPlan(attempt);
   assert.equal(plan.nextVersion, STYLEX_NEXT_REQUIRED_VERSION);
   const lease = await acquireStylexNextOutputLease(root, options.outputDirectory, plan.attemptId);
+  let uncollected = false;
   try {
-    await runNextPass(root, installation.bin, attempt, "discovery");
-    await finalizeStylexNextDiscovery(attempt, root);
-    await runNextPass(root, installation.bin, attempt, "delivery");
-    return await completeStylexNextBuild(attempt, root);
+    const lifecycle = await beginStylexNextTypeScriptLifecycle(root, attempt, options.outputDirectory);
+    let lifecycleFailure: unknown;
+    try {
+      await runNextPass(root, installation.bin, attempt, "discovery", lifecycle);
+      await finalizeStylexNextDiscovery(attempt, root);
+      await runNextPass(root, installation.bin, attempt, "delivery", lifecycle);
+      return await completeStylexNextBuild(attempt, root);
+    } catch (error) {
+      lifecycleFailure = error;
+      uncollected = error instanceof UncollectedNextProcessError;
+      throw error;
+    } finally {
+      if (!uncollected) {
+        try { endStylexNextTypeScriptLifecycle(lifecycle); }
+        catch (error) {
+          throw lifecycleFailure === undefined ? error : new AggregateError([lifecycleFailure, error], "Next build failed and TypeScript ownership could not be returned safely");
+        }
+      }
+    }
   } finally {
-    await releaseStylexNextOutputLease(lease);
+    if (!uncollected) await releaseStylexNextOutputLease(lease);
   }
 }
 

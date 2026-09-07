@@ -3,7 +3,7 @@
 import * as stylex from "@stylexjs/stylex";
 
 const styles = stylex.create({
-  error: { borderBlockStartWidth: "23px" },
+  error: { borderBlockStartStyle: "solid", borderBlockStartWidth: "23px" },
 });
 
 export default function GlobalError({ reset }: Readonly<{ error: Error & { digest?: string }; reset(): void }>) {

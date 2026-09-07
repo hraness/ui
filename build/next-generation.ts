@@ -205,7 +205,7 @@ function artifact(value: unknown, description: string): StylexArtifactV1 {
   };
 }
 
-function parsePlan(value: unknown): StylexNextAttemptPlanV2 {
+export function validateStylexNextAttemptPlan(value: unknown): StylexNextAttemptPlanV2 {
   const record = plainObject(value, "Next attempt plan");
   exactKeys(record, [
     "adapterVersion", "attemptId", "compilerSha256", "graphMap", "kind", "nextVersion",
@@ -279,7 +279,7 @@ async function loadAttempt(handle: StylexNextAttemptHandle): Promise<Readonly<{ 
   exactKeys(record, ["directory", "planSha256"], "Next attempt handle");
   assert.ok(typeof record.directory === "string" && resolve(record.directory) === record.directory, "Next attempt directory must be absolute");
   const root = await ordinaryDirectory(record.directory, "Next attempt directory");
-  const loaded = await canonicalFile(join(root, "plan.json"), parsePlan, "Next attempt plan");
+  const loaded = await canonicalFile(join(root, "plan.json"), validateStylexNextAttemptPlan, "Next attempt plan");
   assert.equal(sha256(loaded.source), digest(record.planSha256, "Next attempt plan hash"), "Next attempt plan hash changed");
   return { plan: loaded.value, root };
 }
@@ -363,7 +363,7 @@ export async function prepareStylexNextAttempt(options: PrepareStylexNextAttempt
   }));
   packageManifests.sort((left, right) => compareStylexNextStrings(left.identity.name, right.identity.name));
   assert.equal(new Set(packageManifests.map(({ identity }) => identity.name)).size, packageManifests.length, "Next package manifests contain duplicate package names");
-  const plan = parsePlan({
+  const plan = validateStylexNextAttemptPlan({
     adapterVersion: STYLEX_NEXT_ADAPTER_VERSION,
     attemptId,
     compilerSha256,
@@ -1014,6 +1014,25 @@ export async function readStylexNextGraphReceipt(
 ): Promise<StylexNextGraphReceiptV1> {
   const loaded = await loadAttempt(attempt);
   return (await canonicalFile(join(loaded.root, mode, target, "graph.json"), validateStylexNextGraphReceipt, `Next ${mode} ${target} graph receipt`)).value;
+}
+
+/** Proves completed compiler ownership even when the later native typecheck fails. */
+export async function readStylexNextTypeScriptGraphReceipts(
+  attempt: StylexNextAttemptHandle,
+  rootDirectory: string,
+  mode: StylexNextProductionMode,
+): Promise<readonly StylexNextGraphReceiptV1[]> {
+  const loaded = await loadAttempt(attempt);
+  const graphs = await graphReceipts(loaded, mode);
+  for (const { receipt } of graphs) {
+    const modules = await loadModuleReceipts(loaded, rootDirectory, mode, receipt.target);
+    assert.deepEqual(
+      modules.map(({ receipt: module, receiptSha256 }) => ({ path: module.input.path, receiptSha256 })),
+      receipt.modules,
+      `Next ${mode} ${receipt.target} TypeScript provenance lost its compiler source census`,
+    );
+  }
+  return graphs.map(({ receipt }) => receipt);
 }
 
 export function nextGraphReceiptSha256(receipt: StylexNextGraphReceiptV1): string {

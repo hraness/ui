@@ -411,15 +411,44 @@ function logicalResource(root: string, value: unknown): string | undefined {
   return normalizeLogicalPath(logical, "StyleX Next compilation resource");
 }
 
+export function stylexNextCssInputPaths(
+  root: string,
+  modules: Iterable<WebpackModule>,
+): readonly string[] {
+  const paths = new Set<string>();
+  let count = 0;
+  for (const module of modules) {
+    assert.ok(++count <= 100_000, "Next CSS input module census exceeds its bounded limit");
+    const resource = logicalResource(root, module.resource);
+    if (resource?.endsWith(".css")) paths.add(resource);
+    if (module.type !== "css/mini-extract") continue;
+    // Cached extraction retains CssModules, but need not recreate the ordinary
+    // modules evaluated by its CSS loader. This public source identity survives
+    // serialization and is also used to prove generated stylesheet ownership.
+    assert.equal(typeof module.nameForCondition, "function", "Next extracted CSS omitted its public source identity");
+    assert.equal(typeof module.getSourceTypes, "function", "Next extracted CSS omitted its source types");
+    assert.deepEqual([...module.getSourceTypes!()], ["css/mini-extract"], "Next extracted CSS contains another source type");
+    const source = module.nameForCondition!();
+    assert.ok(
+      typeof source === "string" && isAbsolute(source) && resolve(source) === source
+        && source.endsWith(".css") && !/[?#\0]/u.test(source),
+      "Next extracted CSS must identify an exact absolute stylesheet path",
+    );
+    const logical = logicalResource(root, source);
+    assert.ok(logical !== undefined, "Next extracted CSS source escapes the application root");
+    if (module.resource !== undefined) {
+      assert.equal(module.resource, source, "Next extracted CSS resource conflicts with its public source identity");
+    }
+    paths.add(logical);
+  }
+  return [...paths].sort();
+}
+
 async function cssInputs(
   root: string,
   modules: Iterable<WebpackModule>,
 ): Promise<readonly StylexArtifactV1[]> {
-  const paths = [...new Set([...modules]
-    .map(({ resource }) => logicalResource(root, resource))
-    .filter((path): path is string => path !== undefined && path.endsWith(".css")))]
-    .sort();
-  return await Promise.all(paths.map((path) => artifactForFile(root, path)));
+  return await Promise.all(stylexNextCssInputPaths(root, modules).map((path) => artifactForFile(root, path)));
 }
 
 function repositorySources(

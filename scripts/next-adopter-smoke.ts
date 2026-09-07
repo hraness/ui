@@ -476,6 +476,7 @@ try {
   const mappedSourcesByTarget = new Map<NextTarget, NextSourceMapEntry[]>(
     NEXT_TARGETS.map((target) => [target, []]),
   );
+  let globalErrorStylesheet: Artifact | undefined;
   for (const identity of deliveryIdentities) {
     const graphPath = resolve(attemptRoot, "delivery", identity.target, "graph.json");
     const graphStat = await lstat(graphPath);
@@ -493,6 +494,22 @@ try {
     assert.deepEqual(modules.map(({ path }) => path), requiredSources[identity.target], `Next ${identity.target} graph differs from the planned source census`);
     assert.equal(graph.sourcesSha256, sha256(JSON.stringify(modules)), `Next ${identity.target} source inventory hash is stale`);
     const outputs = orderedArtifacts(graph.outputs, `Next ${identity.target} outputs`);
+    if (identity.target === "client") {
+      assert.ok(Array.isArray(graph.entrypoints) && graph.entrypoints.length > 0 && graph.entrypoints.length <= 4096, "Next client entrypoints must be a nonempty bounded array");
+      const entrypoints = graph.entrypoints.map((value, index) => object(value, `Next client entrypoint ${String(index)}`));
+      const owners = entrypoints.filter(({ name }) => name === "app/global-error");
+      assert.equal(owners.length, 1, "Next client graph must contain exactly one global-error owner");
+      const owner = owners[0]!;
+      const stylesheets = orderedLogicalPaths(owner.stylexCss, "Next global-error StyleX stylesheets");
+      assert.equal(stylesheets.length, 1, "Next global-error must own exactly one finalized StyleX stylesheet");
+      const stylesheetPath = stylesheets[0]!;
+      assert.match(stylesheetPath, /^static\/css\/[a-zA-Z0-9_-]+\.css$/u, "Next global-error stylesheet must be an ordinary static CSS asset");
+      assert.ok(orderedLogicalPaths(owner.css, "Next global-error CSS").includes(stylesheetPath), "Next global-error CSS inventory omitted its StyleX stylesheet");
+      assert.ok(orderedLogicalPaths(owner.files, "Next global-error files").includes(stylesheetPath), "Next global-error file inventory omitted its StyleX stylesheet");
+      globalErrorStylesheet = outputs.find(({ path }) => path === stylesheetPath);
+      assert.ok(globalErrorStylesheet !== undefined, "Next global-error stylesheet is not bound to the client output artifacts");
+      await readArtifact(outputRoot, globalErrorStylesheet, "Next global-error stylesheet");
+    }
     const sourceMaps = orderedArtifacts(graph.sourceMaps, `Next ${identity.target} source maps`);
     assert.deepEqual(
       sourceMaps,
@@ -522,6 +539,7 @@ try {
       if (javascriptChunks.includes(outputPath)) mappedSourcesByTarget.get(identity.target)!.push(...entries);
     }
   }
+  assert.ok(globalErrorStylesheet !== undefined, "Next delivery omitted the global-error stylesheet artifact");
   assert.deepEqual(
     [...receiptMapArtifacts.keys()].sort(),
     mapFiles,
@@ -546,7 +564,7 @@ try {
   const cssFiles = outputFiles.filter((path) => path.endsWith(".css"));
   assert.ok(cssFiles.length > 0, "Next delivery must emit CSS assets");
   const css = (await Promise.all(cssFiles.map((path) => readFile(resolve(consumer, ".next", path), "utf8")))).join("\n");
-  for (const value of ["13px", "17px", "19px", "29px", "31px"]) assert.ok(css.includes(value), `Next CSS union omitted ${value}`);
+  for (const value of ["13px", "17px", "19px", "23px", "29px", "31px"]) assert.ok(css.includes(value), `Next CSS union omitted ${value}`);
   assert.ok(
     css.includes(fontFiles[0]!.split("/").at(-1)!),
     "Next CSS does not link the exact emitted font URL asset",
@@ -587,9 +605,50 @@ try {
     const browser = await chromium.launch({ args: ["--no-sandbox"], executablePath: browserExecutable, headless: true });
     try {
       const page = await browser.newPage();
-      await page.goto(base, { waitUntil: "networkidle" });
-      await page.locator('[data-next-hydrated="true"]').waitFor();
-      await page.locator('[data-next-lazy="ready"]').waitFor();
+      const hydrationDiagnostics: Readonly<{ kind: string; detail: string }>[] = [];
+      let hydrationRuntimeFailed = false;
+      const recordHydrationDiagnostic = (kind: string, detail: string): void => {
+        if (hydrationDiagnostics.length < 100) hydrationDiagnostics.push({ kind, detail: detail.slice(0, 2_000) });
+      };
+      page.on("pageerror", (error) => {
+        hydrationRuntimeFailed = true;
+        recordHydrationDiagnostic("pageerror", error.stack ?? error.message);
+      });
+      page.on("requestfailed", (request) => recordHydrationDiagnostic("requestfailed", `${request.url()}: ${request.failure()?.errorText ?? "unknown"}`));
+      page.on("console", (message) => {
+        if (message.type() === "error" || message.type() === "warning") recordHydrationDiagnostic(message.type(), message.text());
+      });
+      try {
+        await page.goto(base, { waitUntil: "networkidle" });
+        await page.locator('[data-next-hydrated="true"]').waitFor();
+        await page.locator('[data-next-lazy="ready"]').waitFor();
+      } catch (error) {
+        const capture = page.evaluate(() => ({
+          readyState: document.readyState,
+          sentinels: [...document.querySelectorAll("[data-next-client], [data-next-lazy], [data-next-global-error]")]
+            .slice(0, 10).map((element) => ({
+              markup: element.outerHTML.slice(0, 2_000),
+              display: getComputedStyle(element).display,
+              visibility: getComputedStyle(element).visibility,
+              rect: element.getBoundingClientRect().toJSON(),
+            })),
+          scripts: [...document.scripts].slice(0, 100).map((script) => script.src).filter(Boolean),
+        })).catch((captureError: unknown) => ({ captureError: String(captureError) }));
+        let captureTimeout: ReturnType<typeof setTimeout> | undefined;
+        let dom: unknown;
+        try {
+          dom = await Promise.race([
+            capture,
+            new Promise((resolveCapture) => {
+              captureTimeout = setTimeout(() => resolveCapture({ captureError: "DOM capture exceeded 5 seconds" }), 5_000);
+            }),
+          ]);
+        } finally {
+          if (captureTimeout !== undefined) clearTimeout(captureTimeout);
+        }
+        throw new Error(`Next hydration proof failed: ${JSON.stringify({ runtimeFailed: hydrationRuntimeFailed, diagnostics: hydrationDiagnostics, dom })}`, { cause: error });
+      }
+      assert.equal(hydrationRuntimeFailed, false, `Next hydration reported browser runtime errors: ${JSON.stringify(hydrationDiagnostics)}`);
       const evidence = await page.evaluate(() => {
         const node = document.querySelector<HTMLElement>("[data-next-node-rsc]");
         const client = document.querySelector<HTMLElement>("[data-next-client]");
@@ -615,13 +674,75 @@ try {
         extraHTTPHeaders: { "x-stylex-global-error-proof": "true" },
       });
       try {
-        await globalErrorPage.goto(`${base}/global-error-proof`, { waitUntil: "networkidle" });
+        const stylesheetUrl = new URL(`/_next/${globalErrorStylesheet.path}`, base).href;
+        const [stylesheetResponse] = await Promise.all([
+          globalErrorPage.waitForResponse((response) => response.url() === stylesheetUrl),
+          globalErrorPage.goto(`${base}/global-error-proof`, { waitUntil: "networkidle" }),
+        ]);
+        assert.equal(stylesheetResponse.status(), 200, "Next global-error stylesheet request failed");
+        assert.match(stylesheetResponse.headers()["content-type"] ?? "", /^text\/css(?:;|$)/iu, "Next global-error stylesheet response is not CSS");
+        const stylesheetBytes = await stylesheetResponse.body();
+        assert.deepEqual(
+          { bytes: stylesheetBytes.byteLength, sha256: sha256(stylesheetBytes) },
+          { bytes: globalErrorStylesheet.bytes, sha256: globalErrorStylesheet.sha256 },
+          "Next global-error browser stylesheet differs from its exact graph-bound artifact",
+        );
         const globalError = globalErrorPage.locator('[data-next-global-error="true"]');
         await globalError.waitFor();
-        assert.equal(
-          await globalError.evaluate((element) => getComputedStyle(element).borderBlockStartWidth),
-          "23px",
-          "Next global-error boundary did not receive its compiled StyleX rule",
+        const globalErrorEvidence = await globalError.evaluate((element, expectedHref) => {
+          const expected = new URL(expectedHref);
+          if (expected.origin !== location.origin || expected.search !== "" || expected.hash !== "") {
+            throw new Error("Next global-error stylesheet must have one exact same-origin URL");
+          }
+          const sameResource = (href: string): boolean => {
+            const candidate = new URL(href, document.baseURI);
+            return candidate.origin === expected.origin && candidate.pathname === expected.pathname;
+          };
+          const links = [...document.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"]')]
+            .filter((link) => sameResource(link.href));
+          const sheets = [...document.styleSheets]
+            .filter((sheet) => sheet.href !== null && sameResource(sheet.href));
+          if (links.length !== 1 || sheets.length !== 1) {
+            throw new Error("Next global-error stylesheet is absent, duplicated, or aliased");
+          }
+          const link = links[0]!;
+          const sheet = sheets[0]!;
+          if (
+            link.href !== expected.href || sheet.href !== expected.href
+            || link.sheet !== sheet || sheet.ownerNode !== link || sheet.ownerRule !== null
+            || link.disabled || sheet.disabled || link.relList.contains("alternate")
+            || link.media !== "" || sheet.media.mediaText !== "" || sheet.cssRules.length === 0
+          ) {
+            throw new Error("Next global-error stylesheet is not the ordinary loaded graph-bound stylesheet");
+          }
+          if (element.hasAttribute("style")) throw new Error("Next global-error sentinel must not use inline styles");
+          const readBorder = () => {
+            const computed = getComputedStyle(element);
+            return { style: computed.borderBlockStartStyle, width: computed.borderBlockStartWidth };
+          };
+          const before = readBorder();
+          if (before.style !== "solid" || before.width !== "23px") {
+            throw new Error(`Next global-error compiled border is missing: ${JSON.stringify(before)}`);
+          }
+          let disabled: Readonly<{ style: string; width: string }> | undefined;
+          try {
+            sheet.disabled = true;
+            if (!sheet.disabled) throw new Error("Next global-error stylesheet negative control did not disable its target");
+            disabled = readBorder();
+          } finally {
+            sheet.disabled = false;
+          }
+          if (sheet.disabled) throw new Error("Next global-error stylesheet negative control did not restore its target");
+          return { before, disabled, restored: readBorder() };
+        }, stylesheetUrl);
+        assert.deepEqual(
+          globalErrorEvidence,
+          {
+            before: { style: "solid", width: "23px" },
+            disabled: { style: "none", width: "0px" },
+            restored: { style: "solid", width: "23px" },
+          },
+          "Next global-error border must depend only on its loaded graph-bound StyleX stylesheet",
         );
       } finally {
         await globalErrorPage.close();

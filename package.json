@@ -73,8 +73,10 @@
     "build/next-loader.cjs",
     "build/next-loader.ts",
     "build/next-plugin.ts",
+    "build/next-process.ts",
     "build/next-ssg.ts",
     "build/next-auxiliary.ts",
+    "build/next-typescript.ts",
     "build/next.ts",
     "build/stylex-babel-compat.ts",
     "build/vite.ts",
@@ -188,6 +190,7 @@
     "next": "16.2.12",
     "react": ">=18 <20",
     "react-dom": ">=18 <20",
+    "typescript": "6.0.3",
     "vite": ">=7 <8"
   },
   "peerDependenciesMeta": {
@@ -212,6 +215,9 @@
     "next": {
       "optional": true
     },
+    "typescript": {
+      "optional": true
+    },
     "vite": {
       "optional": true
     }
@@ -230,7 +236,7 @@
     "playwright-core": "1.62.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "typescript": "^6.0.3",
+    "typescript": "6.0.3",
     "unplugin": "2.3.11",
     "vite": "7.3.6"
   },
