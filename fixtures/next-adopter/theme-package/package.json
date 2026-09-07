@@ -1,0 +1,11 @@
+{
+  "name": "@fixture/theme",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./compiler-foundation.css": "./src/compiler-foundation.css",
+    "./stylex.css": "./dist/stylex.css",
+    "./stylex-manifest.json": "./dist/stylex-manifest.json"
+  }
+}

@@ -1,0 +1,14 @@
+@layer base, components;
+
+@font-face {
+  font-family: "Fixture Next Font";
+  font-style: normal;
+  font-weight: 400;
+  src: url("./fixture.woff2") format("woff2");
+}
+
+@layer components.fixture-theme.legacy {
+  :root {
+    --fixture-next-font: "Fixture Next Font", sans-serif;
+  }
+}

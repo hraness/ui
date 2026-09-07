@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.4"
+    "@hraness/ui": "github:hraness/ui#v0.5.5"
   }
 }
 ```
@@ -112,7 +112,7 @@ For a standards-only or narrower integration, import the required layers directl
 @import "@hraness/ui/stylex.css";
 ```
 
-The built-in recipes are already compiled, so ordinary consumers do not need a StyleX compiler. Applications that compile local StyleX declarations or pass typed `xstyle` recipes use `@hraness/ui/stylex-build` with its `/bun` or `/vite` adapter and the versioned `@hraness/ui/stylex-manifest.json`. They register every client, lazy, multi-entry, and SSR graph before building, then finalize once. Every HTML or SSR entry links the returned combined recipe stylesheet. Compiler adopters include every registered package's compiler foundation in the stylesheet graph, directly or transitively, and must not also import `styles.css` or `stylex.css`.
+The built-in recipes are already compiled, so ordinary consumers do not need a StyleX compiler. Applications that compile local StyleX declarations or pass typed `xstyle` recipes use `@hraness/ui/stylex-build` with its `/bun`, `/vite`, or production `/next` adapter and the versioned `@hraness/ui/stylex-manifest.json`. They register every client, lazy, multi-entry, and SSR graph before building, then finalize once. Every HTML or SSR entry links the returned combined recipe stylesheet. Compiler adopters include every registered package's compiler foundation in the stylesheet graph, directly or transitively, and must not also import `styles.css` or `stylex.css`.
 
 Compiler adopters install the package's exact build-tool peers: `@babel/core@7.29.7`, `@stylexjs/babel-plugin@0.19.0`, `lightningcss@1.33.0`, and `@types/babel__core@7.20.5`. TypeScript projects using the Bun adapter also install `@types/bun@1.3.14`; Vite adapter projects install a supported Vite 7 release and compatible Node types (`@types/node@^20.19.0 || >=22.12.0`). These peers are optional for ordinary precompiled-stylesheet consumers.
 
@@ -195,6 +195,81 @@ graph. Finalization rejects a missing, duplicate, or foreign graph stylesheet.
 The finalizer validates package and graph identities, rejects missing or stale graph receipts and mixed partial CSS, unions all raw rule metadata, and calls the pinned StyleX serializer once. It preserves the full finite priority inventory rather than mapping it to a fixed range. Build-tool modules remain outside the UI runtime entry, runtime CSS injection stays disabled, and the compiler contract pins property-specificity resolution and its Babel, StyleX, and Lightning CSS versions.
 
 The compiler also binds a narrowly scoped StyleX 0.19.0 parser compatibility repair. It verifies the installed Babel plugin's exact source bytes before accepting an explicit terminal EOF token after a complete media query. The repaired plugin runs in memory without modifying installed dependencies or global loader hooks. Media-query ordering remains enabled, malformed trailing input remains invalid, and the same compiler implementation runs under Bun and Node. Source and repair hashes form part of the compiler identity, so adopters must rebuild package manifests and graph receipts together when upgrading from an earlier compiler release.
+
+### Next.js production adapter
+
+Install TypeScript 6.0.3 directly as an adopter development dependency. Production build orchestration supports macOS and Linux, where it owns and collects each native POSIX process group before restoring shared files or releasing build ownership. The adapter uses that application's pinned TypeScript parser and leaves native typechecking enabled in both build passes. Each pass selects a generated sibling configuration through Next's `typescript.tsconfigPath`; the authored configuration and `next-env.d.ts` are preserved. Only hash-verified prior generated types can be omitted from later typecheck inputs. Unknown historical files remain inputs and can cause a visible error instead of being silently excluded.
+
+Upstream source maps must already use forward-slash repository-logical paths for `sources`, `file`, and any nonempty `sourceRoot`. Absolute machine paths, URLs, traversal, and encoded aliases are rejected before receipts are written. Accepted mapping segments, source order, names, and embedded contents are preserved; the adapter does not silently redact or rebase their provenance.
+
+Verified installed Next framework inputs may be ordinary hardlinked files, as produced by Bun on Linux. Their pinned creator bytes, package identity, and stable file identity are still checked. Generated SSG and dependency-trace outputs must remain ordinary single-link files; installed-input compatibility does not authorize linked output or following dependency-trace filenames.
+
+Ignore `.hraness-stylex-next-*.json` beside the selected TypeScript configuration, in addition to the configured evidence and output directories. These attempt-owned configuration projections are retained as evidence. Builds targeting different output directories still serialize TypeScript lifecycle ownership within one physical application root. Do not disable Next's output cleaning or bypass type errors.
+
+If an incomplete native pass leaves generated type files that have no complete graph proof, preserve the failed application root, output, and receipts. Rebuild the same authored source and pinned dependencies in a clean isolated application root with a new attempt identifier. Selecting another output directory alone does not hide unverified historical types, and partial writer observations never become exclusion authority. Automatic in-place recovery of that state is unsupported.
+
+The Next adapter supports exactly Next 16.2.12 with webpack 5 under Node 24. That pinned framework writes a different client-reference manifest path than it reads for a static App Router identity beginning with `/index`, so the adapter rejects that unsupported route before accepting the manifest. Dynamic descendants such as `/index/[slug]` remain supported and may statically generate a concrete URL such as `/index/example`. The adapter runs two ordinary `next build --webpack` processes because Next owns separate client, Node React Server Component, and edge React Server Component compilers and exposes no supported cross-compiler completion barrier in `next.config`. The discovery build records every repository JavaScript and TypeScript input, chained source map, raw StyleX rule, registered package manifest, CSS input, and emitted asset. The delivery build must reproduce the same source and transform receipts before it can add the single serialized rule union through a native CSS import. Missing, duplicate, or unexpected targets and inter-pass drift stop the build.
+
+Import every registered package foundation from the application root layout. Do not import its standalone `styles.css` or `stylex.css` route:
+
+```tsx
+// app/layout.tsx
+import "@hraness/ui/compiler-foundation.css";
+```
+
+Wrap the production Next config with the compiled public entry. Node never executes TypeScript from `node_modules`:
+
+```js
+// next.config.mjs
+import { withStylexNext } from "@hraness/ui/stylex-build/next";
+import { PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER } from "next/constants.js";
+
+const rootDirectory = process.cwd();
+const config = { reactStrictMode: true };
+
+export default function nextConfig(phase) {
+  if (phase === PHASE_PRODUCTION_SERVER) return config;
+  if (phase !== PHASE_PRODUCTION_BUILD) {
+    throw new Error("This configuration supports production build and start only.");
+  }
+  return withStylexNext(config, {
+    packageManifests: [
+      "node_modules/@hraness/ui/dist/stylex-manifest.json",
+    ],
+    rootDirectory,
+  });
+}
+```
+
+Run the checked orchestrator instead of invoking `next build` directly:
+
+```js
+// scripts/build-next.mjs
+import { runStylexNextBuild } from "@hraness/ui/stylex-build/next";
+
+await runStylexNextBuild({
+  attemptId: "production",
+  packageManifests: [
+    "node_modules/@hraness/ui/dist/stylex-manifest.json",
+  ],
+  // This hash-bound plan inventory is the only required-source authority. The
+  // child next.config reads it instead of duplicating an unverified list.
+  requiredSources: {
+    client: ["app/global-error.tsx"],
+    edgeRsc: ["app/edge/page.tsx"],
+    nodeRsc: ["app/layout.tsx"],
+  },
+  rootDirectory: process.cwd(),
+});
+```
+
+List the complete repository-owned source census for each production target. Keep all three keys; use an empty array only to declare that the target must compile no repository source, such as an application with no Edge route. The adapter still requires at least one source overall and writes discovery and delivery receipts for an observed-empty target instead of skipping it.
+
+The delivery pass preserves webpack source-map chaining and lets Next own CSS deduplication, splitting, filenames, route manifests, and `<link>` delivery. The adapter verifies emitted entrypoint-to-CSS links from webpack's public compilation data; it does not edit private Next manifests, install a global module hook, or inject an inline style. The production receipt therefore remains compatible with a strict `style-src 'self'` policy.
+
+`complete` means the StyleX graph proof is complete. It is not a whole-build integrity, dependency-safety, or deployment-readiness attestation. Next rewrites server dependency traces after webpack; the adapter records their exact initial artifacts and settled final hashes separately as `observation-only` auxiliary metadata. Only traces belonging to registered Node server entries qualify. These observations never exempt JavaScript, CSS, source maps, or linked assets from their strict checks, and the adapter never follows trace file lists to select or copy dependencies. Next standalone packaging and provider deployments still require their own dependency-selection, packaging, browser, and deployment acceptance checks.
+
+Development and HMR are a separate, unreceipted boundary. This production adapter deliberately rejects `next dev`, Turbopack, Rspack, and a build config loaded outside `runStylexNextBuild`; a development run cannot be presented as production graph evidence. `next start` uses the unchanged runtime configuration without the build wrapper or private build-attempt environment variables. If you select a custom output directory, use the same `distDir` for serving it. A compiled local preview requires a successful rebuild, an owned server restart, and manual refresh. Build into a new output generation while an existing generation is being served; do not claim HMR or preserved application state. An uncompiled development surface may continue to use the package's precompiled stylesheet route, but it cannot evaluate product-owned StyleX recipes that require compilation.
 
 Unlayered product CSS retains its existing override authority, except for the shared visually-hidden accessibility recipe. Its offscreen reset uses layered important declarations so conflicting unlayered important rules cannot accidentally expose accessible-only copy. Change the component visibility prop instead of overriding this helper.
 

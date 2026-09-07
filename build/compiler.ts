@@ -5,7 +5,7 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, extname, relative, resolve, sep } from "node:path";
 
-import { transformAsync, type ParserOptions } from "@babel/core";
+import { transformAsync, type ParserOptions, type TransformOptions } from "@babel/core";
 import type {
   Rule as UpstreamStylexRule,
   StyleXTransformObj,
@@ -334,10 +334,39 @@ export function verifyCompilerContract(): void {
   assert.equal(compilerSha256, sha256(canonicalJson(compilerContract)));
 }
 
+export type StylexSourceMapV1 = Readonly<{
+  file?: string;
+  ignoreList?: readonly number[];
+  mappings: string;
+  names: readonly string[];
+  sourceRoot?: string;
+  sources: readonly string[];
+  sourcesContent?: readonly (null | string)[];
+  version: 3;
+  x_google_ignoreList?: readonly number[];
+}>;
+
 export type StylexTransformResult = Readonly<{ code: string; rules: readonly StylexRuleV1[] }>;
+export type StylexMappedTransformResult = Readonly<{
+  code: string;
+  inputMapSha256: null | string;
+  logicalSourceFileName: string;
+  map: StylexSourceMapV1;
+  mapSha256: string;
+  rules: readonly StylexRuleV1[];
+}>;
+export type StylexMappedTransformOptions = Readonly<{
+  inputSourceMap?: unknown;
+  logicalSourceFileName: string;
+}>;
 export type StylexTransformCollector = Readonly<{
   seal(): readonly StylexRuleV1[];
   transform(code: string, id: string): Promise<StylexTransformResult>;
+  transformWithMap(
+    code: string,
+    id: string,
+    options: StylexMappedTransformOptions,
+  ): Promise<StylexMappedTransformResult>;
 }>;
 
 function parserPluginsForPath(path: string): NonNullable<ParserOptions["plugins"]> {
@@ -364,39 +393,86 @@ export function createStylexTransformCollector(rootDirectory: string): StylexTra
   const root = resolve(rootDirectory);
   const inventories: StylexRuleV1[][] = [];
   let sealed = false;
-  return {
-    async transform(source, id) {
-      assert.equal(sealed, false, "StyleX collector is sealed");
-      const absolute = resolve(id);
-      const logical = relative(root, absolute).split(sep).join("/");
-      normalizeLogicalPath(logical, "transform id");
-      const result = await transformAsync(source, {
-        ast: false,
-        babelrc: false,
-        code: true,
-        configFile: false,
-        filename: absolute,
-        parserOpts: { plugins: parserPluginsForPath(logical) },
-        plugins: [stylexPlugin.withOptions({
-          classNamePrefix: compilerContract.transform.classNamePrefix,
-          dev: compilerContract.transform.dev,
-          enableMediaQueryOrder: compilerContract.transform.enableMediaQueryOrder,
-          importSources: [...compilerContract.transform.importSources],
-          runtimeInjection: false,
-          styleResolution: compilerContract.transform.styleResolution,
-          sxPropName: compilerContract.transform.sxPropName,
-          treeshakeCompensation: compilerContract.transform.treeshakeCompensation,
-          unstable_moduleResolution: { rootDir: root, type: compilerContract.transform.moduleResolution },
-        })],
-        sourceMaps: false,
-        sourceType: compilerContract.transform.sourceType,
-      });
-      assert.ok(result !== null && typeof result.code === "string", `Babel returned no code for ${logical}`);
-      const metadata = plainObject(result.metadata, `${logical} metadata`);
-      exactKeys(metadata, ["stylex"], [], `${logical} metadata`);
-      const rules = [...parseStylexRules(metadata.stylex, `${logical} metadata.stylex`)];
+  const transform = async (
+    source: string,
+    id: string,
+    mapOptions?: StylexMappedTransformOptions,
+  ): Promise<StylexMappedTransformResult | StylexTransformResult> => {
+    assert.equal(sealed, false, "StyleX collector is sealed");
+    const absolute = resolve(id);
+    const logical = relative(root, absolute).split(sep).join("/");
+    normalizeLogicalPath(logical, "transform id");
+    const logicalSourceFileName = mapOptions === undefined
+      ? undefined
+      : validateStylexSourceMapPath(
+          mapOptions.logicalSourceFileName,
+          "mapped transform logicalSourceFileName",
+        );
+    const inputSourceMap = mapOptions?.inputSourceMap === undefined
+      ? undefined
+      : parseStylexSourceMap(mapOptions.inputSourceMap, "mapped transform inputSourceMap");
+    // Babel's declarations predate valid v3 nullable sourcesContent entries and
+    // require `file`, even though the runtime accepts the standard optional form.
+    // Clone the validated map into mutable arrays at that narrow type boundary.
+    const babelInputSourceMap = inputSourceMap === undefined
+      ? undefined
+      : ({
+          ...inputSourceMap,
+          names: [...inputSourceMap.names],
+          sources: [...inputSourceMap.sources],
+          ...(inputSourceMap.sourcesContent === undefined
+            ? {}
+            : { sourcesContent: [...inputSourceMap.sourcesContent] }),
+        } as unknown as NonNullable<TransformOptions["inputSourceMap"]>);
+    const result = await transformAsync(source, {
+      ast: false,
+      babelrc: false,
+      code: true,
+      configFile: false,
+      filename: absolute,
+      inputSourceMap: babelInputSourceMap,
+      parserOpts: { plugins: parserPluginsForPath(logical) },
+      plugins: [stylexPlugin.withOptions({
+        classNamePrefix: compilerContract.transform.classNamePrefix,
+        dev: compilerContract.transform.dev,
+        enableMediaQueryOrder: compilerContract.transform.enableMediaQueryOrder,
+        importSources: [...compilerContract.transform.importSources],
+        runtimeInjection: false,
+        styleResolution: compilerContract.transform.styleResolution,
+        sxPropName: compilerContract.transform.sxPropName,
+        treeshakeCompensation: compilerContract.transform.treeshakeCompensation,
+        unstable_moduleResolution: { rootDir: root, type: compilerContract.transform.moduleResolution },
+      })],
+      sourceFileName: logicalSourceFileName,
+      sourceMaps: mapOptions === undefined ? false : true,
+      sourceType: compilerContract.transform.sourceType,
+    });
+    assert.ok(result !== null && typeof result.code === "string", `Babel returned no code for ${logical}`);
+    const metadata = plainObject(result.metadata, `${logical} metadata`);
+    exactKeys(metadata, ["stylex"], [], `${logical} metadata`);
+    const rules = [...parseStylexRules(metadata.stylex, `${logical} metadata.stylex`)];
+    if (mapOptions === undefined) {
       inventories.push(rules);
       return { code: result.code, rules };
+    }
+    assert.ok(result.map !== null && result.map !== undefined, `Babel returned no source map for ${logical}`);
+    const map = parseStylexSourceMap(result.map, `${logical} output source map`);
+    inventories.push(rules);
+    return {
+      code: result.code,
+      inputMapSha256: inputSourceMap === undefined ? null : sha256(canonicalJson(inputSourceMap)),
+      logicalSourceFileName: logicalSourceFileName!,
+      map,
+      mapSha256: sha256(canonicalJson(map)),
+      rules,
+    };
+  };
+  return {
+    async transform(source, id) {
+      return await transform(source, id) as StylexTransformResult;
+    },
+    async transformWithMap(source, id, options) {
+      return await transform(source, id, options) as StylexMappedTransformResult;
     },
     seal() {
       assert.equal(sealed, false, "StyleX collector may be sealed only once");
@@ -404,6 +480,84 @@ export function createStylexTransformCollector(rootDirectory: string): StylexTra
       return canonicalizeStylexRules(...inventories);
     },
   };
+}
+
+/** Map paths are repository-logical paths, not URLs or encoded URL references.
+ * Validate without rewriting so source indexes, mappings and input hashes keep
+ * the caller's exact accepted provenance. */
+export function validateStylexSourceMapPath(value: unknown, description = "StyleX source-map path"): string {
+  const path = normalizeLogicalPath(value, description);
+  assert.ok(path.trim() === path && !/[:%?#]/u.test(path), `${description} must be an unencoded repository-logical path, not a URL`);
+  return path;
+}
+
+export function parseStylexSourceMap(
+  value: unknown,
+  description = "StyleX source map",
+): StylexSourceMapV1 {
+  const record = plainObject(value, description);
+  exactKeys(
+    record,
+    ["mappings", "names", "sources", "version"],
+    ["file", "ignoreList", "sourceRoot", "sourcesContent", "x_google_ignoreList"],
+    description,
+  );
+  assert.equal(record.version, 3, `${description}.version must be 3`);
+  assert.ok(typeof record.mappings === "string", `${description}.mappings must be a string`);
+  assert.ok(Array.isArray(record.names), `${description}.names must be an array`);
+  assert.ok(
+    record.names.every((name) => typeof name === "string"),
+    `${description}.names must contain only strings`,
+  );
+  assert.ok(Array.isArray(record.sources) && record.sources.length > 0, `${description}.sources must be a nonempty array`);
+  const sources = record.sources.map((source, index) => validateStylexSourceMapPath(source, `${description}.sources[${String(index)}]`));
+  const output: {
+    file?: string;
+    ignoreList?: readonly number[];
+    mappings: string;
+    names: readonly string[];
+    sourceRoot?: string;
+    sources: readonly string[];
+    sourcesContent?: readonly (null | string)[];
+    version: 3;
+    x_google_ignoreList?: readonly number[];
+  } = {
+    mappings: record.mappings,
+    names: [...record.names] as string[],
+    sources,
+    version: 3,
+  };
+  if (record.file !== undefined) output.file = validateStylexSourceMapPath(record.file, `${description}.file`);
+  for (const key of ["ignoreList", "x_google_ignoreList"] as const) {
+    const value = record[key];
+    if (value === undefined) continue;
+    assert.ok(Array.isArray(value), `${description}.${key} must be an array`);
+    assert.ok(
+      value.every((index) => Number.isSafeInteger(index) && (index as number) >= 0 && (index as number) < output.sources.length),
+      `${description}.${key} must contain valid source indexes`,
+    );
+    assert.equal(new Set(value).size, value.length, `${description}.${key} must be unique`);
+    output[key] = [...value] as number[];
+  }
+  if (record.sourceRoot !== undefined) {
+    assert.ok(typeof record.sourceRoot === "string", `${description}.sourceRoot must be a string`);
+    // An empty root and an optional trailing directory separator are standard
+    // relative forms. Retain their bytes after checking the directory itself.
+    if (record.sourceRoot !== "") {
+      validateStylexSourceMapPath(record.sourceRoot.replace(/\/$/u, ""), `${description}.sourceRoot`);
+    }
+    output.sourceRoot = record.sourceRoot;
+  }
+  if (record.sourcesContent !== undefined) {
+    assert.ok(Array.isArray(record.sourcesContent), `${description}.sourcesContent must be an array`);
+    assert.equal(record.sourcesContent.length, output.sources.length, `${description}.sourcesContent length must match sources`);
+    assert.ok(
+      record.sourcesContent.every((source) => source === null || typeof source === "string"),
+      `${description}.sourcesContent must contain strings or null`,
+    );
+    output.sourcesContent = [...record.sourcesContent] as (null | string)[];
+  }
+  return output;
 }
 
 function serializeStylexRulesWithSerializer(

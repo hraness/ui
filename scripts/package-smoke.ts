@@ -7030,7 +7030,7 @@ async function verifyConsumer(
     `@types/react-dom@${release.reactDomTypes}`,
     `react@${release.version}`,
     `react-dom@${release.version}`,
-    "typescript@^6.0.3",
+    "typescript@6.0.3",
     "vite@^7.0.0",
     ...(release.label === "react-19" ? [
       "@babel/core@7.29.7",
@@ -7137,6 +7137,10 @@ async function verifyConsumer(
     types: "./build/bun.ts",
     import: "./dist/build/bun.js",
   });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/next"], {
+    types: "./build/next.ts",
+    import: "./dist/build/next.js",
+  });
   assert.deepEqual(installedManifest.exports?.["./stylex-build/vite"], {
     types: "./build/vite.ts",
     import: "./dist/build/vite.js",
@@ -7157,9 +7161,22 @@ async function verifyConsumer(
     "build/contracts.ts",
     "build/generation.ts",
     "build/index.ts",
+    "build/next-contracts.ts",
+    "build/next-generation.ts",
+    "build/next-loader.cjs",
+    "build/next-loader.ts",
+    "build/next-plugin.ts",
+    "build/next-process.ts",
+    "build/next-ssg.ts",
+    "build/next-auxiliary.ts",
+    "build/next-typescript.ts",
+    "build/next.ts",
     "build/vite.ts",
     "dist/build/bun.js",
     "dist/build/index.js",
+    "dist/build/next-loader.cjs",
+    "dist/build/next-loader.js",
+    "dist/build/next.js",
     "dist/build/vite.js",
     "dist/stylex.css",
     "dist/stylex-manifest.json",
