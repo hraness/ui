@@ -65,6 +65,17 @@ type NextWebpackCallbackContext = StylexNextWebpackContext & Readonly<{
   webpack: Readonly<{ version?: unknown }>;
 }>;
 
+type WebpackEntryOptionHook = Readonly<{
+  tap(
+    options: Readonly<{ name: string; stage: number }>,
+    callback: (context: string, entry: unknown) => void,
+  ): void;
+}>;
+
+type WebpackCompiler = Readonly<{
+  hooks: Readonly<{ entryOption: WebpackEntryOptionHook }>;
+}>;
+
 type NextConfig = Record<string, unknown> & Readonly<{
   distDir?: unknown;
   productionBrowserSourceMaps?: unknown;
@@ -158,18 +169,6 @@ function passFromEnvironment(root: string): OperationalPass {
   return { attempt: { directory: attemptDirectory, planSha256 }, mode };
 }
 
-function withDeliveryEntry(config: NextWebpackConfig, generatedEntry: string): NextWebpackConfig {
-  const original = config.entry;
-  assert.notEqual(original, undefined, "Next webpack config did not expose entries");
-  return {
-    ...config,
-    entry: async () => stylexNextDeliveryEntries(
-      typeof original === "function" ? await (original as () => unknown)() : await original,
-      generatedEntry,
-    ),
-  };
-}
-
 function verifyGeneratedEntryForInjection(path: string): string {
   const absolute = resolve(path);
   const entryStat = lstatSync(absolute);
@@ -177,6 +176,33 @@ function verifyGeneratedEntryForInjection(path: string): string {
   assert.equal(realpathSync(absolute), absolute, "Next generated entry must not traverse a symlink before injection");
   assert.equal(readFileSync(absolute, "utf8"), STYLEX_NEXT_GENERATED_ENTRY_SOURCE, "Next generated entry bytes changed before injection");
   return absolute;
+}
+
+class StylexNextDeliveryEntryPlugin {
+  readonly #generatedEntry: string;
+
+  constructor(generatedEntry: string) {
+    this.#generatedEntry = generatedEntry;
+  }
+
+  apply(compiler: WebpackCompiler): void {
+    compiler.hooks.entryOption.tap(
+      { name: "StylexNextDeliveryEntryPlugin", stage: -1_000 },
+      (_context, entry) => {
+        const original = object(entry, "Next webpack final client entry map");
+        const settled = stylexNextDeliveryEntries(
+          original,
+          verifyGeneratedEntryForInjection(this.#generatedEntry),
+        );
+        assert.deepEqual(
+          Object.keys(settled),
+          Object.keys(original),
+          "StyleX Next delivery entry settlement must preserve the final client entry key set",
+        );
+        for (const [name, value] of Object.entries(settled)) original[name] = value;
+      },
+    );
+  }
 }
 
 function loaderPath(): string {
@@ -199,7 +225,10 @@ function configureWebpack(
     resolve(options.rootDirectory, ...options.outputDirectory.split("/")),
     resolve(options.rootDirectory, "node_modules"),
   ];
-  const configured: NextWebpackConfig = {
+  const deliveryEntryPlugin = pass.mode === "delivery" && target === "client"
+    ? new StylexNextDeliveryEntryPlugin(resolve(pass.attempt.directory, "generated", "entry.mjs"))
+    : undefined;
+  return {
     ...value,
     devtool: "source-map",
     module: {
@@ -226,6 +255,7 @@ function configureWebpack(
     },
     plugins: [
       ...((value.plugins ?? []) as readonly unknown[]),
+      ...(deliveryEntryPlugin === undefined ? [] : [deliveryEntryPlugin]),
       new StylexNextWebpackPlugin({
         attemptDirectory: pass.attempt.directory,
         graphMap: options.graphMap,
@@ -239,10 +269,6 @@ function configureWebpack(
       }),
     ],
   };
-  if (pass.mode === "delivery" && target === "client") {
-    return withDeliveryEntry(configured, verifyGeneratedEntryForInjection(resolve(pass.attempt.directory, "generated", "entry.mjs")));
-  }
-  return configured;
 }
 
 export function withStylexNext<T extends NextConfig>(config: T, rawOptions: StylexNextConfigOptions): T {

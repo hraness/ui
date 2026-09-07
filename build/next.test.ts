@@ -1,9 +1,69 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, test } from "bun:test";
 
 import { stylexNextDeliveryEntries } from "./next-contracts.js";
+import { STYLEX_NEXT_GENERATED_ENTRY_SOURCE } from "./next-generation.js";
 import { runStylexNextBuild, withStylexNext } from "./next.js";
+
+type DeliveryEntryCallback = (context: string, entry: unknown) => void;
+
+function environmentSnapshot(): Readonly<Record<string, string | undefined>> {
+  return {
+    HRANESS_STYLEX_NEXT_ATTEMPT_DIRECTORY: process.env.HRANESS_STYLEX_NEXT_ATTEMPT_DIRECTORY,
+    HRANESS_STYLEX_NEXT_MODE: process.env.HRANESS_STYLEX_NEXT_MODE,
+    HRANESS_STYLEX_NEXT_PLAN_SHA256: process.env.HRANESS_STYLEX_NEXT_PLAN_SHA256,
+  };
+}
+
+function restoreEnvironment(environment: Readonly<Record<string, string | undefined>>): void {
+  for (const [name, value] of Object.entries(environment)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
+function deliveryEntryCallback(rootDirectory: string, initialEntry: unknown): DeliveryEntryCallback {
+  const attemptDirectory = join(rootDirectory, ".stylex-next", "fixture");
+  mkdirSync(join(attemptDirectory, "generated"), { recursive: true });
+  writeFileSync(join(attemptDirectory, "generated", "entry.mjs"), STYLEX_NEXT_GENERATED_ENTRY_SOURCE);
+  process.env.HRANESS_STYLEX_NEXT_ATTEMPT_DIRECTORY = attemptDirectory;
+  process.env.HRANESS_STYLEX_NEXT_MODE = "delivery";
+  process.env.HRANESS_STYLEX_NEXT_PLAN_SHA256 = "0".repeat(64);
+  const context = { dev: false, isServer: false, webpack: { version: "5.99.0" } } as const;
+  const configured = withStylexNext({}, {
+    packageManifests: ["node_modules/@hraness/ui/dist/stylex-manifest.json"],
+    rootDirectory,
+  }) as Readonly<{
+    webpack(config: Record<string, unknown>, webpackContext: typeof context): Record<string, unknown>;
+  }>;
+  const webpackConfig = configured.webpack({ entry: initialEntry }, context);
+  assert.equal(webpackConfig.entry, initialEntry, "the config callback must leave Next's pre-injection entry value untouched");
+  assert.ok(Array.isArray(webpackConfig.plugins));
+  const plugin = webpackConfig.plugins.find((candidate) => (
+    typeof candidate === "object"
+      && candidate !== null
+      && candidate.constructor.name === "StylexNextDeliveryEntryPlugin"
+  ));
+  assert.ok(plugin !== undefined && "apply" in plugin && typeof plugin.apply === "function");
+  let callback: DeliveryEntryCallback | undefined;
+  plugin.apply({
+    hooks: {
+      entryOption: {
+        tap(options: Readonly<{ name: string; stage: number }>, value: DeliveryEntryCallback): void {
+          assert.deepEqual(options, { name: "StylexNextDeliveryEntryPlugin", stage: -1_000 });
+          assert.equal(callback, undefined, "the delivery plugin must register exactly one entry hook");
+          callback = value;
+        },
+      },
+    },
+  });
+  assert.ok(callback !== undefined);
+  return callback;
+}
 
 describe("StyleX Next production runtime", () => {
   test("appends the delivery entry only to physical App Router stylesheet owners", async () => {
@@ -37,12 +97,119 @@ describe("StyleX Next production runtime", () => {
     );
   });
 
+  test("defers delivery injection until Next exposes its final App Router client entries", () => {
+    const environment = environmentSnapshot();
+    const rootDirectory = realpathSync(mkdtempSync(join(tmpdir(), "stylex-next-final-entry-")));
+    try {
+      const initialMain = { import: ["next-main"] };
+      const initialMainApp = { import: ["next-main-app"], layer: "app-pages-browser" };
+      const callback = deliveryEntryCallback(rootDirectory, {
+        main: initialMain,
+        "main-app": initialMainApp,
+      });
+      const generatedEntry = join(rootDirectory, ".stylex-next", "fixture", "generated", "entry.mjs");
+      const layoutDependOn = ["main-app"];
+      const layoutImports = ["root-layout"];
+      const layout = {
+        dependOn: layoutDependOn,
+        import: layoutImports,
+        layer: "app-pages-browser",
+        runtime: "root-runtime",
+      };
+      const globalErrorDependOn = ["main-app"];
+      const globalError = {
+        dependOn: globalErrorDependOn,
+        import: "physical-global-error",
+        layer: "app-pages-browser",
+      };
+      const page = { dependOn: ["main-app"], import: "root-page", layer: "app-pages-browser" };
+      const nestedLayout = { dependOn: ["main-app"], import: "nested-layout", layer: "app-pages-browser" };
+      const finalEntries: Record<string, unknown> = {
+        main: initialMain,
+        "main-app": initialMainApp,
+        "app/_global-error/page": { dependOn: ["main-app"], import: "synthetic-global-error", layer: "app-pages-browser" },
+        "app/global-error": globalError,
+        "app/layout": layout,
+        "app/nested/layout": nestedLayout,
+        "app/page": page,
+        "next/dist/client/components/builtin/not-found": "builtin-not-found",
+      };
+      const names = Object.keys(finalEntries);
+
+      callback(rootDirectory, finalEntries);
+
+      assert.deepEqual(Object.keys(finalEntries), names);
+      assert.deepEqual(finalEntries["app/layout"], {
+        ...layout,
+        import: [...layoutImports, generatedEntry],
+      });
+      assert.deepEqual(finalEntries["app/global-error"], {
+        ...globalError,
+        import: ["physical-global-error", generatedEntry],
+      });
+      const settledLayout = finalEntries["app/layout"] as typeof layout;
+      const settledGlobalError = finalEntries["app/global-error"] as Readonly<{
+        dependOn: readonly string[];
+        import: readonly string[];
+        layer: string;
+      }>;
+      assert.equal(settledLayout.dependOn, layoutDependOn);
+      assert.equal(settledLayout.runtime, layout.runtime);
+      assert.equal(settledGlobalError.dependOn, globalErrorDependOn);
+      for (const [name, entry] of [
+        ["main", initialMain],
+        ["main-app", initialMainApp],
+        ["app/page", page],
+        ["app/nested/layout", nestedLayout],
+      ] as const) {
+        assert.equal(finalEntries[name], entry, `${name} must retain its exact entry identity`);
+      }
+    } finally {
+      restoreEnvironment(environment);
+      rmSync(rootDirectory, { force: true, recursive: true });
+    }
+  });
+
+  test("fails closed only when the final client entry topology lacks a physical root", () => {
+    const environment = environmentSnapshot();
+    const rootDirectory = realpathSync(mkdtempSync(join(tmpdir(), "stylex-next-missing-final-entry-")));
+    try {
+      const callback = deliveryEntryCallback(rootDirectory, {
+        main: "next-main",
+        "main-app": { import: ["next-main-app"], layer: "app-pages-browser" },
+      });
+      assert.throws(
+        () => callback(rootDirectory, {
+          main: "next-main",
+          "main-app": { import: ["next-main-app"], layer: "app-pages-browser" },
+          "app/page": { dependOn: ["main-app"], import: "root-page", layer: "app-pages-browser" },
+        }),
+        /requires at least one physical App Router root layout entry/u,
+      );
+      assert.throws(
+        () => callback(rootDirectory, async () => ({ "app/layout": "root-layout" })),
+        /final client entry map must be an object/u,
+      );
+      writeFileSync(
+        join(rootDirectory, ".stylex-next", "fixture", "generated", "entry.mjs"),
+        `${STYLEX_NEXT_GENERATED_ENTRY_SOURCE}// changed after configuration\n`,
+      );
+      assert.throws(
+        () => callback(rootDirectory, {
+          "app/layout": { dependOn: ["main-app"], import: "root-layout", layer: "app-pages-browser" },
+          "app/page": { dependOn: ["main-app"], import: "root-page", layer: "app-pages-browser" },
+          "main-app": { import: ["next-main-app"], layer: "app-pages-browser" },
+        }),
+        /generated entry bytes changed before injection/u,
+      );
+    } finally {
+      restoreEnvironment(environment);
+      rmSync(rootDirectory, { force: true, recursive: true });
+    }
+  });
+
   test("keeps Next's webpack callback synchronous and rejects an asynchronous upstream callback", () => {
-    const environment = {
-      HRANESS_STYLEX_NEXT_ATTEMPT_DIRECTORY: process.env.HRANESS_STYLEX_NEXT_ATTEMPT_DIRECTORY,
-      HRANESS_STYLEX_NEXT_MODE: process.env.HRANESS_STYLEX_NEXT_MODE,
-      HRANESS_STYLEX_NEXT_PLAN_SHA256: process.env.HRANESS_STYLEX_NEXT_PLAN_SHA256,
-    };
+    const environment = environmentSnapshot();
     process.env.HRANESS_STYLEX_NEXT_ATTEMPT_DIRECTORY = `${process.cwd()}/.stylex-next/fixture`;
     process.env.HRANESS_STYLEX_NEXT_MODE = "discovery";
     process.env.HRANESS_STYLEX_NEXT_PLAN_SHA256 = "0".repeat(64);
@@ -68,10 +235,7 @@ describe("StyleX Next production runtime", () => {
         /rejects asynchronous next\.config webpack callbacks/u,
       );
     } finally {
-      for (const [name, value] of Object.entries(environment)) {
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
-      }
+      restoreEnvironment(environment);
     }
   });
 
