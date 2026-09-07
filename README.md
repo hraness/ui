@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.3"
+    "@hraness/ui": "github:hraness/ui#v0.5.4"
   }
 }
 ```
@@ -118,7 +118,9 @@ Compiler adopters install the package's exact build-tool peers: `@babel/core@7.2
 
 Package authors use the lower-level exports from `@hraness/ui/stylex-build` inside their own build: `createStylexTransformCollector` compiles package source, `serializeStylexPackageRules` produces that package's independently usable CSS under a package-owned `components.*` namespace, and the artifact and manifest helpers bind the resulting JavaScript, CSS, raw rules, and `compilerFoundation` without independently serialized StyleX rules. That standalone CSS remains the plugin-free package route. Each package must choose a distinct namespace and publish its manifest with the package.
 
-Final applications do not concatenate those independently compiled recipe sheets. They register every participating package manifest and all application graphs, load each package's compiler foundation, and let the finalizer union the raw package and application rules before the fixed serializer runs once. Every foundation stylesheet must precede the one finalized recipe stylesheet in the document. Loading a package's `styles.css` or `stylex.css` beside that final asset is an unsupported mixed route and fails the checked adapters.
+Final applications do not concatenate those independently compiled recipe sheets. They register every participating package manifest and all application graphs, load each package's compiler foundation, and let the finalizer union the raw package and application rules before the fixed serializer runs once. Combined rules use the reserved `components.hraness-stylex` namespace after every package's legacy layers. This keeps later package foundations from overriding another package's compiled atoms. Identical cross-package rules are emitted once; conflicting rule identities stop the build. Every foundation stylesheet must precede the one finalized recipe stylesheet in the document. Loading a package's `styles.css` or `stylex.css` beside that final asset is an unsupported mixed route and fails the checked adapters.
+
+Generation plans and completion records use schema 2 and bind `unionPolicySha256` separately from the unchanged package compiler contract. Existing schema-1 package manifests and their standalone stylesheets remain valid inputs. Old generation plans cannot resume under the new delivery policy; create a fresh generation. The public `serializeStylexRuleUnionV1` API accepts raw rules and every registered package's standalone serializer. Package foundations and graph stylesheets must not declare or write the reserved union namespace.
 
 The registered `src/client.tsx` entry imports `@hraness/ui/compiler-foundation.css` before product CSS. This one-shot Vite build registers that complete client graph, resolves the package manifest through its public export, seals the generated HTML, and publishes only after the graph and template have settled:
 

@@ -50,6 +50,7 @@ const SSR_CSS_PROPERTY = "outline-offset";
 const SSR_SOURCE_PROPERTY = "outlineOffset";
 const SSR_VALUE = "141421px";
 const STYLEX_VERSION = "0.19.0";
+const STYLEX_UNION_POLICY_SHA256 = "1ceced1f1bf6359413ca6425ede61e1fdae272b897f4455c2347e2431d75caa1";
 const TYPESCRIPT_VERSION = "6.0.3";
 const VITE_VERSION = "7.3.6";
 
@@ -302,6 +303,12 @@ if (outputPath !== undefined) {
 
 const applicationCss = `@import "./nested/foundation.css";
 
+@layer components.fixture-product.legacy {
+  [data-vite-ssr] {
+    scroll-margin-bottom: 2px;
+  }
+}
+
 .vite-adopter-client {
   display: block;
 }
@@ -322,14 +329,37 @@ import { basename, join, resolve } from "node:path";
 import { build as viteBuild } from "vite";
 import {
   STYLEX_TEMPLATE_CSS_PLACEHOLDER,
+  auditCssWithoutStylexUnionNamespace,
   createStylexGeneration,
   finalizeStylexGeneration,
   prepareStylexProducedTemplate,
   sealStylexProducedTemplate,
+  serializeStylexRuleUnionV1,
+  stylexUnionPolicySha256,
 } from "@hraness/ui/stylex-build";
 import { stylexVite } from "@hraness/ui/stylex-build/vite";
 
 const root = ${JSON.stringify(consumer)};
+const expectedUnionPolicySha256 = ${JSON.stringify(STYLEX_UNION_POLICY_SHA256)};
+
+assert.equal(stylexUnionPolicySha256, expectedUnionPolicySha256);
+const unionProbe = serializeStylexRuleUnionV1(
+  [["x-packed-vite-union-probe", { ltr: ".x-packed-vite-union-probe{color:red}" }, 1000]],
+  [{ before: ["components.fixture-package.legacy"], prefix: "components.fixture-package" }],
+);
+assert.match(unionProbe, /@layer components\\.hraness-stylex\\.priority1/u);
+assert.doesNotMatch(unionProbe, /components\\.fixture-package\\.priority/u);
+auditCssWithoutStylexUnionNamespace(
+  "@layer components.fixture-package.legacy { .fixture { display: block; } }",
+  "packed Vite safe foundation probe",
+);
+assert.throws(
+  () => auditCssWithoutStylexUnionNamespace(
+    "@layer components.hraness-stylex.priority9 { .fixture { display: block; } }",
+    "packed Vite reserved foundation probe",
+  ),
+  /reserved StyleX rule-union namespace/u,
+);
 
 async function readReceipt(generation, graphId) {
   return JSON.parse(await readFile(
@@ -497,6 +527,14 @@ const clientEntry = namedJavaScript(clientReceipt, "client", "client entry");
 const secondaryEntry = namedJavaScript(clientReceipt, "secondary", "secondary entry");
 namedJavaScript(clientReceipt, "lazy", "lazy chunk");
 const foundation = oneOutput(clientReceipt, ({ path }) => path.endsWith(".css"), "client foundation CSS");
+auditCssWithoutStylexUnionNamespace(
+  await readFile(join(
+    generation.directory,
+    ...clientReceipt.outputRoot.split("/"),
+    ...foundation.path.split("/"),
+  ), "utf8"),
+  "packed Vite client foundation graph",
+);
 assert.equal(await exists(join(generation.directory, "payload", "stylex.css")), false);
 
 await viteBuild({
@@ -550,10 +588,18 @@ assert.equal(finalDirectory, resolve(outputDirectory, "packed-vite-adopter"));
 }
 
 const typeContractSource = `import {
+  auditCssWithoutStylexUnionNamespace,
   createStylexGeneration,
   finalizeStylexGeneration,
   serializeStylexPackageRules,
+  serializeStylexRuleUnionV1,
+  stylexUnionPolicy,
+  stylexUnionPolicySha256,
+  type StylexCompleteRecordV2,
   type StylexGenerationHandleV1,
+  type StylexGenerationPlanV2,
+  type StylexRuleUnionPolicyV1,
+  type StylexRuleV1,
   type StylexStandaloneSerializerV1,
 } from "@hraness/ui/stylex-build";
 import {
@@ -573,11 +619,30 @@ const standaloneSerializer = {
   prefix: "components.fixture-package",
 } satisfies StylexStandaloneSerializerV1;
 const standaloneCss: string = serializeStylexPackageRules([], standaloneSerializer);
+const unionRules: readonly StylexRuleV1[] = [[
+  "x-type-union-probe",
+  { ltr: ".x-type-union-probe{color:red}" },
+  1000,
+]];
+const unionCss: string = serializeStylexRuleUnionV1(unionRules, [standaloneSerializer]);
+const unionPolicy: StylexRuleUnionPolicyV1 = stylexUnionPolicy;
+const unionPolicyDigest: string = stylexUnionPolicySha256;
+const complete = null as unknown as StylexCompleteRecordV2;
+const plan = null as unknown as StylexGenerationPlanV2;
+auditCssWithoutStylexUnionNamespace(
+  "@layer components.fixture-package.legacy;",
+  "packed Vite type-contract foundation",
+);
 const plugin: Plugin = stylexVite(options);
 void createStylexGeneration;
 void finalizeStylexGeneration;
 void plugin;
 void standaloneCss;
+void unionCss;
+void unionPolicy;
+void unionPolicyDigest;
+void complete;
+void plan;
 
 // @ts-expect-error Portable StyleX and Vite declarations must not expose Bun globals.
 void Bun;
@@ -1048,6 +1113,51 @@ async function verifyBrowserOutput(
           },
           "Chromium must preserve the finalized client, SSR, overlap, specificity, important-state, and pseudo-element rules",
         );
+        const finalStylesheetHref = new URL("/stylex.css", origin).href;
+        const setFinalStylesheetDisabled = async (disabled: boolean): Promise<void> => {
+          await page.evaluate(({ disabled: nextDisabled, expectedHref }) => {
+            const matches = [...document.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"]')]
+              .filter((link) => link.href === expectedHref);
+            if (matches.length !== 1) {
+              throw new Error(`Expected one finalized stylesheet at ${expectedHref}, received ${String(matches.length)}`);
+            }
+            matches[0]!.disabled = nextDisabled;
+          }, { disabled, expectedHref: finalStylesheetHref });
+        };
+        const waitForClientValue = async (expected: string): Promise<void> => {
+          await page.waitForFunction((value) => {
+            const main = document.querySelector("main[data-vite-ssr='true']");
+            return main instanceof HTMLElement
+              && getComputedStyle(main).scrollMarginBottom === value;
+          }, expected, { polling: "raf", timeout: 10_000 });
+        };
+        let canaryValue: string | undefined;
+        let finalStylesheetDisabled = false;
+        try {
+          await setFinalStylesheetDisabled(true);
+          finalStylesheetDisabled = true;
+          await waitForClientValue("2px");
+          canaryValue = await page.locator("main[data-vite-ssr='true']").evaluate(
+            (main) => getComputedStyle(main).scrollMarginBottom,
+          );
+        } finally {
+          if (finalStylesheetDisabled) {
+            await setFinalStylesheetDisabled(false);
+            await waitForClientValue(CLIENT_VALUE);
+          }
+        }
+        assert.equal(
+          canaryValue,
+          "2px",
+          "The later product legacy sibling must become authoritative only when the exact final union stylesheet is disabled",
+        );
+        assert.equal(
+          await page.locator("main[data-vite-ssr='true']").evaluate(
+            (main) => getComputedStyle(main).scrollMarginBottom,
+          ),
+          CLIENT_VALUE,
+          "Restoring the exact final union stylesheet must restore the client StyleX atom",
+        );
         for (const interaction of [forwardInteraction, reverseInteraction]) {
           assert.deepEqual(interaction, {
             focusColor: FOCUS_IMPORTANT_VALUE,
@@ -1265,6 +1375,28 @@ const build = await import("@hraness/ui/stylex-build");
 const vite = await import("@hraness/ui/stylex-build/vite");
 assert.equal(typeof build.createStylexGeneration, "function");
 assert.equal(typeof build.finalizeStylexGeneration, "function");
+assert.equal(typeof build.serializeStylexRuleUnionV1, "function");
+assert.equal(typeof build.auditCssWithoutStylexUnionNamespace, "function");
+assert.equal(build.stylexUnionPolicy.prefix, "components.hraness-stylex");
+assert.equal(build.stylexUnionPolicySha256, ${JSON.stringify(STYLEX_UNION_POLICY_SHA256)});
+assert.equal(build.STYLEX_GENERATION_SCHEMA_VERSION, 2);
+assert.equal(build.STYLEX_COMPLETE_RECORD_SCHEMA_VERSION, 2);
+const unionCss = build.serializeStylexRuleUnionV1(
+  [["x-node-union-probe", { ltr: ".x-node-union-probe{color:red}" }, 1000]],
+  [{ before: ["components.fixture-package.legacy"], prefix: "components.fixture-package" }],
+);
+assert.match(unionCss, /@layer components\\.hraness-stylex\\.priority1/u);
+build.auditCssWithoutStylexUnionNamespace(
+  "@layer components.fixture-package.legacy;",
+  "packed Node safe foundation probe",
+);
+assert.throws(
+  () => build.auditCssWithoutStylexUnionNamespace(
+    "@import './fixture.css' layer(components.hraness-stylex.priority8);",
+    "packed Node reserved foundation probe",
+  ),
+  /reserved StyleX rule-union namespace/u,
+);
 assert.equal(typeof vite.stylexVite, "function");
 assert.equal(globalThis.Bun, undefined);
 `),
@@ -1308,9 +1440,11 @@ assert.equal(globalThis.Bun, undefined);
     packages?: { manifestSha256?: unknown; name?: unknown; version?: unknown }[];
     schemaVersion?: unknown;
     state?: unknown;
+    unionPolicySha256?: unknown;
   };
   assert.equal(complete.kind, "hraness-stylex-complete-generation");
-  assert.equal(complete.schemaVersion, 1);
+  assert.equal(complete.schemaVersion, 2);
+  assert.equal(complete.unionPolicySha256, STYLEX_UNION_POLICY_SHA256);
   assert.equal(complete.state, "complete");
   assert.equal(complete.generationId, "packed-vite-adopter");
   assert.deepEqual(complete.graphs?.map(({ id }) => id), ["client", "ssr"]);
@@ -1375,7 +1509,9 @@ assert.equal(globalThis.Bun, undefined);
   assert.match(compactFinalCss, /:(?:focus-visible|hover)\{[^{}]*!important/u);
   assert.match(compactFinalCss, /:{1,2}before\{/u);
   assert.match(compactFinalCss, /@keyframes[^{}]+\{[^{}]*\{opacity:\.(?:314159|3142)/u);
-  assert.match(finalCss, /@layer\s+components\.hraness-ui\.priority[1-9]\d*/u);
+  assert.match(finalCss, /@layer\s+components\.hraness-stylex\.priority[1-9]\d*/u);
+  assert.doesNotMatch(finalCss, /@layer\s+components\.hraness-ui\.priority[1-9]\d*/u);
+  assert.doesNotMatch(finalCss, /components\.fixture-product\.legacy/u);
   assert.doesNotMatch(finalCss, /@import\b|\.stylex-fixtures|\/private\//u);
 
   const manifest = JSON.parse(
@@ -1391,11 +1527,29 @@ assert.equal(globalThis.Bun, undefined);
 
   const graphCssPaths = clientFiles.filter((path) => path.endsWith(".css"));
   const standaloneBytes = await readFile(resolve(consumer, "node_modules/@hraness/ui/dist/stylex.css"));
+  const standaloneCss = standaloneBytes.toString("utf8");
+  assert.match(standaloneCss, /@layer\s+components\.hraness-ui\.priority[1-9]\d*/u);
+  assert.doesNotMatch(standaloneCss, /components\.hraness-stylex(?:\.|\b)/u);
   for (const path of graphCssPaths) {
     const bytes = await readFile(resolve(finalDirectory, path));
     const css = bytes.toString("utf8");
     assert.notEqual(sha256(bytes), sha256(standaloneBytes), "graph CSS must not copy the standalone package recipes");
+    assert.equal(
+      count(
+        css,
+        /@layer\s+components\.fixture-product\.legacy\s*\{\s*\[data-vite-ssr\]\s*\{[^{}]*scroll-margin-bottom\s*:\s*2px\s*(?:;|\})\s*\}/gu,
+      ),
+      1,
+      "the emitted foundation graph must retain the exact canary inside one product legacy sibling layer",
+    );
+    const packageLegacyIndex = css.indexOf("components.hraness-ui.legacy");
+    const productLegacyIndex = css.indexOf("components.fixture-product.legacy");
+    assert.ok(
+      packageLegacyIndex >= 0 && productLegacyIndex > packageLegacyIndex,
+      "the emitted product legacy sibling must be registered after the UI foundation layer",
+    );
     assert.doesNotMatch(css, /@layer\s+components\.hraness-ui\.priority(?:0|[1-9]\d*)/u);
+    assert.doesNotMatch(css, /components\.hraness-stylex(?:\.|\b)/u);
     assert.doesNotMatch(css, packageSelector);
     for (const value of [CLIENT_VALUE, LAZY_VALUE, MULTI_VALUE, SSR_VALUE]) assert.ok(!css.includes(value));
     assert.ok(css.includes("--ui-background"), "client graph CSS must contain the recipe-free compiler foundation");

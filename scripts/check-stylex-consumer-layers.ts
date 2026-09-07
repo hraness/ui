@@ -6,17 +6,18 @@ import { pathToFileURL } from "node:url";
 
 import { collectBunStylexGraph } from "../build/bun.js";
 import {
+  auditCssWithoutStylexUnionNamespace,
   createStylexGeneration,
   finalizeStylexGeneration,
   prepareStylexProducedTemplate,
   sealStylexProducedTemplate,
+  stylexUnionPolicySha256,
   STYLEX_TEMPLATE_CSS_PLACEHOLDER,
 } from "../build/index.js";
 
-const PREFIX = "components.hraness-ui";
-const PACKAGE_LAYER_SEQUENCE = [
-  `${PREFIX}.legacy.base`,
-  `${PREFIX}.legacy`,
+const EXPECTED_UNION_POLICY_SHA256 = "1ceced1f1bf6359413ca6425ede61e1fdae272b897f4455c2347e2431d75caa1";
+const PREFIX = "components.hraness-stylex";
+const UNION_LAYER_SEQUENCE = [
   `${PREFIX}.priority1`,
   `${PREFIX}.priority2`,
   `${PREFIX}.priority3`,
@@ -493,6 +494,11 @@ async function installPackedPackage(consumer: string, packed: string): Promise<v
 
 async function main(): Promise<void> {
   assert.equal(Bun.version, "1.3.14");
+  assert.equal(
+    stylexUnionPolicySha256,
+    EXPECTED_UNION_POLICY_SHA256,
+    "Consumer-layer evidence must bind the reviewed shared-union policy",
+  );
   const repository = process.cwd();
   const compiler = JSON.parse(await readFile(join(repository, "node_modules/@stylexjs/babel-plugin/package.json"), "utf8")) as { version?: unknown };
   assert.equal(compiler.version, "0.19.0", "Review this regression before changing the compiler version");
@@ -517,6 +523,17 @@ async function main(): Promise<void> {
     assert.ok(metadata.split("\n").filter(Boolean).every((line) => /^[d-]/u.test(line)), "The package archive must contain only ordinary files/directories");
     await run(["/usr/bin/tar", "-xf", archive, "-C", work], repository, environment);
     const packed = join(work, "package");
+    const packedStandaloneCss = await readFile(join(packed, "dist/stylex.css"), "utf8");
+    assert.match(
+      packedStandaloneCss,
+      /@layer\s+components\.hraness-ui\.priority[1-9]\d*/u,
+      "The immutable package stylesheet must retain its standalone namespace",
+    );
+    assert.doesNotMatch(
+      packedStandaloneCss,
+      /components\.hraness-stylex(?:\.|\b)/u,
+      "The standalone package stylesheet must not occupy the finalized union namespace",
+    );
     await writeFile(join(evidence, "inputs.json"), `${JSON.stringify({
       bun: Bun.version, compiler: compiler.version,
       package: digest(await readFile(join(repository, "package.json"))),
@@ -554,6 +571,10 @@ async function main(): Promise<void> {
           readFile(foundationCss[0]!, "utf8"),
           readFile(combinedCss[0]!, "utf8"),
         ]);
+        auditCssWithoutStylexUnionNamespace(
+          foundationSource,
+          `${variant.name} compiler foundation graph`,
+        );
         const css = `${foundationSource}\n${combinedSource}`;
         const reverseCss = `${combinedSource}\n${foundationSource}`;
         const sheet = parseCss(css);
@@ -563,6 +584,13 @@ async function main(): Promise<void> {
         for (const check of [
           () => requireKnownLayers(sheet),
           () => requireKnownLayers(reverseSheet),
+          () => {
+            const legacy = sheet.layers.indexOf("components.hraness-ui.legacy");
+            assert.ok(
+              legacy >= 0 && legacy < sheet.layers.indexOf(`${PREFIX}.priority1`),
+              "Package foundation layers must precede the shared union namespace",
+            );
+          },
           () => verify(sheet, snapshot, variant),
           () => verify(reverseSheet, snapshot, variant),
           () => assert.deepEqual(
@@ -575,8 +603,8 @@ async function main(): Promise<void> {
           () => assert.equal(/(?:^|[;{])\s*padding:\s*19px\s*[;}]/u.test(css), variant.padding, "Shorthand inventory must add its own padding atom"),
           () => assert.deepEqual(
             sheet.layers.filter((name) => name === PREFIX || name.startsWith(`${PREFIX}.`)),
-            PACKAGE_LAYER_SEQUENCE,
-            "The complete union must retain the exact package layer sequence after shared motion and consumer registrations",
+            UNION_LAYER_SEQUENCE,
+            "The complete union must retain its exact shared layer sequence after motion and consumer registrations",
           ),
         ]) {
           try { check(); } catch (error) { failures.push(String(error)); }

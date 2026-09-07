@@ -29,6 +29,7 @@ const MULTI_STYLEX_SOURCE_PROPERTY = "marginInlineEnd";
 const MULTI_STYLEX_VALUE = "161803px";
 const REACT_VERSION = "19.2.3";
 const STYLEX_VERSION = "0.19.0";
+const STYLEX_UNION_POLICY_SHA256 = "1ceced1f1bf6359413ca6425ede61e1fdae272b897f4455c2347e2431d75caa1";
 
 type Artifact = Readonly<{
   body: string;
@@ -177,6 +178,7 @@ ${renderSource}`;
 const typeContractSource = `import {
   STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION,
   artifactForFile,
+  auditCssWithoutStylexUnionNamespace,
   canonicalJson,
   compilerContract,
   compilerSha256,
@@ -185,13 +187,19 @@ const typeContractSource = `import {
   finalizeStylexGeneration,
   readStylexPackageManifest,
   serializeStylexPackageRules,
+  serializeStylexRuleUnionV1,
+  stylexUnionPolicy,
+  stylexUnionPolicySha256,
   stylexRulesSha256,
   validateStylexPackageManifest,
   type StylexArtifactV1,
   type StylexCompilerContractV1,
+  type StylexCompleteRecordV2,
   type StylexGenerationHandleV1,
+  type StylexGenerationPlanV2,
   type StylexPackageManifestV1,
   type StylexRuleV1,
+  type StylexRuleUnionPolicyV1,
   type StylexStandaloneSerializerV1,
   type StylexTransformCollector,
   type StylexTransformResult,
@@ -209,6 +217,20 @@ const standaloneSerializer = {
   prefix: "components.fixture-package",
 } satisfies StylexStandaloneSerializerV1;
 const standaloneCss: string = serializeStylexPackageRules([], standaloneSerializer);
+const unionRules: readonly StylexRuleV1[] = [[
+  "x-type-union-probe",
+  { ltr: ".x-type-union-probe{color:red}" },
+  1000,
+]];
+const unionCss: string = serializeStylexRuleUnionV1(unionRules, [standaloneSerializer]);
+const unionPolicy: StylexRuleUnionPolicyV1 = stylexUnionPolicy;
+const unionPolicyDigest: string = stylexUnionPolicySha256;
+const complete = null as unknown as StylexCompleteRecordV2;
+const plan = null as unknown as StylexGenerationPlanV2;
+auditCssWithoutStylexUnionNamespace(
+  "@layer components.fixture-package.legacy;",
+  "packed Bun type-contract foundation",
+);
 const artifact: StylexArtifactV1 = {
   bytes: 0,
   path: "dist/index.js",
@@ -255,6 +277,11 @@ void transformed;
 void validated;
 void readManifest;
 void standaloneCss;
+void unionCss;
+void unionPolicy;
+void unionPolicyDigest;
+void complete;
+void plan;
 `;
 
 const typeContractConfig = `${JSON.stringify({
@@ -273,21 +300,45 @@ const typeContractConfig = `${JSON.stringify({
 
 function buildSource(consumer: string): string {
   return `import {
+  auditCssWithoutStylexUnionNamespace,
   compilerContract,
   createStylexTransformCollector,
   createStylexGeneration,
   finalizeStylexGeneration,
   prepareStylexProducedTemplate,
   sealStylexProducedTemplate,
+  serializeStylexRuleUnionV1,
+  stylexUnionPolicy,
+  stylexUnionPolicySha256,
 } from "@hraness/ui/stylex-build";
 import { collectBunStylexGraph } from "@hraness/ui/stylex-build/bun";
 import assert from "node:assert/strict";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const root = ${JSON.stringify(consumer)};
+const expectedUnionPolicySha256 = ${JSON.stringify(STYLEX_UNION_POLICY_SHA256)};
 
 assert.ok(import.meta.resolve("@hraness/ui/stylex-build").endsWith("/node_modules/@hraness/ui/dist/build/index.js"), "Compiler proof must load the installed packed build entry");
+assert.equal(stylexUnionPolicy.prefix, "components.hraness-stylex");
+assert.equal(stylexUnionPolicySha256, expectedUnionPolicySha256);
+const unionProbe = serializeStylexRuleUnionV1(
+  [["x-packed-bun-union-probe", { ltr: ".x-packed-bun-union-probe{color:red}" }, 1000]],
+  [{ before: ["components.fixture-package.legacy"], prefix: "components.fixture-package" }],
+);
+assert.match(unionProbe, /@layer components\\.hraness-stylex\\.priority1/u);
+assert.doesNotMatch(unionProbe, /components\\.fixture-package\\.priority/u);
+auditCssWithoutStylexUnionNamespace(
+  "@layer components.fixture-package.legacy { .fixture { display: block; } }",
+  "packed Bun safe foundation probe",
+);
+assert.throws(
+  () => auditCssWithoutStylexUnionNamespace(
+    "@import './fixture.css' layer(components.hraness-stylex.priority8);",
+    "packed Bun reserved foundation probe",
+  ),
+  /reserved StyleX rule-union namespace/u,
+);
 assert.equal(compilerContract.transform.enableMediaQueryOrder, true);
 assert.equal(compilerContract.tools.stylexBabelCompatibility.patchId, "stylex-0.19.0-token-parser-explicit-eof-v1");
 const parserCollector = createStylexTransformCollector(root);
@@ -404,6 +455,14 @@ assert.equal(
 const clientEntry = clientEntries[0];
 const foundationOutput = foundationOutputs[0];
 assert.ok(clientEntry !== undefined && foundationOutput !== undefined);
+auditCssWithoutStylexUnionNamespace(
+  await readFile(join(
+    generation.directory,
+    ...clientReceipt.outputRoot.split("/"),
+    ...foundationOutput.path.split("/"),
+  ), "utf8"),
+  "packed Bun client foundation graph",
+);
 const ssrReceipt = await collectBunStylexGraph({
   build: { minify: true },
   generation,
@@ -1002,13 +1061,19 @@ try {
     finalCss?: { path?: unknown };
     generationId?: unknown;
     graphs?: { id?: unknown }[];
+    kind?: unknown;
     packages?: {
       manifestSha256?: unknown;
       name?: unknown;
       version?: unknown;
     }[];
+    schemaVersion?: unknown;
     state?: unknown;
+    unionPolicySha256?: unknown;
   };
+  assert.equal(completeRecord.kind, "hraness-stylex-complete-generation");
+  assert.equal(completeRecord.schemaVersion, 2);
+  assert.equal(completeRecord.unionPolicySha256, STYLEX_UNION_POLICY_SHA256);
   assert.equal(completeRecord.state, "complete");
   assert.equal(completeRecord.generationId, "packed-consumer");
   assert.equal(completeRecord.finalCss?.path, "stylex.css");
@@ -1185,13 +1250,32 @@ try {
   );
 
   const priorityLayers = [
-    ...finalCss.matchAll(/@layer\s+components\.hraness-ui\.priority([1-9]\d*)/gu),
+    ...finalCss.matchAll(/@layer\s+components\.hraness-stylex\.priority([1-9]\d*)/gu),
   ].map((match) => Number(match[1]));
   assert.ok(priorityLayers.length > 0, "final CSS must contain recipe layers");
   assert.equal(
     new Set(priorityLayers).size,
     priorityLayers.length,
     "each finite priority layer must be serialized exactly once",
+  );
+  assert.doesNotMatch(
+    finalCss,
+    /@layer\s+components\.hraness-ui\.priority[1-9]\d*/u,
+    "the finalized union must not reuse the standalone package namespace",
+  );
+  const standaloneCss = await readFile(
+    resolve(consumer, "node_modules/@hraness/ui/dist/stylex.css"),
+    "utf8",
+  );
+  assert.match(
+    standaloneCss,
+    /@layer\s+components\.hraness-ui\.priority[1-9]\d*/u,
+    "the packed package stylesheet must retain its standalone namespace",
+  );
+  assert.doesNotMatch(
+    standaloneCss,
+    /components\.hraness-stylex(?:\.|\b)/u,
+    "the packed standalone stylesheet must not occupy the finalized union namespace",
   );
   const iconElement = html.match(
     /<svg\b(?=[^>]*\bdata-slot="icon")(?=[^>]*\bclass="([^"]*)")[^>]*>/u,
@@ -1236,6 +1320,11 @@ try {
     countMatches(browserCss, localStylexCssPattern),
     0,
     "the foundation graph CSS must not contain local recipe output",
+  );
+  assert.doesNotMatch(
+    browserCss,
+    /components\.hraness-stylex(?:\.|\b)/u,
+    "the compiler foundation graph must not occupy the finalized union namespace",
   );
   forbid(
     finalCss,
