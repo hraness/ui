@@ -319,7 +319,15 @@ describe("StyleX Next output provenance", () => {
     page.parentsIterable.push(layout);
     const nestedLayout = entry(["static/nested-layout.js"]);
     const mainApp = entry(["static/main-app.js"]);
-    const proxy = { resource: generatedResource, type: "javascript/auto" };
+    const proxy = { resource: generatedResource, type: "javascript/auto", userRequest: generatedResource, layer: "app-pages-browser" };
+    const cssLoader = "/fixture/app/node_modules/next/dist/build/webpack/loaders/css-loader/src/index.js??ruleSet[1].rules[15].oneOf[10].use[2]";
+    const postcssLoader = "/fixture/app/node_modules/next/dist/build/webpack/loaders/postcss-loader/src/index.js??ruleSet[1].rules[15].oneOf[10].use[3]";
+    const evaluation = {
+      resource: generatedResource,
+      type: "javascript/auto",
+      userRequest: `${generatedResource}.webpack[javascript/auto]!=!${cssLoader}!${postcssLoader}!${generatedResource}`,
+      layer: null,
+    };
     const extracted = {
       getSourceTypes: () => new Set(["css/mini-extract"]),
       nameForCondition: () => generatedResource,
@@ -336,7 +344,7 @@ describe("StyleX Next output provenance", () => {
         ["app/nested/layout", nestedLayout],
         ["app/global-error", globalError],
       ]),
-      modules: [proxy, extracted],
+      modules: [proxy, evaluation, extracted],
     };
     const receipts = stylexNextEntrypointReceipts(compilation as never, root, root, generatedResource);
     assert.deepEqual(
@@ -359,14 +367,36 @@ describe("StyleX Next output provenance", () => {
     proxy.resource = "/fixture/app/.stylex-next/attempt/generated/../generated/stylex.css";
     assert.throws(
       () => stylexNextEntrypointReceipts(compilation as never, root, root, generatedResource),
-      /exactly one generated StyleX CSS module/u,
+      /exactly the generated CSS proxy and loader evaluation/u,
     );
     proxy.resource = generatedResource;
     compilation.modules.push({ ...proxy });
     assert.throws(
       () => stylexNextEntrypointReceipts(compilation as never, root, root, generatedResource),
-      /exactly one generated StyleX CSS module/u,
+      /exactly the generated CSS proxy and loader evaluation/u,
     );
+    compilation.modules.pop();
+    for (const malformed of [
+      { ...evaluation, layer: "app-pages-browser" },
+      { ...evaluation, type: "javascript/esm" },
+      { ...evaluation, resource: `${generatedResource}?other` },
+      { ...evaluation, userRequest: evaluation.userRequest.replace(cssLoader, "/fixture/unregistered-loader.js??ruleSet[1].rules[15].oneOf[10].use[2]") },
+      { ...evaluation, userRequest: evaluation.userRequest.replace(`${cssLoader}!`, `${cssLoader}!${cssLoader}!`) },
+      { ...evaluation, userRequest: evaluation.userRequest.replace("use[2]", "unbound") },
+      { ...evaluation, userRequest: evaluation.userRequest.replace(".webpack[javascript/auto]", ".webpack[javascript/esm]") },
+      { ...evaluation, userRequest: `${evaluation.userRequest}?different` },
+    ]) {
+      assert.throws(() => stylexNextEntrypointReceipts({
+        ...compilation,
+        modules: [proxy, malformed, extracted],
+      } as never, root, root, generatedResource), /Next generated CSS/u);
+    }
+    assert.throws(() => stylexNextEntrypointReceipts({
+      ...compilation,
+      chunkGraph: {
+        getModuleChunksIterable: (module: unknown) => module === evaluation || module === extracted ? [generatedChunk] : [],
+      },
+    } as never, root, root, generatedResource), /build-time evaluation cannot own emitted chunks/u);
   });
 
   test("follows the extracted CSS module after native CSS chunking moves it away from its JavaScript proxy", () => {

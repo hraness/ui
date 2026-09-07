@@ -59,6 +59,7 @@ type WebpackModule = Readonly<{
   buildInfo?: unknown;
   resource?: unknown;
   request?: unknown;
+  userRequest?: unknown;
   type?: unknown;
   layer?: unknown;
   loaders?: unknown;
@@ -484,7 +485,34 @@ export function stylexNextEntrypointReceipts(
     const generatedModules = [...compilation.modules].filter(({ resource }) =>
       typeof resource === "string" && cleanResource(resource) === generatedCssResource
     );
-    assert.equal(generatedModules.length, 1, "Next delivery client graph must contain exactly one generated StyleX CSS module");
+    // Next's pinned MiniCssExtractPlugin imports the remaining CSS loader chain
+    // as a build-time JavaScript module. It shares the proxy's physical resource
+    // but is not a second stylesheet or a browser chunk owner.
+    assert.equal(generatedModules.length, 2, "Next delivery client graph must contain exactly the generated CSS proxy and loader evaluation");
+    assert.equal(new Set(generatedModules).size, 2, "Next generated CSS module census repeats a module");
+    for (const module of generatedModules) {
+      assert.equal(module.resource, generatedCssResource, "Next generated CSS module resource must be exact and query-free");
+      assert.equal(module.type, "javascript/auto", "Next generated CSS proxy/evaluation module type changed");
+    }
+    const proxy = generatedModules.find((module) => module.userRequest === generatedCssResource);
+    assert.ok(proxy !== undefined && proxy.layer === "app-pages-browser", "Next generated CSS must have one exact App Router proxy");
+    const evaluation = generatedModules.find((module) => module !== proxy)!;
+    assert.equal(evaluation.layer, null, "Next generated CSS loader evaluation must be layer-free");
+    const request = evaluation.userRequest;
+    assert.equal(typeof request, "string", "Next generated CSS loader evaluation must expose its request");
+    const prefix = `${generatedCssResource}.webpack[javascript/auto]!=!`;
+    assert.ok((request as string).startsWith(prefix), "Next generated CSS loader evaluation match resource changed");
+    const requestParts = (request as string).slice(prefix.length).split("!");
+    assert.equal(requestParts.pop(), generatedCssResource, "Next generated CSS loader evaluation must read the exact stylesheet");
+    assert.equal(requestParts.length, 2, "Next generated CSS loader evaluation must contain only the pinned CSS and PostCSS loaders");
+    for (const [index, loader] of ["css-loader", "postcss-loader"].entries()) {
+      const part = requestParts[index]!;
+      const query = part.indexOf("??");
+      assert.ok(query > 0 && isAbsolute(part.slice(0, query)), "Next generated CSS evaluation loader must use an absolute path and bound options");
+      assert.ok(part.slice(0, query).endsWith(`/node_modules/next/dist/build/webpack/loaders/${loader}/src/index.js`), "Next generated CSS evaluation loader identity changed");
+      assert.match(part.slice(query), /^\?\?ruleSet\[\d+\]\.rules\[\d+\]\.oneOf\[\d+\]\.use\[\d+\]$/u, "Next generated CSS evaluation loader options changed");
+    }
+    assert.deepEqual([...compilation.chunkGraph.getModuleChunksIterable(evaluation)], [], "Next generated CSS build-time evaluation cannot own emitted chunks");
     for (const chunk of stylexNextExtractedCssChunks(compilation, generatedCssResource)) generatedChunks.add(chunk);
     assert.ok(generatedChunks.size > 0, "Generated StyleX CSS module is not associated with an emitted chunk");
   }
