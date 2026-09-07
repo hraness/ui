@@ -146,6 +146,36 @@ function compareStrings(left: string, right: string): number {
 
 export const compilerSha256 = sha256(canonicalJson(compilerContract));
 
+export const STYLEX_RULE_UNION_POLICY_VERSION = "hraness-stylex-rule-union-v1" as const;
+
+export type StylexRuleUnionPolicyV1 = Readonly<{
+  foundationOrder: "all-package-foundations-before-union";
+  kind: "hraness-stylex-rule-union-policy";
+  legacyLayerOrder: "canonical-package-prefix-then-declared";
+  policyVersion: typeof STYLEX_RULE_UNION_POLICY_VERSION;
+  prefix: "components.hraness-stylex";
+  priorityLayers: "complete-finite";
+  ruleUnion: "dedupe-identical-reject-conflicts";
+  schemaVersion: 1;
+}>;
+
+/**
+ * Final compiler-adopter CSS uses a delivery namespace that is deliberately
+ * independent from every immutable package's standalone serializer.
+ */
+export const stylexUnionPolicy: StylexRuleUnionPolicyV1 = Object.freeze({
+  foundationOrder: "all-package-foundations-before-union",
+  kind: "hraness-stylex-rule-union-policy",
+  legacyLayerOrder: "canonical-package-prefix-then-declared",
+  policyVersion: STYLEX_RULE_UNION_POLICY_VERSION,
+  prefix: "components.hraness-stylex",
+  priorityLayers: "complete-finite",
+  ruleUnion: "dedupe-identical-reject-conflicts",
+  schemaVersion: 1,
+});
+
+export const stylexUnionPolicySha256 = sha256(canonicalJson(stylexUnionPolicy));
+
 export function stylexRulesSha256(value: unknown): string {
   return sha256(canonicalJson(canonicalizeStylexRules(parseStylexRules(value))));
 }
@@ -443,6 +473,50 @@ export function serializeStylexRules(value: unknown): string {
   );
 }
 
+function layerNamespacesOverlap(left: string, right: string): boolean {
+  return left === right || left.startsWith(`${right}.`) || right.startsWith(`${left}.`);
+}
+
+function parseStylexUnionSerializers(value: unknown): readonly StylexStandaloneSerializerV1[] {
+  assert.ok(Array.isArray(value) && value.length > 0, "StyleX rule union serializers must be a nonempty array");
+  const serializers = value.map((item, index) =>
+    parseStandaloneSerializer(item, `StyleX rule union serializers[${String(index)}]`)
+  ).sort((left, right) => compareStrings(left.prefix, right.prefix));
+  for (const [index, serializer] of serializers.entries()) {
+    assert.ok(
+      !layerNamespacesOverlap(serializer.prefix, stylexUnionPolicy.prefix),
+      `StyleX package namespace overlaps the reserved rule-union namespace: ${serializer.prefix}`,
+    );
+    for (const layer of serializer.before) {
+      assert.ok(
+        layer !== stylexUnionPolicy.prefix && !layer.startsWith(`${stylexUnionPolicy.prefix}.`),
+        `StyleX package legacy layer occupies the reserved rule-union namespace: ${layer}`,
+      );
+    }
+    for (const previous of serializers.slice(0, index)) {
+      assert.ok(
+        !layerNamespacesOverlap(previous.prefix, serializer.prefix),
+        `StyleX package namespaces overlap: ${previous.prefix} and ${serializer.prefix}`,
+      );
+    }
+  }
+  return serializers;
+}
+
+/** Serialize one canonical package-and-graph rule union into the late delivery namespace. */
+export function serializeStylexRuleUnionV1(
+  value: unknown,
+  serializerValues: unknown,
+): string {
+  verifyCompilerContract();
+  const serializers = parseStylexUnionSerializers(serializerValues);
+  const before = [...new Set(serializers.flatMap(({ before: layers }) => layers))];
+  return serializeStylexRulesWithSerializer(value, {
+    before,
+    prefix: stylexUnionPolicy.prefix,
+  });
+}
+
 function parseArtifact(value: unknown, description: string): StylexArtifactV1 {
   const record = plainObject(value, description);
   exactKeys(record, ["bytes", "path", "sha256"], [], description);
@@ -625,8 +699,10 @@ function cssInventory(
           if (name === "source" || name === "custom-variant" || name === "theme") {
             assert.fail(`${description} contains unsupported @${name} directive`);
           }
-        } else if (rule.type === "import") imports.add(rule.value.url);
-        else if (rule.type === "keyframes") registrations.add(rule.value.name.value);
+        } else if (rule.type === "import") {
+          imports.add(rule.value.url);
+          if (rule.value.layer != null) layers.add([...layerStack, ...rule.value.layer].join("."));
+        } else if (rule.type === "keyframes") registrations.add(rule.value.name.value);
         else if (rule.type === "property") registrations.add(rule.value.name);
         else if (rule.type === "layer-statement") {
           for (const name of rule.value.names) layers.add([...layerStack, ...name].join("."));
@@ -658,6 +734,21 @@ function isPriorityLayerUnderPrefix(layer: string, prefix: string): boolean {
   if (!layer.startsWith(`${prefix}.`)) return false;
   const nextSegment = layer.slice(prefix.length + 1).split(".", 1)[0];
   return nextSegment !== undefined && priorityLayerSegmentPattern.test(nextSegment);
+}
+
+/** Reject package or graph CSS that attempts to occupy the final union namespace. */
+export function auditCssWithoutStylexUnionNamespace(
+  css: string,
+  description = "Compiler graph",
+): void {
+  assert.ok(typeof css === "string", `${description} CSS must be a string`);
+  const graph = cssInventory(css, description);
+  for (const layer of graph.layers) {
+    assert.ok(
+      layer !== stylexUnionPolicy.prefix && !layer.startsWith(`${stylexUnionPolicy.prefix}.`),
+      `${description} must not occupy the reserved StyleX rule-union namespace: ${layer}`,
+    );
+  }
 }
 
 function auditCssWithoutStylexRulesUnderPrefixes(
@@ -697,6 +788,7 @@ export function auditCssWithoutStylexRules(
   rules: readonly StylexRuleV1[],
   description = "Compiler graph",
 ): void {
+  auditCssWithoutStylexUnionNamespace(css, description);
   auditCssWithoutStylexRulesUnderPrefixes(
     css,
     rules,
@@ -712,6 +804,7 @@ export function auditCssWithoutStandaloneRecipes(
 ): void {
   assert.ok(typeof css === "string");
   const manifests = packageManifests.map(validateStylexPackageManifest);
+  auditCssWithoutStylexUnionNamespace(css, description);
   const graph = cssInventory(css, description);
   assert.ok(
     ![...graph.imports].some((url) => /(?:^|\/)stylex\.css(?:[?#]|$)/iu.test(url)),

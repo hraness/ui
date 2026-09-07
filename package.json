@@ -1,6 +1,6 @@
 {
   "name": "@hraness/ui",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.",
   "license": "MIT",
   "type": "module",
@@ -144,7 +144,7 @@
     "check:stylex-consumer-layers": "bun run ./scripts/check-stylex-consumer-layers.ts",
     "check:stylex-determinism": "bun run ./scripts/check-stylex-determinism.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --isolate --preload ./scripts/register-stylex-test-transform.ts ./src ./build ./scripts/browser-executable.test.ts ./scripts/check-committed-dist.test.ts ./scripts/check-stylex-determinism.test.ts ./scripts/mark-react-client-package.test.ts ./scripts/package-consumer-lifecycle.test.ts",
+    "test": "bun test --isolate --preload ./scripts/register-stylex-test-transform.ts ./src ./build ./scripts/browser-executable.test.ts ./scripts/check-committed-dist.test.ts ./scripts/check-stylex-determinism.test.ts ./scripts/gallery-layer-counterfactual.test.ts ./scripts/mark-react-client-package.test.ts ./scripts/package-consumer-lifecycle.test.ts",
     "test:browser": "bun run ./scripts/gallery-browser.ts",
     "test:package": "bun run ./scripts/package-smoke.ts",
     "test:packed-bun-browser": "bun run ./scripts/packed-bun-browser-smoke.ts",

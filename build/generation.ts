@@ -35,9 +35,9 @@ import {
   type CreateStylexGenerationOptions,
   type FinalizeStylexGenerationOptions,
   type StylexArtifactV1,
-  type StylexCompleteRecordV1,
+  type StylexCompleteRecordV2,
   type StylexGenerationHandleV1,
-  type StylexGenerationPlanV1,
+  type StylexGenerationPlanV2,
   type StylexGraphEdgeV1,
   type StylexGraphExpectationV1,
   type StylexGraphReceiptV1,
@@ -57,9 +57,10 @@ import {
   parseStylexRules,
   readStylexPackageManifest,
   resolveRootRelativeInput,
-  serializeStylexRules,
+  serializeStylexRuleUnionV1,
   sha256,
   stylexRulesSha256,
+  stylexUnionPolicySha256,
   validateStylexPackageManifest,
 } from "./compiler.js";
 
@@ -226,13 +227,14 @@ function template(value: unknown, description: string): StylexTemplateV1 {
   return result;
 }
 
-function parsePlan(value: unknown): StylexGenerationPlanV1 {
+function parsePlan(value: unknown): StylexGenerationPlanV2 {
   const record = object(value, "generation plan");
-  keys(record, ["compiler", "compilerSha256", "expectedGraphs", "finalCssPath", "generationId", "kind", "packages", "schemaVersion", "templates"], "generation plan");
+  keys(record, ["compiler", "compilerSha256", "expectedGraphs", "finalCssPath", "generationId", "kind", "packages", "schemaVersion", "templates", "unionPolicySha256"], "generation plan");
   assert.equal(record.kind, "hraness-stylex-generation");
   assert.equal(record.schemaVersion, STYLEX_GENERATION_SCHEMA_VERSION);
   assert.equal(canonicalJson(record.compiler), canonicalJson(compilerContract), "Generation compiler contract is stale");
   assert.equal(record.compilerSha256, compilerSha256, "Generation compiler hash is stale");
+  assert.equal(record.unionPolicySha256, stylexUnionPolicySha256, "Generation union policy is stale");
   assert.ok(Array.isArray(record.expectedGraphs), "expectedGraphs must be an array");
   const expectedGraphs = record.expectedGraphs.map((item, index) => expectation(item, `expectedGraphs[${String(index)}]`));
   assert.deepEqual(expectedGraphs, [...expectedGraphs].sort((a, b) => compareStrings(a.id, b.id)), "expectedGraphs must be ID sorted");
@@ -253,7 +255,7 @@ function parsePlan(value: unknown): StylexGenerationPlanV1 {
     compiler: compilerContract, compilerSha256, expectedGraphs,
     finalCssPath: normalizeLogicalPath(record.finalCssPath, "finalCssPath"),
     generationId: segment(record.generationId, "generationId"), kind: "hraness-stylex-generation",
-    packages, schemaVersion: STYLEX_GENERATION_SCHEMA_VERSION, templates,
+    packages, schemaVersion: STYLEX_GENERATION_SCHEMA_VERSION, templates, unionPolicySha256: stylexUnionPolicySha256,
   };
 }
 
@@ -511,7 +513,7 @@ function producedTemplateName(templateValue: StylexTemplateV1): string {
   }));
 }
 
-function producedTemplateForOutput(plan: StylexGenerationPlanV1, outputPath: unknown): StylexTemplateV1 & { graphId: string } {
+function producedTemplateForOutput(plan: StylexGenerationPlanV2, outputPath: unknown): StylexTemplateV1 & { graphId: string } {
   const normalized = normalizeLogicalPath(outputPath, "produced template outputPath");
   const result = plan.templates.find((item) => item.outputPath === normalized);
   assert.ok(result !== undefined && result.graphId !== undefined, `No graph-produced template is registered for ${normalized}`);
@@ -547,7 +549,7 @@ function parseProducedTemplateReceipt(value: unknown): ProducedTemplateReceipt {
 export type LoadedStylexGeneration = Readonly<{
   expectedGraph(id: string): StylexGraphExpectationV1;
   packageManifests: readonly StylexPackageManifestV1[];
-  plan: StylexGenerationPlanV1;
+  plan: StylexGenerationPlanV2;
 }>;
 
 type LivePackageFoundation = Readonly<{
@@ -785,10 +787,10 @@ export async function createStylexGeneration(options: CreateStylexGenerationOpti
       await writeFile(join(directory, TEMPLATE_INPUTS, name), source, { flag: "wx", mode: 0o600 });
       stagedTemplateInputs.set(name, item.sourcePath);
     }
-    const plan: StylexGenerationPlanV1 = {
+    const plan: StylexGenerationPlanV2 = {
       compiler: compilerContract, compilerSha256, expectedGraphs, finalCssPath, generationId,
       kind: "hraness-stylex-generation", packages: loadedPackages.map(({ identity }) => identity),
-      schemaVersion: STYLEX_GENERATION_SCHEMA_VERSION, templates,
+      schemaVersion: STYLEX_GENERATION_SCHEMA_VERSION, templates, unionPolicySha256: stylexUnionPolicySha256,
     };
     const planSource = `${canonicalJson(parsePlan(plan))}\n`;
     await writeFile(join(directory, PLAN), planSource, { flag: "wx", mode: 0o600 });
@@ -1625,7 +1627,7 @@ export async function finalizeStylexGeneration(options: FinalizeStylexGeneration
       }
     }
     injectFailure(failAfter, "artifacts");
-    const css = serializeStylexRules(combinedRules);
+    const css = serializeStylexRuleUnionV1(combinedRules, loaded.packageManifests.map(({ standaloneSerializer }) => standaloneSerializer));
     const cssDestination = join(parsedOptions.generation.directory, PAYLOAD, ...loaded.plan.finalCssPath.split("/"));
     await mkdir(dirname(cssDestination), { recursive: true });
     await writeFile(cssDestination, css, { flag: "wx" });
@@ -1686,11 +1688,11 @@ export async function finalizeStylexGeneration(options: FinalizeStylexGeneration
       [...artifacts.map(({ path }) => path), finalCss.path].sort(compareStrings),
       "Generation payload differs from its expected artifact inventory",
     );
-    const complete: StylexCompleteRecordV1 = {
+    const complete: StylexCompleteRecordV2 = {
       artifacts, compilerSha256, finalCss, generationId: loaded.plan.generationId,
       graphs: loadedReceipts.map(({ receipt, source }) => ({ id: receipt.graphId, receiptSha256: sha256(source) })).sort((a, b) => compareStrings(a.id, b.id)),
       kind: "hraness-stylex-complete-generation", packages: loaded.plan.packages,
-      planSha256: parsedOptions.generation.planSha256, schemaVersion: STYLEX_COMPLETE_RECORD_SCHEMA_VERSION, state: "complete",
+      planSha256: parsedOptions.generation.planSha256, schemaVersion: STYLEX_COMPLETE_RECORD_SCHEMA_VERSION, state: "complete", unionPolicySha256: stylexUnionPolicySha256,
     };
     await writeCanonicalExclusive(join(parsedOptions.generation.directory, PAYLOAD, COMPLETE_RECORD), complete);
     assert.deepEqual(

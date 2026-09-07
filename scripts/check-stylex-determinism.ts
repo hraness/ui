@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { cp, lstat, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -76,12 +76,24 @@ export async function runDeterminismChild(
   }
 }
 
-async function buildCopy(repository: string, destination: string): Promise<void> {
+export async function copyDeterminismInputs(repository: string, destination: string): Promise<void> {
+  const dependencies = resolve(repository, "node_modules");
+  const dependencyStat = await lstat(dependencies);
+  assert.ok(dependencyStat.isDirectory() && !dependencyStat.isSymbolicLink(),
+    "StyleX determinism requires the repository's ordinary installed node_modules directory");
   await Promise.all([
     cp(resolve(repository, "src"), resolve(destination, "src"), { recursive: true }),
     cp(resolve(repository, "build"), resolve(destination, "build"), { recursive: true }),
     cp(resolve(repository, "package.json"), resolve(destination, "package.json")),
+    cp(resolve(repository, "bun.lock"), resolve(destination, "bun.lock")),
   ]);
+  // Relocate every authored input, but use the same frozen compiler toolchain.
+  // The emitted build-tool modules load their declared external peers from here.
+  await symlink(dependencies, resolve(destination, "node_modules"), "dir");
+}
+
+async function buildCopy(repository: string, destination: string): Promise<void> {
+  await copyDeterminismInputs(repository, destination);
   await runDeterminismChild(
     [process.execPath, resolve(repository, "scripts/build-package.ts")],
     destination,

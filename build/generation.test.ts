@@ -42,6 +42,7 @@ import {
   serializeStylexRules,
   sha256,
   stylexRulesSha256,
+  stylexUnionPolicySha256,
   validateStylexPackageManifest,
 } from "./compiler.js";
 import {
@@ -525,6 +526,40 @@ describe("compiler boundary", () => {
 });
 
 describe("generation lifecycle", () => {
+  test("rejects missing or stale union policy and historical schemas even when the plan is rehashed", async () => {
+    const context = await fixture();
+    const generation = await create(context, "policy-binding");
+    const planPath = join(generation.directory, ".stylex-generation/plan.json");
+    const source = await readFile(planPath, "utf8");
+    const plan = JSON.parse(source) as Record<string, unknown>;
+    expect(plan.schemaVersion).toBe(2);
+    expect(plan.unionPolicySha256).toBe(stylexUnionPolicySha256);
+    expect(plan.compiler).toEqual(compilerContract);
+    expect(plan.compilerSha256).toBe(compilerSha256);
+    const missingPolicy = { ...plan };
+    delete missingPolicy.unionPolicySha256;
+    const variants = [
+      { ...plan, unionPolicySha256: sha256("obsolete union policy") },
+      missingPolicy,
+      { ...plan, schemaVersion: 1 },
+      { ...missingPolicy, schemaVersion: 1 },
+    ];
+    for (const forgedPlan of variants) {
+      const forgedSource = `${canonicalJson(forgedPlan)}\n`;
+      await writeFile(planPath, forgedSource);
+      const forged = { ...generation, planSha256: sha256(forgedSource) };
+      expect(forged.planSha256).not.toBe(generation.planSha256);
+      expect(sha256(await readFile(planPath))).toBe(forged.planSha256);
+      await expect(loadStylexGeneration(forged)).rejects.toThrow();
+      await expect(finalize(context, forged)).rejects.toThrow();
+      expect(await pathExists(join(context.outputDirectory, "policy-binding"))).toBe(false);
+    }
+    await writeFile(planPath, source);
+    expect(canonicalJson((await loadStylexGeneration(generation)).plan)).toBe(canonicalJson(plan));
+    await seal(context, generation, "client", clientRule);
+    expect(await pathExists(await finalize(context, generation))).toBe(true);
+  });
+
   test("finalizes identical bytes across entry, package-manifest, and client/SSR arrival permutations", async () => {
     const context = await fixture();
     const secondManifest = await packageAt(
@@ -598,9 +633,55 @@ describe("generation lifecycle", () => {
     for (const marker of ["x-package", "x-second-package", "x-client", "x-server"]) {
       expect(forward.css).toContain(marker);
     }
-    expect(forward.css).toContain("components.hraness-ui.priority1");
+    expect(forward.css).toContain("components.hraness-stylex.priority1");
+    expect(forward.css).not.toContain("components.hraness-ui.priority");
     expect(forward.css).not.toContain("components.fixture-ui.priority");
     expect(forward.css).not.toContain("components.fixture-second-ui.priority");
+  });
+
+  test("deduplicates an identical class across two immutable packages and client/SSR into the final union only", async () => {
+    const context = await fixture();
+    const secondManifest = await packageAt(context.root, "second-package", "red", "@fixture/second-ui", "2.0.0");
+    const manifests = [context.manifestPath, secondManifest];
+    const standalonePaths = manifests.map((path) => resolve(path, "../stylex.css"));
+    const immutableSources = await Promise.all([...manifests, ...standalonePaths].map((path) => readFile(path, "utf8")));
+    await write(join(context.root, "src/client.ts"), "export const client = true;\n");
+    await write(join(context.root, "src/server.ts"), "export const server = true;\n");
+    const generation = await createStylexGeneration({
+      expectedGraphs: [expectedGraph("client"), expectedGraph("server", "ssr")],
+      finalCssPath: "stylex.css",
+      generationId: "identical-union",
+      outputDirectory: context.outputDirectory,
+      packageManifests: manifests.map((path) => logical(context.root, path)),
+      rootDirectory: context.root,
+      templates: [{
+        cssHref: "stylex.css", outputPath: "index.html",
+        sourcePath: logical(context.root, context.templatePath), stylesheetGraphId: "client",
+      }],
+    });
+    const client = await seal(context, generation, "client", packageRule, "foundation.css", ".foundation{display:block}\n");
+    const server = await seal(context, generation, "server", packageRule);
+    for (const receipt of [client, server]) {
+      expect(receipt.schemaVersion).toBe(1);
+      expect(receipt.compilerSha256).toBe(compilerSha256);
+      expect(receipt).not.toHaveProperty("unionPolicySha256");
+      expect(receipt.rules).toEqual([packageRule]);
+    }
+    const output = await finalize(context, generation);
+    const css = await readFile(join(output, "stylex.css"), "utf8");
+    expect(css.match(/\.x-package\s*\{/gu)).toHaveLength(1);
+    expect(css).toContain("@layer components.hraness-stylex.priority1 {");
+    expect(css).not.toMatch(/components\.fixture-(?:second-)?ui\.priority/u);
+    const html = await readFile(join(output, "index.html"), "utf8");
+    expect(html.indexOf('href="/graphs/client/foundation.css"')).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf('href="/graphs/client/foundation.css"')).toBeLessThan(html.indexOf('href="stylex.css"'));
+    expect(await Promise.all([...manifests, ...standalonePaths].map((path) => readFile(path, "utf8")))).toEqual(immutableSources);
+    for (const path of manifests) {
+      const manifest = await readStylexPackageManifest(path);
+      expect(manifest.schemaVersion).toBe(1);
+      expect(manifest.compilerSha256).toBe(compilerSha256);
+      expect(manifest).not.toHaveProperty("unionPolicySha256");
+    }
   });
 
   test("unions package, client, and SSR metadata once and publishes collision-safe graph trees deterministically", async () => {
@@ -624,9 +705,18 @@ describe("generation lifecycle", () => {
     expect(await Bun.file(join(firstOutput, "graphs/server/index.js")).exists()).toBe(true);
     expect(await readFile(join(firstOutput, "index.html"), "utf8")).toContain('href="assets/recipes.css"');
     const completeSource = await readFile(join(firstOutput, "stylex-complete.json"), "utf8");
-    const complete = JSON.parse(completeSource) as { artifacts: { path: string }[]; state: string };
+    const complete = JSON.parse(completeSource) as {
+      artifacts: { path: string }[];
+      compilerSha256: string;
+      schemaVersion: number;
+      state: string;
+      unionPolicySha256: string;
+    };
     expect(completeSource).toBe(`${canonicalJson(complete)}\n`);
     expect(complete.state).toBe("complete");
+    expect(complete.schemaVersion).toBe(2);
+    expect(complete.unionPolicySha256).toBe(stylexUnionPolicySha256);
+    expect(complete.compilerSha256).toBe(compilerSha256);
     expect(complete.artifacts.map(({ path }) => path)).toEqual([
       "graphs/client/foundation.css",
       "graphs/server/index.js",

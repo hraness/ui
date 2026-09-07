@@ -8,13 +8,17 @@ import {
 } from "./contracts.js";
 import {
   artifactForFile as artifactForFileImplementation,
+  auditCssWithoutStylexUnionNamespace as auditCssWithoutStylexUnionNamespaceImplementation,
   canonicalJson as canonicalJsonImplementation,
   compilerContract as compilerContractValue,
   compilerSha256 as compilerSha256Value,
   createStylexTransformCollector as createStylexTransformCollectorImplementation,
   readStylexPackageManifest as readStylexPackageManifestImplementation,
   serializeStylexPackageRules as serializeStylexPackageRulesImplementation,
+  serializeStylexRuleUnionV1 as serializeStylexRuleUnionV1Implementation,
   serializeStylexRules as serializeStylexRulesImplementation,
+  stylexUnionPolicy as stylexUnionPolicyValue,
+  stylexUnionPolicySha256 as stylexUnionPolicySha256Value,
   stylexRulesSha256 as stylexRulesSha256Implementation,
   validateStylexPackageManifest as validateStylexPackageManifestImplementation,
 } from "./compiler.js";
@@ -32,6 +36,7 @@ export const STYLEX_GRAPH_RECEIPT_SCHEMA_VERSION = GRAPH_RECEIPT_SCHEMA_VERSION;
 export const STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION = PACKAGE_MANIFEST_SCHEMA_VERSION;
 export const STYLEX_TEMPLATE_CSS_PLACEHOLDER = TEMPLATE_CSS_PLACEHOLDER;
 export const artifactForFile: typeof artifactForFileImplementation = (...arguments_) => artifactForFileImplementation(...arguments_);
+export const auditCssWithoutStylexUnionNamespace: typeof auditCssWithoutStylexUnionNamespaceImplementation = (...arguments_) => auditCssWithoutStylexUnionNamespaceImplementation(...arguments_);
 export const canonicalJson: typeof canonicalJsonImplementation = (...arguments_) => canonicalJsonImplementation(...arguments_);
 export const compilerContract = compilerContractValue;
 export const compilerSha256 = compilerSha256Value;
@@ -42,8 +47,11 @@ export const prepareStylexProducedTemplate: typeof prepareStylexProducedTemplate
 export const readStylexPackageManifest: typeof readStylexPackageManifestImplementation = (...arguments_) => readStylexPackageManifestImplementation(...arguments_);
 export const sealStylexProducedTemplate: typeof sealStylexProducedTemplateImplementation = (...arguments_) => sealStylexProducedTemplateImplementation(...arguments_);
 export const serializeStylexPackageRules: typeof serializeStylexPackageRulesImplementation = (...arguments_) => serializeStylexPackageRulesImplementation(...arguments_);
+export const serializeStylexRuleUnionV1: typeof serializeStylexRuleUnionV1Implementation = (...arguments_) => serializeStylexRuleUnionV1Implementation(...arguments_);
 export const serializeStylexRules: typeof serializeStylexRulesImplementation = (...arguments_) => serializeStylexRulesImplementation(...arguments_);
 export const stylexRulesSha256: typeof stylexRulesSha256Implementation = (...arguments_) => stylexRulesSha256Implementation(...arguments_);
+export const stylexUnionPolicy = stylexUnionPolicyValue;
+export const stylexUnionPolicySha256 = stylexUnionPolicySha256Value;
 export const validateStylexPackageManifest: typeof validateStylexPackageManifestImplementation = (...arguments_) => validateStylexPackageManifestImplementation(...arguments_);
 export type {
   CreateStylexGenerationOptions,
@@ -52,8 +60,10 @@ export type {
   StylexCompilerContractV1,
   StylexCompleteGraphV1,
   StylexCompleteRecordV1,
+  StylexCompleteRecordV2,
   StylexGenerationHandleV1,
   StylexGenerationPlanV1,
+  StylexGenerationPlanV2,
   StylexGraphAdapterV1,
   StylexGraphEdgeV1,
   StylexGraphExpectationV1,
@@ -66,5 +76,5 @@ export type {
   StylexStandaloneSerializerV1,
   StylexTemplateV1,
 } from "./contracts.js";
-export type { StylexTransformCollector, StylexTransformResult } from "./compiler.js";
+export type { StylexRuleUnionPolicyV1, StylexTransformCollector, StylexTransformResult } from "./compiler.js";
 export type { PreparedStylexProducedTemplate } from "./generation.js";

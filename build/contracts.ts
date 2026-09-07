@@ -1,6 +1,6 @@
 export const STYLEX_COMPILER_CONTRACT_VERSION = "hraness-stylex-compiler-v1" as const;
-export const STYLEX_COMPLETE_RECORD_SCHEMA_VERSION = 1 as const;
-export const STYLEX_GENERATION_SCHEMA_VERSION = 1 as const;
+export const STYLEX_COMPLETE_RECORD_SCHEMA_VERSION = 2 as const;
+export const STYLEX_GENERATION_SCHEMA_VERSION = 2 as const;
 export const STYLEX_GRAPH_RECEIPT_SCHEMA_VERSION = 1 as const;
 export const STYLEX_PACKAGE_MANIFEST_SCHEMA_VERSION = 1 as const;
 export const STYLEX_TEMPLATE_CSS_PLACEHOLDER = "__HRANESS_STYLEX_CSS__" as const;
@@ -132,8 +132,15 @@ export type StylexGenerationPlanV1 = Readonly<{
   generationId: string;
   kind: "hraness-stylex-generation";
   packages: readonly StylexPackageIdentityV1[];
-  schemaVersion: typeof STYLEX_GENERATION_SCHEMA_VERSION;
+  schemaVersion: 1;
   templates: readonly StylexTemplateV1[];
+}>;
+
+/** Cross-package deliveries bind a separate union policy without changing
+ * immutable package compiler or standalone serializer identities. */
+export type StylexGenerationPlanV2 = Readonly<Omit<StylexGenerationPlanV1, "schemaVersion"> & {
+  schemaVersion: typeof STYLEX_GENERATION_SCHEMA_VERSION;
+  unionPolicySha256: string;
 }>;
 
 export type StylexGenerationHandleV1 = Readonly<{
@@ -182,8 +189,13 @@ export type StylexCompleteRecordV1 = Readonly<{
   kind: "hraness-stylex-complete-generation";
   packages: readonly StylexPackageIdentityV1[];
   planSha256: string;
-  schemaVersion: typeof STYLEX_COMPLETE_RECORD_SCHEMA_VERSION;
+  schemaVersion: 1;
   state: "complete";
+}>;
+
+export type StylexCompleteRecordV2 = Readonly<Omit<StylexCompleteRecordV1, "schemaVersion"> & {
+  schemaVersion: typeof STYLEX_COMPLETE_RECORD_SCHEMA_VERSION;
+  unionPolicySha256: string;
 }>;
 
 export type CreateStylexGenerationOptions = Readonly<{
