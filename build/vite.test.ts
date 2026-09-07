@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { build as viteBuild } from "vite";
+import { createBoundedDiagnostics } from "../fixtures/vite8-adopter/diagnostics.ts";
 
 import type {
   StylexGenerationHandleV1,
@@ -205,7 +206,7 @@ async function configureGraph(
       copyPublicDir: false,
       cssCodeSplit: false,
       outDir: outputDirectory,
-      rollupOptions: {},
+      rollupOptions: { input: graph.entrypoints.map((entrypoint) => resolve(context.root, entrypoint)) },
       sourcemap: false,
       ssr: graph.kind === "ssr" ? resolve(context.root, graph.entrypoints[0]!) : false,
       watch: null,
@@ -269,6 +270,147 @@ async function writeDependencyPackage(
   })}\n`);
   await write(join(root, "index.js"), source);
 }
+
+describe("stylexVite terminal module census (pure)", () => {
+  type Info = Record<string, unknown>;
+  function census(engine: "rollup" | "rolldown", extra: readonly Info[] = []) {
+    const entry = resolve("src/census-entry.ts");
+    const lazy = resolve("src/census-lazy.ts");
+    const info = (id: string, code: string | null, isEntry = false): Info => ({
+      id, code, isEntry, importedIds: [], dynamicallyImportedIds: [],
+      ...(engine === "rollup" ? { isExternal: code === null } : {}),
+    });
+    const records = new Map<string, Info>([
+      [entry, { ...info(entry, "export const load = () => import('./census-lazy');", true), importedIds: ["fixture-external"], dynamicallyImportedIds: [lazy] }],
+      [lazy, info(lazy, "export const lazy = true;")],
+      ["fixture-external", info("fixture-external", null)],
+      ...extra.map((record) => [record.id as string, record] as [string, Info]),
+    ]);
+    const plugin = stylexVite({ rootDirectory: process.cwd(), graphId: "census",
+      generation: { directory: resolve("unused-census-generation"), planSha256: "0".repeat(64) } });
+    const context = {
+      meta: { rollupVersion: "4.23.0", ...(engine === "rolldown" ? { rolldownVersion: "1.0.0" } : {}) },
+      getModuleIds: (): IterableIterator<string> => records.keys(),
+      getModuleInfo: (id: string) => records.get(id) ?? null,
+    };
+    const parse = (id: string) => handler<(info: unknown) => void>(plugin.moduleParsed)(records.get(id));
+    const end = (error?: Error) => handler<(this: typeof context, error?: Error) => void>(plugin.buildEnd).call(context, error);
+    const render = () => handler<(this: typeof context) => void>(plugin.renderStart).call(context);
+    const parseInternals = () => { parse(entry); parse(lazy); };
+    return { context, end, entry, info, lazy, parse, parseInternals, records, render };
+  }
+
+  test("positively attests internals, lazy edges, bare externals, and native builtins for both engines", () => {
+    for (const engine of ["rollup", "rolldown"] as const) {
+      const run = census(engine);
+      for (const id of ["node:fs/promises", "react-dom/server", "@scope/package/subpath"]) {
+        run.records.set(id, run.info(id, null));
+        (run.records.get(run.entry)!.importedIds as string[]).push(id);
+      }
+      run.parseInternals();
+      expect(run.end).not.toThrow();
+      expect(run.render).not.toThrow();
+    }
+  });
+
+  test("requires explicit Rollup flags and never forges Rolldown flags", () => {
+    for (const value of [undefined, null, "false", 0]) {
+      const run = census("rollup");
+      run.records.get("fixture-external")!.isExternal = value;
+      run.parseInternals();
+      expect(run.end).toThrow(/Rollup must explicitly classify/u);
+    }
+    const run = census("rolldown");
+    run.records.get("fixture-external")!.isExternal = true;
+    run.parseInternals();
+    expect(run.end).toThrow(/Rolldown external classification/u);
+  });
+
+  test("rejects unavailable internal code and unparsed code instead of defaulting external", () => {
+    for (const engine of ["rollup", "rolldown"] as const) {
+      const missing = census(engine);
+      missing.records.get(missing.entry)!.code = null;
+      expect(() => missing.parse(missing.entry)).toThrow(/parsed internal module must have available code/u);
+      const unavailable = census(engine);
+      unavailable.records.get(unavailable.entry)!.code = null;
+      unavailable.parse(unavailable.lazy);
+      expect(unavailable.end).toThrow(/external module may not be an entry|lacks a moduleParsed attestation/u);
+      const unparsed = census(engine);
+      unparsed.parse(unparsed.entry);
+      expect(unparsed.end).toThrow(/unparsed external module has code|lacks a moduleParsed attestation/u);
+      const forged = census(engine);
+      forged.records.get("fixture-external")!.code = "export const internal = true;";
+      forged.parseInternals();
+      forged.parse("fixture-external");
+      if (engine === "rollup") expect(forged.end).toThrow(/parsed internal module was classified external/u);
+      else expect(forged.end).not.toThrow();
+    }
+  });
+
+  test("rejects queried, private, virtual, and file externals on both engines", () => {
+    for (const engine of ["rollup", "rolldown"] as const) {
+      for (const id of [
+        "./local.ts", "../local.ts", "/private/local.ts", "C:/private/local.ts", "C:\\private\\local.ts",
+        "file:///private/local.ts", "\0virtual:module", "virtual:module", "vite:preload-helper",
+        "#private", "~/private.ts", "fixture-external?raw", "fixture-external#fragment", "/@fs/private/local.ts",
+        "https://example.test/module.js", "data:text/javascript,export default 1", "pkg/../private.ts", "pkg/./private.ts",
+      ]) {
+        const run = census(engine);
+        run.records.delete("fixture-external");
+        run.records.set(id, run.info(id, null));
+        run.records.get(run.entry)!.importedIds = [id];
+        run.parseInternals();
+        expect(run.end).toThrow(/external import|may not externalize/u);
+      }
+    }
+  });
+
+  test("closes census membership and rejects unavailable or inconsistent records", () => {
+    for (const engine of ["rollup", "rolldown"] as const) {
+      for (const mutation of ["missing", "id", "edge", "external-edge", "duplicate", "null-record"] as const) {
+        const run = census(engine);
+        if (mutation === "edge") run.records.get(run.entry)!.importedIds = ["not-in-census"];
+        run.parseInternals();
+        if (mutation === "missing") run.records.delete(run.lazy);
+        if (mutation === "id") run.records.get(run.lazy)!.id = "wrong-id";
+        if (mutation === "external-edge") run.records.get("fixture-external")!.importedIds = [run.lazy];
+        if (mutation === "duplicate") run.context.getModuleIds = function* () { yield* run.records.keys(); yield run.entry; };
+        if (mutation === "null-record") run.context.getModuleInfo = () => null;
+        expect(run.end).toThrow(/census|ID differs|external module has internal|metadata is unavailable/u);
+      }
+    }
+  });
+
+  test("seals code, edges, entry state, and membership by value through output generation", () => {
+    for (const engine of ["rollup", "rolldown"] as const) {
+      for (const mutation of ["code", "edge", "entry", "new-module", "new-parsed", "removed"] as const) {
+        const run = census(engine);
+        run.parseInternals();
+        run.end();
+        if (mutation === "code") run.records.get(run.lazy)!.code = "changed";
+        if (mutation === "edge") (run.records.get(run.entry)!.importedIds as string[]).push(run.lazy);
+        if (mutation === "entry") run.records.get(run.lazy)!.isEntry = true;
+        if (mutation === "new-module") run.records.set("another-external", run.info("another-external", null));
+        if (mutation === "removed") run.records.delete("fixture-external");
+        if (mutation === "new-parsed") expect(() => run.parse(run.lazy)).toThrow(/after terminal collection/u);
+        else expect(run.render).toThrow(/changed|absent from the terminal module census/u);
+      }
+    }
+  });
+
+  test("does not seal failed builds or accept repeated terminal collection", () => {
+    const failed = census("rolldown");
+    failed.parseInternals();
+    failed.end(new Error("native compile failed"));
+    expect(failed.render).toThrow(/successful buildEnd/u);
+    expect(failed.end).toThrow(/only once/u);
+    const good = census("rolldown");
+    good.parseInternals();
+    good.end();
+    expect(good.render).not.toThrow();
+    expect(good.end).toThrow(/only once/u);
+  });
+});
 
 describe("stylexVite", () => {
   test("collects multi-entry, lazy, and nested CSS modules without synthetic CSS provenance", async () => {
@@ -1006,6 +1148,9 @@ export const className = stylex.props(styles.local).className;
       { build: { rollupOptions: { external: ["./local.js"] } } },
       { build: { rollupOptions: { input: "src/main.ts" } } },
       { build: { rollupOptions: { output: { dir: "dist" } } } },
+      { build: { rolldownOptions: { external: ["./local.js"] } } },
+      { build: { rolldownOptions: { input: "src/main.ts" } } },
+      { build: { rolldownOptions: { output: { dir: "dist" } } } },
       { build: { watch: {} } },
       { build: { write: false } },
     ];
@@ -1020,6 +1165,216 @@ export const className = stylex.props(styles.local).className;
 
     expect(() => handler<() => void>(makePlugin().configureServer)()).toThrow(/serve|HMR/u);
     expect(() => handler<() => void>(makePlugin().handleHotUpdate)()).toThrow(/HMR/u);
+  });
+
+  test("validates both resolved Vite 8 bundler aliases without relying on object identity", async () => {
+    const context = await fixture();
+    const entry = join(context.root, "src/entry.ts");
+    await write(entry, "export const value = true;\n");
+    const graph = graphExpectation(context, "resolved-aliases", "client", [entry]);
+    const generationValue = await generation(context, graph);
+    for (const mutation of [
+      { input: [join(context.root, "src/other.ts")] },
+      { input: [entry], external: ["react"] },
+      { input: [entry], output: { sourcemap: "hidden" } },
+    ]) {
+      const plugin = stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root });
+      const config = await handler<ConfigHook>(plugin.config).call({}, {}, { command: "build", mode: "production" });
+      assert.ok(typeof config === "object" && config !== null && "build" in config);
+      await expect(handler<(value: unknown) => Promise<void>>(plugin.configResolved)({
+        ...config,
+        build: { ...config.build as object, rolldownOptions: mutation, ssr: false, watch: null },
+        command: "build",
+      })).rejects.toThrow(/input differs|externalization|output options/u);
+      expect(await receiptExists(generationValue, graph.id)).toBe(false);
+    }
+    const plugin = stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root });
+    const config = await handler<ConfigHook>(plugin.config).call({}, {}, { command: "build", mode: "production" });
+    assert.ok(typeof config === "object" && config !== null && "build" in config);
+    await expect(handler<(value: unknown) => Promise<void>>(plugin.configResolved)({
+      ...config,
+      build: { ...config.build as object, rolldownOptions: { input: [entry], platform: "browser" }, ssr: false, watch: null },
+      command: "build",
+    })).resolves.toBeUndefined();
+  });
+
+  test("rejects changed chunk bytes and linkage after generateBundle", async () => {
+    for (const part of ["code", "imports", "dynamicImports", "isEntry", "facadeModuleId", "modules"] as const) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "globalThis.fixture = 'before';\n");
+      const graph = graphExpectation(context, `chunk-mutation-${part.toLowerCase()}`, "client", [entry]);
+      const generationValue = await generation(context, graph);
+      await expect(viteBuild({
+        configFile: false,
+        logLevel: "silent",
+        plugins: [
+          stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root }),
+          {
+            name: `mutate-generated-${part}`,
+            generateBundle: {
+              order: "post",
+              handler(_options, bundle) {
+                const chunk = Object.values(bundle).find((output) => output.type === "chunk");
+                assert.ok(chunk?.type === "chunk");
+                if (part === "code") chunk.code = chunk.code.replace("before", "after!");
+                else if (part === "imports") chunk.imports.push("changed.js");
+                else if (part === "dynamicImports") chunk.dynamicImports.push("changed.js");
+                else if (part === "isEntry") chunk.isEntry = !chunk.isEntry;
+                else if (part === "facadeModuleId") chunk.facadeModuleId = join(context.root, "src/other.ts");
+                else chunk.modules = {};
+              },
+            },
+          },
+        ],
+      })).rejects.toThrow(/bundle bytes or linkage changed/u);
+      expect(await receiptExists(generationValue, graph.id)).toBe(false);
+    }
+  });
+
+  test("rejects settled chunk drift even when the in-memory bundle stays unchanged", async () => {
+    const context = await fixture();
+    const entry = join(context.root, "src/entry.ts");
+    await write(entry, "globalThis.fixture = 'before';\n");
+    const graph = graphExpectation(context, "settled-chunk-drift", "client", [entry]);
+    const generationValue = await generation(context, graph);
+    await expect(viteBuild({
+      configFile: false,
+      logLevel: "silent",
+      plugins: [
+        stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root }),
+        {
+          name: "mutate-written-chunk",
+          writeBundle: {
+            order: "pre",
+            async handler(options, bundle) {
+              const chunk = Object.values(bundle).find((output) => output.type === "chunk");
+              assert.ok(chunk?.type === "chunk" && options.dir !== undefined);
+              await writeFile(join(options.dir, chunk.fileName), chunk.code.replace("before", "after!"));
+            },
+          },
+        },
+      ],
+    })).rejects.toThrow(/settled output differs from its generated byte snapshot/u);
+    expect(await receiptExists(generationValue, graph.id)).toBe(false);
+  });
+
+  test("rejects injected source-map comments despite map-disabled config", async () => {
+    for (const directive of [
+      "//# sourceMappingURL=hidden.js.map", "//@ sourceMappingURL=hidden.js.map",
+      "/*# sourceMappingURL=hidden.js.map */", "/*@ sourceMappingURL=data:application/json;base64,e30= */",
+      "globalThis.interpolation = `${/*# sourceMappingURL=hidden.js.map */ 1}`;",
+    ]) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "globalThis.fixture = true;\n");
+      const graph = graphExpectation(context, "injected-map", "client", [entry]);
+      const generationValue = await generation(context, graph);
+      await expect(viteBuild({
+        configFile: false,
+        logLevel: "silent",
+        plugins: [
+          stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root }),
+          { name: "inject-unverified-map", generateBundle(_options, bundle) {
+            const chunk = Object.values(bundle).find((output) => output.type === "chunk");
+            assert.ok(chunk?.type === "chunk");
+            chunk.code += `\n${directive}\n`;
+          } },
+        ],
+      })).rejects.toThrow(/source-map references/u);
+      expect(await receiptExists(generationValue, graph.id)).toBe(false);
+    }
+  });
+
+  test("allows source-map directive text in JavaScript string, regex and template tokens", async () => {
+    const source = [
+      'globalThis.literal = "//# sourceMappingURL=example.map";',
+      "globalThis.blockLiteral = '/*# sourceMappingURL=example.map */';",
+      'globalThis.regex = /[//# sourceMappingURL=]/u;',
+      'globalThis.template = `//# sourceMappingURL=example.map`;',
+      'globalThis.tagged = String.raw`/*# sourceMappingURL=example.map */`;',
+      '// Documentation mentions //# sourceMappingURL=example.map.',
+      '/* Documentation mentions /*# sourceMappingURL=example.map */',
+    ].join("\n");
+    const context = await fixture();
+    const entry = join(context.root, "src/entry.ts");
+    await write(entry, source);
+    await write(join(context.root, "src/literals.js"), source);
+    await writeFile(entry, `${source}\nglobalThis.rawAsset = new URL('./literals.js', import.meta.url).href;\n`);
+    const graph = graphExpectation(context, "map-lookalikes", "client", [entry]);
+    const generationValue = await generation(context, graph);
+    await expect(viteBuild({
+      configFile: false, logLevel: "silent",
+      plugins: [stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root })],
+    })).resolves.toBeDefined();
+    expect(await receiptExists(generationValue, graph.id)).toBe(true);
+  });
+
+  test("bounds diagnostics while retaining exact first and last failure bytes", () => {
+    const output = createBoundedDiagnostics(8);
+    output.append(Buffer.from("first"));
+    expect(output.render("stdout").toString()).toBe("first");
+    output.append(Buffer.from("middle"));
+    output.append(Buffer.from("last"));
+    expect(output.retainedBytes).toBe(8);
+    expect(output.render("stdout").toString()).toBe("firs\n[stdout: 7 bytes omitted; first and last diagnostics retained]\nlast");
+    const oversized = createBoundedDiagnostics(8);
+    oversized.append(Buffer.from("first middle last"));
+    expect(oversized.retainedBytes).toBe(8);
+    expect(oversized.render("stderr").toString()).toBe("firs\n[stderr: 9 bytes omitted; first and last diagnostics retained]\nlast");
+    const untouched = createBoundedDiagnostics(8);
+    expect(untouched.render("stdout").length).toBe(0);
+    const unicode = createBoundedDiagnostics(16);
+    const bytes = Buffer.from("aé🙂z");
+    for (const byte of bytes) unicode.append(Buffer.from([byte]));
+    expect(unicode.render("stdout")).toEqual(bytes);
+    expect(() => createBoundedDiagnostics(1)).toThrow();
+    expect(() => createBoundedDiagnostics(1024 * 1024 + 1)).toThrow();
+  });
+
+  test("distinguishes real CSS map comments from strings and URL tokens", async () => {
+    const benign = [
+      '.literal::before { content: "/*# sourceMappingURL=example.map */"; }',
+      ".quoted::before { content: '/*@ sourceMappingURL=example.map */'; }",
+      '.escaped::before { content: "\\\"/*# sourceMappingURL=example.map */"; }',
+      '.url { background-image: url(data:,/*#sourceMappingURL=example.map*/); }',
+      '.escaped-url { background-image: u\\72l(data:,/*#sourceMappingURL=example.map*/); }',
+      '/* Documentation mentions /*# sourceMappingURL=example.map */',
+    ].join("\n");
+    for (const directive of ["", "/*# sourceMappingURL=example.map */", "/*@ sourceMappingURL=data:application/json;base64,e30= */"]) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "export const entry = true;\n");
+      const graph = graphExpectation(context, "css-map-comments", "client", [entry]);
+      const session = await configureGraph(context, graph);
+      const outcome = session.generate.call({}, { dir: session.outputDirectory }, {
+        "style.css": { fileName: "style.css", source: `${benign}\n${directive}`, type: "asset" },
+      });
+      if (directive === "") await expect(outcome).resolves.toBeUndefined();
+      else await expect(outcome).rejects.toThrow(/source-map references/u);
+    }
+  });
+
+  test("rejects source maps copied as native assets with otherwise valid provenance", async () => {
+    for (const [name, source] of [
+      ["copied.map", '{"version":3,"sources":["private.ts"],"sourcesContent":["private source"],"names":[],"mappings":"AAAA"}'],
+      ["copied.js", "globalThis.asset = true;\n//# sourceMappingURL=data:application/json;base64,e30=\n"],
+      ["copied.JS", "globalThis.asset = true;\n//# sourceMappingURL=data:application/json;base64,e30=\n"],
+      ["copied.MJS", "globalThis.asset = true;\n/*# sourceMappingURL=data:application/json;base64,e30= */\n"],
+      ["copied.CJS", "globalThis.asset = true;\n//@ sourceMappingURL=data:application/json;base64,e30=\n"],
+    ] as const) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      await write(join(context.root, "src", name), source);
+      await write(entry, `globalThis.assetUrl = new URL('./${name}', import.meta.url).href;\n`);
+      const graph = graphExpectation(context, name.replace(".", "-").toLowerCase(), "client", [entry]);
+      const generationValue = await generation(context, graph);
+      await expect(viteBuild({
+        configFile: false, logLevel: "silent",
+        plugins: [stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root })],
+      })).rejects.toThrow(/source-map output|source-map references/u);
+      expect(await receiptExists(generationValue, graph.id)).toBe(false);
+    }
   });
 
   test("rejects caller sourcemaps without consuming the graph slot", async () => {
@@ -1161,7 +1516,7 @@ export const className = stylex.props(styles.local).className;
     const build = configured.build;
     assert.ok(typeof build === "object" && build !== null && "outDir" in build && typeof build.outDir === "string");
     await expect(handler<(config: unknown) => Promise<void>>(plugin.configResolved)({
-      build: { assetsInlineLimit: 0, copyPublicDir: false, cssCodeSplit: false, outDir: build.outDir, rollupOptions: {}, sourcemap: false, ssr: entry, watch: null, write: true },
+      build: { assetsInlineLimit: 0, copyPublicDir: false, cssCodeSplit: false, outDir: build.outDir, rollupOptions: { input: [entry] }, sourcemap: false, ssr: entry, watch: null, write: true },
       command: "build",
       publicDir: "",
       root: context.root,

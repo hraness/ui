@@ -1,0 +1,5 @@
+@import "./foundation.css";
+
+[data-shell] {
+  --vite-foundation-proof: present;
+}

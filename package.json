@@ -1,6 +1,6 @@
 {
   "name": "@hraness/ui",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.",
   "license": "MIT",
   "type": "module",
@@ -158,17 +158,19 @@
     "check:stylex-consumer-layers": "bun run ./scripts/check-stylex-consumer-layers.ts",
     "check:stylex-determinism": "bun run ./scripts/check-stylex-determinism.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --isolate --preload ./scripts/register-stylex-test-transform.ts ./src ./build ./scripts/browser-executable.test.ts ./scripts/check-committed-dist.test.ts ./scripts/check-stylex-determinism.test.ts ./scripts/gallery-layer-counterfactual.test.ts ./scripts/mark-react-client-package.test.ts ./scripts/package-consumer-lifecycle.test.ts",
+    "test": "bun test --isolate --preload ./scripts/register-stylex-test-transform.ts ./src ./build ./scripts/browser-executable.test.ts ./scripts/check-committed-dist.test.ts ./scripts/check-stylex-determinism.test.ts ./scripts/gallery-layer-counterfactual.test.ts ./scripts/mark-react-client-package.test.ts ./scripts/package-consumer-lifecycle.test.ts ./scripts/vite8-adopter-custody.test.ts",
     "test:browser": "bun run ./scripts/gallery-browser.ts",
     "test:package": "bun run ./scripts/package-smoke.ts",
     "test:next-adopter": "bun run ./scripts/next-adopter-smoke.ts",
     "test:packed-bun-browser": "bun run ./scripts/packed-bun-browser-smoke.ts",
     "test:vite-adopter": "bun run ./scripts/vite-adopter-smoke.ts",
+    "test:vite-custody": "bun test ./scripts/vite8-adopter-custody.process.test.ts",
+    "test:vite78-adopter": "bun run ./scripts/vite8-adopter-smoke.ts",
     "kb:refresh": "bunx --bun github:hraness/kb#v0.15.1 refresh --root kb",
     "kb:check:lane": "bunx --bun github:hraness/kb#v0.15.1 check --root kb --no-catalog",
     "kb:check": "bunx --bun github:hraness/kb#v0.15.1 check --root kb && bunx --bun github:hraness/kb#v0.15.1 agents check --root kb --repo .",
     "kb:catalog": "bunx --bun github:hraness/kb#v0.15.1 catalog --root kb",
-    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:next-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser",
+    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:vite-custody && bun run test:vite78-adopter && bun run test:next-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser",
     "prepack": "bun run check"
   },
   "dependencies": {
@@ -191,7 +193,7 @@
     "react": ">=18 <20",
     "react-dom": ">=18 <20",
     "typescript": "6.0.3",
-    "vite": ">=7 <8"
+    "vite": "7.3.6 || 8.2.1"
   },
   "peerDependenciesMeta": {
     "@babel/core": {
