@@ -21,6 +21,21 @@ function fixture(rule = targetRule): string {
     "@layer components.hraness-ui.legacy {",
     "  .quiet-site-footer { padding-top: 9rem; }",
     "}",
+    "@layer base {",
+    "@font-face {",
+    '  font-family: "Gallery Sans";',
+    '  src: url("/gallery-sans.woff2") format("woff2")',
+    "}",
+    "@property --gallery-angle {",
+    '  syntax: "<angle>";',
+    "  inherits: false;",
+    "  initial-value: 0deg",
+    "}",
+    "}",
+    "@keyframes gallery-arrive {",
+    "  from { opacity: 0 }",
+    "  to { opacity: 1 }",
+    "}",
     "@layer base, components;",
     `@layer ${[...legacyLayers, ...priorities].join(", ")};`,
     "@layer components.hraness-stylex.priority2 {",
@@ -128,5 +143,52 @@ describe("quiet-site footer layer counterfactual", () => {
     expect(() => placeQuietSiteFooterPriorityBeforeLegacy(
       `@layer components { @layer hraness-stylex.priority5; }\n${source}`,
     )).toThrow(/must be top-level/u);
+    expect(() => placeQuietSiteFooterPriorityBeforeLegacy(
+      `@media (width > 1px) { @layer components.hraness-stylex.priority5; }\n${source}`,
+    )).toThrow(/must be top-level/u);
+    expect(() => placeQuietSiteFooterPriorityBeforeLegacy(
+      `.nested-rule { color: red; @layer components.hraness-stylex.priority5 { .forged { color: blue } } }\n${source}`,
+    )).toThrow(/layer nested inside a qualified rule/u);
+    for (const escapedLayer of [
+      "@LaYeR",
+      String.raw`@\6c ayer`,
+      String.raw`@l\61 yer`,
+    ]) {
+      expect(() => placeQuietSiteFooterPriorityBeforeLegacy(
+        `.nested-rule { color: red; ${escapedLayer} components.hraness-stylex.priority5 { .forged { color: blue } } }\n${source}`,
+      )).toThrow(/layer nested inside a qualified rule/u);
+    }
+    expect(() => placeQuietSiteFooterPriorityBeforeLegacy(
+      `@layer components.hraness-ui.before-legacy.forged;\n${source}`,
+    )).toThrow(/counterfactual layer is already declared/u);
+    expect(() => placeQuietSiteFooterPriorityBeforeLegacy(
+      `@import url("/forged.css") layer(components.hraness-stylex.priority5);\n${source}`,
+    )).toThrow(/unsupported statement at-rule/u);
+    expect(() => placeQuietSiteFooterPriorityBeforeLegacy(
+      `@charset "UTF-8";\n${source}`,
+    )).toThrow(/unsupported statement at-rule/u);
+    expect(() => placeQuietSiteFooterPriorityBeforeLegacy(
+      `@fixture-rule-list { @layer components.hraness-stylex.priority5; }\n${source}`,
+    )).toThrow(/unsupported block at-rule/u);
+    for (const nearMiss of [
+      "@font-face-evil",
+      "@keyframes-evil",
+      "@media-evil",
+      "@property-evil",
+      "@supports-evil",
+    ]) {
+      expect(() => placeQuietSiteFooterPriorityBeforeLegacy(
+        `${nearMiss} { value: forged }\n${source}`,
+      )).toThrow(/unsupported block at-rule/u);
+    }
+
+    const literalLayerText = fixture().replace(
+      "@layer components.hraness-stylex.priority2 {",
+      [
+        "@layer components.hraness-stylex.priority2 {",
+        '  .literal { content: "@layer components.hraness-stylex.priority5"; background-image: url("data:text/plain,@layer"); }',
+      ].join("\n"),
+    );
+    expect(() => placeQuietSiteFooterPriorityBeforeLegacy(literalLayerText)).not.toThrow();
   });
 });

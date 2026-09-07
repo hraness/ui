@@ -193,6 +193,115 @@ function resolveNestedLayer(parent: string | undefined, name: string): string {
   return parent === undefined ? name : `${parent}.${name}`;
 }
 
+type AtRuleBlockKind = "declaration-list" | "keyframes" | "rule-list";
+
+function classifyAtRuleBlock(header: string): AtRuleBlockKind {
+  if (
+    /^@(?:container|document|media|-moz-document|scope|supports)(?=\s|\()/u.test(header)
+    || header === "@starting-style"
+  ) {
+    return "rule-list";
+  }
+  if (
+    header === "@font-face"
+    || /^@property\s+--[-_A-Za-z0-9]+$/u.test(header)
+  ) return "declaration-list";
+  if (/^@(?:-webkit-)?keyframes\s+[-_A-Za-z][-_A-Za-z0-9]*$/u.test(header)) {
+    return "keyframes";
+  }
+  throw new Error(`counterfactual CSS contains an unsupported block at-rule: ${header}`);
+}
+
+function readAtKeyword(
+  source: string,
+  at: number,
+  end: number,
+): Readonly<{ end: number; name: string }> | undefined {
+  let cursor = at + 1;
+  let name = "";
+  while (cursor < end) {
+    const character = source[cursor];
+    if (character === undefined) break;
+    if (/[-_A-Za-z0-9]/u.test(character) || character.charCodeAt(0) >= 0x80) {
+      name += character;
+      cursor += 1;
+      continue;
+    }
+    if (character !== "\\") break;
+    const escaped = source[cursor + 1];
+    invariant(
+      escaped !== undefined && !/[\n\r\f]/u.test(escaped),
+      "counterfactual CSS contains a malformed escaped at-keyword",
+    );
+    if (/[0-9A-Fa-f]/u.test(escaped)) {
+      let hexEnd = cursor + 1;
+      while (
+        hexEnd < end
+        && hexEnd < cursor + 7
+        && /[0-9A-Fa-f]/u.test(source[hexEnd] ?? "")
+      ) hexEnd += 1;
+      const codePoint = Number.parseInt(source.slice(cursor + 1, hexEnd), 16);
+      name += codePoint === 0 || codePoint > 0x10FFFF || (codePoint >= 0xD800 && codePoint <= 0xDFFF)
+        ? "\uFFFD"
+        : String.fromCodePoint(codePoint);
+      if (/\s/u.test(source[hexEnd] ?? "")) {
+        if (source[hexEnd] === "\r" && source[hexEnd + 1] === "\n") hexEnd += 1;
+        hexEnd += 1;
+      }
+      cursor = hexEnd;
+      continue;
+    }
+    name += escaped;
+    cursor += 2;
+  }
+  return name.length === 0 ? undefined : { end: cursor, name };
+}
+
+function assertNoNestedLayerAtRule(
+  source: string,
+  start: number,
+  end: number,
+): void {
+  let escaped = false;
+  let parentheses = 0;
+  let quote: "\"" | "'" | undefined;
+  for (let cursor = start; cursor < end; cursor += 1) {
+    const character = source[cursor];
+    if (character === undefined) continue;
+    if (quote !== undefined) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === "/" && source[cursor + 1] === "*") {
+      cursor = skipComment(source, cursor, end) - 1;
+      continue;
+    }
+    if (character === "\"" || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "\\") {
+      cursor += 1;
+      continue;
+    }
+    if (character === "(") parentheses += 1;
+    else if (character === ")") {
+      parentheses -= 1;
+      invariant(parentheses >= 0, "counterfactual CSS contains an unmatched parenthesis");
+    } else if (parentheses === 0 && character === "@") {
+      const keyword = readAtKeyword(source, cursor, end);
+      if (keyword?.name.toLowerCase() === "layer") {
+        throw new Error("counterfactual CSS contains a layer nested inside a qualified rule");
+      }
+      if (keyword !== undefined) cursor = keyword.end - 1;
+    }
+  }
+  invariant(quote === undefined && parentheses === 0,
+    "counterfactual CSS contains an unterminated qualified rule value");
+}
+
 function splitDeclarations(body: string): readonly { readonly property: string; readonly value: string }[] {
   const segments: string[] = [];
   let cursor = 0;
@@ -261,13 +370,15 @@ function collectFooterRules(
       continue;
     }
     if (construct.header.startsWith("@")) {
-      collectFooterRules(
-        source,
-        scanConstructs(source, construct.open + 1, construct.close),
-        layer,
-        conditionalDepth + 1,
-        footerRules,
-      );
+      if (classifyAtRuleBlock(construct.header) === "rule-list") {
+        collectFooterRules(
+          source,
+          scanConstructs(source, construct.open + 1, construct.close),
+          layer,
+          conditionalDepth + 1,
+          footerRules,
+        );
+      }
       continue;
     }
     const body = source.slice(construct.open + 1, construct.close);
@@ -297,32 +408,50 @@ function validateNestedLayers(
   source: string,
   constructs: readonly CssConstruct[],
   parentLayer: string | undefined,
+  depth = 0,
 ): void {
   for (const construct of constructs) {
     const names = parseLayerNames(construct.header, construct.kind);
+    if (
+      construct.kind === "statement"
+      && construct.header.startsWith("@")
+      && names === undefined
+    ) {
+      throw new Error(
+        `counterfactual CSS contains an unsupported statement at-rule: ${construct.header}`,
+      );
+    }
     if (names !== undefined) {
       for (const name of names) {
         const resolved = resolveNestedLayer(parentLayer, name);
         invariant(
-          parentLayer === undefined || !isUnionLayer(resolved),
+          depth === 0 || !isUnionLayer(resolved),
           `the shared StyleX union layer must be top-level, not nested: ${resolved}`,
         );
         invariant(
-          resolved !== COUNTERFACTUAL_LAYER,
+          resolved !== COUNTERFACTUAL_LAYER
+            && !resolved.startsWith(`${COUNTERFACTUAL_LAYER}.`),
           `the counterfactual layer is already declared: ${COUNTERFACTUAL_LAYER}`,
         );
       }
     }
-    if (construct.kind === "block" && construct.header.startsWith("@")) {
-      const nextParent = names === undefined
-        ? parentLayer
-        : resolveNestedLayer(parentLayer, names[0]!);
-      validateNestedLayers(
-        source,
-        scanConstructs(source, construct.open + 1, construct.close),
-        nextParent,
-      );
+    if (construct.kind !== "block") continue;
+    if (!construct.header.startsWith("@")) {
+      assertNoNestedLayerAtRule(source, construct.open + 1, construct.close);
+      continue;
     }
+    const recurse = names !== undefined
+      || classifyAtRuleBlock(construct.header) === "rule-list";
+    if (!recurse) continue;
+    const nextParent = names === undefined
+      ? parentLayer
+      : resolveNestedLayer(parentLayer, names[0]!);
+    validateNestedLayers(
+      source,
+      scanConstructs(source, construct.open + 1, construct.close),
+      nextParent,
+      depth + 1,
+    );
   }
 }
 
