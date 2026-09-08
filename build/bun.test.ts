@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:f
 import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import type {
@@ -3523,6 +3524,122 @@ describe("collectBunStylexGraph", () => {
       } finally {
         build.mockRestore();
       }
+    }
+  });
+
+  test("settles native React SSR imports from the real compiled UI runtime", async () => {
+    const root = await realpath(resolve(import.meta.dir, ".."));
+    const work = await mkdtemp(join(root, ".stylex-fixtures/react-native-"));
+    roots.push(work);
+    const entry = join(work, "entry.ts");
+    await write(entry, [
+      "import { createElement } from 'react';",
+      "import { renderToStaticMarkup } from 'react-dom/server';",
+      "import { SkipLink } from '../../dist/index.js';",
+      "export const html = renderToStaticMarkup(createElement(SkipLink, { href: '#main' }, 'Skip'));",
+    ].join("\n"));
+    for (const minify of [false, true]) {
+      const handle = await createStylexGeneration({
+        expectedGraphs: [expectation(root, "ssr", "ssr", entry)],
+        generationId: `react-native-${String(minify)}`,
+        outputDirectory: join(work, `output-${String(minify)}`),
+        packageManifests: ["dist/stylex-manifest.json"],
+        rootDirectory: root,
+      });
+      const receipt = await collectBunStylexGraph({
+        build: { minify, sourcemap: "none" }, generation: handle, graphId: "ssr", rootDirectory: root,
+      });
+      expect(receipt.inputs.some(({ path }) => path.endsWith("/react/cjs/react.production.js"))).toBe(true);
+      if (!minify) {
+        expect(receipt.edges.filter(edge => edge.from === "input:dist/index.js" && edge.to === "input:node_modules/react/index.js"))
+          .toEqual([{ external: false, from: "input:dist/index.js", kind: "import-statement", to: "input:node_modules/react/index.js" }]);
+      }
+      const artifact = receipt.outputs.find(item => /^entries\/entry-.*\.js$/u.test(item.path));
+      expect(artifact).toBeDefined();
+      const rendered: unknown = (await import(pathToFileURL(join(handle.directory, receipt.outputRoot, artifact!.path)).href)).html;
+      expect(typeof rendered).toBe("string");
+      expect(rendered).toContain('href="#main"');
+      expect(rendered).toContain("Skip</a>");
+    }
+  }, 30_000);
+
+  test("settles native React edges through the Bun isolated package link", async () => {
+    for (const kind of ["client", "ssr"] as const) {
+      const context = await fixture();
+      const packageRoot = join(context.root, "node_modules/.bun/react@19.2.3/node_modules/react");
+      const installed = resolve(import.meta.dir, "../node_modules/react");
+      for (const path of ["package.json", "index.js", "cjs/react.production.js", "cjs/react.development.js"]) {
+        await write(join(packageRoot, path), await readFile(join(installed, path), "utf8"));
+      }
+      await symlink(".bun/react@19.2.3/node_modules/react", join(context.root, "node_modules/react"));
+      await write(join(context.root, "src/consumer.ts"), "import { createElement } from 'react'; export const element = createElement('div');\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "import { version } from 'react'; export { element } from './consumer.ts'; export const reactVersion = version;\n");
+      const handle = await generation(context, `react-isolated-${kind}`, [expectation(context.root, kind, kind, entry)]);
+      const original = Bun.build.bind(Bun);
+      let rawReactEdges = 0;
+      const build = spyOn(Bun, "build").mockImplementation(async options => {
+        const result = await original(options);
+        for (const item of Object.values(result.metafile!.inputs)) {
+          rawReactEdges += item.imports.filter(item => item.path === "react" && !("original" in item)).length;
+        }
+        return result;
+      });
+      try {
+        const receipt = await collectBunStylexGraph({ generation: handle, graphId: kind, rootDirectory: context.root });
+        expect(rawReactEdges).toBeGreaterThan(0);
+        expect(receipt.edges.filter(edge => edge.to === `input:${logical(context.root, packageRoot)}/index.js`)).toHaveLength(2);
+        expect(receipt.inputs.some(item => item.path === `${logical(context.root, packageRoot)}/cjs/react.production.js`)).toBe(true);
+      } finally { build.mockRestore(); }
+    }
+  });
+
+  test("rejects unsupported aliases around an otherwise known Bun isolated installation", async () => {
+    for (const variant of ["absolute", "outside-store", "chained", "store-ancestor-link", "wrong-package", "hidden-closer", "cancelled-missing", "cancelled-redirect"] as const) {
+      const context = await fixture();
+      const directory = join(context.root, "node_modules/.bun/runtime@1.0.0/node_modules/runtime");
+      await write(join(directory, "package.json"), JSON.stringify({ name: "runtime", exports: "./index.js", type: "module" }));
+      await write(join(directory, "index.js"), "export const marker = true;\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "import { marker } from '../node_modules/.bun/runtime@1.0.0/node_modules/runtime/index.js'; export const value = marker;\n");
+      const handle = await generation(context, `isolated-near-miss-${variant}`, [expectation(context.root, "client", "client", entry)]);
+      const original = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async options => {
+        const result = await original(options);
+        const link = join(context.root, "node_modules/runtime");
+        if (variant === "absolute") await symlink(directory, link);
+        else if (variant === "outside-store") {
+          await mkdir(join(context.root, "ordinary-runtime"));
+          await symlink("../ordinary-runtime", link);
+        } else if (variant === "chained") {
+          await symlink(".bun/runtime@1.0.0/node_modules/runtime", join(context.root, "node_modules/alias"));
+          await symlink("alias", link);
+        } else if (variant === "store-ancestor-link") {
+          await symlink("runtime@1.0.0", join(context.root, "node_modules/.bun/alias@1.0.0"));
+          await symlink(".bun/alias@1.0.0/node_modules/runtime", link);
+        } else if (variant === "wrong-package") {
+          await mkdir(join(context.root, "node_modules/.bun/runtime@1.0.0/node_modules/wrong"));
+          await symlink(".bun/runtime@1.0.0/node_modules/wrong", link);
+        } else if (variant === "cancelled-missing" || variant === "cancelled-redirect") {
+          if (variant === "cancelled-redirect") {
+            await mkdir(join(context.root, "redirect/child"), { recursive: true });
+            await symlink("../redirect/child", join(context.root, "node_modules/cancelled"));
+          }
+          await symlink("cancelled/../.bun/runtime@1.0.0/node_modules/runtime", link);
+        } else {
+          await symlink(".bun/runtime@1.0.0/node_modules/runtime", link);
+          await write(join(context.root, "src/node_modules/runtime/package.json"), JSON.stringify({ name: "runtime", exports: "./index.js", type: "module" }));
+          await write(join(context.root, "src/node_modules/runtime/index.js"), "export const marker = false;\n");
+        }
+        const key = Object.keys(result.metafile!.inputs).find(path => path.endsWith("/src/entry.ts") || path === "src/entry.ts")!;
+        result.metafile!.inputs[key]!.imports = [{ kind: "import-statement", path: "runtime" }] as never;
+        return result;
+      });
+      try {
+        await expect(collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }))
+          .rejects.toThrow(/Bun metafile import.*is unresolved/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally { build.mockRestore(); }
     }
   });
 

@@ -15,6 +15,10 @@ import {
   matrixDeadline, ownViteMatrixCancellationOwner, viteMatrixGroup, type ViteMatrixCustody,
 } from "../fixtures/vite8-adopter/custody.ts";
 import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
+import {
+  assertNextArchiveAdmissionEvidence, createNextArchiveUse, parseNextArchiveSeal,
+  type NextArchiveAdmissionEvidence, type NextArchiveSeal,
+} from "./next-dev-archive.ts";
 import { createNextDevDiagnostics, createNextStartupErrorReader } from "./next-dev-diagnostics.ts";
 import { retainStoppedNextLog, syncNextEvidenceDirectory } from "./next-dev-restart.ts";
 import { snapshotNextFile, snapshotNextPackage } from "./next-dev-inputs.ts";
@@ -172,8 +176,8 @@ type WorkerRequest = Readonly<{
   evidenceRoot: string;
   repository: string;
   work: string;
-  archiveSeal: Awaited<ReturnType<typeof snapshotNextFile>>["seal"];
-  packageInputs: Awaited<ReturnType<typeof snapshotNextPackage>>;
+  archiveSeal: NextArchiveSeal;
+  packageInputs: readonly Readonly<Awaited<ReturnType<typeof snapshotNextPackage>>[number]>[];
 }>;
 
 function object(value: unknown): Record<string, unknown> {
@@ -181,30 +185,67 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-async function readRequest(inputPath: string): Promise<WorkerRequest> {
-  assert.equal(await realpath(inputPath), inputPath);
-  const info = await lstat(inputPath);
-  assert.ok(info.isFile() && info.nlink === 1 && info.size <= 262_144);
-  const request = object(JSON.parse(await readFile(inputPath, "utf8")) as unknown);
+function exactPath(value: unknown): asserts value is string {
+  assert.ok(typeof value === "string" && value.length > 0 && value.length <= 4096
+    && !/[\x00-\x1f\\]/u.test(value) && resolve(value) === value);
+}
+
+/** Parse the complete bounded request before dereferencing any embedded path. */
+export function parseNextDevWorkerRequest(inputPath: string, value: unknown): WorkerRequest {
+  exactPath(inputPath);
+  const request = object(value);
   assert.deepEqual(Object.keys(request).sort(), ["archiveSeal", "browserExecutable", "bunExecutable", "evidenceRoot", "packageInputs", "repository", "schemaVersion", "work"]);
   assert.equal(request.schemaVersion, 1);
   for (const key of ["browserExecutable", "bunExecutable", "evidenceRoot", "repository", "work"] as const) {
-    const path = request[key];
-    assert.ok(typeof path === "string" && path.length <= 4096 && resolve(path) === path);
-    assert.equal(await realpath(path), path);
-    const stat = await lstat(path);
-    assert.ok(key.endsWith("Executable") ? stat.isFile() : stat.isDirectory());
+    exactPath(request[key]);
   }
-  const parsed = request as WorkerRequest;
+  const archiveSeal = parseNextArchiveSeal(request.archiveSeal);
+  assert.ok(Array.isArray(request.packageInputs) && request.packageInputs.length > 0 && request.packageInputs.length <= 1024);
+  let total = 0;
+  let prior = "";
+  const packageInputs = request.packageInputs.map((value: unknown) => {
+    const row = object(value);
+    assert.deepEqual(Object.keys(row).sort(), ["bytes", "path", "sha256"]);
+    assert.ok(typeof row.path === "string" && /^[A-Za-z0-9_.\/-]+$/u.test(row.path)
+      && row.path.split("/").length <= 32 && !row.path.split("/").some(part => part === "" || part === "." || part === "..")
+      && row.path > prior, "Packed input paths must be bounded, unique and sorted");
+    assert.ok(typeof row.bytes === "number" && Number.isSafeInteger(row.bytes) && row.bytes >= 0 && row.bytes <= 32 * 1024 * 1024);
+    assert.ok(typeof row.sha256 === "string" && /^[a-f0-9]{64}$/u.test(row.sha256));
+    prior = row.path;
+    total += row.bytes;
+    assert.ok(total <= 256 * 1024 * 1024);
+    return Object.freeze({ path: row.path, bytes: row.bytes, sha256: row.sha256 });
+  });
+  const parsed = Object.freeze({ ...request, archiveSeal, packageInputs: Object.freeze(packageInputs) }) as WorkerRequest;
   const fixtures = join(parsed.repository, ".stylex-fixtures");
   assert.equal(dirname(parsed.work), fixtures);
   assert.equal(dirname(parsed.evidenceRoot), fixtures);
   assert.ok(parsed.work.startsWith(join(fixtures, "next-dev-adopter-")));
   assert.ok(parsed.evidenceRoot.startsWith(join(fixtures, "next-dev-evidence-")));
   assert.equal(inputPath, join(parsed.evidenceRoot, "worker-request.json"));
-  assert.deepEqual(await snapshotNextPackage(parsed.repository), parsed.packageInputs);
-  assert.deepEqual((await snapshotNextFile(join(parsed.work, "hraness-ui.tgz"))).seal, parsed.archiveSeal);
   return parsed;
+}
+
+async function readRequest(inputPath: string) {
+  exactPath(inputPath);
+  const snapshot = await snapshotNextFile(inputPath, 262_144);
+  assert.equal(snapshot.seal.identity[3], "1", "Worker request must have one physical link");
+  return { request: parseNextDevWorkerRequest(inputPath, JSON.parse(snapshot.bytes.toString("utf8")) as unknown), requestSha256: snapshot.seal.sha256 };
+}
+
+/** Failure records prove cleanup only; they cannot carry archive-use success. */
+export function assertNextDevWorkerArchiveReceipt(
+  state: unknown, admission: unknown, archivePath: string, producerSeal: unknown,
+  currentSnapshot?: Awaited<ReturnType<typeof snapshotNextFile>>,
+): NextArchiveAdmissionEvidence | null {
+  assert.ok(state === "complete" || state === "failed" || state === "cancelled");
+  if (state !== "complete") {
+    assert.equal(admission, null);
+    assert.equal(currentSnapshot, undefined);
+    return null;
+  }
+  assert.ok(currentSnapshot !== undefined, "Completed worker requires a fresh strict archive snapshot");
+  return assertNextArchiveAdmissionEvidence(admission, archivePath, producerSeal, currentSnapshot);
 }
 
 async function acquireBrowser(custody: ViteMatrixCustody, request: WorkerRequest, browserPids: number[]) {
@@ -250,25 +291,37 @@ async function acquireBrowser(custody: ViteMatrixCustody, request: WorkerRequest
 
 async function runWorker(inputPath: string): Promise<void> {
   assert.ok(process.versions.bun === undefined && !("Bun" in globalThis) && /^24\./u.test(process.versions.node), "Next browser worker requires genuine Node 24");
+  const { request, requestSha256 } = await readRequest(inputPath);
   const custody = createViteMatrixCustody();
-  const request = await readRequest(inputPath);
-  const requestSha256 = sha256(await readFile(inputPath));
   const { repository, work, evidenceRoot: restartEvidenceRoot } = request;
   const node = process.execPath;
   const temporary = join(work, "tmp");
   const env = { ...process.env, BUN_TMPDIR: temporary, TMPDIR: temporary, NEXT_TELEMETRY_DISABLED: "1", NODE_ENV: "development" };
-  const sourceBefore = await sourceInventory(join(repository, "fixtures/next-dev-adopter"));
   const processGroups: number[] = [];
   const browserPids: number[] = [];
   const listeners: string[] = [];
   const run = (command: readonly string[], cwd: string, environment: NodeJS.ProcessEnv) => runCommand(command, cwd, environment, custody, processGroups);
   let evidence: unknown = null;
-  let failure: unknown;
+  let archiveUse: ReturnType<typeof createNextArchiveUse> | undefined;
+  let archiveAdmission: NextArchiveAdmissionEvidence | null = null;
+  let failure: Readonly<{ error: unknown }> | undefined;
   try {
+    // The request's shape and path boundaries are already trusted. Physical
+    // input failures now belong to this worker's terminal cleanup protocol.
+    for (const key of ["browserExecutable", "bunExecutable", "evidenceRoot", "repository", "work"] as const) {
+      const path = request[key];
+      assert.equal(await realpath(path), path);
+      const stat = await lstat(path);
+      assert.ok(key.endsWith("Executable") ? stat.isFile() : stat.isDirectory());
+    }
+    assert.deepEqual(await snapshotNextPackage(repository), request.packageInputs);
+    const sourceBefore = await sourceInventory(join(repository, "fixtures/next-dev-adopter"));
     assert.equal(execFileSync(request.bunExecutable, ["--version"], { encoding: "utf8", timeout: 2_000 }).trim(), "1.3.14");
     await mkdir(temporary, { mode: 0o700 });
     const archive = join(work, "hraness-ui.tgz");
-    assert.deepEqual((await snapshotNextFile(archive)).seal, request.archiveSeal);
+    archiveUse = createNextArchiveUse(archive, request.archiveSeal);
+    const admission = await archiveUse.admit();
+    archiveAdmission = admission;
     const ownedBrowser = await acquireBrowser(custody, request, browserPids);
     const browser = ownedBrowser.browser;
     try {
@@ -295,11 +348,14 @@ async function runWorker(inputPath: string): Promise<void> {
             next: NEXT_VERSION, react: "19.2.3", "react-dom": "19.2.3", typescript: "6.0.3",
           },
         }, null, 2)}\n`, { flag: "wx" });
+        await archiveUse.assertUnchanged(admission);
         await run([request.bunExecutable, "install", "--ignore-scripts"], consumer, env);
+        await archiveUse.assertUnchanged(admission);
         const lock = await readFile(join(consumer, "bun.lock"));
+        await archiveUse.assertUnchanged(admission);
         await run([request.bunExecutable, "install", "--frozen-lockfile", "--ignore-scripts"], consumer, env);
+        await archiveUse.assertUnchanged(admission);
         assert.ok((await readFile(join(consumer, "bun.lock"))).equals(lock));
-        assert.deepEqual((await snapshotNextFile(archive)).seal, request.archiveSeal);
         assert.deepEqual(await snapshotNextPackage(join(consumer, "node_modules/@hraness/ui")), request.packageInputs,
           "Installed fixture package differs from the coordinator's exact packed sources");
         const installed: unknown = JSON.parse(await readFile(join(consumer, "node_modules/next/package.json"), "utf8"));
@@ -370,11 +426,11 @@ async function runWorker(inputPath: string): Promise<void> {
       }
       assert.deepEqual(await sourceInventory(join(repository, "fixtures/next-dev-adopter")), sourceBefore, "Next development smoke modified authored fixture sources");
       assert.deepEqual(await snapshotNextPackage(repository), request.packageInputs);
-      assert.deepEqual((await snapshotNextFile(archive)).seal, request.archiveSeal);
-      evidence = { kind: "hraness-next-development-browser-matrix", next: NEXT_VERSION, node: process.versions.node, browser: browser.version(), archiveSha256: sha256(await readFile(archive)), receipts };
+      await archiveUse.assertUnchanged(admission);
+      evidence = { kind: "hraness-next-development-browser-matrix", next: NEXT_VERSION, node: process.versions.node, browser: browser.version(), archiveSha256: admission.executionSeal.sha256, receipts };
     } finally { await ownedBrowser.close(); }
   } catch (error) {
-    failure = error;
+    failure = { error };
   } finally {
     // An uncertain close retains the worker and all evidence without a terminal
     // record. The Bun owner independently probes every reported process group.
@@ -384,16 +440,23 @@ async function runWorker(inputPath: string): Promise<void> {
     for (const origin of listeners) assert.equal(await listenerReachable(origin), false);
     assert.equal(sha256(await readFile(inputPath)), requestSha256);
     const cancelled = custody.signal.aborted;
+    if (failure === undefined && !cancelled) {
+      try {
+        assert.ok(archiveUse !== undefined && archiveAdmission !== null);
+        await archiveUse.assertUnchanged(archiveAdmission);
+      } catch (error) { failure = { error }; }
+    }
     await writeViteBrowserJson(join(restartEvidenceRoot, "worker-result.json"), {
       schemaVersion: 1, kind: "hraness-next-development-worker",
       state: cancelled ? "cancelled" : failure === undefined ? "complete" : "failed",
       owner: process.pid, node: process.versions.node, requestSha256,
       resources: 0, processGroups, browserPids, listeners,
+      archiveAdmission: failure === undefined && !cancelled ? archiveAdmission : null,
       evidence: failure === undefined && !cancelled ? evidence : null,
     });
     custody.dispose();
   }
-  if (failure !== undefined && !custody.signal.aborted) throw failure;
+  if (failure !== undefined && !custody.signal.aborted) throw failure.error;
 }
 
 async function readWorkerResult(request: WorkerRequest, requestSha256: string, ownerPid: number) {
@@ -402,7 +465,7 @@ async function readWorkerResult(request: WorkerRequest, requestSha256: string, o
   const stat = await lstat(path);
   assert.ok(stat.isFile() && stat.nlink === 1 && stat.size <= 1024 * 1024);
   const value = object(JSON.parse(await readFile(path, "utf8")) as unknown);
-  assert.deepEqual(Object.keys(value).sort(), ["browserPids", "evidence", "kind", "listeners", "node", "owner", "processGroups", "requestSha256", "resources", "schemaVersion", "state"]);
+  assert.deepEqual(Object.keys(value).sort(), ["archiveAdmission", "browserPids", "evidence", "kind", "listeners", "node", "owner", "processGroups", "requestSha256", "resources", "schemaVersion", "state"]);
   assert.equal(value.schemaVersion, 1);
   assert.equal(value.kind, "hraness-next-development-worker");
   assert.equal(value.owner, ownerPid);
@@ -425,6 +488,8 @@ async function readWorkerResult(request: WorkerRequest, requestSha256: string, o
     assert.equal(await listenerReachable(origin), false, "Next worker returned with a reachable listener");
   }
   if (value.state === "complete") {
+    assertNextDevWorkerArchiveReceipt(value.state, value.archiveAdmission, join(request.work, "hraness-ui.tgz"), request.archiveSeal,
+      await snapshotNextFile(join(request.work, "hraness-ui.tgz")));
     assert.equal(browserPids.length, 1);
     assert.equal(listeners.length, 2);
     assert.ok(processGroups.length >= 9);
@@ -434,7 +499,10 @@ async function readWorkerResult(request: WorkerRequest, requestSha256: string, o
     assert.equal(evidence.archiveSha256, request.archiveSeal.sha256);
     assert.ok(Array.isArray(evidence.receipts) && evidence.receipts.length === 2);
     assert.deepEqual(evidence.receipts.map((receipt: unknown) => object(receipt).variant), ["edge", "no-edge"]);
-  } else assert.equal(value.evidence, null);
+  } else {
+    assertNextDevWorkerArchiveReceipt(value.state, value.archiveAdmission, join(request.work, "hraness-ui.tgz"), request.archiveSeal);
+    assert.equal(value.evidence, null);
+  }
   return value;
 }
 
@@ -503,7 +571,7 @@ async function runCoordinator(): Promise<void> {
     const sourceBefore = await sourceInventory(join(repository, "fixtures/next-dev-adopter"));
     const ownedInputs = [
       "package.json", "bun.lock", "dist/stylex-manifest.json",
-      "scripts/next-dev-adopter-smoke.ts", "scripts/next-dev-diagnostics.ts", "scripts/next-dev-restart.ts", "scripts/next-dev-inputs.ts", "scripts/next-dev-network.ts", "scripts/browser-executable.ts",
+      "scripts/next-dev-adopter-smoke.ts", "scripts/next-dev-archive.ts", "scripts/next-dev-diagnostics.ts", "scripts/next-dev-restart.ts", "scripts/next-dev-inputs.ts", "scripts/next-dev-network.ts", "scripts/browser-executable.ts",
       "fixtures/vite8-adopter/custody.ts", "fixtures/vite8-adopter/diagnostics.ts",
       "fixtures/vite8-adopter/browser-control.ts", "fixtures/vite8-adopter/browser-endpoint.ts",
       "build/next-dev.ts", "build/next-dev-session.ts", "build/next-dev-css-loader.cjs", "build/next-dev-loader.cjs",
@@ -538,7 +606,8 @@ async function runCoordinator(): Promise<void> {
     assert.deepEqual(await sourceInventory(join(repository, "fixtures/next-dev-adopter")), sourceBefore);
     assert.deepEqual(await snapshotInputs(), inputs, "Next development matrix inputs changed during verification");
     assert.deepEqual(await snapshotNextPackage(repository), packageInputs);
-    assert.deepEqual((await snapshotNextFile(archive)).seal, archiveSeal);
+    assertNextDevWorkerArchiveReceipt(object(result).state, object(result).archiveAdmission, archive, archiveSeal,
+      await snapshotNextFile(archive));
     assert.deepEqual({ bun: sha256(await readFile(request.bunExecutable)), node: sha256(await readFile(node)), browser: sha256(await readFile(browserExecutable)) }, runtimes);
     const path = await commitSuccess(request, {
       schemaVersion: 1, kind: "hraness-next-development-browser-matrix", state: "complete",
