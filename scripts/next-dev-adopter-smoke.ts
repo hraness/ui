@@ -18,6 +18,7 @@ import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import { createNextDevDiagnostics, createNextStartupErrorReader } from "./next-dev-diagnostics.ts";
 import { retainStoppedNextLog, syncNextEvidenceDirectory } from "./next-dev-restart.ts";
 import { snapshotNextFile, snapshotNextPackage } from "./next-dev-inputs.ts";
+import { createNextNetworkOwner, routeNextDevRequest } from "./next-dev-network.ts";
 
 const NEXT_VERSION = "16.2.12";
 const MAX_SOURCE_FILES = 64;
@@ -311,23 +312,26 @@ async function runWorker(inputPath: string): Promise<void> {
         const restartLogs: Awaited<ReturnType<typeof retainStoppedNextLog>>[] = [];
         try {
           await ready(origin, server, consumer, custody);
+          const network = createNextNetworkOwner();
           const ownedContext = await acquireViteMatrixResource(custody, "Next browser context",
             () => browser.newContext({ serviceWorkers: "block", viewport: { width: 1280, height: 900 } }),
-            (context) => matrixDeadline(context.close(), 5_000, "Next browser context did not close"));
+            async (context) => {
+              try { await matrixDeadline(context.close(), 5_000, "Next browser context did not close"); }
+              finally {
+                await matrixDeadline(network.settle(), 5_000, "Next network handlers did not settle after context closure");
+                if (network.failureCount() > 0) process.stderr.write(`Next network handler failures collected: ${String(network.failureCount())}\n`);
+              }
+            });
           const context = ownedContext.value;
           try {
             const external: string[] = [];
-            await context.route("**/*", async (route) => {
-              const request = new URL(route.request().url());
-              if (request.origin === origin) await route.continue();
-              else { external.push(request.origin); await route.abort(); }
-            });
-            await context.routeWebSocket("**/*", (socket) => {
+            await context.route("**/*", (route) => network.run(() => routeNextDevRequest(route, origin, external)));
+            await context.routeWebSocket("**/*", (socket) => network.run(async () => {
               const url = new URL(socket.url());
               if (url.protocol === "ws:" && url.host === new URL(origin).host && url.pathname === "/_next/webpack-hmr"
                 && url.username === "" && url.password === "" && url.hash === "") socket.connectToServer();
-              else { external.push(url.origin); socket.close({ code: 1008, reason: "Outside the owned HMR endpoint" }); }
-            });
+              else { external.push(url.origin); await socket.close({ code: 1008, reason: "Outside the owned HMR endpoint" }); }
+            }));
             const hotPage = await context.newPage();
             let proof: Awaited<ReturnType<typeof verifyNextDevAdopter>>;
             try { proof = await verifyNextDevAdopter(hotPage, origin, consumer, variant === "edge"); }
@@ -342,7 +346,7 @@ async function runWorker(inputPath: string): Promise<void> {
                 assert.equal(groupExists(server), false, "Cannot rotate a live Next process log");
               });
               restartLogs.push(log);
-              process.stdout.write(`${JSON.stringify({ kind: "next-dev-retained-restart-log", variant, restart: restartLogs.length, evidenceRoot: restartEvidenceRoot, ...log })}\n`);
+              process.stdout.write(`${JSON.stringify({ event: "next-dev-retained-restart-log", variant, restart: restartLogs.length, evidenceRoot: restartEvidenceRoot, ...log })}\n`);
               await beforeStart?.();
               server = startProcess(command, consumer, env, custody, processGroups);
               await ready(origin, server, consumer, custody);
@@ -356,6 +360,7 @@ async function runWorker(inputPath: string): Promise<void> {
             assert.deepEqual(await sourceInventory(join(consumer, "app")), before, "Next development verifier failed to restore exact disposable sources");
             receipts.push({ variant, ...proof, stableRestarts, restartLogs });
           } finally { await ownedContext.close(); }
+          network.assertHealthy();
         } finally {
           try { await stop(server); }
           finally { process.stdout.write(server.diagnostics()); }
@@ -498,7 +503,7 @@ async function runCoordinator(): Promise<void> {
     const sourceBefore = await sourceInventory(join(repository, "fixtures/next-dev-adopter"));
     const ownedInputs = [
       "package.json", "bun.lock", "dist/stylex-manifest.json",
-      "scripts/next-dev-adopter-smoke.ts", "scripts/next-dev-diagnostics.ts", "scripts/next-dev-restart.ts", "scripts/next-dev-inputs.ts", "scripts/browser-executable.ts",
+      "scripts/next-dev-adopter-smoke.ts", "scripts/next-dev-diagnostics.ts", "scripts/next-dev-restart.ts", "scripts/next-dev-inputs.ts", "scripts/next-dev-network.ts", "scripts/browser-executable.ts",
       "fixtures/vite8-adopter/custody.ts", "fixtures/vite8-adopter/diagnostics.ts",
       "fixtures/vite8-adopter/browser-control.ts", "fixtures/vite8-adopter/browser-endpoint.ts",
       "build/next-dev.ts", "build/next-dev-session.ts", "build/next-dev-css-loader.cjs", "build/next-dev-loader.cjs",

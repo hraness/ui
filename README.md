@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.6"
+    "@hraness/ui": "github:hraness/ui#v0.5.7"
   }
 }
 ```
@@ -274,6 +274,30 @@ The delivery pass preserves webpack source-map chaining and lets Next own CSS de
 Development and HMR are a separate, unreceipted boundary. This production adapter deliberately rejects `next dev`, Turbopack, Rspack, and a build config loaded outside `runStylexNextBuild`; a development run cannot be presented as production graph evidence. `next start` uses the unchanged runtime configuration without the build wrapper or private build-attempt environment variables. If you select a custom output directory, use the same `distDir` for serving it. A compiled local preview requires a successful rebuild, an owned server restart, and manual refresh. Build into a new output generation while an existing generation is being served; do not claim HMR or preserved application state. An uncompiled development surface may continue to use the package's precompiled stylesheet route, but it cannot evaluate product-owned StyleX recipes that require compilation.
 
 Unlayered product CSS retains its existing override authority, except for the shared visually-hidden accessibility recipe. Its offscreen reset uses layered important declarations so conflicting unlayered important rules cannot accidentally expose accessible-only copy. Change the component visibility prop instead of overriding this helper.
+
+### Next.js development adapter
+
+The separate `@hraness/ui/stylex-build/next-dev` entry supports a finite Next 16.2.12, webpack 5 and Node 24 development profile. It does not change the production adapter or issue production completion receipts. Select it only for `phase-development-server`; keep the production configuration on `withStylexNext` and `runStylexNextBuild`.
+
+```js
+import { withStylexNextDev } from "@hraness/ui/stylex-build/next-dev";
+
+// Inside the development phase of next.config.mjs:
+return withStylexNextDev(config, {
+  rootDirectory,
+  sourceDirectories: ["app"],
+  cssEntry: "app/stylex-dev.css",
+  packageManifests: ["node_modules/@hraness/ui/dist/stylex-manifest.json"],
+});
+```
+
+Import that CSS entry from the root layout. Its entire contents must be the following marker followed by one newline; the adapter supplies the compiled package/caller rule union through Next's ordinary CSS loader.
+
+```css
+/* @hraness/ui StyleX Next development stylesheet */
+```
+
+Run `next dev --webpack`. Ordinary recipe changes converge across client, Node and optional Edge compilers before successful output; failed revisions retain the last accepted stylesheet and recover when the exact missing or invalid source is repaired. Stable `defineVars` and `createTheme` changes require an explicit server restart. Turbopack, Rspack, arbitrary framework versions and changing the package contract during a session are unsupported. The packed native development fixture covers finite HTTP responses and real WebSocket HMR; it does not establish streamed React Server Component arrival timing. Production, standalone packaging and deployment still require their separate gates.
 
 ## Composition patterns
 

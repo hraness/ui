@@ -52,7 +52,7 @@ export async function snapshotNextPackage(root: string) {
   for (const entry of ["package.json", ...manifest.files]) {
     assert.ok(typeof entry === "string"); await visit(entry);
   }
-  const rows = [];
+  const rows: { path: string; bytes: number; sha256: string }[] = [];
   let total = 0;
   for (const path of [...paths].sort()) {
     const { seal } = await snapshotNextFile(resolve(root, path));
