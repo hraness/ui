@@ -87,6 +87,7 @@ import {
   ToastProvider,
   useToast,
   ViewportFrame,
+  VisuallyHidden,
   WrappingRow,
 } from "@hraness/ui";
 
@@ -809,6 +810,7 @@ function ToastGallery() {
 }
 
 export function PrimitiveGallery() {
+  const [hiddenPressCount, setHiddenPressCount] = useState(0);
   const [cardPressCount, setCardPressCount] = useState(0);
   const [collectionToggle, setCollectionToggle] = useState<GalleryToggle | null>(
     "primary",
@@ -1501,6 +1503,23 @@ export function PrimitiveGallery() {
               label="Checking primitives"
               size="small"
             />
+          </div>
+          <div data-gallery-public-hidden="heading" data-slot="public-hidden-heading">
+            <VisuallyHidden as="h1" id="gallery-hidden-document-heading"
+              ref={(element) => { if (element !== null) element.dataset.galleryHiddenRef = element.tagName; }}>
+              Accessible document heading
+            </VisuallyHidden>
+          </div>
+          <div data-gallery-public-hidden="status" data-slot="public-hidden-status">
+            <VisuallyHidden role="status" aria-live="polite" aria-atomic="true">
+              Selected hidden item {hiddenPressCount}
+            </VisuallyHidden>
+          </div>
+          <div data-gallery-public-hidden="button" data-slot="public-hidden-button">
+            <Button onPress={() => setHiddenPressCount((count) => count + 1)}>
+              <span aria-hidden="true">+</span>
+              <VisuallyHidden>Inspect the deliberately long accessible timeline entry</VisuallyHidden>
+            </Button>
           </div>
           <InlineAlert title="Migration boundary" tone="info">
             Quiet-site landmarks now use package-compiled StyleX while later families

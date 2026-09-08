@@ -5746,11 +5746,17 @@ async function verifyVisuallyHiddenPresentation(
       spinner: document.querySelector(
         '[data-slot="spinner"][data-gallery-visually-hidden-layer-conflict="true"]',
       ),
+      publicHeading: document.querySelector('[data-gallery-public-hidden="heading"]'),
+      publicStatus: document.querySelector('[data-gallery-public-hidden="status"]'),
+      publicButton: document.querySelector('[data-gallery-public-hidden="button"]'),
     };
     if (
       !(roots.checkbox instanceof HTMLElement)
       || !(roots.select instanceof HTMLElement)
       || !(roots.spinner instanceof HTMLElement)
+      || !(roots.publicHeading instanceof HTMLElement)
+      || !(roots.publicStatus instanceof HTMLElement)
+      || !(roots.publicButton instanceof HTMLElement)
     ) {
       throw new Error("The gallery visually-hidden specimens are incomplete.");
     }
@@ -5831,6 +5837,9 @@ async function verifyVisuallyHiddenPresentation(
           .includes(selectLabel.id),
       spinner: read(roots.spinner),
       spinnerRole: roots.spinner.getAttribute("role"),
+      publicHeading: read(roots.publicHeading),
+      publicStatus: read(roots.publicStatus),
+      publicButton: read(roots.publicButton),
     };
   });
   const canonicalAtoms = new Set(evidence.spinner.hiddenAtoms);
@@ -5905,6 +5914,40 @@ async function verifyVisuallyHiddenPresentation(
     }) && evidence.checkboxAssociation,
     `${id}: CheckboxField visually-hidden presentation failed: ${JSON.stringify(evidence.checkbox)}`,
   );
+  for (const [key, rootSlot, tagName, text] of [
+    ["publicHeading", "public-hidden-heading", "H1", "Accessible document heading"],
+    ["publicStatus", "public-hidden-status", "SPAN", "Selected hidden item 0"],
+    ["publicButton", "public-hidden-button", "SPAN", "Inspect the deliberately long accessible timeline entry"],
+  ] as const) {
+    invariant(
+      hiddenContract(evidence[key], { rootSlot, slot: "visually-hidden", tagName, text }),
+      `${id}: public ${key} lost compiled hiding or semantics: ${JSON.stringify(evidence[key])}`,
+    );
+  }
+  const heading = page.getByRole("heading", { level: 1, name: "Accessible document heading", exact: true });
+  invariant(await heading.count() === 1, `${id}: hidden document heading disappeared from the accessibility tree`);
+  invariant(await heading.getAttribute("data-gallery-hidden-ref") === "H1", `${id}: hidden heading ref does not address its native H1`);
+  const status = page.locator('[data-gallery-public-hidden="status"]').getByRole("status");
+  invariant(await status.count() === 1 && await status.getAttribute("aria-live") === "polite"
+    && await status.getAttribute("aria-atomic") === "true", `${id}: hidden live status semantics changed`);
+  const button = page.getByRole("button", { name: "Inspect the deliberately long accessible timeline entry", exact: true });
+  invariant(await button.count() === 1, `${id}: hidden label did not name its native button`);
+  const contained = await button.evaluate((element) => {
+    const parent = element.closest('[data-gallery-public-hidden="button"]');
+    const label = element.querySelector('[data-slot="button-label"]') ?? element.querySelector('.hraness-button__label');
+    const hidden = element.querySelector('[data-slot="visually-hidden"]');
+    if (!(parent instanceof HTMLElement) || !(label instanceof HTMLElement) || !(hidden instanceof HTMLElement)) return false;
+    const outer = parent.getBoundingClientRect();
+    return [element, label, hidden].every((node) => {
+      const box = node.getBoundingClientRect();
+      return box.left >= outer.left - 1 && box.right <= outer.right + 1;
+    });
+  });
+  invariant(contained, `${id}: long hidden label or action wrapper escaped its compact column`);
+  await button.focus();
+  invariant(await button.evaluate((element) => document.activeElement === element), `${id}: labeled native button did not focus`);
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector('[data-gallery-public-hidden="status"] [role="status"]')?.textContent?.trim() === "Selected hidden item 1");
 }
 
 async function verifySegmentedControlInteraction(page: Page, id: string): Promise<void> {

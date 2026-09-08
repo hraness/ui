@@ -1323,6 +1323,7 @@
   }
 }
 
+html body [data-gallery-public-hidden] [data-slot="visually-hidden"],
 html body [data-gallery-visually-hidden-layer-conflict="true"] [data-slot="spinner-label"],
 html body [data-gallery-visually-hidden-layer-conflict="true"] [data-slot="checkbox-label"],
 html body [data-gallery-visually-hidden-layer-conflict="true"][data-slot="select-field"] > span {
@@ -1342,6 +1343,10 @@ html body [data-gallery-visually-hidden-layer-conflict="true"][data-slot="select
   position: static !important;
   white-space: normal !important;
   width: 99px !important;
+}
+
+[data-gallery-public-hidden="button"] {
+  width: 4rem;
 }
 
 .gallery-card--class-variable {
