@@ -3529,6 +3529,7 @@ describe("collectBunStylexGraph", () => {
 
   test("settles native React SSR imports from the real compiled UI runtime", async () => {
     const root = await realpath(resolve(import.meta.dir, ".."));
+    await mkdir(join(root, ".stylex-fixtures"), { recursive: true });
     const work = await mkdtemp(join(root, ".stylex-fixtures/react-native-"));
     roots.push(work);
     const entry = join(work, "entry.ts");
