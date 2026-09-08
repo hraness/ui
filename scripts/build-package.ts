@@ -20,7 +20,7 @@ import {
   writeFile,
   type FileHandle,
 } from "node:fs/promises";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -161,7 +161,7 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
   const sourceRoot = resolve(repository, "build");
   const outdir = resolve(stage, "build");
   const outputPaths: string[] = [];
-  for (const entrypoint of ["index.ts", "bun.ts", "next.ts", "next-loader.ts", "vite.ts"]) {
+  for (const entrypoint of ["index.ts", "bun.ts", "next.ts", "next-loader.ts", "next-dev.ts", "next-dev-session.ts", "next-output-settlement.ts", "vite.ts"]) {
     const result = await Bun.build({
       entrypoints: [resolve(sourceRoot, entrypoint)],
       env: "disable",
@@ -183,13 +183,11 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
       ...result.outputs.map((output) => relativeBelow(stage, resolve(output.path), "build-tool output")),
     );
   }
-  const nextLoaderCjs = "build/next-loader.cjs";
-  await writeFile(
-    resolve(stage, nextLoaderCjs),
-    await readFile(resolve(sourceRoot, "next-loader.cjs")),
-    { flag: "wx", mode: 0o644 },
-  );
-  outputPaths.push(nextLoaderCjs);
+  for (const loader of ["next-loader.cjs", "next-dev-loader.cjs", "next-dev-css-loader.cjs"]) {
+    const output = `build/${loader}`;
+    await writeFile(resolve(stage, output), await readFile(resolve(sourceRoot, loader)), { flag: "wx", mode: 0o644 });
+    outputPaths.push(output);
+  }
   const paths = (await filesBelow(outdir)).map((path) => `build/${path}`);
   assert.deepEqual(
     paths,
@@ -249,6 +247,20 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
     }],
     ["build/next-loader.cjs", { exports: [], functions: [] }],
     ["build/next-loader.js", { exports: ["transformStylexNextModule"], functions: ["transformStylexNextModule"] }],
+    ["build/next-dev-loader.cjs", { exports: [], functions: [] }],
+    ["build/next-dev-css-loader.cjs", { exports: [], functions: [] }],
+    ["build/next-dev.js", {
+      exports: ["STYLEX_NEXT_DEV_CSS_ENTRY", "STYLEX_NEXT_DEV_VERSION", "withStylexNextDev"],
+      functions: ["withStylexNextDev"],
+    }],
+    ["build/next-dev-session.js", {
+      exports: ["STYLEX_NEXT_DEV_CSS_ENTRY", "STYLEX_NEXT_DEV_CONTEXT", "STYLEX_NEXT_DEV_VERSION", "STYLEX_NEXT_DEV_EXTENSIONS", "STYLEX_NEXT_DEV_EXTENSION_ALIASES", "assertNextDevRuntime", "isNextDevSource", "parseNextDevOptions", "nextDevLogicalPath", "composeNextDevSnapshot", "createNextDevSession", "createNextDevRevisionCoordinator", "requireNextDevSnapshot", "transformNextDevSource", "renderNextDevCss", "auditNextDevCss", "loadNextDevModule"],
+      functions: ["assertNextDevRuntime", "isNextDevSource", "parseNextDevOptions", "nextDevLogicalPath", "composeNextDevSnapshot", "createNextDevSession", "createNextDevRevisionCoordinator", "requireNextDevSnapshot", "transformNextDevSource", "renderNextDevCss", "auditNextDevCss", "loadNextDevModule"],
+    }],
+    ["build/next-output-settlement.js", {
+      exports: ["STYLEX_NEXT_OUTPUT_SETTLEMENT_SCHEMA_VERSION", "STYLEX_NEXT_OUTPUT_SETTLEMENT_SCOPE", "STYLEX_NEXT_OUTPUT_MAX_DIRECTORIES", "STYLEX_NEXT_OUTPUT_MAX_FILES", "STYLEX_NEXT_OUTPUT_MAX_PRIVATE_MAPS", "STYLEX_NEXT_OUTPUT_MAX_TEXT_BYTES", "STYLEX_NEXT_OUTPUT_MAX_TOTAL_BYTES", "revalidateStylexNextOutputSettlement", "settleStylexNextPrivateOutput"],
+      functions: ["revalidateStylexNextOutputSettlement", "settleStylexNextPrivateOutput"],
+    }],
     ["build/next.js", {
       exports: ["STYLEX_NEXT_ADAPTER_VERSION", "STYLEX_NEXT_REQUIRED_VERSION", "runStylexNextBuild", "withStylexNext"],
       functions: ["runStylexNextBuild", "withStylexNext"],
@@ -260,7 +272,7 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
     if (entrypoint.endsWith(".cjs")) {
       assert.equal(
         await readFile(resolve(stage, ...entrypoint.split("/")), "utf8"),
-        await readFile(resolve(sourceRoot, "next-loader.cjs"), "utf8"),
+        await readFile(resolve(sourceRoot, basename(entrypoint)), "utf8"),
         "Next CommonJS loader output changed while copying",
       );
       continue;

@@ -52,6 +52,14 @@
       "types": "./build/next.ts",
       "import": "./dist/build/next.js"
     },
+    "./stylex-build/next-dev": {
+      "types": "./build/next-dev.ts",
+      "import": "./dist/build/next-dev.js"
+    },
+    "./stylex-build/next-output": {
+      "types": "./build/next-output-settlement.ts",
+      "import": "./dist/build/next-output-settlement.js"
+    },
     "./stylex-build/vite": {
       "types": "./build/vite.ts",
       "import": "./dist/build/vite.js"
@@ -69,9 +77,14 @@
     "build/generation.ts",
     "build/index.ts",
     "build/next-contracts.ts",
+    "build/next-dev-css-loader.cjs",
+    "build/next-dev-loader.cjs",
+    "build/next-dev-session.ts",
+    "build/next-dev.ts",
     "build/next-generation.ts",
     "build/next-loader.cjs",
     "build/next-loader.ts",
+    "build/next-output-settlement.ts",
     "build/next-plugin.ts",
     "build/next-process.ts",
     "build/next-ssg.ts",
@@ -158,10 +171,11 @@
     "check:stylex-consumer-layers": "bun run ./scripts/check-stylex-consumer-layers.ts",
     "check:stylex-determinism": "bun run ./scripts/check-stylex-determinism.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --isolate --preload ./scripts/register-stylex-test-transform.ts ./src ./build ./scripts/browser-executable.test.ts ./scripts/check-committed-dist.test.ts ./scripts/check-stylex-determinism.test.ts ./scripts/gallery-layer-counterfactual.test.ts ./scripts/mark-react-client-package.test.ts ./scripts/package-consumer-lifecycle.test.ts ./scripts/vite8-adopter-custody.test.ts",
+    "test": "bun test --isolate --preload ./scripts/register-stylex-test-transform.ts ./src ./build ./scripts/browser-executable.test.ts ./scripts/check-committed-dist.test.ts ./scripts/check-stylex-determinism.test.ts ./scripts/gallery-layer-counterfactual.test.ts ./scripts/mark-react-client-package.test.ts ./scripts/next-dev-diagnostics.test.ts ./scripts/next-dev-inputs.test.ts ./scripts/next-dev-restart.test.ts ./scripts/package-consumer-lifecycle.test.ts ./scripts/vite8-adopter-custody.test.ts",
     "test:browser": "bun run ./scripts/gallery-browser.ts",
     "test:package": "bun run ./scripts/package-smoke.ts",
     "test:next-adopter": "bun run ./scripts/next-adopter-smoke.ts",
+    "test:next-dev-adopter": "bun run ./scripts/next-dev-adopter-smoke.ts",
     "test:packed-bun-browser": "bun run ./scripts/packed-bun-browser-smoke.ts",
     "test:vite-adopter": "bun run ./scripts/vite-adopter-smoke.ts",
     "test:vite-custody": "bun test ./scripts/vite8-adopter-custody.process.test.ts",
@@ -170,7 +184,7 @@
     "kb:check:lane": "bunx --bun github:hraness/kb#v0.15.1 check --root kb --no-catalog",
     "kb:check": "bunx --bun github:hraness/kb#v0.15.1 check --root kb && bunx --bun github:hraness/kb#v0.15.1 agents check --root kb --repo .",
     "kb:catalog": "bunx --bun github:hraness/kb#v0.15.1 catalog --root kb",
-    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:vite-custody && bun run test:vite78-adopter && bun run test:next-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser",
+    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:vite-custody && bun run test:vite78-adopter && bun run test:next-adopter && bun run test:next-dev-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser",
     "prepack": "bun run check"
   },
   "dependencies": {

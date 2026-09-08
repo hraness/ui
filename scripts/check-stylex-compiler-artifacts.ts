@@ -109,6 +109,8 @@ const exportedBuildTools = [
   importTarget(exportsRecord["./stylex-build"], "stylex-build export"),
   importTarget(exportsRecord["./stylex-build/bun"], "stylex-build/bun export"),
   importTarget(exportsRecord["./stylex-build/next"], "stylex-build/next export"),
+  importTarget(exportsRecord["./stylex-build/next-dev"], "stylex-build/next-dev export"),
+  importTarget(exportsRecord["./stylex-build/next-output"], "stylex-build/next-output export"),
   importTarget(exportsRecord["./stylex-build/vite"], "stylex-build/vite export"),
 ].sort();
 

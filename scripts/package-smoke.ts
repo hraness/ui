@@ -7141,6 +7141,14 @@ async function verifyConsumer(
     types: "./build/next.ts",
     import: "./dist/build/next.js",
   });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/next-dev"], {
+    types: "./build/next-dev.ts",
+    import: "./dist/build/next-dev.js",
+  });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/next-output"], {
+    types: "./build/next-output-settlement.ts",
+    import: "./dist/build/next-output-settlement.js",
+  });
   assert.deepEqual(installedManifest.exports?.["./stylex-build/vite"], {
     types: "./build/vite.ts",
     import: "./dist/build/vite.js",
@@ -7162,9 +7170,14 @@ async function verifyConsumer(
     "build/generation.ts",
     "build/index.ts",
     "build/next-contracts.ts",
+    "build/next-dev-css-loader.cjs",
+    "build/next-dev-loader.cjs",
+    "build/next-dev-session.ts",
+    "build/next-dev.ts",
     "build/next-generation.ts",
     "build/next-loader.cjs",
     "build/next-loader.ts",
+    "build/next-output-settlement.ts",
     "build/next-plugin.ts",
     "build/next-process.ts",
     "build/next-ssg.ts",
@@ -7174,6 +7187,11 @@ async function verifyConsumer(
     "build/vite.ts",
     "dist/build/bun.js",
     "dist/build/index.js",
+    "dist/build/next-dev-css-loader.cjs",
+    "dist/build/next-dev-loader.cjs",
+    "dist/build/next-dev-session.js",
+    "dist/build/next-dev.js",
+    "dist/build/next-output-settlement.js",
     "dist/build/next-loader.cjs",
     "dist/build/next-loader.js",
     "dist/build/next.js",
