@@ -48,6 +48,14 @@
       "types": "./build/bun.ts",
       "import": "./dist/build/bun.js"
     },
+    "./stylex-build/next-dev": {
+      "types": "./build/next-dev.ts",
+      "import": "./dist/build/next-dev.js"
+    },
+    "./stylex-build/next-output": {
+      "types": "./build/next-output-settlement.ts",
+      "import": "./dist/build/next-output-settlement.js"
+    },
     "./stylex-build/vite": {
       "types": "./build/vite.ts",
       "import": "./dist/build/vite.js"
@@ -64,6 +72,9 @@
     "build/contracts.ts",
     "build/generation.ts",
     "build/index.ts",
+    "build/next-dev.ts",
+    "build/next-dev-session.ts",
+    "build/next-output-settlement.ts",
     "build/stylex-babel-compat.ts",
     "build/vite.ts",
     "dist",
@@ -149,11 +160,13 @@
     "test:package": "bun run ./scripts/package-smoke.ts",
     "test:packed-bun-browser": "bun run ./scripts/packed-bun-browser-smoke.ts",
     "test:vite-adopter": "bun run ./scripts/vite-adopter-smoke.ts",
+    "test:vite8-adopter": "bun run ./scripts/vite8-adopter-smoke.ts",
+    "test:next-dev-adopter": "bun run ./scripts/next-dev-adopter-smoke.ts",
     "kb:refresh": "bunx --bun github:hraness/kb#v0.15.1 refresh --root kb",
     "kb:check:lane": "bunx --bun github:hraness/kb#v0.15.1 check --root kb --no-catalog",
     "kb:check": "bunx --bun github:hraness/kb#v0.15.1 check --root kb && bunx --bun github:hraness/kb#v0.15.1 agents check --root kb --repo .",
     "kb:catalog": "bunx --bun github:hraness/kb#v0.15.1 catalog --root kb",
-    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser",
+    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:vite8-adopter && bun run test:next-dev-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser",
     "prepack": "bun run check"
   },
   "dependencies": {
@@ -172,9 +185,10 @@
     "@types/bun": "1.3.14",
     "@types/node": "^20.19.0 || >=22.12.0",
     "lightningcss": "1.33.0",
+    "next": "16.2.12",
     "react": ">=18 <20",
     "react-dom": ">=18 <20",
-    "vite": ">=7 <8"
+    "vite": ">=7 <9"
   },
   "peerDependenciesMeta": {
     "@babel/core": {
@@ -193,6 +207,9 @@
       "optional": true
     },
     "lightningcss": {
+      "optional": true
+    },
+    "next": {
       "optional": true
     },
     "vite": {

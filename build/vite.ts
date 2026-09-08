@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { isBuiltin } from "node:module";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import { parseSync } from "@babel/core";
 import { transform as inspectCss } from "lightningcss";
 import type { Plugin, ResolvedConfig } from "vite";
 
@@ -123,7 +125,99 @@ function externalGraphName(id: string): string {
       && !clean.toLowerCase().startsWith("file:"),
     `Vite may not externalize a relative or absolute file from a complete graph: ${id}`,
   );
+  assert.ok(
+    id === clean && (isBuiltin(clean) || (
+      /^(?:@[a-z0-9_-][a-z0-9._-]*\/)?[a-z0-9_-][a-z0-9._-]*(?:\/[a-z0-9._~-]+)*$/iu.test(clean)
+      && clean.split("/").every((part) => part !== "." && part !== "..")
+    )),
+    `Vite external import must be a bare package or Node builtin, not a queried, private, or virtual module: ${id}`,
+  );
   return `external:${clean}`;
+}
+
+type ParsedModule = Readonly<{
+  codeSha256: string;
+  importedIds: readonly string[];
+  dynamicallyImportedIds: readonly string[];
+}>;
+type ModuleSnapshot = Readonly<{
+  id: string;
+  external: boolean;
+  isEntry: boolean;
+  codeSha256: string | null;
+  importedIds: readonly string[];
+  dynamicallyImportedIds: readonly string[];
+}>;
+type ModuleContext = Readonly<{
+  meta: unknown;
+  getModuleIds(): IterableIterator<string>;
+  getModuleInfo(id: string): unknown;
+}>;
+
+function moduleRecord(value: unknown): Record<string, unknown> {
+  assert.ok(typeof value === "object" && value !== null && !Array.isArray(value), "Vite module metadata is unavailable");
+  return value as Record<string, unknown>;
+}
+
+function moduleEdges(value: unknown): readonly string[] {
+  assert.ok(Array.isArray(value) && value.every((id: unknown) => typeof id === "string" && id.length > 0),
+    "Vite module dependencies must contain exact module IDs");
+  return [...value] as string[];
+}
+
+function parsedModule(value: unknown): ParsedModule {
+  const info = moduleRecord(value);
+  assert.equal(typeof info.code, "string", "Vite parsed internal module must have available code");
+  return {
+    codeSha256: sha256(info.code as string),
+    importedIds: moduleEdges(info.importedIds),
+    dynamicallyImportedIds: moduleEdges(info.dynamicallyImportedIds),
+  };
+}
+
+function snapshotModules(context: ModuleContext, parsed: ReadonlyMap<string, ParsedModule>): readonly ModuleSnapshot[] {
+  const meta = moduleRecord(context.meta);
+  assert.ok(typeof meta.rollupVersion === "string" && meta.rollupVersion.length > 0, "Vite bundler identity is unavailable");
+  // Rolldown documents rollupVersion as a dummy compatibility value. Its own
+  // public version field selects the ModuleInfo contract, never a missing flag.
+  const rolldown = "rolldownVersion" in meta;
+  if (rolldown) assert.ok(typeof meta.rolldownVersion === "string" && meta.rolldownVersion.length > 0);
+  const ids = [...context.getModuleIds()];
+  assert.ok(ids.length > 0 && ids.length <= 100_000 && ids.every((id) => typeof id === "string" && id.length > 0));
+  const membership = new Set(ids);
+  assert.equal(membership.size, ids.length, "Vite module census contains duplicate IDs");
+  for (const id of parsed.keys()) assert.ok(membership.has(id), `Vite parsed module disappeared from the terminal census: ${id}`);
+  return ids.sort(compareStrings).map((id) => {
+    const info = moduleRecord(context.getModuleInfo(id));
+    assert.equal(info.id, id, "Vite module metadata ID differs from its census entry");
+    assert.equal(typeof info.isEntry, "boolean", "Vite module entry status is unavailable");
+    const importedIds = moduleEdges(info.importedIds);
+    const dynamicallyImportedIds = moduleEdges(info.dynamicallyImportedIds);
+    const attestation = parsed.get(id);
+    let external: boolean;
+    if (rolldown) {
+      assert.equal("isExternal" in info, false, "Rolldown external classification must use its parsed-module census");
+      external = attestation === undefined;
+    } else {
+      assert.equal(typeof info.isExternal, "boolean", "Rollup must explicitly classify external modules");
+      external = info.isExternal as boolean;
+    }
+    if (external) {
+      assert.equal(attestation, undefined, `Vite parsed internal module was classified external: ${id}`);
+      assert.equal(info.code, null, `Vite unparsed external module has code: ${id}`);
+      assert.equal(info.isEntry, false, `Vite external module may not be an entry: ${id}`);
+      assert.deepEqual(importedIds, [], `Vite external module has internal dependencies: ${id}`);
+      assert.deepEqual(dynamicallyImportedIds, [], `Vite external module has dynamic dependencies: ${id}`);
+      externalGraphName(id);
+    } else {
+      assert.ok(attestation !== undefined, `Vite internal module lacks a moduleParsed attestation: ${id}`);
+      assert.deepEqual(parsedModule(info), attestation, `Vite module changed after parsing: ${id}`);
+    }
+    for (const dependency of [...importedIds, ...dynamicallyImportedIds]) {
+      assert.ok(membership.has(dependency), `Vite dependency is absent from the terminal module census: ${dependency}`);
+    }
+    return { id, external, isEntry: info.isEntry as boolean, codeSha256: external ? null : attestation!.codeSha256, importedIds, dynamicallyImportedIds };
+  });
 }
 
 function verifyRegisteredPackageInput(
@@ -237,13 +331,21 @@ function rejectOutputOverrides(config: Record<string, unknown>): void {
   for (const key of ["assetsInlineLimit", "outDir", "assetsDir", "copyPublicDir", "cssCodeSplit", "emptyOutDir", "lib", "write"] as const) {
     assert.equal(record[key], undefined, `The StyleX Vite adapter owns build.${key}`);
   }
-  const rollup = record.rollupOptions;
-  if (rollup === undefined) return;
-  assert.ok(typeof rollup === "object" && rollup !== null && !Array.isArray(rollup), "Vite rollupOptions must be an object");
-  const rollupRecord = rollup as Record<string, unknown>;
-  assert.equal(rollupRecord.external, undefined, "The StyleX Vite adapter owns Rollup externalization");
-  assert.equal(rollupRecord.input, undefined, "The StyleX Vite adapter owns Rollup input");
-  assert.equal(rollupRecord.output, undefined, "The StyleX Vite adapter owns Rollup output paths");
+  for (const [alias, bundler] of bundlerOptionRecords(record)) {
+    assert.equal(bundler.external, undefined, `The StyleX Vite adapter owns ${alias} externalization`);
+    assert.equal(bundler.input, undefined, `The StyleX Vite adapter owns ${alias} input`);
+    assert.equal(bundler.output, undefined, `The StyleX Vite adapter owns ${alias} output paths`);
+  }
+}
+
+function bundlerOptionRecords(build: object): readonly (readonly [string, Record<string, unknown>])[] {
+  const record = build as Record<string, unknown>;
+  return ["rollupOptions", "rolldownOptions"].flatMap((alias) => {
+    const value = record[alias];
+    if (value === undefined) return [];
+    assert.ok(typeof value === "object" && value !== null && !Array.isArray(value), `Vite ${alias} must be an object`);
+    return [[alias, value as Record<string, unknown>] as const];
+  });
 }
 
 type EmittedAsset = Readonly<{
@@ -253,6 +355,131 @@ type EmittedAsset = Readonly<{
   source: string | Uint8Array;
   type: "asset";
 }>;
+
+type EmittedChunk = Readonly<{
+  code: string;
+  dynamicImports: readonly string[];
+  facadeModuleId: string | null;
+  fileName: string;
+  imports: readonly string[];
+  isEntry: boolean;
+  map: unknown;
+  modules: Readonly<Record<string, unknown>>;
+  type: "chunk";
+}>;
+
+type BundleSnapshot = Readonly<{
+  artifact: StylexArtifactV1;
+  linkage: string;
+}>;
+
+function rejectJavaScriptSourceMapComments(source: string, path: string): void {
+  const plugins: ("jsx" | "typescript")[] = [];
+  if (/\.[cm]?tsx?$/iu.test(path)) plugins.push("typescript");
+  if (/\.[cm]?[jt]sx$/iu.test(path)) plugins.push("jsx");
+  const parsed = parseSync(source, {
+    babelrc: false, configFile: false, filename: path, sourceType: "unambiguous",
+    parserOpts: { plugins, allowReturnOutsideFunction: true },
+  });
+  assert.ok(parsed !== null, `Vite output JavaScript could not be inspected: ${path}`);
+  for (const comment of parsed.comments ?? []) {
+    assert.doesNotMatch(comment.value, /^\s*[@#]\s*sourceMappingURL\s*=/u,
+      `StyleX Vite does not support source-map references: ${path}`);
+  }
+}
+
+function rejectCssSourceMapComments(source: string, path: string): void {
+  // The CSS has already passed Lightning CSS's parser. Recognize comments
+  // outside string and URL tokens without mistaking their literal contents for
+  // annotations. CSS escapes apply to URL function names as well as values.
+  const whitespace = (character: string | undefined): boolean => character !== undefined && /[\t\n\f\r ]/u.test(character);
+  const nameCharacter = (character: string | undefined): boolean => character !== undefined && /[-_a-z0-9\u0080-\uffff]/iu.test(character);
+  const escape = (offset: number): readonly [number, string] => {
+    let end = offset + 1;
+    const start = end;
+    while (end < source.length && end - start < 6 && /[a-f0-9]/iu.test(source[end]!)) end += 1;
+    if (end > start) {
+      const value = Number.parseInt(source.slice(start, end), 16);
+      if (source[end] === "\r" && source[end + 1] === "\n") end += 2;
+      else if (whitespace(source[end])) end += 1;
+      return [end, value === 0 || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff) ? "\ufffd" : String.fromCodePoint(value)];
+    }
+    if (source[end] === "\r" && source[end + 1] === "\n") return [end + 2, ""];
+    return [Math.min(end + 1, source.length), source[end] ?? ""];
+  };
+  let offset = 0;
+  while (offset < source.length) {
+    const character = source[offset]!;
+    if (character === '"' || character === "'") {
+      const quote = character;
+      offset += 1;
+      while (offset < source.length && source[offset] !== quote) {
+        offset = source[offset] === "\\" ? escape(offset)[0] : offset + 1;
+      }
+      offset += 1;
+    } else if (source.startsWith("/*", offset)) {
+      const end = source.indexOf("*/", offset + 2);
+      assert.doesNotMatch(source.slice(offset + 2, end === -1 ? source.length : end), /^\s*[@#]\s*sourceMappingURL\s*=/u,
+        `StyleX Vite does not support source-map references: ${path}`);
+      offset = end === -1 ? source.length : end + 2;
+    } else if (nameCharacter(character) || character === "\\") {
+      let name = "";
+      while (nameCharacter(source[offset]) || source[offset] === "\\") {
+        if (source[offset] === "\\") {
+          const [next, value] = escape(offset);
+          name += value;
+          offset = next;
+        } else { name += source[offset]!; offset += 1; }
+      }
+      if (name.toLowerCase() !== "url" || source[offset] !== "(") continue;
+      offset += 1;
+      while (whitespace(source[offset])) offset += 1;
+      if (source[offset] === '"' || source[offset] === "'") continue;
+      while (offset < source.length && source[offset] !== ")") {
+        offset = source[offset] === "\\" ? escape(offset)[0] : offset + 1;
+      }
+      offset += 1;
+    } else offset += 1;
+  }
+}
+
+function snapshotBundle(
+  bundle: Readonly<Record<string, EmittedAsset | EmittedChunk>>,
+  rootDirectory: string,
+): readonly BundleSnapshot[] {
+  // Rolldown does not preserve bundle object identity between hooks. Snapshot
+  // bytes and public linkage values, never an output object or backing buffer.
+  return Object.values(bundle).map((output) => {
+    const path = normalizeLogicalPath(output.fileName, "Vite output path");
+    assert.ok(!/\.map$/iu.test(path), `StyleX Vite does not support source-map output: ${path}`);
+    const bytes = output.type === "chunk"
+      ? Buffer.from(output.code)
+      : typeof output.source === "string" ? Buffer.from(output.source) : Buffer.from(output.source);
+    if (output.type === "chunk" || javascriptFilter.test(path)) {
+      rejectJavaScriptSourceMapComments(bytes.toString("utf8"), path);
+    } else if (/\.css$/iu.test(path)) {
+      rejectCssSourceMapComments(bytes.toString("utf8"), path);
+    }
+    let linkage: string;
+    if (output.type === "chunk") {
+      assert.ok(output.map === null || output.map === undefined, `StyleX Vite does not support chunk source maps: ${path}`);
+      linkage = canonicalJson({
+        dynamicImports: [...output.dynamicImports],
+        facade: output.facadeModuleId === null ? null : graphName(output.facadeModuleId, rootDirectory),
+        imports: [...output.imports],
+        isEntry: output.isEntry,
+        modules: Object.keys(output.modules).map((id) => graphName(id, rootDirectory)).sort(compareStrings),
+        type: output.type,
+      });
+    } else {
+      linkage = canonicalJson({
+        provenance: /\.css$/iu.test(path) ? [] : emittedAssetProvenance(output, rootDirectory),
+        type: output.type,
+      });
+    }
+    return { artifact: { bytes: bytes.byteLength, path, sha256: sha256(bytes) }, linkage };
+  }).sort((left, right) => compareStrings(left.artifact.path, right.artifact.path));
+}
 
 function emittedAssetProvenance(output: EmittedAsset, rootDirectory: string): readonly string[] {
   const names = [...(output.originalFileNames ?? [])];
@@ -302,6 +529,9 @@ export function stylexVite(options: StylexViteOptions): Plugin {
   const emittedAssetInputs = new Set<string>();
   const cssEdges: StylexGraphEdgeV1[] = [];
   const inputSnapshots = new Map<string, InputSnapshot>();
+  const parsedModules = new Map<string, ParsedModule>();
+  let terminalModules: readonly ModuleSnapshot[] | undefined;
+  let moduleCollectionEnded = false;
   let configured = false;
   let resolved = false;
   let complete = false;
@@ -310,6 +540,7 @@ export function stylexVite(options: StylexViteOptions): Plugin {
   let plannedOutput: Readonly<{ outputDirectory: string; outputRoot: string }> | undefined;
   let loaded: Awaited<ReturnType<typeof loadStylexGeneration>> | undefined;
   let resolvedConfig: ResolvedConfig | undefined;
+  let generatedBundle: readonly BundleSnapshot[] | undefined;
 
   const snapshotInput = (logical: string, bytes: string | Uint8Array): void => {
     const snapshot = {
@@ -345,12 +576,15 @@ export function stylexVite(options: StylexViteOptions): Plugin {
     assert.equal(resolve(config.build.outDir), plannedOutput.outputDirectory, "Resolved Vite outDir differs from the graph staging root");
     assert.equal(config.build.sourcemap, false, "StyleX Vite must disable sourcemap output");
     assert.equal(config.build.write, true, "StyleX Vite requires filesystem output for receipt sealing");
-    assert.equal(
-      config.build.rollupOptions.output,
-      undefined,
-      "The StyleX Vite adapter owns resolved Rollup output options",
-    );
     const graph = loaded.expectedGraph(options.graphId);
+    const bundlers = bundlerOptionRecords(config.build);
+    assert.ok(bundlers.length > 0, "StyleX Vite requires resolved bundler input");
+    for (const [alias, bundler] of bundlers) {
+      assert.equal(bundler.output, undefined, `The StyleX Vite adapter owns resolved Rollup output options (${alias})`);
+      assert.equal(bundler.external, undefined, `The StyleX Vite adapter owns resolved ${alias} externalization`);
+      assert.deepEqual(bundler.input, graph.entrypoints.map((entrypoint) => resolve(rootDirectory, entrypoint)),
+        `Resolved ${alias} input differs from the declared graph`);
+    }
     const target = config.build.ssr === false || config.build.ssr === undefined ? "client" : "ssr";
     assert.equal(target, graph.kind, `Vite target differs from graph ${graph.id}`);
   };
@@ -391,6 +625,26 @@ export function stylexVite(options: StylexViteOptions): Plugin {
       validateResolvedConfig(config);
       resolvedConfig = config;
       resolved = true;
+    },
+    moduleParsed(info) {
+      assert.equal(moduleCollectionEnded, false, "Vite parsed a module after terminal collection");
+      assert.ok(typeof info.id === "string" && info.id.length > 0);
+      assert.equal(parsedModules.has(info.id), false, `Vite parsed a module more than once: ${info.id}`);
+      parsedModules.set(info.id, parsedModule(info));
+    },
+    buildEnd: {
+      order: "post",
+      handler(error) {
+        assert.equal(moduleCollectionEnded, false, "Vite module collection may finish only once");
+        moduleCollectionEnded = true;
+        if (error !== undefined) return;
+        terminalModules = snapshotModules(this, parsedModules);
+      },
+    },
+    renderStart() {
+      assert.ok(terminalModules !== undefined, "Vite modules were not sealed by a successful buildEnd");
+      assert.deepEqual(snapshotModules(this, parsedModules), terminalModules,
+        "Vite module census changed after terminal collection");
     },
     load: {
       order: "pre",
@@ -513,6 +767,7 @@ export function stylexVite(options: StylexViteOptions): Plugin {
             }
           }
         }
+        generatedBundle = snapshotBundle(bundle, rootDirectory);
       },
     },
     configureServer() {
@@ -557,25 +812,30 @@ export function stylexVite(options: StylexViteOptions): Plugin {
             }
           }
         }
-        const moduleIds = [...this.getModuleIds()];
-        const entrypoints = moduleIds
-          .filter((id) => this.getModuleInfo(id)?.isEntry === true)
-          .map((id) => rootInputPath(id, rootDirectory))
+        assert.ok(terminalModules !== undefined, "Vite modules were not sealed by a successful buildEnd");
+        assert.deepEqual(snapshotModules(this, parsedModules), terminalModules,
+          "Vite module census changed after terminal collection");
+        const modules = new Map(terminalModules.map((info) => [info.id, info]));
+        const moduleIds = terminalModules.filter(({ external }) => !external).map(({ id }) => id);
+        const entrypoints = terminalModules
+          .filter((info) => info.isEntry)
+          .map((info) => rootInputPath(info.id, rootDirectory))
           .filter((id): id is string => id !== undefined)
           .sort();
         assert.deepEqual(entrypoints, [...graph.entrypoints].sort(), "Vite entry modules differ from the declared graph");
         const edges: StylexGraphEdgeV1[] = [...cssEdges];
         const dependency = (id: string): Readonly<{ external: boolean; to: string }> => {
-          const external = this.getModuleInfo(id)?.isExternal ?? true;
+          const info = modules.get(id);
+          assert.ok(info !== undefined, `Vite dependency is absent from the terminal module census: ${id}`);
+          const { external } = info;
           return {
             external,
             to: external ? externalGraphName(id) : graphName(id, rootDirectory),
           };
         };
-        for (const id of moduleIds) {
-          const info = this.getModuleInfo(id);
-          if (info === null) continue;
-          if (info.isExternal) externalGraphName(id);
+        for (const info of terminalModules) {
+          if (info.external) continue;
+          const { id } = info;
           const from = graphName(id, rootDirectory);
           const importedIds = [...info.importedIds, ...info.dynamicallyImportedIds];
           verifyStylexDependencyEdges(
@@ -659,6 +919,13 @@ export function stylexVite(options: StylexViteOptions): Plugin {
           auditCssWithoutStylexRules(css, rules, "Vite settled graph output");
         }
         const outputs = await Promise.all(outputPaths.map((path) => artifactForFile(preparedGraph.outputDirectory, path)));
+        assert.ok(generatedBundle !== undefined, "StyleX Vite bundle snapshot was not sealed");
+        assert.deepEqual(snapshotBundle(bundle, rootDirectory), generatedBundle,
+          "Vite bundle bytes or linkage changed after the generated snapshot");
+        assert.deepEqual(outputs, generatedBundle.map(({ artifact }) => artifact),
+          "Vite settled output differs from its generated byte snapshot");
+        assert.deepEqual(snapshotModules(this, parsedModules), terminalModules,
+          "Vite module census changed before receipt publication");
         await writeStylexGraphReceipt({
           generation: options.generation,
           rootDirectory,

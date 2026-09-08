@@ -92,7 +92,8 @@ optionalPeer(packageJson, "@types/babel__core", "7.20.5");
 optionalPeer(packageJson, "@types/bun", "1.3.14");
 optionalPeer(packageJson, "@types/node", "^20.19.0 || >=22.12.0");
 optionalPeer(packageJson, "lightningcss", "1.33.0");
-optionalPeer(packageJson, "vite", ">=7 <8");
+optionalPeer(packageJson, "next", "16.2.12");
+optionalPeer(packageJson, "vite", ">=7 <9");
 
 const exportsRecord = packageJson.exports;
 assert.ok(exportsRecord !== undefined, "package exports are missing");
@@ -107,12 +108,14 @@ assert.equal(exportsRecord["./compiler-reset.css"], undefined, "Compiler reset m
 const exportedBuildTools = [
   importTarget(exportsRecord["./stylex-build"], "stylex-build export"),
   importTarget(exportsRecord["./stylex-build/bun"], "stylex-build/bun export"),
+  importTarget(exportsRecord["./stylex-build/next-dev"], "stylex-build/next-dev export"),
+  importTarget(exportsRecord["./stylex-build/next-output"], "stylex-build/next-output export"),
   importTarget(exportsRecord["./stylex-build/vite"], "stylex-build/vite export"),
 ].sort();
 
 const paths = await filesBelow(dist);
 const runtime = paths.filter((path) => path.endsWith(".js") && !path.startsWith("build/"));
-const buildTools = paths.filter((path) => path.endsWith(".js") && path.startsWith("build/"));
+const buildTools = paths.filter((path) => /\.[cm]?js$/u.test(path) && path.startsWith("build/"));
 assert.ok(runtime.length > 0 && buildTools.length >= exportedBuildTools.length, "dist must contain runtime and build-tool JavaScript");
 for (const path of exportedBuildTools) {
   assert.ok(paths.includes(path.replace(/^dist\//u, "")), `Missing exported build tool ${path}`);
@@ -157,6 +160,9 @@ for (const path of runtime) {
 for (const path of buildTools) {
   const source = await readFile(resolve(dist, ...path.split("/")), "utf8");
   assert.ok(!source.startsWith('"use client";\n'), `Build tool was client-marked: ${path}`);
+}
+for (const loader of ["next-dev-loader.cjs", "next-dev-css-loader.cjs"]) {
+  assert.ok((await readFile(resolve(dist, "build", loader))).equals(await readFile(resolve(repository, "build", loader))), `Packaged Next development loader differs from source: ${loader}`);
 }
 
 const [foundation, compilerReset, publicReset] = await Promise.all([

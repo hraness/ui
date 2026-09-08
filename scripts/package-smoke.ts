@@ -6974,6 +6974,39 @@ assert.equal(dirname(generation.directory), join(rootDirectory, ".stylex-author-
 console.log("Packed package-author StyleX manifest and mixed-package generation passed");
 `;
 
+const packedNextOutputProbe = String.raw`import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+import * as nextOutput from "@hraness/ui/stylex-build/next-output";
+
+assert.equal(
+  fileURLToPath(import.meta.resolve("@hraness/ui/stylex-build/next-output")),
+  resolve("node_modules/@hraness/ui/dist/build/next-output-settlement.js"),
+  "Packed Next output helper must resolve through its public installed subpath",
+);
+assert.deepEqual(Object.keys(nextOutput).sort(), [
+  "STYLEX_NEXT_OUTPUT_MAX_DIRECTORIES",
+  "STYLEX_NEXT_OUTPUT_MAX_FILES",
+  "STYLEX_NEXT_OUTPUT_MAX_PRIVATE_MAPS",
+  "STYLEX_NEXT_OUTPUT_MAX_TEXT_BYTES",
+  "STYLEX_NEXT_OUTPUT_MAX_TOTAL_BYTES",
+  "STYLEX_NEXT_OUTPUT_SETTLEMENT_SCHEMA_VERSION",
+  "STYLEX_NEXT_OUTPUT_SETTLEMENT_SCOPE",
+  "revalidateStylexNextOutputSettlement",
+  "settleStylexNextPrivateOutput",
+]);
+assert.equal(nextOutput.STYLEX_NEXT_OUTPUT_MAX_DIRECTORIES, 32_768);
+assert.equal(nextOutput.STYLEX_NEXT_OUTPUT_MAX_FILES, 32_768);
+assert.equal(nextOutput.STYLEX_NEXT_OUTPUT_MAX_PRIVATE_MAPS, 4_096);
+assert.equal(nextOutput.STYLEX_NEXT_OUTPUT_MAX_TEXT_BYTES, 64 * 1024 * 1024);
+assert.equal(nextOutput.STYLEX_NEXT_OUTPUT_MAX_TOTAL_BYTES, 16 * 1024 * 1024 * 1024);
+assert.equal(nextOutput.STYLEX_NEXT_OUTPUT_SETTLEMENT_SCHEMA_VERSION, 1);
+assert.equal(nextOutput.STYLEX_NEXT_OUTPUT_SETTLEMENT_SCOPE, "isolated-regular-file-deliverable-stage");
+assert.equal(typeof nextOutput.revalidateStylexNextOutputSettlement, "function");
+assert.equal(typeof nextOutput.settleStylexNextPrivateOutput, "function");
+console.log("Packed Next output helper public subpath passed");
+`;
+
 async function verifyPackedPackageAuthor(consumer: string): Promise<void> {
   const packageRoot = join(consumer, "package-author-fixture");
   await mkdir(join(packageRoot, "src"), { recursive: true });
@@ -7006,6 +7039,11 @@ async function verifyPackedPackageAuthor(consumer: string): Promise<void> {
     writeFile(join(consumer, "package-author-probe.mts"), packedPackageAuthorProbe, { flag: "wx" }),
   ]);
   await run([process.execPath, "./package-author-probe.mts"], consumer);
+}
+
+async function verifyPackedNextOutput(consumer: string, nodeExecutable: string): Promise<void> {
+  await writeFile(join(consumer, "next-output-probe.mjs"), packedNextOutputProbe, { flag: "wx" });
+  await run([nodeExecutable, "./next-output-probe.mjs"], consumer);
 }
 
 async function verifyConsumer(
@@ -7141,6 +7179,14 @@ async function verifyConsumer(
     types: "./build/vite.ts",
     import: "./dist/build/vite.js",
   });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/next-dev"], {
+    types: "./build/next-dev.ts",
+    import: "./dist/build/next-dev.js",
+  });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/next-output"], {
+    types: "./build/next-output-settlement.ts",
+    import: "./dist/build/next-output-settlement.js",
+  });
   assert.equal(
     installedManifest.exports?.["./stylex-manifest.json"],
     "./dist/stylex-manifest.json",
@@ -7157,9 +7203,17 @@ async function verifyConsumer(
     "build/contracts.ts",
     "build/generation.ts",
     "build/index.ts",
+    "build/next-dev.ts",
+    "build/next-dev-session.ts",
+    "build/next-output-settlement.ts",
     "build/vite.ts",
     "dist/build/bun.js",
     "dist/build/index.js",
+    "dist/build/next-dev.js",
+    "dist/build/next-dev-session.js",
+    "dist/build/next-dev-loader.cjs",
+    "dist/build/next-dev-css-loader.cjs",
+    "dist/build/next-output-settlement.js",
     "dist/build/vite.js",
     "dist/stylex.css",
     "dist/stylex-manifest.json",
@@ -7230,7 +7284,10 @@ async function verifyConsumer(
     installedComponentsCss,
     installedStylesCss,
   );
-  if (release.label === "react-19") await verifyPackedPackageAuthor(consumer);
+  if (release.label === "react-19") {
+    await verifyPackedPackageAuthor(consumer);
+    await verifyPackedNextOutput(consumer, nodeExecutable);
+  }
 
   // A restored package-manager cache can retain this valid duplicate topology.
   // Public source types must remain portable when React Aria resolves through it.

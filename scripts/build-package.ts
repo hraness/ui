@@ -161,7 +161,7 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
   const sourceRoot = resolve(repository, "build");
   const outdir = resolve(stage, "build");
   const outputPaths: string[] = [];
-  for (const entrypoint of ["index.ts", "bun.ts", "vite.ts"]) {
+  for (const entrypoint of ["index.ts", "bun.ts", "vite.ts", "next-dev.ts", "next-dev-session.ts", "next-output-settlement.ts"]) {
     const result = await Bun.build({
       entrypoints: [resolve(sourceRoot, entrypoint)],
       env: "disable",
@@ -182,6 +182,11 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
     outputPaths.push(
       ...result.outputs.map((output) => relativeBelow(stage, resolve(output.path), "build-tool output")),
     );
+  }
+  const loaders = ["next-dev-loader.cjs", "next-dev-css-loader.cjs"] as const;
+  for (const loader of loaders) {
+    await writeFile(resolve(outdir, loader), await readFile(resolve(sourceRoot, loader)), { flag: "wx" });
+    outputPaths.push(`build/${loader}`);
   }
   const paths = (await filesBelow(outdir)).map((path) => `build/${path}`);
   assert.deepEqual(
@@ -209,6 +214,7 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
         "createStylexGeneration",
         "createStylexTransformCollector",
         "finalizeStylexGeneration",
+        "parseStylexSourceMap",
         "prepareStylexProducedTemplate",
         "readStylexPackageManifest",
         "sealStylexProducedTemplate",
@@ -223,6 +229,7 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
         "createStylexGeneration",
         "createStylexTransformCollector",
         "finalizeStylexGeneration",
+        "parseStylexSourceMap",
         "prepareStylexProducedTemplate",
         "readStylexPackageManifest",
         "sealStylexProducedTemplate",
@@ -233,8 +240,31 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
       ],
     }],
     ["build/vite.js", { exports: ["stylexVite"], functions: ["stylexVite"] }],
+    ["build/next-dev.js", {
+      exports: ["STYLEX_NEXT_DEV_CSS_ENTRY", "STYLEX_NEXT_DEV_VERSION", "withStylexNextDev"],
+      functions: ["withStylexNextDev"],
+    }],
+    ["build/next-dev-session.js", {
+      exports: [
+        "STYLEX_NEXT_DEV_CONTEXT", "STYLEX_NEXT_DEV_CSS_ENTRY", "STYLEX_NEXT_DEV_EXTENSION_ALIASES", "STYLEX_NEXT_DEV_EXTENSIONS", "STYLEX_NEXT_DEV_VERSION",
+        "assertNextDevRuntime", "auditNextDevCss", "composeNextDevSnapshot", "createNextDevRevisionCoordinator", "createNextDevSession", "isNextDevSource",
+        "loadNextDevModule", "nextDevLogicalPath", "parseNextDevOptions", "renderNextDevCss", "requireNextDevSnapshot", "transformNextDevSource",
+      ],
+      functions: ["assertNextDevRuntime", "auditNextDevCss", "loadNextDevModule"],
+    }],
+    ["build/next-output-settlement.js", {
+      exports: [
+        "STYLEX_NEXT_OUTPUT_MAX_DIRECTORIES", "STYLEX_NEXT_OUTPUT_MAX_FILES", "STYLEX_NEXT_OUTPUT_MAX_PRIVATE_MAPS", "STYLEX_NEXT_OUTPUT_MAX_TEXT_BYTES",
+        "STYLEX_NEXT_OUTPUT_MAX_TOTAL_BYTES", "STYLEX_NEXT_OUTPUT_SETTLEMENT_SCHEMA_VERSION", "STYLEX_NEXT_OUTPUT_SETTLEMENT_SCOPE",
+        "revalidateStylexNextOutputSettlement", "settleStylexNextPrivateOutput",
+      ],
+      functions: ["revalidateStylexNextOutputSettlement", "settleStylexNextPrivateOutput"],
+    }],
   ] as const);
-  assert.deepEqual(paths, [...expectedBuildTools.keys()].sort(), "Build-tool build must emit exactly its three public entrypoints");
+  assert.deepEqual(paths, [...expectedBuildTools.keys(), ...loaders.map((loader) => `build/${loader}`)].sort(), "Build-tool build must emit exactly its reviewed entries and internal loaders");
+  for (const loader of loaders) {
+    assert.ok((await readFile(resolve(outdir, loader))).equals(await readFile(resolve(sourceRoot, loader))), `Next development loader bytes changed: ${loader}`);
+  }
   for (const [entrypoint, contract] of expectedBuildTools) {
     const module: unknown = await import(pathToFileURL(resolve(stage, ...entrypoint.split("/"))).href);
     assert.ok(typeof module === "object" && module !== null, `Build-tool output did not load as a module: ${entrypoint}`);
@@ -247,7 +277,7 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
       );
     }
   }
-  assert.ok(paths.every((path) => path.endsWith(".js")), "Build-tool build emitted an unexpected non-JavaScript artifact");
+  assert.ok(paths.every((path) => /\.[cm]?js$/u.test(path)), "Build-tool build emitted an unexpected non-JavaScript artifact");
   for (const path of paths) {
     assert.ok(
       !(await readFile(resolve(stage, ...path.split("/")), "utf8")).startsWith('"use client";'),

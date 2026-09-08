@@ -136,7 +136,12 @@ async function main(): Promise<void> {
       || !firstOutputs.includes("stylex-manifest.json")
       || !firstOutputs.includes("build/index.js")
       || !firstOutputs.includes("build/bun.js")
-      || !firstOutputs.includes("build/vite.js")) {
+      || !firstOutputs.includes("build/vite.js")
+      || !firstOutputs.includes("build/next-dev.js")
+      || !firstOutputs.includes("build/next-dev-session.js")
+      || !firstOutputs.includes("build/next-dev-loader.cjs")
+      || !firstOutputs.includes("build/next-dev-css-loader.cjs")
+      || !firstOutputs.includes("build/next-output-settlement.js")) {
       throw new Error("StyleX determinism build omitted required public artifacts");
     }
 

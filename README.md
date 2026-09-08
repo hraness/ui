@@ -112,11 +112,11 @@ For a standards-only or narrower integration, import the required layers directl
 @import "@hraness/ui/stylex.css";
 ```
 
-The built-in recipes are already compiled, so ordinary consumers do not need a StyleX compiler. Applications that compile local StyleX declarations or pass typed `xstyle` recipes use `@hraness/ui/stylex-build` with its `/bun` or `/vite` adapter and the versioned `@hraness/ui/stylex-manifest.json`. They register every client, lazy, multi-entry, and SSR graph before building, then finalize once. Every HTML or SSR entry links the returned combined recipe stylesheet. Compiler adopters include every registered package's compiler foundation in the stylesheet graph, directly or transitively, and must not also import `styles.css` or `stylex.css`.
+The built-in recipes are already compiled, so ordinary consumers do not need a StyleX compiler. Applications that compile local StyleX declarations or pass typed `xstyle` recipes use `@hraness/ui/stylex-build` with its `/bun` or `/vite` one-shot build adapter and the versioned `@hraness/ui/stylex-manifest.json`. They register every client, lazy, multi-entry, and SSR graph before building, then finalize once. Every HTML or SSR entry links the returned combined recipe stylesheet. Compiler adopters include every registered package's compiler foundation in the stylesheet graph, directly or transitively, and must not also import `styles.css` or `stylex.css`.
 
-Compiler adopters install the package's exact build-tool peers: `@babel/core@7.29.7`, `@stylexjs/babel-plugin@0.19.0`, `lightningcss@1.33.0`, and `@types/babel__core@7.20.5`. TypeScript projects using the Bun adapter also install `@types/bun@1.3.14`; Vite adapter projects install a supported Vite 7 release and compatible Node types (`@types/node@^20.19.0 || >=22.12.0`). These peers are optional for ordinary precompiled-stylesheet consumers.
+Compiler adopters install the package's exact build-tool peers: `@babel/core@7.29.7`, `@stylexjs/babel-plugin@0.19.0`, `lightningcss@1.33.0`, and `@types/babel__core@7.20.5`. TypeScript projects using the Bun adapter also install `@types/bun@1.3.14`; Vite adapter projects install Vite 7 or 8 and compatible Node types (`@types/node@^20.19.0 || >=22.12.0`). Vite 7.3.6 and 8.2.1 are the checked versions. The Vite adapter accepts one-shot builds with source maps disabled. It rejects serve, watch, and HMR modes. These peers are optional for ordinary precompiled-stylesheet consumers.
 
-Package authors use the lower-level exports from `@hraness/ui/stylex-build` inside their own build: `createStylexTransformCollector` compiles package source, `serializeStylexPackageRules` produces that package's independently usable CSS under a package-owned `components.*` namespace, and the artifact and manifest helpers bind the resulting JavaScript, CSS, raw rules, and `compilerFoundation` without independently serialized StyleX rules. That standalone CSS remains the plugin-free package route. Each package must choose a distinct namespace and publish its manifest with the package.
+Package authors use the lower-level exports from `@hraness/ui/stylex-build` inside their own build: `createStylexTransformCollector` compiles package source, `serializeStylexPackageRules` produces that package's independently usable CSS under a package-owned `components.*` namespace, and the artifact and manifest helpers bind the resulting JavaScript, CSS, raw rules, and `compilerFoundation` without independently serialized StyleX rules. The collector's existing `transform` method remains map-free. Adapters that preserve an original-source chain opt into `transformWithMap` with a logical source filename and an optional validated version 3 input map; `parseStylexSourceMap` exposes the same fail-closed shape validation. This does not enable a bundler's output maps. That standalone CSS remains the plugin-free package route. Each package must choose a distinct namespace and publish its manifest with the package.
 
 Final applications do not concatenate those independently compiled recipe sheets. They register every participating package manifest and all application graphs, load each package's compiler foundation, and let the finalizer union the raw package and application rules before the fixed serializer runs once. Every foundation stylesheet must precede the one finalized recipe stylesheet in the document. Loading a package's `styles.css` or `stylex.css` beside that final asset is an unsupported mixed route and fails the checked adapters.
 
@@ -184,6 +184,59 @@ const publishedDirectory = await finalizeStylexGeneration({
 });
 console.log(publishedDirectory);
 ```
+
+### Next development
+
+The optional Next development adapter targets exactly Next 16.2.12 with Webpack 5 under genuine Node 24. It supports `next dev --webpack` only. Production builds and Turbopack are outside this adapter.
+
+Import one package-owned native CSS entry from the application layout. The file contains exactly the public `STYLEX_NEXT_DEV_CSS_ENTRY` marker, including its trailing newline:
+
+```css
+/* @hraness/ui StyleX Next development stylesheet */
+```
+
+```js
+import "./stylex-dev.css";
+```
+
+Wrap the development config with the public adapter and declare bounded application sources plus every participating package manifest:
+
+```js
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { withStylexNextDev } from "@hraness/ui/stylex-build/next-dev";
+
+const rootDirectory = dirname(fileURLToPath(import.meta.url));
+
+export default function config(phase) {
+  if (phase !== "phase-development-server") {
+    throw new Error("This config supports next dev --webpack only.");
+  }
+
+  return withStylexNextDev({ reactStrictMode: true }, {
+    cssEntry: "app/stylex-dev.css",
+    packageManifests: [
+      "node_modules/@hraness/ui/dist/stylex-manifest.json",
+    ],
+    rootDirectory,
+    sourceDirectories: ["app"],
+  });
+}
+```
+
+An ordinary atomic-recipe edit first publishes a transition sheet that retains old-only identities. After every compiler that actually participates in the application accepts the same revision, the client invalidates once and the native CSS entry settles to current-only rules. An application without an Edge route does not wait for an idle Edge compiler. Preparation and compilation failures keep the browser's last-good sheet, surface the error through Next, and register exact existing and missing inputs so native watching can recover after the source is repaired.
+
+A changed stable identity produced by `stylex.defineVars` or `stylex.createTheme` cannot represent both revisions in one transition sheet. The adapter fails closed and requires a development-server restart. That boundary is not seamless HMR.
+
+The immutable release named under [First render](#first-render) remains the installation authority. These adapter additions are not released until a later package version includes their public exports and completes the repository gates.
+
+### Private source-map settlement
+
+`@hraness/ui/stylex-build/next-output` provides the optional, provider-neutral `settleStylexNextPrivateOutput` and `revalidateStylexNextOutputSettlement` helpers. The caller supplies one exact verified delivery inventory and map-to-output pairs inside an isolated regular-file staging directory, then holds its output lease throughout settlement. Files, directories, links, modes, and bytes outside the declared scope fail closed.
+
+An optional trusted processor may modify only the paired mapped outputs and maps. The integration must bind that processor's identity and configuration outside this helper. Settlement removes the private maps and exact terminal sidecar references, restores original mapped bytes after processor failure, and returns separate historical-private and current-public inventories. The return value is not a publication barrier. Revalidate it immediately before the caller atomically commits its outer completion record.
+
+The helper contains no PostHog integration, credentials, provider command, or upload policy. A product that uploads maps must implement and verify that provider boundary separately.
 
 `graphId` records the graph that produced a generated template;
 `stylesheetGraphId` records the graph whose complete emitted stylesheet set the
@@ -693,7 +746,7 @@ The package exports `cn` for conditional consumer class composition while preser
 
 ## Evidence
 
-These claims were reviewed on September 2, 2026 against the package manifest, public barrel, token stylesheet, component tests, and checked build scripts.
+These claims were reviewed on September 6, 2026 against the package manifest, public barrel, token stylesheet, component tests, and checked build scripts.
 
 | Claim | Source of truth | Executable evidence |
 | --- | --- | --- |
@@ -701,7 +754,8 @@ These claims were reviewed on September 2, 2026 against the package manifest, pu
 | Public component and type surface | `src/index.ts` and exported source modules | `bun run typecheck`, `bun run test` |
 | Token names, accessibility fallbacks, and layer order | `src/tokens.css`, foundations, reset, compiled recipes | `bun run check:stylex-artifacts`, `bun run test` |
 | Deterministic package and combined consumer artifacts | Build scripts, versioned metadata, and committed `dist` | `bun run build`, `bun run check:committed-dist`, `bun run check:stylex-compiler-artifacts`, `bun run check:stylex-determinism`, `bun run check:stylex-consumer-layers` |
-| Packed consumer behavior | Packed Bun, Vite, and browser fixtures | `bun run test:package`, `bun run test:vite-adopter`, `bun run test:packed-bun-browser` |
+| Packed consumer behavior | Packed Bun, Vite 7/8, Next development, and browser fixtures | `bun run test:package`, `bun run test:vite-adopter`, `bun run test:vite8-adopter`, `bun run test:next-dev-adopter`, `bun run test:packed-bun-browser` |
+| Private output settlement | Exact isolated-stage, privacy, topology, mode, and late-revalidation controls | `bun test ./build/next-output-settlement.test.ts` |
 | Pointer, keyboard, writing-mode, and browser cascade behavior | Real gallery scenarios | `bun run test:browser` |
 
 `bun run check` runs the complete required sequence. A passing Markdown contract proves that this README matches checked repository facts; it does not replace package, browser, or consumer validation.
