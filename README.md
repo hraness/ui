@@ -297,7 +297,7 @@ Import that CSS entry from the root layout. Its entire contents must be the foll
 /* @hraness/ui StyleX Next development stylesheet */
 ```
 
-Run `next dev --webpack`. Ordinary recipe changes converge across client, Node and optional Edge compilers before successful output; failed revisions retain the last accepted stylesheet and recover when the exact missing or invalid source is repaired. Stable `defineVars` and `createTheme` changes require an explicit server restart. Turbopack, Rspack, arbitrary framework versions and changing the package contract during a session are unsupported. The packed native development fixture covers finite HTTP responses and real WebSocket HMR; it does not establish streamed React Server Component arrival timing. Production, standalone packaging and deployment still require their separate gates.
+Run `next dev --webpack`. Ordinary recipe changes converge across client, Node and optional Edge compilers before successful output; failed revisions retain the last accepted stylesheet and recover when the exact missing or invalid source is repaired. Stable `defineVars` and `createTheme` changes require an explicit server restart. Turbopack, Rspack, arbitrary framework versions and changing the package contract during a session are unsupported. The packed native development fixture covers finite HTTP responses and real WebSocket HMR. Its ordinary-recipe state-preservation proof keeps one live browser document at a time; it does not establish simultaneous-client behavior or streamed React Server Component arrival timing. Production, standalone packaging and deployment still require their separate gates.
 
 ## Composition patterns
 

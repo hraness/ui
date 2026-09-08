@@ -1,12 +1,30 @@
 import assert from "node:assert/strict";
 import { lstat, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parse, type DefaultTreeAdapterMap } from "parse5";
 import type { ConsoleMessage, Page, Response } from "playwright-core";
 import { nextDevOutboundHmrFrame, nextDevRequestFailure, nextDevResponseSummary } from "../../scripts/next-dev-diagnostics.ts";
 import { expectedStableRestartDiagnostic, stableRejectionProof, type RestartDiagnostic, type StableRejectionProof } from "../../scripts/next-dev-restart.ts";
 
 type CoherenceAudit = { failures: string[]; frame: number; samples: number };
 type AuditedWindow = Window & { __hranessNextDevCoherence?: CoherenceAudit };
+
+/** Verify rendered HTML, not a canary quoted inside a Flight or script payload. */
+export function assertNextDevRouteWitness(html: string, expectedMargin: string): void {
+  assert.ok(Buffer.byteLength(html, "utf8") <= 4 * 1024 * 1024, "Route HTML exceeded its finite evidence bound");
+  const pending: DefaultTreeAdapterMap["node"][] = [parse(html)];
+  const witnesses: DefaultTreeAdapterMap["element"][] = [];
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    if ("tagName" in node && node.attrs.some(({ name }) => name === "data-dev-edge")) witnesses.push(node);
+    if ("childNodes" in node) pending.push(...node.childNodes);
+  }
+  assert.equal(witnesses.length, 1, "Route must render exactly one server witness");
+  const witness = witnesses[0]!;
+  assert.equal(witness.tagName, "main");
+  assert.ok(witness.attrs.some(({ name }) => name === "data-dev-coherence-root"));
+  assert.equal(witness.attrs.find(({ name }) => name === "data-dev-expected-margin")?.value, expectedMargin);
+}
 
 /** The caller owns a disposable installed fixture, Next process, browser, and cleanup. */
 export async function verifyNextDevAdopter(page: Page, origin: string, fixture: string, hasEdge: boolean): Promise<Readonly<{ coherenceFrames: number; sealedDocuments: readonly { route: string; samples: number }[]; stages: readonly string[] }>> {
@@ -71,7 +89,6 @@ export async function verifyNextDevAdopter(page: Page, origin: string, fixture: 
   };
   tracePage(page, "/");
   const sealedDocuments: { route: string; samples: number }[] = [];
-  let routePage: Page | null = null;
   const css = async (): Promise<string> => page.evaluate(() => {
     const visit = (rules: CSSRuleList): string => Array.from(rules, (rule) => `${rule.cssText}${"cssRules" in rule ? visit((rule as CSSGroupingRule).cssRules) : ""}`).join("\n");
     return Array.from(document.styleSheets, (sheet) => visit(sheet.cssRules)).join("\n").replace(/\s+/gu, "");
@@ -153,21 +170,22 @@ export async function verifyNextDevAdopter(page: Page, origin: string, fixture: 
       assert.equal(await page.locator("[data-dev-counter]").textContent(), "Count 3");
       assert.equal(await page.locator("[data-dev-draft]").inputValue(), "Preserved draft");
       await assertCoherence(page);
-      if (routePage !== null && !routePage.isClosed()) await assertCoherence(routePage);
     };
     await eventually(async () => (await css()).includes("91.875px") && (await css()).includes("62.625px"), "Unvisited RSC and lazy rules must exist before navigation or import");
     assert.ok((await css()).includes("components.hraness-stylex.priority"), "Development must deliver the current package-and-graph union namespace");
     assert.ok(!(await css()).includes("components.hraness-ui.priority"), "Development must not load the standalone package recipe namespace");
     stages.push("initial-complete-union");
-    routePage = await page.context().newPage();
-    tracePage(routePage, "/unvisited");
-    routePage.on("console", consoleListener);
-    routePage.on("pageerror", pageErrorListener);
-    await routePage.goto(`${origin}/unvisited`, { waitUntil: "networkidle" });
-    await installCoherenceAudit(routePage);
-    assert.equal(await routePage.locator("[data-dev-edge]").getAttribute("data-dev-expected-margin"), "91.875px", `Real ${routeRuntime} fixture rendered the wrong source revision`);
-    assert.equal(await routePage.locator("[data-dev-edge]").evaluate((element) => getComputedStyle(element).marginLeft), "91.875px", `Real ${routeRuntime} fixture rendered without its complete StyleX sheet`);
-    stages.push(`real-${routeRuntime}-route`);
+    // Activate the real server compiler without opening another HMR client.
+    // Next 16.2.12 broadcasts a new client's initial sync hash to existing
+    // clients; that separate multi-client reload is not an atomic recipe edit.
+    const routeResponse = await page.request.get(`${origin}/unvisited`, { maxRedirects: 0, maxRetries: 0, timeout: 45_000 });
+    try {
+      assert.equal(routeResponse.url(), `${origin}/unvisited`);
+      assert.equal(routeResponse.status(), 200);
+      assert.match(routeResponse.headers()["content-type"] ?? "", /^text\/html(?:;|$)/iu);
+      assertNextDevRouteWitness(await routeResponse.text(), "91.875px");
+    } finally { await routeResponse.dispose(); }
+    stages.push(`real-${routeRuntime}-compiler-activated`);
     // The original epoch predates this route's first compilation. Prove it
     // still holds before attributing any later navigation to the first edit.
     await preserveState();
@@ -188,13 +206,8 @@ export async function verifyNextDevAdopter(page: Page, origin: string, fixture: 
     stages.push("lazy-edit");
     await edit("app/unvisited/page.tsx", "91.875", "92.875");
     await eventually(async () => (await css()).includes("92.875px") && !(await css()).includes("91.875px"), "Unvisited server edit did not replace its native CSS");
-    sealedDocuments.push({ route: "/unvisited", samples: await assertCoherence(routePage, true) });
-    await routePage.reload({ waitUntil: "networkidle" });
-    await installCoherenceAudit(routePage);
-    assert.equal(await routePage.locator("[data-dev-edge]").getAttribute("data-dev-expected-margin"), "92.875px", `Real ${routeRuntime} route did not compile the edited source revision`);
-    assert.equal(await routePage.locator("[data-dev-edge]").evaluate((element) => getComputedStyle(element).marginLeft), "92.875px", `Real ${routeRuntime} route exposed JavaScript without its matching StyleX sheet`);
     await preserveState();
-    stages.push(`${routeRuntime}-route-edit-coherent`);
+    stages.push(`${routeRuntime}-unvisited-edit-state-preserved`);
     const added = join(fixture, "app/added.stylex.ts");
     await writeFile(added, 'import * as stylex from "@stylexjs/stylex"; export const added = stylex.create({ root: { marginLeft: 143.375 } });\n', { flag: "wx" });
     addedOwned = true;
@@ -239,9 +252,30 @@ export async function verifyNextDevAdopter(page: Page, origin: string, fixture: 
     await unlink(join(fixture, "app/created-later.tsx")); missingOwned = false;
     await eventually(async () => (await css()).includes("117.125px") && !(await css()).includes("119.125px"), "Restored missing-input proof retained stale CSS");
     await preserveState();
+    // Finish all root HMR/state evidence before an intentional navigation.
+    // Replay the small server-only edit on the same browser page so both
+    // original and edited routes retain native computed-style observations.
+    await edit("app/unvisited/page.tsx", "92.875", "91.875");
+    await eventually(async () => (await css()).includes("91.875px") && !(await css()).includes("92.875px"), "Restored route recipe retained stale native CSS");
+    await preserveState();
+    sealedDocuments.push({ route: "/", samples: await assertCoherence(page, true) });
+    stages.push("root-hmr-document-sealed");
+    await page.goto(`${origin}/unvisited`, { waitUntil: "networkidle" });
+    await installCoherenceAudit(page);
+    assert.equal(await page.locator("[data-dev-edge]").getAttribute("data-dev-expected-margin"), "91.875px", `Real ${routeRuntime} fixture rendered the wrong source revision`);
+    assert.equal(await page.locator("[data-dev-edge]").evaluate((element) => getComputedStyle(element).marginLeft), "91.875px", `Real ${routeRuntime} fixture rendered without its complete StyleX sheet`);
+    stages.push(`real-${routeRuntime}-route`);
+    await edit("app/unvisited/page.tsx", "91.875", "92.875");
+    await eventually(async () => (await css()).includes("92.875px") && !(await css()).includes("91.875px"), "Visited server edit did not replace its native CSS");
+    sealedDocuments.push({ route: "/unvisited", samples: await assertCoherence(page, true) });
+    await page.reload({ waitUntil: "networkidle" });
+    await installCoherenceAudit(page);
+    assert.equal(await page.locator("[data-dev-edge]").getAttribute("data-dev-expected-margin"), "92.875px", `Real ${routeRuntime} route did not compile the edited source revision`);
+    assert.equal(await page.locator("[data-dev-edge]").evaluate((element) => getComputedStyle(element).marginLeft), "92.875px", `Real ${routeRuntime} route exposed JavaScript without its matching StyleX sheet`);
+    stages.push(`${routeRuntime}-route-edit-coherent`);
     assert.deepEqual(failures, [], "Next development browser reported unexpected diagnostics");
     return { coherenceFrames: sealedDocuments.reduce((sum, document) => sum + document.samples, 0)
-      + await assertCoherence(page) + (routePage === null ? 0 : await assertCoherence(routePage)),
+      + await assertCoherence(page),
       sealedDocuments: Object.freeze(sealedDocuments), stages: Object.freeze(stages) };
   } catch (error) {
     // A failed native proof keeps bounded transport/navigation evidence inside
@@ -252,7 +286,6 @@ export async function verifyNextDevAdopter(page: Page, origin: string, fixture: 
     page.off("console", consoleListener);
     page.off("pageerror", pageErrorListener);
     try {
-      if (routePage !== null && !routePage.isClosed()) await routePage.close();
       if (!page.isClosed()) await page.evaluate(() => {
         const target = window as AuditedWindow;
         if (target.__hranessNextDevCoherence !== undefined) cancelAnimationFrame(target.__hranessNextDevCoherence.frame);

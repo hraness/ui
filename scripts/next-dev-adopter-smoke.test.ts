@@ -1,7 +1,19 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { assertNextDevRouteWitness } from "../fixtures/next-dev-adopter/verify.ts";
 import { createNextArchiveUse } from "./next-dev-archive.ts";
 import { assertNextDevWorkerArchiveReceipt, parseNextDevWorkerRequest } from "./next-dev-adopter-smoke.ts";
+
+test("server compiler warm-up requires one rendered exact route witness", () => {
+  const witness = '<main data-dev-coherence-root data-dev-edge data-dev-expected-margin="91.875px"></main>';
+  expect(() => assertNextDevRouteWitness(witness, "91.875px")).not.toThrow();
+  for (const html of ["", `<script>${JSON.stringify(witness)}</script>`, `<!--${witness}-->`,
+    `<template>${witness}</template>`, witness + witness, witness.replaceAll("main", "div"),
+    witness.replace(" data-dev-coherence-root", ""), witness.replace("91.875px", "92.875px"),
+    witness.replace("data-dev-edge", "data-dev-edge-other"), "x".repeat(4 * 1024 * 1024 + 1)]) {
+    expect(() => assertNextDevRouteWitness(html, "91.875px")).toThrow();
+  }
+});
 
 const repository = "/private/tmp/next-protocol-repository";
 const evidenceRoot = `${repository}/.stylex-fixtures/next-dev-evidence-test`;
