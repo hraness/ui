@@ -66,7 +66,7 @@ try {
       } finally {
         // Missing/failed collection receipts must not hide the subordinate
         // worker's bounded diagnostics behind the cooperative-owner error.
-        process.stderr.write(diagnostics.render("browser worker"));
+        process.stderr.write(diagnostics.render("stderr"));
       }
     }
   }
