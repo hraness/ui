@@ -1,5 +1,16 @@
 import assert from "node:assert/strict";
-import type { APIResponse, Route } from "playwright-core";
+import type { APIResponse, BrowserContext, Route } from "playwright-core";
+import type { NextDevRequestFailurePhase } from "./next-dev-diagnostics.ts";
+
+/** Permission is scoped to the disposable source origin. Mandatory request and
+ * socket routing still confines destinations to the owned loopback server. */
+export async function grantNextDevLoopbackPermission(context: Pick<BrowserContext, "grantPermissions">, origin: string): Promise<void> {
+  assert.match(origin, /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/u);
+  const url = new URL(origin);
+  assert.equal(url.origin, origin);
+  assert.ok(Number(url.port) <= 65535);
+  await context.grantPermissions(["local-network-access"], { origin });
+}
 
 /** Playwright rethrows rejected route callbacks. Observe them immediately,
  * then collect all handlers after context closure before accepting evidence. */
@@ -28,7 +39,7 @@ export function createNextNetworkOwner() {
 
 /** Route continuation skips subsequent redirect hops. Fetch exactly one owned
  * response instead, and never hand a redirect to the native browser. */
-export async function routeNextDevRequest(route: Route, origin: string, rejected: string[]): Promise<void> {
+export async function routeNextDevRequest(route: Route, origin: string, rejected: string[], observeFailure?: (phase: NextDevRequestFailurePhase, error: unknown) => void): Promise<void> {
   const url = new URL(route.request().url());
   if (url.origin !== origin || url.username !== "" || url.password !== "") {
     rejected.push(url.origin);
@@ -36,15 +47,26 @@ export async function routeNextDevRequest(route: Route, origin: string, rejected
     return;
   }
   let response: APIResponse | undefined;
+  let phase: NextDevRequestFailurePhase = "fetch";
+  const observe = (failurePhase: NextDevRequestFailurePhase, error: unknown): void => {
+    try { observeFailure?.(failurePhase, error); }
+    catch { /* Observation must never replace the original network failure. */ }
+  };
   try {
     response = await route.fetch({ maxRedirects: 0, maxRetries: 0, timeout: 30_000 });
     if (response.status() >= 300 && response.status() < 400) {
       rejected.push(`redirect:${url.pathname}:${String(response.status())}`);
+      phase = "redirect-abort";
       await route.abort("blockedbyclient");
       return;
     }
+    phase = "fulfill";
     await route.fulfill({ response });
+  } catch (error) {
+    observe(phase, error);
+    throw error;
   } finally {
-    await response?.dispose();
+    try { await response?.dispose(); }
+    catch (error) { observe("dispose", error); throw error; }
   }
 }

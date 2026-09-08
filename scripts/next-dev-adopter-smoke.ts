@@ -19,10 +19,10 @@ import {
   assertNextArchiveAdmissionEvidence, createNextArchiveUse, parseNextArchiveSeal,
   type NextArchiveAdmissionEvidence, type NextArchiveSeal,
 } from "./next-dev-archive.ts";
-import { createNextDevDiagnostics, createNextStartupErrorReader } from "./next-dev-diagnostics.ts";
+import { createNextDevDiagnostics, createNextStartupErrorReader, nextDevRequestFailure, type NextDevRequestFailure } from "./next-dev-diagnostics.ts";
 import { retainStoppedNextLog, syncNextEvidenceDirectory } from "./next-dev-restart.ts";
 import { snapshotNextFile, snapshotNextPackage } from "./next-dev-inputs.ts";
-import { createNextNetworkOwner, routeNextDevRequest } from "./next-dev-network.ts";
+import { createNextNetworkOwner, grantNextDevLoopbackPermission, routeNextDevRequest } from "./next-dev-network.ts";
 
 const NEXT_VERSION = "16.2.12";
 const MAX_SOURCE_FILES = 64;
@@ -369,6 +369,8 @@ async function runWorker(inputPath: string): Promise<void> {
         try {
           await ready(origin, server, consumer, custody);
           const network = createNextNetworkOwner();
+          const networkFailures: NextDevRequestFailure[] = [];
+          let omittedNetworkFailures = 0;
           const ownedContext = await acquireViteMatrixResource(custody, "Next browser context",
             () => browser.newContext({ serviceWorkers: "block", viewport: { width: 1280, height: 900 } }),
             async (context) => {
@@ -376,12 +378,26 @@ async function runWorker(inputPath: string): Promise<void> {
               finally {
                 await matrixDeadline(network.settle(), 5_000, "Next network handlers did not settle after context closure");
                 if (network.failureCount() > 0) process.stderr.write(`Next network handler failures collected: ${String(network.failureCount())}\n`);
+                if (networkFailures.length > 0) {
+                  const path = join(restartEvidenceRoot, `${variant}-network-failures.json`);
+                  await writeViteBrowserJson(path, { schemaVersion: 1, kind: "next-dev-network-failure-diagnostics", variant,
+                    failures: networkFailures, omitted: omittedNetworkFailures });
+                  process.stderr.write(`Next network failure diagnostics retained: ${path}\n`);
+                }
               }
             });
           const context = ownedContext.value;
           try {
+            // Native Chromium gates the development WebSocket separately from
+            // HTTP interception. Grant only this disposable loopback origin;
+            // the exact request and HMR endpoint allowlists still govern IO.
+            await grantNextDevLoopbackPermission(context, origin);
             const external: string[] = [];
-            await context.route("**/*", (route) => network.run(() => routeNextDevRequest(route, origin, external)));
+            await context.route("**/*", (route) => network.run(() => routeNextDevRequest(route, origin, external, (phase, error) => {
+              if (networkFailures.length >= 64) { omittedNetworkFailures += 1; return; }
+              const request = route.request();
+              networkFailures.push(nextDevRequestFailure({ url: request.url(), method: request.method(), resourceType: request.resourceType() }, origin, phase, error));
+            })));
             await context.routeWebSocket("**/*", (socket) => network.run(async () => {
               const url = new URL(socket.url());
               if (url.protocol === "ws:" && url.host === new URL(origin).host && url.pathname === "/_next/webpack-hmr"

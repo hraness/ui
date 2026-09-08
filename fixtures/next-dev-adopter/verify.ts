@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { lstat, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ConsoleMessage, Page, Response } from "playwright-core";
+import { nextDevOutboundHmrFrame, nextDevRequestFailure, nextDevResponseSummary } from "../../scripts/next-dev-diagnostics.ts";
 import { expectedStableRestartDiagnostic, stableRejectionProof, type RestartDiagnostic, type StableRejectionProof } from "../../scripts/next-dev-restart.ts";
 
 type CoherenceAudit = { failures: string[]; frame: number; samples: number };
@@ -51,10 +52,21 @@ export async function verifyNextDevAdopter(page: Page, origin: string, fixture: 
       if (message.type() === "warning" || message.type() === "error") trace(label, `console-${message.type()}`, message.text());
     });
     subject.on("framenavigated", (frame) => { if (frame === subject.mainFrame()) trace(label, "navigation", frame.url()); });
+    subject.on("requestfailed", (request) => trace(label, "request-failed", JSON.stringify(nextDevRequestFailure({
+      url: request.url(), method: request.method(), resourceType: request.resourceType(),
+    }, origin, "browser", request.failure()?.errorText))));
+    subject.on("response", (response) => {
+      const request = response.request();
+      if (!["document", "fetch", "xhr"].includes(request.resourceType())) return;
+      trace(label, "response", JSON.stringify(nextDevResponseSummary({ url: request.url(), method: request.method(),
+        resourceType: request.resourceType(), headers: request.headers() }, origin,
+      { status: response.status(), headers: response.headers() })));
+    });
     subject.on("websocket", (socket) => {
       const url = new URL(socket.url());
       if (url.hostname !== "127.0.0.1" || url.port !== new URL(origin).port || url.pathname !== "/_next/webpack-hmr") return;
       socket.on("framereceived", ({ payload }) => trace(label, "hmr-frame", String(payload)));
+      socket.on("framesent", ({ payload }) => trace(label, "hmr-sent", nextDevOutboundHmrFrame(payload)));
     });
   };
   tracePage(page, "/");
@@ -94,8 +106,15 @@ export async function verifyNextDevAdopter(page: Page, origin: string, fixture: 
       stages.push("native-fractional-length-control");
     } finally { await control.close(); }
     await page.goto(`${origin}/`, { waitUntil: "networkidle" });
-    for (let count = 0; count < 3; count += 1) await page.locator("[data-dev-counter]").click();
+    await eventually(async () => await page.locator('[data-dev-hydrated="true"]').count() === 1,
+      "The real client fixture did not finish hydration");
+    for (let count = 0; count < 3; count += 1) {
+      await page.locator("[data-dev-counter]").click();
+      await eventually(async () => await page.locator("[data-dev-counter]").textContent() === `Count ${count + 1}`,
+        "The hydrated client did not apply the exact counter action");
+    }
     await page.locator("[data-dev-draft]").fill("Preserved draft");
+    assert.equal(await page.locator("[data-dev-draft]").inputValue(), "Preserved draft");
     const epoch = await page.evaluate(() => performance.timeOrigin);
     const installCoherenceAudit = async (subject: Page): Promise<void> => subject.evaluate(() => {
       const target = window as AuditedWindow;
@@ -149,6 +168,9 @@ export async function verifyNextDevAdopter(page: Page, origin: string, fixture: 
     assert.equal(await routePage.locator("[data-dev-edge]").getAttribute("data-dev-expected-margin"), "91.875px", `Real ${routeRuntime} fixture rendered the wrong source revision`);
     assert.equal(await routePage.locator("[data-dev-edge]").evaluate((element) => getComputedStyle(element).marginLeft), "91.875px", `Real ${routeRuntime} fixture rendered without its complete StyleX sheet`);
     stages.push(`real-${routeRuntime}-route`);
+    // The original epoch predates this route's first compilation. Prove it
+    // still holds before attributing any later navigation to the first edit.
+    await preserveState();
     await edit("app/client.stylex.ts", "rgb(151, 92, 179)", "rgb(152, 93, 180)");
     await eventually(async () => page.locator("[data-dev-counter]").evaluate((element) => getComputedStyle(element).backgroundColor === "rgb(152, 93, 180)"), "Client StyleX HMR did not apply");
     await preserveState();
