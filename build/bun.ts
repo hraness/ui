@@ -88,6 +88,17 @@ type BareInputWitnesses = Readonly<{
   specifiers: ReadonlySet<string>;
 }>;
 
+type PackageInstallationObservation = Readonly<{
+  installationRoot: string | undefined;
+  link?: Readonly<{
+    path: string;
+    target: string;
+    identity: readonly string[];
+    directoryIdentity: readonly string[];
+  }>;
+}>;
+type ResolverCache = Map<string, Promise<PackageInstallationObservation>>;
+
 type BareInputFallbackPolicy = Readonly<{
   enabled: boolean;
   packageName: string | undefined;
@@ -639,7 +650,8 @@ async function nearestPhysicalPackageInstallation(
   rootDirectory: string,
   from: string,
   packageName: string,
-): Promise<string | undefined> {
+): Promise<PackageInstallationObservation> {
+  const absent = { installationRoot: undefined };
   let directory = posix.dirname(from);
   while (true) {
     if (posix.basename(directory) !== "node_modules") {
@@ -649,33 +661,70 @@ async function nearestPhysicalPackageInstallation(
       try {
         stat = await lstat(absolute);
       } catch (error) {
-        if (!missingPath(error)) return undefined;
+        if (!missingPath(error)) return absent;
         stat = undefined;
       }
       if (stat !== undefined) {
-        if (!stat.isDirectory() || stat.isSymbolicLink()) return undefined;
+        if (stat.isSymbolicLink()) {
+          // Bun's isolated linker installs ordinary package directories in its
+          // root-owned .bun store and exposes them through one relative link.
+          // Admit that exact layout, not arbitrary aliases, chained links or
+          // paths outside the graph. Retain the link's full identity through
+          // both edge-settlement fences, including witnessed bare imports.
+          const before = await lstat(absolute, { bigint: true });
+          if (!before.isSymbolicLink() || await realpath(resolve(absolute, "..")) !== resolve(absolute, "..")) return absent;
+          const target = await readlink(absolute);
+          if (target.length > 4096 || isAbsolute(target) || /[\\\u0000-\u001f\u007f]/u.test(target)) return absent;
+          const physical = resolve(absolute, "..", target);
+          const installationRoot = relative(rootDirectory, physical).split(sep).join("/");
+          const escapedPackage = packageName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+          if (!new RegExp(`^node_modules/\\.bun/[A-Za-z0-9@+._~-]+/node_modules/${escapedPackage}$`, "u").test(installationRoot)) return absent;
+          if (target !== posix.relative(posix.dirname(logical), installationRoot)
+            || await realpath(absolute).catch(() => undefined) !== physical) return absent;
+          const destination = await lstat(physical, { bigint: true }).catch(() => undefined);
+          if (destination === undefined || !destination.isDirectory() || destination.isSymbolicLink()
+            || await realpath(physical).catch(() => undefined) !== physical) return absent;
+          const identity = (value: typeof before) => [value.dev, value.ino, value.mode, value.nlink, value.size, value.mtimeNs, value.ctimeNs].map(String);
+          const after = await lstat(absolute, { bigint: true });
+          assert.deepEqual(identity(after), identity(before), `Bun isolated package link changed while observing ${logical}`);
+          assert.equal(await readlink(absolute), target, `Bun isolated package link target changed while observing ${logical}`);
+          assert.equal(await realpath(absolute), physical, `Bun isolated package link traversal changed while observing ${logical}`);
+          return {
+            installationRoot,
+            link: { path: logical, target, identity: identity(before), directoryIdentity: [destination.dev, destination.ino, destination.mode].map(String) },
+          };
+        }
+        if (!stat.isDirectory()) return absent;
         const settled = await realpath(absolute).catch(() => undefined);
-        if (settled !== absolute) return undefined;
-        return normalizeLogicalPath(logical, "resolver-visible package installation");
+        if (settled !== absolute) return absent;
+        return { installationRoot: normalizeLogicalPath(logical, "resolver-visible package installation") };
       }
     }
-    if (directory === ".") return undefined;
+    if (directory === ".") return absent;
     directory = posix.dirname(directory);
   }
 }
 
-function resolverVisibleInstallation(
+async function resolverVisibleInstallation(
   rootDirectory: string,
   from: string,
   packageName: string,
-  cache: Map<string, Promise<string | undefined>>,
+  cache: ResolverCache,
 ): Promise<string | undefined> {
   const key = JSON.stringify([from, packageName]);
   const existing = cache.get(key);
-  if (existing !== undefined) return existing;
+  if (existing !== undefined) return (await existing).installationRoot;
   const pending = nearestPhysicalPackageInstallation(rootDirectory, from, packageName);
   cache.set(key, pending);
-  return pending;
+  return (await pending).installationRoot;
+}
+
+async function revalidateResolverInstallations(rootDirectory: string, cache: ResolverCache, boundary: string): Promise<void> {
+  for (const [key, pending] of cache) {
+    const [from, packageName] = JSON.parse(key) as [string, string];
+    assert.deepEqual(await nearestPhysicalPackageInstallation(rootDirectory, from, packageName), await pending,
+      `Bun resolver-visible package installation changed ${boundary}: ${from} -> ${packageName}`);
+  }
 }
 
 function bareImportWitnessKey(kind: string, specifier: string): string {
@@ -1339,7 +1388,7 @@ async function resolvedInputTarget(
   witnesses: BareInputWitnesses,
   rootDirectory: string,
   fallbackPolicy: BareInputFallbackPolicy,
-  resolverCache: Map<string, Promise<string | undefined>>,
+  resolverCache: ResolverCache,
   rawFallbackUses: RawBareInputFallbackUse[],
   packageScopes: ReadonlyMap<string, PackageScope>,
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
@@ -1503,7 +1552,7 @@ async function revalidateRawBareInputFallbackUses(
   );
   for (const use of uses) {
     assert.equal(
-      await nearestPhysicalPackageInstallation(rootDirectory, use.from, use.packageName),
+      (await nearestPhysicalPackageInstallation(rootDirectory, use.from, use.packageName)).installationRoot,
       use.installationRoot,
       `Bun raw fallback resolver-visible installation changed for ${use.specifier} from ${use.from}`,
     );
@@ -2039,7 +2088,7 @@ async function captureObservedElidedPackageInput(
   capturedTargets: Map<string, ObservedElidedPackageInputSnapshot>,
   capturedScopeSnapshots: Map<string, ResolutionFileSnapshot>,
   capturedInstallationRoots: Set<string>,
-  resolverCache: Map<string, Promise<string | undefined>>,
+  resolverCache: ResolverCache,
   buildConditions: readonly string[],
   buildTarget: "browser" | "bun",
 ): Promise<boolean> {
@@ -2291,7 +2340,7 @@ async function importTargetsStylexRuntime(
   witnesses: BareInputWitnesses,
   rootDirectory: string,
   fallbackPolicy: BareInputFallbackPolicy,
-  resolverCache: Map<string, Promise<string | undefined>>,
+  resolverCache: ResolverCache,
   rawFallbackUses: RawBareInputFallbackUse[],
   packageScopes: ReadonlyMap<string, PackageScope>,
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
@@ -2540,7 +2589,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const knownInputs = new Set(inputMetadata.keys());
   const inputPackageInstallations = packageInstallations(knownInputs);
   const inputWitnesses = witnessedBareInputTargets(inputMetadata, inputAliases);
-  const resolverCache = new Map<string, Promise<string | undefined>>();
+  const resolverCache: ResolverCache = new Map();
   const rawFallbackUses: RawBareInputFallbackUse[] = [];
   assert.deepEqual(
     [...knownInputs].filter((path) => !settledPackageScopes.has(path)).sort(),
@@ -2884,6 +2933,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
   const revalidateEdgeSettlement = async (
     boundary: "during edge settlement" | "before graph receipt commit",
   ): Promise<void> => {
+    await revalidateResolverInstallations(rootDirectory, resolverCache, boundary);
     await revalidateRawBareInputFallbackUses(
       rootDirectory,
       rootResolutionBefore,
