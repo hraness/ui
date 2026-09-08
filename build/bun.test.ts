@@ -2806,6 +2806,206 @@ describe("collectBunStylexGraph", () => {
     }
   });
 
+  test("repairs native zero-witness package roots beside only noninterfering browser mappings", async () => {
+    const variants = [
+      { id: "no-map" },
+      { id: "unrelated-files", browser: { "./server.js": "./server.browser.js", "./static.js": "./static.browser.js" } },
+      { id: "disabled-unrelated-file", browser: { "./server.js": false } },
+      { id: "empty-map", browser: {} },
+    ];
+    for (const variant of variants) {
+      const context = await fixture();
+      const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");
+      await write(join(runtimeDirectory, "package.json"), `${JSON.stringify({
+        ...(Object.hasOwn(variant, "browser") ? { browser: variant.browser } : {}),
+        exports: { ".": { "react-server": "./server.js", default: "./index.js" } },
+        name: "@fixture/runtime", type: "module", version: "1.0.0",
+      })}\n`);
+      const runtimeSource = "import './private.js'; export const marker = 'runtime';\n";
+      await write(join(runtimeDirectory, "index.js"), runtimeSource);
+      await write(join(runtimeDirectory, "private.js"), "globalThis.__fixtureRuntimeLoaded = true;\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+      const handle = await generation(context, `bare-input-browser-map-${variant.id}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      let observed = false;
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.success && result.metafile !== undefined, result.logs.map(String).join("\n"));
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) => path === "src/entry.ts" || path.endsWith("/src/entry.ts"));
+        const runtimeKey = Object.keys(inputs).find((path) =>
+          path === "node_modules/@fixture/runtime/index.js" || path.endsWith("/node_modules/@fixture/runtime/index.js"));
+        assert.ok(entryKey !== undefined && runtimeKey !== undefined);
+        const entryInput = inputs[entryKey]!;
+        const witness = entryInput.imports.find((imported) => imported.original === "@fixture/runtime");
+        assert.ok(witness !== undefined);
+        expect(witness.kind).toBe("import-statement");
+        expect(witness.path === runtimeKey || witness.path.endsWith("/node_modules/@fixture/runtime/index.js")).toBe(true);
+        expect(Object.values(inputs).flatMap((input) => input.imports)
+          .filter((imported) => imported.original === "@fixture/runtime")).toHaveLength(1);
+        expect(await readFile(join(runtimeDirectory, "index.js"), "utf8")).toBe(runtimeSource);
+        const outputsBefore = canonicalJson(result.metafile.outputs);
+        const rootInputBefore = canonicalJson(inputs[runtimeKey]);
+        // Bun also emits this raw spelling for other imports of the same root.
+        // Remove only the witness spelling, never the native input or outputs.
+        entryInput.imports = entryInput.imports.map((imported) => imported === witness
+          ? { kind: "import-statement", path: "@fixture/runtime" } : imported) as never;
+        expect(Object.values(inputs).flatMap((input) => input.imports)
+          .some((imported) => imported.original === "@fixture/runtime")).toBe(false);
+        expect(canonicalJson(result.metafile.outputs)).toBe(outputsBefore);
+        expect(canonicalJson(inputs[runtimeKey])).toBe(rootInputBefore);
+        observed = true;
+        return result;
+      });
+      try {
+        const receipt = await collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root });
+        expect(observed).toBe(true);
+        expect(receipt.edges).toContainEqual({ external: false, from: "input:src/entry.ts",
+          kind: "import-statement", to: "input:node_modules/@fixture/runtime/index.js" });
+        expect(receipt.inputs.find(({ path }) => path === "node_modules/@fixture/runtime/index.js")?.sha256).toBe(sha256(runtimeSource));
+        expect(receipt.edges.some(({ external }) => external)).toBe(false);
+      } finally { build.mockRestore(); }
+    }
+  });
+
+  test("rejects unsupported or potentially interfering zero-witness browser maps", async () => {
+    const variants: readonly unknown[] = [
+      { "./index.js": "./browser.js" }, { "./index.js": false },
+      { "./INDEX.js": "./browser.js" }, { "./index": "./browser.js" },
+      { "@fixture/runtime": "./browser.js" }, { "./server.js": "other-package" },
+      { "../server.js": "./browser.js" }, { "./server.js": "../browser.js" },
+      { "./server.js?query": "./browser.js" }, { "./server.js": "./browser.js#fragment" },
+      { "./caf\u00e9.js": "./browser.js" }, { "./cafe\u0301.js": "./browser.js" },
+      { "./server.js": "./caf\u00e9.js" }, { "./server.js": "./cafe\u0301.js" },
+      { "./server.js": true }, { "./server.js": null }, { "./server.js": {} },
+      { "./server.js": "./browser.js", "./invalid": "./browser.js" },
+      ["./browser.js"], "./browser.js", null,
+    ];
+    for (const [index, browser] of variants.entries()) {
+      const context = await fixture();
+      const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");
+      await write(join(runtimeDirectory, "package.json"), `${JSON.stringify({
+        browser, exports: "./index.js", name: "@fixture/runtime", type: "module", version: "1.0.0",
+      })}\n`);
+      await write(join(runtimeDirectory, "index.js"), "export const marker = 'runtime';\n");
+      await write(join(runtimeDirectory, "browser.js"), "export const marker = 'browser';\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+      const handle = await generation(context, `bare-input-invalid-browser-map-${String(index)}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        if (!result.success || result.metafile === undefined) return result;
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) => path === "src/entry.ts" || path.endsWith("/src/entry.ts"));
+        assert.ok(entryKey !== undefined);
+        const imports = inputs[entryKey]!.imports;
+        inputs[entryKey]!.imports = imports.map((imported) => imported.original === "@fixture/runtime"
+          ? { kind: "import-statement", path: "@fixture/runtime" } : imported) as never;
+        return result;
+      });
+      try {
+        await expect(collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }))
+          .rejects.toThrow(/(?:Bun graph .* failed|Bun metafile import.*is unresolved)/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally { build.mockRestore(); }
+    }
+  });
+
+  test("zero-witness browser-map inference rejects Unicode-normalization aliases of the package root", async () => {
+    for (const filename of ["caf\u00e9.js", "cafe\u0301.js"]) {
+      const context = await fixture();
+      const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");
+      await write(join(runtimeDirectory, "package.json"), `${JSON.stringify({
+        browser: {}, exports: `./${filename}`, name: "@fixture/runtime", type: "module", version: "1.0.0",
+      })}\n`);
+      await write(join(runtimeDirectory, filename), "export const marker = 'runtime';\n");
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+      const handle = await generation(context, "bare-input-unicode-root", [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.success && result.metafile !== undefined, result.logs.map(String).join("\n"));
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) => path === "src/entry.ts" || path.endsWith("/src/entry.ts"));
+        assert.ok(entryKey !== undefined);
+        const witness = inputs[entryKey]!.imports.find((imported) => imported.original === "@fixture/runtime");
+        assert.ok(witness !== undefined);
+        assert.ok(Object.keys(inputs).some((path) => path.normalize("NFC").endsWith(`/@fixture/runtime/${filename.normalize("NFC")}`)));
+        inputs[entryKey]!.imports = inputs[entryKey]!.imports.map((imported) => imported === witness
+          ? { kind: "import-statement", path: "@fixture/runtime" } : imported) as never;
+        return result;
+      });
+      try {
+        await expect(collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }))
+          .rejects.toThrow(/Bun metafile import.*is unresolved/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally { build.mockRestore(); }
+    }
+  });
+
+  test("noninterfering browser-map fallback still rejects changed input and scope snapshots", async () => {
+    for (const mutation of ["input", "scope", "config", "closer-installation", "ambiguous-installations"] as const) {
+      const context = await fixture();
+      const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");
+      const manifest = { browser: { "./server.js": "./server.browser.js" }, exports: "./index.js",
+        name: "@fixture/runtime", type: "module", version: "1.0.0" };
+      await write(join(runtimeDirectory, "package.json"), `${JSON.stringify(manifest)}\n`);
+      await write(join(runtimeDirectory, "index.js"), "export const marker = 'runtime';\n");
+      const entry = join(context.root, "src/nested/entry.ts");
+      if (mutation === "ambiguous-installations") {
+        const other = join(context.root, "src/peer/node_modules/@fixture/runtime");
+        await write(join(other, "package.json"), `${JSON.stringify(manifest)}\n`);
+        await write(join(other, "index.js"), "export const marker = 'peer';\n");
+        await write(join(context.root, "src/peer/input.ts"), "export { marker as other } from '@fixture/runtime';\n");
+        await write(entry, "import { marker } from '@fixture/runtime'; import { other } from '../peer/input.ts'; export const value = [marker, other];\n");
+      } else {
+        await write(entry, "import { marker } from '@fixture/runtime'; export const value = marker;\n");
+      }
+      const handle = await generation(context, `bare-input-browser-map-changed-${mutation}`, [
+        expectation(context.root, "client", "client", entry),
+      ]);
+      const buildOriginal = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async (options) => {
+        const result = await buildOriginal(options);
+        assert.ok(result.success && result.metafile !== undefined, result.logs.map(String).join("\n"));
+        const inputs = result.metafile.inputs;
+        const entryKey = Object.keys(inputs).find((path) => path === "src/nested/entry.ts" || path.endsWith("/src/nested/entry.ts"));
+        assert.ok(entryKey !== undefined);
+        const witness = inputs[entryKey]!.imports.find((imported) => imported.original === "@fixture/runtime");
+        assert.ok(witness !== undefined && (witness.path === "node_modules/@fixture/runtime/index.js"
+          || witness.path.endsWith("/node_modules/@fixture/runtime/index.js")));
+        inputs[entryKey]!.imports = inputs[entryKey]!.imports.map((imported) => imported === witness
+          ? { kind: "import-statement", path: "@fixture/runtime" } : imported) as never;
+        if (mutation === "input") {
+          await writeFile(join(runtimeDirectory, "index.js"), "export const marker = 'changed';\n");
+        } else if (mutation === "scope") {
+          await writeFile(join(runtimeDirectory, "package.json"), `${JSON.stringify({ ...manifest, browser: { "./index.js": "./server.js" } })}\n`);
+        } else if (mutation === "config") {
+          await writeFile(join(context.root, "tsconfig.json"), '{"compilerOptions":{"paths":{"@fixture/runtime":["./other.js"]}}}\n');
+        } else if (mutation === "closer-installation") {
+          const closer = join(context.root, "src/nested/node_modules/@fixture/runtime");
+          await write(join(closer, "package.json"), `${JSON.stringify(manifest)}\n`);
+          await write(join(closer, "index.js"), "export const marker = 'closer';\n");
+        }
+        return result;
+      });
+      try {
+        await expect(collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root }))
+          .rejects.toThrow(/(?:changed|differs|unresolved|ambiguous)/u);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally { build.mockRestore(); }
+    }
+  });
+
   test("rejects browser-remapped zero-witness package roots", async () => {
     const context = await fixture();
     const runtimeDirectory = join(context.root, "node_modules/@fixture/runtime");

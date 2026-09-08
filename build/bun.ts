@@ -808,6 +808,35 @@ function canonicalPackageRootTarget(
     : undefined;
 }
 
+function browserMapPreservesPackageRoot(
+  value: unknown,
+  installationRoot: string,
+  candidate: string,
+): boolean {
+  const mappings = jsonRecord(value);
+  if (mappings === undefined || Object.keys(mappings).length > 128) return false;
+  // Only explicit package-local JavaScript files are understood here. Bare,
+  // extensionless, directory, non-ASCII, and malformed mappings need native
+  // resolution evidence instead of an inferred zero-witness package-root edge.
+  // ASCII avoids filesystem Unicode-normalization aliases; case aliases are
+  // checked separately because supported hosts may be case-insensitive.
+  const javascriptPath = /^[\x20-\x7e]+\.(?:c|m)?js$/u;
+  if (!javascriptPath.test(candidate)) return false;
+  for (const [key, value] of Object.entries(mappings)) {
+    const source = canonicalPackageRootTarget(installationRoot, key);
+    if (
+      source === undefined
+      || !javascriptPath.test(source)
+      || source.toLowerCase() === candidate.toLowerCase()
+    ) return false;
+    if (value === false) continue;
+    if (typeof value !== "string") return false;
+    const target = canonicalPackageRootTarget(installationRoot, value);
+    if (target === undefined || !javascriptPath.test(target)) return false;
+  }
+  return true;
+}
+
 function capturedPackageRootExportTarget(
   packageName: string,
   installationRoot: string,
@@ -827,8 +856,6 @@ function capturedPackageRootExportTarget(
     || record === undefined
     || record.name !== packageName
   ) return undefined;
-  if (buildTarget === "browser" && Object.hasOwn(record, "browser")) return undefined;
-
   let candidate: string | undefined;
   if (Object.hasOwn(record, "exports")) {
     const rootBranch = packageRootExportBranch(record.exports);
@@ -877,6 +904,8 @@ function capturedPackageRootExportTarget(
     || !candidate.startsWith(`${installationRoot}/`)
     || packageInstallationRoot(candidate) !== installationRoot
     || !known.has(candidate)
+    || (buildTarget === "browser" && Object.hasOwn(record, "browser")
+      && !browserMapPreservesPackageRoot(record.browser, installationRoot, candidate))
   ) return undefined;
   return candidate;
 }

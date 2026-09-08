@@ -93,7 +93,7 @@ optionalPeer(packageJson, "@types/bun", "1.3.14");
 optionalPeer(packageJson, "@types/node", "^20.19.0 || >=22.12.0");
 optionalPeer(packageJson, "lightningcss", "1.33.0");
 optionalPeer(packageJson, "next", "16.2.12");
-optionalPeer(packageJson, "vite", ">=7 <8");
+optionalPeer(packageJson, "vite", "7.3.6 || 8.2.1");
 
 const exportsRecord = packageJson.exports;
 assert.ok(exportsRecord !== undefined, "package exports are missing");
