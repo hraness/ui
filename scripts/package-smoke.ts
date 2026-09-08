@@ -3849,6 +3849,7 @@ import {
   TextAreaField,
   TextField,
   ViewportFrame,
+  VisuallyHidden,
   WrappingRow,
   buildAskAiProviderLinks,
 } from "@hraness/ui";
@@ -3944,6 +3945,26 @@ const knobRootBaseClasses = ${JSON.stringify(indicatorKnobProbe.knobRootBaseClas
 const knobControlBaseClasses = ${JSON.stringify(indicatorKnobProbe.knobControlBaseClasses)};
 const knobControlNativeFocusClasses = ${JSON.stringify(indicatorKnobProbe.knobControlNativeFocusClasses)};
 const visuallyHiddenClasses = ${JSON.stringify(visuallyHiddenClasses)};
+
+for (const as of ["span", "h1", "h2", "h3", "h4", "h5", "h6", "div", "p"]) {
+  const hiddenMarkup = renderToStaticMarkup(React.createElement(VisuallyHidden, {
+    as, id: "consumer-hidden", className: "consumer-hidden-class",
+    ...(as === "span" ? { role: "status", "aria-live": "polite" } : {}),
+  }, "Accessible package content"));
+  assert.ok(hiddenMarkup.startsWith("<" + as + " "));
+  assert.ok(hiddenMarkup.endsWith(">Accessible package content</" + as + ">"));
+  assert.match(hiddenMarkup, /id="consumer-hidden"/u);
+  assert.match(hiddenMarkup, /data-slot="visually-hidden"/u);
+  assert.doesNotMatch(hiddenMarkup, /(?:style|aria-hidden|hidden)=/u);
+  const classes = hiddenMarkup.match(/class="([^"]+)"/u)?.[1]?.split(" ") ?? [];
+  assert.equal(classes[0], "hraness-visually-hidden");
+  assert.equal(classes.at(-1), "consumer-hidden-class");
+  assert.deepEqual(classes.slice(1, -1).sort(), [...visuallyHiddenClasses].sort());
+  if (as === "span") {
+    assert.match(hiddenMarkup, /role="status"/u);
+    assert.match(hiddenMarkup, /aria-live="polite"/u);
+  }
+}
 
 const reactDomPackageUrl = import.meta.resolve("react-dom/package.json");
 const reactDomPackage = JSON.parse(await readFile(new URL(reactDomPackageUrl), "utf8"));
@@ -5374,11 +5395,22 @@ import {
   TextAreaField,
   TextField,
   ViewportFrame,
+  VisuallyHidden,
+  type VisuallyHiddenProps,
   WrappingRow,
   buildAskAiProviderLinks,
 } from "@hraness/ui";
 import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+
+const hiddenHeadingProps: VisuallyHiddenProps = {
+  as: "h1", id: "document-name", children: "Accessible document",
+};
+createElement(VisuallyHidden, { ...hiddenHeadingProps, ref: createRef<HTMLElement>() });
+createElement(VisuallyHidden, { role: "status", "aria-live": "polite", children: "Updated" });
+// @ts-expect-error A hidden text primitive does not admit interactive roots.
+const interactiveHidden: VisuallyHiddenProps = { as: "button" };
+void interactiveHidden;
 
 const styles = stylex.create({
   avatar: {

@@ -1,6 +1,6 @@
 {
   "name": "@hraness/ui",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.",
   "license": "MIT",
   "type": "module",
@@ -146,6 +146,7 @@
     "src/toolbar.stylex.ts",
     "src/toolbar.tsx",
     "src/visually-hidden.stylex.ts",
+    "src/visually-hidden.tsx",
     "README.md",
     "LICENSE"
   ],
