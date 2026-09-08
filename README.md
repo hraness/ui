@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.7"
+    "@hraness/ui": "github:hraness/ui#v0.5.9"
   }
 }
 ```
