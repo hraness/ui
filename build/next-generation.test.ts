@@ -411,6 +411,9 @@ describe("StyleX Next generation", () => {
     );
   });
 
+  // The complete mutation matrix repeatedly rehashes pinned framework inputs and
+  // both physical output trees. Keep every check within a bounded integration
+  // budget instead of Bun's five-second unit-test default on shared CI runners.
   test("joins exact worker receipts across discovery and delivery before completing", async () => {
     const context = await createFixture();
     const attempt = await prepareStylexNextAttempt({
@@ -746,7 +749,7 @@ describe("StyleX Next generation", () => {
       completeStylexNextBuild(attempt, context.root),
       /graphs emitted conflicting bytes/u,
     );
-  });
+  }, 30_000);
 
   test("seals final auxiliary observations without rebinding initial graphs or completion evidence", async () => {
     const context = await createFixture();
