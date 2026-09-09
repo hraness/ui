@@ -75,6 +75,10 @@ export type NextDevSnapshot = Readonly<{
   stylesheets: readonly NextDevCapturedCssInput[];
 }>;
 
+/** Retain presentation authority without retaining historical source/map bytes. */
+export type NextDevRetainedCoverage = Pick<NextDevSnapshot,
+  "cssEntry" | "includedRevisions" | "manifests" | "revision" | "rootDirectory" | "rules" | "stylesheets">;
+
 export type NextDevPreparation = Readonly<{
   attemptedFiles: readonly string[];
   attemptedMissing: readonly string[];
@@ -312,7 +316,7 @@ function renderSnapshotCss(
  * has attested the current graph. A changed rule with one stable identity
  * cannot represent both revisions, so that transition requires a dev restart.
  */
-export function composeNextDevSnapshot(candidate: NextDevSnapshot, retainedValue: readonly NextDevSnapshot[]): NextDevSnapshot {
+export function composeNextDevSnapshot(candidate: NextDevSnapshot, retainedValue: readonly NextDevRetainedCoverage[]): NextDevSnapshot {
   // Two sheets can share a source revision but have different union coverage.
   // Only the caller's explicit empty retention set authorizes dropping either.
   const retained = [...retainedValue]

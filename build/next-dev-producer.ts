@@ -3,16 +3,17 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { canonicalJson, sha256 } from "./compiler.js";
 import { materializeNextDevNativeCss } from "./next-dev-assets.js";
-import { createNextDevConsumerLedger, type NextDevConsumerSource, type NextDevConsumerTarget } from "./next-dev-consumers.js";
-import { assertNextDevRuntime, nextDevLogicalPath, type NextDevSnapshot } from "./next-dev-session.js";
+import { createNextDevConsumerLedger, type NextDevConsumerSnapshot, type NextDevConsumerSource, type NextDevConsumerTarget } from "./next-dev-consumers.js";
+import { assertNextDevRuntime, composeNextDevSnapshot, nextDevLogicalPath, type NextDevRetainedCoverage, type NextDevSnapshot } from "./next-dev-session.js";
 import { parseNextDevWebpackCatalogue, type NextDevWebpackCatalogue } from "./next-dev-webpack-bridge.js";
 
 declare const candidateBrand: unique symbol;
 export type NextDevProducerCandidate = Readonly<{ [candidateBrand]: true }>;
 type NativeAsset = Awaited<ReturnType<typeof materializeNextDevNativeCss>>;
 type Candidate = {
-  asset: NativeAsset;
+  assets: readonly NativeAsset[];
   catalogue: NextDevWebpackCatalogue;
+  coverage: NextDevRetainedCoverage | null;
   handle: NextDevProducerCandidate;
   identity: string;
   phase: "prepared" | "published" | "failed";
@@ -65,6 +66,8 @@ export function createNextDevNativeProducer(options: Readonly<{ consumers: reado
   const published = new Map<string, Candidate>();
   const history: Candidate[] = [];
   const publishedAssets = new Map<string, NativeAsset>();
+  let publishedSnapshots: readonly NextDevConsumerSnapshot[] = [];
+  let retainedCoverage: NextDevRetainedCoverage | null = null;
   let active: Candidate | null = null;
   let pending: Readonly<{ identity: string; promise: Promise<NextDevProducerCandidate> }> | null = null;
   let highestSequence = 0;
@@ -76,28 +79,44 @@ export function createNextDevNativeProducer(options: Readonly<{ consumers: reado
     return value;
   };
   const prepare = async (snapshot: NextDevSnapshot, key: string): Promise<NextDevProducerCandidate> => {
-    assert.ok(history.length < MAX_SNAPSHOTS, "Next development producer snapshot limit requires restart");
+    assert.ok(publishedSnapshots.length < MAX_SNAPSHOTS, "Next development producer snapshot limit requires restart");
     for (const consumer of consumers) {
       assert.equal(snapshot.sources.filter(({ logicalPath }) => logicalPath === consumer.source).length, 1,
         "Next development registered consumer is absent from the captured source census");
     }
-    const asset = await materializeNextDevNativeCss({ entryPath: nextDevLogicalPath(snapshot.rootDirectory, snapshot.cssEntry),
-      manifests: snapshot.manifests, source: snapshot.css, stylesheets: snapshot.stylesheets });
-    assert.equal(identity(snapshot), key, "Next development source snapshot changed during native materialization");
-    const existingAsset = publishedAssets.get(asset.sha256);
-    assert.ok(existingAsset === undefined || existingAsset.css === asset.css, "Next development native asset digest collision");
-    const addedBytes = existingAsset === undefined ? Buffer.byteLength(asset.css) : 0;
-    assert.ok(residentBytes + addedBytes <= MAX_RESIDENT_CSS_BYTES, "Next development producer CSS residency limit requires restart");
-    const sequence = highestSequence + 1;
-    assert.ok(Number.isSafeInteger(sequence), "Next development producer sequence exhausted; restart next dev");
-    const catalogue = parseNextDevWebpackCatalogue({ consumers, currentSequence: sequence, session,
-      snapshots: history.map(({ catalogue }) => catalogue.snapshots.at(-1)!).concat([{
-        includedRevisions: snapshot.includedRevisions, revision: snapshot.revision, sequence, stylesheetSha256: asset.sha256,
-      }]),
+    const aggregate = retainedCoverage === null ? snapshot : composeNextDevSnapshot(snapshot, [retainedCoverage]);
+    const materialize = (value: NextDevSnapshot): Promise<NativeAsset> => materializeNextDevNativeCss({
+      entryPath: nextDevLogicalPath(value.rootDirectory, value.cssEntry), manifests: value.manifests, source: value.css, stylesheets: value.stylesheets,
     });
+    const asset = await materialize(snapshot);
+    const unionAsset = aggregate.css === snapshot.css ? asset : await materialize(aggregate);
+    const assets = [...new Map([unionAsset, asset].map((asset) => [asset.sha256, asset])).values()];
+    assert.equal(identity(snapshot), key, "Next development source snapshot changed during native materialization");
+    let addedBytes = 0;
+    for (const asset of assets) {
+      const existing = publishedAssets.get(asset.sha256);
+      assert.ok(existing === undefined || existing.css === asset.css, "Next development native asset digest collision");
+      if (existing === undefined) addedBytes += Buffer.byteLength(asset.css);
+    }
+    assert.ok(residentBytes + addedBytes <= MAX_RESIDENT_CSS_BYTES, "Next development producer CSS residency limit requires restart");
+    let sequence = highestSequence;
+    const additions: NextDevConsumerSnapshot[] = [];
+    const append = (value: NextDevSnapshot, asset: NativeAsset): void => {
+      assert.ok(Number.isSafeInteger(++sequence), "Next development producer sequence exhausted; restart next dev");
+      additions.push({ includedRevisions: value.includedRevisions, revision: value.revision, sequence, stylesheetSha256: asset.sha256 });
+    };
+    // A loaded historical union must be available before the newer/pruned tag.
+    // Reuse an exactly captured union when only its pruned successor changes.
+    if (unionAsset.sha256 !== asset.sha256 && !publishedSnapshots.some((value) => value.stylesheetSha256 === unionAsset.sha256
+      && canonicalJson(value.includedRevisions) === canonicalJson(aggregate.includedRevisions))) append(aggregate, unionAsset);
+    append(snapshot, asset);
+    assert.ok(publishedSnapshots.length + additions.length <= MAX_SNAPSHOTS, "Next development producer snapshot limit requires restart");
+    const catalogue = parseNextDevWebpackCatalogue({ consumers, currentSequence: sequence, session, snapshots: [...publishedSnapshots, ...additions] });
     highestSequence = sequence;
     const handle = Object.freeze({}) as NextDevProducerCandidate;
-    active = { asset, catalogue, handle, identity: key, phase: "prepared" };
+    const { cssEntry, includedRevisions, manifests, revision, rootDirectory, rules, stylesheets } = aggregate;
+    active = { assets: Object.freeze(assets), catalogue, handle, identity: key, phase: "prepared",
+      coverage: Object.freeze({ cssEntry, includedRevisions, manifests, revision, rootDirectory, rules, stylesheets }) };
     handles.set(handle, active);
     return handle;
   };
@@ -126,7 +145,7 @@ export function createNextDevNativeProducer(options: Readonly<{ consumers: reado
     compilation(handle: NextDevProducerCandidate): Readonly<{ assets: readonly NativeAsset[]; catalogue: NextDevWebpackCatalogue }> {
       const candidate = captured(handle);
       const assets = new Map(publishedAssets);
-      assets.set(candidate.asset.sha256, candidate.asset);
+      for (const asset of candidate.assets) assets.set(asset.sha256, asset);
       return Object.freeze({ assets: Object.freeze([...assets.values()].sort((left, right) => left.path < right.path ? -1 : 1)),
         catalogue: candidate.catalogue });
     },
@@ -147,7 +166,7 @@ export function createNextDevNativeProducer(options: Readonly<{ consumers: reado
       assert.ok(Array.isArray(emitted) && emitted.length <= MAX_SNAPSHOTS, "Next development emitted asset census exceeds its finite bound");
       if (succeeded) {
         const expected = new Map(publishedAssets);
-        expected.set(candidate.asset.sha256, candidate.asset);
+        for (const asset of candidate.assets) expected.set(asset.sha256, asset);
         assert.deepEqual([...emitted].sort((left, right) => left.path < right.path ? -1 : 1),
           [...expected.values()].map(({ path, css }) => ({ path, css })).sort((left, right) => left.path < right.path ? -1 : 1),
           "Next development terminal emitted CSS differs from its complete captured asset census");
@@ -157,13 +176,17 @@ export function createNextDevNativeProducer(options: Readonly<{ consumers: reado
       if (candidate.phase === "published") return;
       assert.equal(candidate, active, "Next development completion is not the active client candidate");
       active = null;
-      if (!succeeded) { candidate.phase = "failed"; return; }
+      if (!succeeded) { candidate.phase = "failed"; candidate.coverage = null; return; }
       candidate.phase = "published";
       published.set(candidate.identity, candidate);
       history.push(candidate);
-      if (!publishedAssets.has(candidate.asset.sha256)) {
-        publishedAssets.set(candidate.asset.sha256, candidate.asset);
-        residentBytes += Buffer.byteLength(candidate.asset.css);
+      publishedSnapshots = candidate.catalogue.snapshots;
+      retainedCoverage = candidate.coverage;
+      candidate.coverage = null;
+      for (const asset of candidate.assets) {
+        if (publishedAssets.has(asset.sha256)) continue;
+        publishedAssets.set(asset.sha256, asset);
+        residentBytes += Buffer.byteLength(asset.css);
       }
     },
     /** Node/Edge compilation cannot independently publish or select new CSS. */
@@ -173,6 +196,6 @@ export function createNextDevNativeProducer(options: Readonly<{ consumers: reado
       return candidate.handle;
     },
     inspect: () => Object.freeze({ active: active !== null, materializing: pending !== null,
-      published: history.length, residentAssets: publishedAssets.size, residentBytes, highestSequence }),
+      published: history.length, capturedSnapshots: publishedSnapshots.length, residentAssets: publishedAssets.size, residentBytes, highestSequence }),
   });
 }

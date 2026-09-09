@@ -33,14 +33,18 @@ class DocumentDouble {
   readonly links: LinkDouble[] = [];
   readonly roots: ElementDouble[] = [];
   readonly listeners = new Map<string, Set<() => void>>();
+  readonly onceListeners = new Map<string, Set<() => void>>();
   readonly windowListeners = new Map<string, Set<(event: unknown) => void>>();
   readonly observers = new Set<() => void>();
+  readonly timers = new Map<number, () => void>();
   readyState = "loading";
   readonly defaultView;
   constructor() {
     const observers = this.observers;
     this.defaultView = {
       HTMLElement: ElementDouble,
+      setTimeout: (callback: () => void) => { const id = this.timers.size + 1; this.timers.set(id, callback); return id; },
+      clearTimeout: (id: number) => { this.timers.delete(id); },
       MutationObserver: class {
         constructor(readonly callback: () => void) {}
         observe(): void { observers.add(this.callback); }
@@ -66,11 +70,22 @@ class DocumentDouble {
   };
   createElement(tag: string): LinkDouble { if (tag !== "link") throw new Error("only links"); return new LinkDouble(this); }
   querySelectorAll(): readonly ElementDouble[] { return this.roots.filter((root) => root.isConnected); }
-  addEventListener(name: string, callback: () => void): void {
+  addEventListener(name: string, callback: () => void, options?: { once?: boolean }): void {
     const listeners = this.listeners.get(name) ?? new Set(); listeners.add(callback); this.listeners.set(name, listeners);
+    if (options?.once === true) {
+      const once = this.onceListeners.get(name) ?? new Set(); once.add(callback); this.onceListeners.set(name, once);
+    }
   }
-  removeEventListener(name: string, callback: () => void): void { this.listeners.get(name)?.delete(callback); }
-  loaded(): void { this.readyState = "complete"; for (const callback of this.listeners.get("DOMContentLoaded") ?? []) callback(); }
+  removeEventListener(name: string, callback: () => void): void {
+    this.listeners.get(name)?.delete(callback); this.onceListeners.get(name)?.delete(callback);
+  }
+  dispatchContentLoaded(): void {
+    for (const callback of [...this.listeners.get("DOMContentLoaded") ?? []]) {
+      if (this.onceListeners.get("DOMContentLoaded")?.has(callback)) this.removeEventListener("DOMContentLoaded", callback);
+      callback();
+    }
+  }
+  loaded(): void { this.readyState = "complete"; this.dispatchContentLoaded(); }
   mutation(): void { for (const callback of this.observers) callback(); }
 }
 const hash = (value: number): string => value.toString(16).padStart(64, "0");
@@ -107,7 +122,7 @@ function fixture(withBridge = false) {
   };
   const bootstrap = async (): Promise<void> => {
     owner.subscribeDocument(() => {});
-    document.links[0]!.load(); await owner.startupReady;
+    document.links[0]!.load(); document.loaded(); await owner.startupReady;
     commit(0, 1); commit(1, 1); document.loaded(); await owner.hydrationReady;
   };
   return { document, authority, owner, roots, render, commit, publish, bootstrap, options, bridge };
@@ -118,7 +133,7 @@ test("entry readiness requires native load and activation; hydration requires ev
   let startup = false;
   void owner.startupReady.then(() => { startup = true; });
   await tick(); expect(startup).toBeFalse();
-  document.links[0]!.load(); await owner.startupReady;
+  document.links[0]!.load(); document.loaded(); await owner.startupReady;
   expect(document.links[0]!.media).toBe("all");
   commit(0, 1); commit(1, 1); document.loaded(); await tick();
   expect(owner.getSnapshot().phase).toBe("bootstrap");
@@ -227,7 +242,7 @@ test("the browser factory adopts authority before waiting for hydration and gate
   expect(owner.getSnapshot().availableSequence).toBe(2);
   expect(owner.getSnapshot().phase).toBe("bootstrap");
   expect(owner.getSnapshot().active).toBeNull();
-  document.links[1]!.load(); await owner.startupReady;
+  document.links[1]!.load(); document.loaded(); await owner.startupReady;
   authority.publish(snapshot(2, [1, 2]));
   expect(owner.canRender(authority.descriptor("app/page.tsx", 2))).toBeFalse();
   document.links[0]!.load(); await adopted; await tick();
@@ -237,6 +252,94 @@ test("the browser factory adopts authority before waiting for hydration and gate
   await owner.hydrationReady;
   await bridge!.updateReady(update);
   expect(owner.getSnapshot().phase).toBe("ready");
+  owner.close();
+});
+
+test("delayed initial SSR survives two edit/prune cycles without making DOM census depend on gated application startup", async () => {
+  const document = new DocumentDouble();
+  const history = [snapshot(1), snapshot(2, [1, 2], 2), snapshot(3, [2], 2),
+    snapshot(4, [1, 2, 3], 3), snapshot(5, [3], 3)];
+  const authority = createNextDevConsumerLedger({ consumers, session });
+  for (const value of history) authority.publish(value);
+  const bridge = createNextDevBridgeOwner(document as unknown as Document, catalogue(history));
+  const owner = bridge.documentOwner;
+  let applicationStarted = false;
+  const startup = owner.startupReady.then(() => { applicationStarted = true; });
+  // The native parser has not reached EOF/DOMContentLoaded. Current JS CSS can
+  // finish first, but must not start application code or prune older SSR roots.
+  document.links.find((link) => link.getAttribute("href")?.includes(hash(105)))!.load();
+  await tick();
+  expect(applicationStarted).toBeFalse();
+  expect(owner.getSnapshot().active).toBeNull();
+  const roots = consumers.map(({ source }, index) => {
+    const root = new ElementDouble(document, index === 0 ? "MAIN" : "SECTION");
+    const sequence = index === 0 ? 1 : 5;
+    root.setAttribute(NEXT_DEV_CONSUMER_ATTRIBUTE, source);
+    root.setAttribute(NEXT_DEV_DESCRIPTOR_ATTRIBUTE, JSON.stringify(authority.descriptor(source, sequence)));
+    document.roots.push(root);
+    return root;
+  });
+  document.loaded(); await tick();
+  expect(owner.inspect().mounts).toBe(0);
+  expect(owner.inspect().documentSubscribers).toBe(0);
+  expect(owner.inspect().ledger.requiredRevisions).toEqual([hash(1), hash(3)]);
+  expect(applicationStarted).toBeFalse();
+  document.links.find((link) => link.getAttribute("href")?.includes(hash(104)))!.load();
+  await startup;
+  expect(applicationStarted).toBeTrue();
+  expect(owner.getSnapshot().active?.sequence).toBe(4);
+  expect(owner.canRender(authority.descriptor("app/page.tsx", 1))).toBeTrue();
+  expect(owner.canRender(authority.descriptor("app/client.tsx", 5))).toBeTrue();
+  // DOMContentLoaded and CSS alone start the application. Only now can its
+  // actual document subscription/consumer commits release bootstrap pins.
+  owner.subscribeDocument(() => {});
+  owner.committed(roots[0] as unknown as HTMLElement, authority.descriptor("app/page.tsx", 1));
+  owner.committed(roots[1] as unknown as HTMLElement, authority.descriptor("app/client.tsx", 5));
+  await owner.hydrationReady;
+  expect(owner.getSnapshot().active?.sequence).toBe(4);
+  const current = authority.descriptor("app/page.tsx", 5);
+  roots[0]!.setAttribute(NEXT_DEV_DESCRIPTOR_ATTRIBUTE, JSON.stringify(current));
+  owner.committed(roots[0] as unknown as HTMLElement, current);
+  await tick();
+  expect(owner.getSnapshot().active?.sequence).toBe(5);
+  expect(document.links).toHaveLength(1);
+  owner.close();
+});
+
+test("synthetic DOMContentLoaded before native EOF cannot omit a later old SSR root or consume the real EOF listener", async () => {
+  const document = new DocumentDouble();
+  const history = [snapshot(1), snapshot(2, [1, 2], 2), snapshot(3, [2], 2),
+    snapshot(4, [1, 2, 3], 3), snapshot(5, [3], 3)];
+  const authority = createNextDevConsumerLedger({ consumers, session });
+  for (const value of history) authority.publish(value);
+  const owner = createNextDevBridgeOwner(document as unknown as Document, catalogue(history)).documentOwner;
+  let started = false;
+  const startup = owner.startupReady.then(() => { started = true; });
+  const appendRoot = (source: string, sequence: number): void => {
+    const root = new ElementDouble(document);
+    root.setAttribute(NEXT_DEV_CONSUMER_ATTRIBUTE, source);
+    root.setAttribute(NEXT_DEV_DESCRIPTOR_ATTRIBUTE, JSON.stringify(authority.descriptor(source, sequence)));
+    document.roots.push(root);
+  };
+  appendRoot("app/client.tsx", 5);
+  for (const link of document.links) link.load();
+  document.dispatchContentLoaded(); await tick();
+  expect(document.readyState).toBe("loading");
+  expect(owner.inspect().censusComplete).toBeFalse();
+  expect(owner.getSnapshot().active).toBeNull();
+  expect(started).toBeFalse();
+  expect(document.listeners.get("DOMContentLoaded")?.size).toBe(1);
+  appendRoot("app/page.tsx", 1);
+  document.mutation(); await tick();
+  expect(owner.getSnapshot().active).toBeNull();
+  expect(started).toBeFalse();
+  document.loaded(); await startup;
+  expect(document.listeners.get("DOMContentLoaded")?.size).toBe(0);
+  expect(owner.inspect().ledger.requiredRevisions).toEqual([hash(1), hash(3)]);
+  expect(owner.getSnapshot().active?.sequence).toBe(4);
+  expect(owner.canRender(authority.descriptor("app/page.tsx", 1))).toBeTrue();
+  expect(owner.canRender(authority.descriptor("app/client.tsx", 5))).toBeTrue();
+  expect(document.timers.size).toBe(0);
   owner.close();
 });
 
@@ -279,11 +382,14 @@ test("a newer native union loading first cannot reject bootstrap, but never subs
   const changed = bridge!.adopt(catalogue([snapshot(1), snapshot(2, [1, 2])]));
   const newerLink = document.links[0]!;
   newerLink.load(); await changed; await tick();
+  expect(owner.getSnapshot().active).toBeNull();
+  expect(started).toBeFalse();
+  document.loaded(); await tick();
   expect(owner.getSnapshot().active?.sequence).toBe(2);
   expect(newerLink.media).toBe("all");
   expect(started).toBeFalse();
   expect(initialLink.sheet).toBeNull();
-  initialLink.load(); await owner.startupReady;
+  initialLink.load(); document.loaded(); await owner.startupReady;
   expect(started).toBeTrue();
   expect(owner.getSnapshot().phase).toBe("bootstrap");
   expect(owner.inspect().ledger.requiredRevisions).toEqual([hash(1)]);
@@ -291,5 +397,47 @@ test("a newer native union loading first cannot reject bootstrap, but never subs
   await owner.hydrationReady;
   expect(owner.getSnapshot().phase).toBe("ready");
   expect(document.links).toContain(initialLink);
+  owner.close();
+});
+
+test("initial DOM census has its own deadline and never relabels an out-of-history SSR response", async () => {
+  const waiting = fixture();
+  waiting.document.links[0]!.load(); await tick();
+  expect(waiting.owner.getSnapshot().active).toBeNull();
+  expect(waiting.document.timers.size).toBe(1);
+  for (const callback of [...waiting.document.timers.values()]) callback();
+  await expect(waiting.owner.startupReady).rejects.toThrow("requires restart");
+  expect(waiting.document.timers.size).toBe(0);
+  expect(waiting.document.observers.size).toBe(0);
+  waiting.owner.close();
+
+  const document = new DocumentDouble();
+  const old = createNextDevConsumerLedger({ consumers, session });
+  old.publish(snapshot(1));
+  const root = new ElementDouble(document);
+  root.setAttribute(NEXT_DEV_CONSUMER_ATTRIBUTE, "app/page.tsx");
+  root.setAttribute(NEXT_DEV_DESCRIPTOR_ATTRIBUTE, JSON.stringify(old.descriptor("app/page.tsx", 1)));
+  document.roots.push(root);
+  const owner = createNextDevBridgeOwner(document as unknown as Document, catalogue([snapshot(5, [3], 3)])).documentOwner;
+  document.links[0]!.load(); document.loaded();
+  await expect(owner.startupReady).rejects.toThrow("requires restart");
+  expect(owner.getSnapshot().active).toBeNull();
+  expect(JSON.parse(root.getAttribute(NEXT_DEV_DESCRIPTOR_ATTRIBUTE)!).sequence).toBe(1);
+  expect(document.timers.size).toBe(0);
+  owner.close();
+  expect(() => createNextDevBridgeOwner(new DocumentDouble() as unknown as Document,
+    catalogue([snapshot(1), snapshot(3, [2], 2), snapshot(5, [3], 3)]))).toThrow("lacks a retained-history union");
+});
+
+test("the completed initial DOM census cannot change while its covering native CSS is pending", async () => {
+  const { document, roots, owner } = fixture();
+  document.loaded(); await tick();
+  expect(owner.inspect().ledger.requiredRevisions).toEqual([hash(1)]);
+  roots[0]!.isConnected = false;
+  document.mutation(); await tick();
+  await expect(owner.startupReady).rejects.toThrow("requires restart");
+  expect(owner.getSnapshot().active).toBeNull();
+  expect(document.links).toHaveLength(0);
+  expect(document.timers.size).toBe(0);
   owner.close();
 });

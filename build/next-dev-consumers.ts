@@ -134,6 +134,8 @@ export function createNextDevConsumerLedger(options: Readonly<{
   let activeSequence: number | null = null;
   let initialSequence: number | null = null;
   let initialPinned = false;
+  let initialCensusPinned = false;
+  let initialConsumerRevisions: readonly string[] = [];
   let highestSequence = 0;
   let state: "open" | "restart-required" | "closed" = "open";
   let reason: "consumer-limit" | "revision-limit" | "stylesheet-error" | "stylesheet-timeout" | null = null;
@@ -157,6 +159,7 @@ export function createNextDevConsumerLedger(options: Readonly<{
   };
   const requiredRevisions = (): readonly string[] => Object.freeze([...new Set([
     ...(initialSequence === null ? [] : snapshots.get(initialSequence)!.includedRevisions),
+    ...(initialSequence === null ? [] : initialConsumerRevisions),
     ...[...consumers].flatMap((consumer) => [
     ...(consumer.current === null ? [] : [consumer.current.revision]),
     ...(consumer.pending === null ? [] : [consumer.pending.descriptor.revision]),
@@ -249,11 +252,30 @@ export function createNextDevConsumerLedger(options: Readonly<{
       initialPinned = true;
       initialSequence = sequence;
     },
+    /** Native DOM EOF census, before startup/activation, not a React effect. */
+    pinInitialConsumers(values: readonly unknown[]): void {
+      requireOpen();
+      requireValue(initialSequence !== null && !initialCensusPinned && activeSequence === null && consumers.size === 0,
+        "initial consumer census must be pinned once before activation or application commits");
+      requireValue(Array.isArray(values) && values.length > 0 && values.length <= consumerLimit,
+        "initial consumer census is empty or exceeds its finite bound");
+      requireValue(Object.getPrototypeOf(values) === Array.prototype && Reflect.ownKeys(values).length === values.length + 1,
+        "initial consumer census must be an ordinary dense array");
+      const descriptors = Array.from({ length: values.length }, (_, index) => {
+        const property = Object.getOwnPropertyDescriptor(values, String(index));
+        requireValue(property?.enumerable === true && Object.hasOwn(property, "value"), "initial consumer census must contain only dense data properties");
+        return capturedDescriptor(property.value);
+      });
+      initialConsumerRevisions = Object.freeze([...new Set(descriptors.map(({ revision }) => revision))].sort());
+      initialCensusPinned = true;
+    },
     /** Only the native document owner may acknowledge its completed hydration census. */
     initialHydrated(): void {
       requireOpen();
       requireValue(initialSequence !== null, "initial hydration pin is absent or completed");
+      requireValue(initialCensusPinned, "initial hydration omitted its native consumer census");
       initialSequence = null;
+      initialConsumerRevisions = [];
     },
     open(sourcePath: string): NextDevConsumerHandle {
       requireOpen();
@@ -320,6 +342,7 @@ export function createNextDevConsumerLedger(options: Readonly<{
       const published = snapshots.get(sequence);
       requireValue(published !== undefined, "unknown or retired stylesheet revision");
       return (activeSequence === null || sequence >= activeSequence)
+        && (initialSequence === null || initialCensusPinned)
         && loadedStylesheets.has(published.stylesheetSha256) && coversLiveConsumers(published);
     },
     /** Called after the native owner synchronously activates this eligible union. */
@@ -327,6 +350,7 @@ export function createNextDevConsumerLedger(options: Readonly<{
       requireOpen();
       const published = snapshots.get(sequence);
       requireValue(published !== undefined && loadedStylesheets.has(published.stylesheetSha256), "stylesheet cannot activate before native CSS readiness");
+      requireValue(initialSequence === null || initialCensusPinned, "stylesheet cannot activate before the native initial consumer census");
       requireValue(activeSequence === null || sequence >= activeSequence, "stylesheet activation cannot move backwards");
       requireValue(coversLiveConsumers(published), "candidate stylesheet omits a live consumer revision");
       activeSequence = sequence;

@@ -356,6 +356,7 @@ test("bootstrap retains initial SSR CSS until the actual document hydration cens
   const subject = ledger();
   subject.publish(makeSnapshot(1));
   subject.pinInitial(1);
+  subject.pinInitialConsumers([subject.descriptor("app/page.tsx", 1)]);
   const consumer = subject.open("app/page.tsx");
   commit(subject, consumer, "app/page.tsx", 1);
   subject.publish(makeSnapshot(2, [1, 2]));
@@ -381,6 +382,7 @@ test("a bootstrap transition keeps every captured SSR descriptor before its firs
   subject.publish(makeSnapshot(2, [1, 2]));
   const olderServer = subject.descriptor("app/page.tsx", 1);
   subject.pinInitial(2);
+  subject.pinInitialConsumers([olderServer]);
   load(subject, 2);
   subject.activated(2);
   subject.publish(makeSnapshot(3, [2], 2));
@@ -394,4 +396,25 @@ test("a bootstrap transition keeps every captured SSR descriptor before its firs
   expect(subject.canActivate(3)).toBeFalse();
   commit(subject, server, "app/page.tsx", 3);
   expect(subject.canActivate(3)).toBeTrue();
+});
+
+test("native initial census is required before activation and rejects spoofed or accessor-based descriptors", () => {
+  const subject = ledger();
+  subject.publish(makeSnapshot(1));
+  subject.pinInitial(1);
+  load(subject, 1);
+  expect(subject.canActivate(1)).toBeFalse();
+  expect(() => subject.activated(1)).toThrow("native initial consumer census");
+  let getterCalls = 0;
+  const accessor: unknown[] = [];
+  Object.defineProperty(accessor, "0", { enumerable: true, get() { getterCalls++; return subject.descriptor("app/page.tsx", 1); } });
+  expect(() => subject.pinInitialConsumers(accessor)).toThrow("dense data properties");
+  expect(getterCalls).toBe(0);
+  expect(() => subject.pinInitialConsumers(new Array(1))).toThrow("dense");
+  expect(() => subject.pinInitialConsumers([{ ...subject.descriptor("app/page.tsx", 1), revision: revision(99) }])).toThrow();
+  subject.pinInitialConsumers([subject.descriptor("app/page.tsx", 1)]);
+  expect(subject.canActivate(1)).toBeTrue();
+  expect(() => subject.pinInitialConsumers([subject.descriptor("app/page.tsx", 1)])).toThrow("once before activation");
+  subject.activated(1);
+  subject.close();
 });

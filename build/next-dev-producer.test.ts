@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { expect, test } from "bun:test";
 import { createNextDevNativeProducer } from "./next-dev-producer.js";
+import { compilerContract, compilerSha256, serializeStylexPackageRules, sha256, validateStylexPackageManifest } from "./compiler.js";
+
+const foundationSource = "@layer base { body { margin: 0; } }";
+const standaloneSerializer = { before: ["components.example-ui.legacy"], prefix: "components.example-ui" };
+const standaloneSource = serializeStylexPackageRules([], standaloneSerializer);
+const manifest = validateStylexPackageManifest({ buildTools: [], compiler: compilerContract, compilerFoundation: "src/foundation.css", compilerSha256,
+  kind: "hraness-stylex-package-manifest", package: { name: "@example/ui", version: "1.0.0" }, rules: [], rulesSha256: sha256("[]"), runtime: [], schemaVersion: 1,
+  standaloneCss: { path: "dist/stylex.css", bytes: Buffer.byteLength(standaloneSource), sha256: sha256(standaloneSource) }, standaloneSerializer,
+  stylesheets: [{ path: "src/foundation.css", bytes: Buffer.byteLength(foundationSource), sha256: sha256(foundationSource) }] });
 
 let compiled: Promise<string> | null = null;
 async function nativeChecks(program: string): Promise<number> {
@@ -35,9 +44,10 @@ const consumers = [{ source:'app/client.tsx',target:'client' },{ source:'app/pag
 const makeSnapshot = index => {
  const revision = digest('snapshot-'+index);
  const source = '@layer base { body { margin: 0; } }';
- return freezeInput({ css:'@layer base, components; @layer components.hraness-stylex.priority1;\\n@import "../node_modules/@example/ui/src/foundation.css";\\n/* '+revision+' */\\n@layer components.hraness-stylex.priority1 { .x-'+index+' { margin-left: '+index+'.125px; } }',
+ return freezeInput({ css:'@layer base, components; @layer components.example-ui.legacy, components.hraness-stylex.priority1;\\n@import "../node_modules/@example/ui/src/foundation.css";\\n/* '+revision+' */\\n@layer components.hraness-stylex.priority1 { .x-'+index+' { margin-left: '+index+'.125px; } }',
   cssEntry:'/captured/app/stylex-dev.css',directories:[],files:[],foundations:['../node_modules/@example/ui/src/foundation.css'],
-  includedRevisions:[revision],manifests:[],packageInputs:[],replacedRuleKeys:[],revision,rootDirectory:'/captured',rules:[],
+  includedRevisions:[revision],manifests:[${JSON.stringify(manifest)}],packageInputs:[],replacedRuleKeys:[],revision,rootDirectory:'/captured',
+  rules:[['x-'+index,{ltr:'.x-'+index+'{margin-left:'+index+'.125px}'},1000]],
   sources:consumers.map(({ source:logicalPath }) => ({code:'export const captured = '+index+';',logicalPath,map:{version:3,sources:[logicalPath],names:[],mappings:''},sourceSha256:digest(logicalPath+index)})),
   stylesheets:[{path:'node_modules/@example/ui/src/foundation.css',source,sha256:digest(source)}] });
 };
@@ -117,11 +127,11 @@ check(() => nativeAssert.throws(() => producer.compilation(b),/unknown or failed
 check(() => nativeAssert.throws(() => producer.published(second),/no exact published/));
 const c = await producer.prepare(third);
 const output = producer.compilation(c);
-check(() => nativeAssert.deepEqual(output.catalogue.snapshots.map(({sequence}) => sequence),[1,3]));
+check(() => nativeAssert.deepEqual(output.catalogue.snapshots.map(({sequence}) => sequence),[1,4,5]));
 check(() => nativeAssert.deepEqual(output.assets.find(({sha256}) => sha256 === firstAsset.sha256),firstAsset));
 producer.complete(c,true,emitted(producer,c));
 check(() => nativeAssert.equal(producer.inspect().published,2));
-check(() => nativeAssert.equal(producer.inspect().residentAssets,2));
+check(() => nativeAssert.equal(producer.inspect().residentAssets,3));
 `)).toBe(9);
 });
 
@@ -148,7 +158,7 @@ await nativeAssert.rejects(producer.prepare(absent),/absent from the captured/);
 const external = freezeInput({...makeSnapshot(2),css:'@import "https://example.com/foreign.css";'});
 await nativeAssert.rejects(producer.prepare(external),/ordinary relative captured paths/); checks++;
 const valid = await producer.prepare(makeSnapshot(2));
-check(() => nativeAssert.equal(producer.compilation(valid).catalogue.currentSequence,2));
+check(() => nativeAssert.equal(producer.compilation(valid).catalogue.currentSequence,3));
 const duplicate = [...emitted(producer,valid),emitted(producer,valid)[0]];
 check(() => nativeAssert.throws(() => producer.complete(valid,true,duplicate),/complete captured asset census/));
 producer.complete(valid,false);
@@ -163,30 +173,54 @@ const a = await producer.prepare(first); producer.complete(a,true,emitted(produc
 const b = await producer.prepare(second); producer.complete(b,true,emitted(producer,b));
 const again = await producer.prepare(first);
 check(() => nativeAssert.notEqual(again,a));
-check(() => nativeAssert.deepEqual(producer.compilation(again).catalogue.snapshots.map(({sequence}) => sequence),[1,2,3]));
-check(() => nativeAssert.equal(producer.compilation(again).assets.length,2));
+check(() => nativeAssert.deepEqual(producer.compilation(again).catalogue.snapshots.map(({sequence}) => sequence),[1,2,3,4,5]));
+check(() => nativeAssert.equal(producer.compilation(again).assets.length,4));
 check(() => nativeAssert.equal(producer.descriptor(again,'app/page.tsx','server').revision,first.revision));
 producer.complete(again,true,emitted(producer,again));
 check(() => nativeAssert.equal(producer.published(first),again));
 check(() => nativeAssert.equal(producer.inspect().published,3));
-check(() => nativeAssert.equal(producer.inspect().residentAssets,2));
+check(() => nativeAssert.equal(producer.inspect().residentAssets,4));
 `)).toBe(7);
 });
 
 test("native producer retains the finite complete history and fails closed at its session bound", async () => {
   expect(await nativeChecks(`
 const producer = createNextDevNativeProducer({consumers});
-for (let index=1; index<=32; index++) {
+for (let index=1; index<=16; index++) {
  const handle = await producer.prepare(makeSnapshot(index));
  producer.complete(handle,true,emitted(producer,handle));
 }
-check(() => nativeAssert.equal(producer.inspect().published,32));
-check(() => nativeAssert.equal(producer.inspect().residentAssets,32));
-await nativeAssert.rejects(producer.prepare(makeSnapshot(33)),/snapshot limit requires restart/); checks++;
+check(() => nativeAssert.equal(producer.inspect().published,16));
+check(() => nativeAssert.equal(producer.inspect().capturedSnapshots,31));
+check(() => nativeAssert.equal(producer.inspect().residentAssets,31));
+await nativeAssert.rejects(producer.prepare(makeSnapshot(17)),/snapshot limit requires restart/); checks++;
 check(() => nativeAssert.equal(producer.inspect().active,false));
 check(() => nativeAssert.equal(producer.inspect().materializing,false));
-const latest = producer.published(makeSnapshot(32));
-check(() => nativeAssert.equal(producer.compilation(latest).catalogue.snapshots.length,32));
-check(() => nativeAssert.equal(producer.compilation(latest).assets.length,32));
-`)).toBe(7);
+const latest = producer.published(makeSnapshot(16));
+check(() => nativeAssert.equal(producer.compilation(latest).catalogue.snapshots.length,31));
+check(() => nativeAssert.equal(producer.compilation(latest).assets.length,31));
+`)).toBe(8);
+});
+
+test("two edit/prune cycles emit a genuine retained-history union before the selected pruned asset", async () => {
+  expect(await nativeChecks(`
+const producer = createNextDevNativeProducer({consumers});
+for (const index of [1,2,3]) {
+ const handle = await producer.prepare(makeSnapshot(index));
+ producer.complete(handle,true,emitted(producer,handle));
+}
+const handle = producer.published(makeSnapshot(3));
+const {assets,catalogue} = producer.compilation(handle);
+const union = catalogue.snapshots.find(({includedRevisions}) => includedRevisions.length === 3);
+check(() => nativeAssert.ok(union));
+check(() => nativeAssert.deepEqual(union.includedRevisions,[1,2,3].map(index=>makeSnapshot(index).revision).sort()));
+check(() => nativeAssert.ok(union.sequence < catalogue.currentSequence));
+const unionCss = assets.find(({sha256}) => sha256 === union.stylesheetSha256).css;
+for (const value of ['1.125px','2.125px','3.125px']) check(() => nativeAssert.ok(unionCss.includes(value)));
+const selected = catalogue.snapshots.at(-1);
+check(() => nativeAssert.deepEqual(selected.includedRevisions,[makeSnapshot(3).revision]));
+const currentCss = assets.find(({sha256}) => sha256 === selected.stylesheetSha256).css;
+check(() => nativeAssert.ok(!currentCss.includes('1.125px') && !currentCss.includes('2.125px')));
+check(() => nativeAssert.equal(producer.descriptor(handle,'app/page.tsx','server').sequence,selected.sequence));
+`)).toBe(9);
 });

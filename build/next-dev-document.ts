@@ -46,11 +46,23 @@ export function createNextDevDocumentOwner(document: Document, options: Readonly
   const stylesheets = createNextDevNativeStylesheets(document);
   const available = new Map<number, NextDevConsumerSnapshot>(ledger.inspect().residentSequences.map((sequence) =>
     [sequence, ledger.descriptor(firstSource, sequence)]));
+  const historyRevisions = new Set([...available.values()].flatMap(({ includedRevisions }) => includedRevisions));
+  const bootstrapUnion = [...available.values()].reverse().find((snapshot) => [...historyRevisions].every((revision) => snapshot.includedRevisions.includes(revision)));
+  if (bootstrapUnion === undefined) throw new Error("Next development bootstrap lacks a retained-history union; restart required");
   const acquisitions = new Map<string, Promise<void>>();
   const mounts = new Map<HTMLElement, Mount>();
   const listeners = new Set<() => void>();
   let documentSubscribers = 0;
   let censusComplete = document.readyState !== "loading";
+  let censusPinned = false;
+  const initialRoots = new Map<HTMLElement, NextDevConsumerDescriptor>();
+  let initialLoaded = false;
+  let started = false;
+  let start!: () => void;
+  let rejectStart!: (error: Error) => void;
+  const startupReady = new Promise<void>((resolve, reject) => { start = resolve; rejectStart = reject; });
+  void startupReady.catch(() => {});
+  let startupTimer: number | null = null;
   let queued = false;
   let state: NextDevDocumentSnapshot = Object.freeze({ active: null, availableSequence: initial.sequence, phase: "bootstrap" });
   let ready!: () => void;
@@ -75,8 +87,10 @@ export function createNextDevDocumentOwner(document: Document, options: Readonly
     state = Object.freeze({ active: state.active, availableSequence: state.availableSequence, phase: "restart-required" });
     observer.disconnect();
     document.removeEventListener("DOMContentLoaded", contentLoaded);
+    if (startupTimer !== null) { view.clearTimeout(startupTimer); startupTimer = null; }
     try { stylesheets.stop(); } catch { /* altered ownership is retained */ }
     rejectReady(new Error("Next development document requires restart"));
+    rejectStart(new Error("Next development document requires restart"));
     notify();
   };
   const requireOpen = (): void => {
@@ -106,6 +120,21 @@ export function createNextDevDocumentOwner(document: Document, options: Readonly
     queued = false;
     if (state.phase === "closed" || state.phase === "restart-required") return;
     try {
+      // The browser parser's EOF event is independent of the gated application
+      // startup. No React subscriber or consumer commit is required to pin the
+      // already-delivered SSR roots and select their covering initial union.
+      if (state.phase === "bootstrap" && censusComplete && !censusPinned) {
+        for (const root of roots()) initialRoots.set(root, rootDescriptor(root));
+        ledger.pinInitialConsumers([...initialRoots.values()]);
+        censusPinned = true;
+      }
+      if (censusPinned && !started) {
+        const currentRoots = roots();
+        if (currentRoots.length !== initialRoots.size || currentRoots.some((root) => {
+          const initial = initialRoots.get(root);
+          return initial === undefined || !same(initial, rootDescriptor(root));
+        })) throw new Error("Next development initial DOM census changed before application startup");
+      }
       for (const [root, mount] of mounts) {
         if (!root.isConnected) {
           if (!mount.parked) throw new Error("Next development root disappeared without its commit cleanup");
@@ -131,6 +160,14 @@ export function createNextDevDocumentOwner(document: Document, options: Readonly
         ledger.activated(candidate.sequence);
         update(state.phase);
       }
+      if (!started && censusPinned && initialLoaded && state.active !== null
+        && stylesheets.loaded(state.active.stylesheetSha256)
+        && ledger.inspect().requiredRevisions.every((revision) => state.active!.includedRevisions.includes(revision))) {
+        started = true;
+        initialRoots.clear();
+        if (startupTimer !== null) { view.clearTimeout(startupTimer); startupTimer = null; }
+        start();
+      }
       const retirement = ledger.retire();
       for (const snapshot of retirement.snapshots) available.delete(snapshot.sequence);
       for (const hash of retirement.stylesheets) {
@@ -145,11 +182,18 @@ export function createNextDevDocumentOwner(document: Document, options: Readonly
     queued = true;
     queueMicrotask(reconcile);
   };
-  const contentLoaded = (): void => { censusComplete = true; schedule(); };
+  const contentLoaded = (): void => {
+    // A dispatched event cannot prove parser EOF. Keep listening after an
+    // early synthetic event so the actual native readiness transition wins.
+    if (document.readyState === "loading") return;
+    censusComplete = true;
+    document.removeEventListener("DOMContentLoaded", contentLoaded);
+    schedule();
+  };
   const observer = new view.MutationObserver(schedule);
   observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true,
     attributeFilter: [NEXT_DEV_CONSUMER_ATTRIBUTE, NEXT_DEV_DESCRIPTOR_ATTRIBUTE] });
-  document.addEventListener("DOMContentLoaded", contentLoaded, { once: true });
+  if (!censusComplete) document.addEventListener("DOMContentLoaded", contentLoaded);
 
   const acquire = (snapshot: NextDevConsumerSnapshot): Promise<void> => {
     const existing = acquisitions.get(snapshot.stylesheetSha256);
@@ -172,31 +216,35 @@ export function createNextDevDocumentOwner(document: Document, options: Readonly
     void pending.catch(() => {});
     return pending;
   };
-  // renderStartup waits this native acquisition AND its synchronous activation,
-  // never the framework's immediate _N_E_STYLE_LOAD Promise.
-  const startupReady = acquire(initial).then(() => {
-    requireOpen();
-    // A newer transition can load first. Still require this exact initial
-    // trusted acquisition, then accept only an intact active producer union
-    // covering ALL initially pinned revisions, not merely its newest source.
-    if (state.active === null || !stylesheets.loaded(state.active.stylesheetSha256)
-      || !initial.includedRevisions.every((revision) => state.active!.includedRevisions.includes(revision))) {
-      throw new Error("Next development initial CSS lacks complete active native coverage before startup");
-    }
-  });
-  void startupReady.catch(() => {});
+  // Acquire in sequence order before any load. The newer pruned tag therefore
+  // already precedes the historical union and never needs to be moved later.
+  // The exact initial trusted load remains mandatory even when older SSR needs
+  // the historical union active until its real replacement commits.
+  startupTimer = view.setTimeout(terminal, 15_000);
+  for (const snapshot of [...new Map([bootstrapUnion, initial].map((snapshot) => [snapshot.sequence, snapshot])).values()]
+    .sort((left, right) => left.sequence - right.sequence)) {
+    const pending = acquire(snapshot);
+    void pending.then(() => {
+      if (snapshot.sequence === initial.sequence) initialLoaded = true;
+      schedule();
+    }, terminal);
+  }
+  schedule();
 
   const close = (): void => {
     if (state.phase === "closed") return;
     observer.disconnect();
     document.removeEventListener("DOMContentLoaded", contentLoaded);
+    if (startupTimer !== null) { view.clearTimeout(startupTimer); startupTimer = null; }
     view.removeEventListener("pagehide", pageHidden);
     try { stylesheets.stop(); } catch { /* preserve foreign ownership */ }
     ledger.close();
     mounts.clear();
+    initialRoots.clear();
     acquisitions.clear();
     available.clear();
     rejectReady(new Error("Next development document closed"));
+    rejectStart(new Error("Next development document closed"));
     update("closed");
     listeners.clear();
   };
