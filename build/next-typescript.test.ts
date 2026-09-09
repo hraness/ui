@@ -122,7 +122,7 @@ function nativeGraphFixtures(root: string, attempt: ReturnType<typeof nativePlan
     json(join(attempt.directory, mode, target, "graph.json"), {
       adapterVersion: STYLEX_NEXT_ADAPTER_VERSION, attemptId: name, auxiliaryTraceAssets: [], compilerSha256, cssInputs: [],
       entrypoints: target === "client" ? [{ name: mode === "delivery" ? "app/layout" : "main-app", css, files: ["static/client.js", "static/client.js.map", ...css], javascript: ["static/client.js"], stylexCss: css }] : [],
-      emptyEntryBootstraps: [], frameworkAssets: [], graphId: target, javascriptChunks: target === "client" ? ["static/client.js"] : [],
+      delegatedEntryBootstraps: [], emptyEntryBootstraps: [], frameworkAssets: [], graphId: target, javascriptChunks: target === "client" ? ["static/client.js"] : [],
       kind: "hraness-stylex-next-graph", mode, modules, nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
       outputDirectory: distDir, outputs, packages: [attempt.identity], rules: [], rulesSha256: emptyRules, schemaVersion: 1,
       sourceMaps: outputs.filter(({ path }) => path.endsWith(".map")), sourcesSha256: hash(canonicalJson(modules)), target, webpackVersion: "5.98.0",

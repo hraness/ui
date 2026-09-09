@@ -55,7 +55,7 @@ async function proxyFixture() {
   const modules = [{ path: "proxy.ts", receiptSha256: sha256("proxy-module") }];
   const graph = validateStylexNextGraphReceipt({
     adapterVersion: STYLEX_NEXT_ADAPTER_VERSION, attemptId: "proxy", auxiliaryTraceAssets: [context.asset], compilerSha256,
-    cssInputs: [], emptyEntryBootstraps: [], frameworkAssets: [], graphId: "node-rsc", kind: "hraness-stylex-next-graph",
+    cssInputs: [], delegatedEntryBootstraps: [], emptyEntryBootstraps: [], frameworkAssets: [], graphId: "node-rsc", kind: "hraness-stylex-next-graph",
     entrypoints: [{ css: [], files: [initial.path], javascript: [initial.path], name: "proxy", stylexCss: [] }],
     javascriptChunks: [initial.path], mode: "discovery", modules, nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
     outputDirectory: ".next", outputs: [initial, sourceMap, context.asset.initial].sort((a, b) => a.path.localeCompare(b.path)),

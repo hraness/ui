@@ -431,7 +431,7 @@ describe("Next adapter contracts", () => {
       compilerSha256,
       cssInputs: [],
       entrypoints: [{ css: ["static/app.css"], files: ["static/app.css", "static/app.js"], javascript: ["static/app.js"], name: "app", stylexCss: [] }],
-      emptyEntryBootstraps: [],
+      delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
       frameworkAssets: [],
       javascriptChunks: ["static/app.js"],
       graphId: "client",
@@ -499,7 +499,7 @@ describe("Next adapter contracts", () => {
     };
     assert.equal(validateStylexNextGraphReceipt(withEmpty).emptyEntryBootstraps.length, 1);
     for (const value of [
-      { ...withEmpty, emptyEntryBootstraps: [] },
+      { ...withEmpty, delegatedEntryBootstraps: [], emptyEntryBootstraps: [] },
       { ...withEmpty, javascriptChunks: ["static/app.js"] },
       { ...withEmpty, target: "node-rsc" },
       { ...withEmpty, emptyEntryBootstraps: [bootstrap, bootstrap] },
@@ -600,7 +600,7 @@ describe("Next adapter contracts", () => {
     const entry = { css: [], files: [javascript.path], javascript: [javascript.path], name: "app/page", stylexCss: [] };
     const graph = {
       adapterVersion: STYLEX_NEXT_ADAPTER_VERSION, attemptId: "fixture", auxiliaryTraceAssets: [asset], compilerSha256,
-      cssInputs: [], emptyEntryBootstraps: [], entrypoints: [entry], frameworkAssets: [], graphId: "node-rsc",
+      cssInputs: [], delegatedEntryBootstraps: [], emptyEntryBootstraps: [], entrypoints: [entry], frameworkAssets: [], graphId: "node-rsc",
       javascriptChunks: [javascript.path], kind: "hraness-stylex-next-graph", mode: "discovery", modules,
       nextVersion: STYLEX_NEXT_REQUIRED_VERSION, outputDirectory: ".next", outputs: [javascript, map, initial],
       packages: [], rules: emptyRules, rulesSha256: stylexRulesSha256(emptyRules), schemaVersion: 1,
@@ -662,7 +662,7 @@ describe("Next adapter contracts", () => {
       const modules = [{ path: source, receiptSha256: sha256(source) }];
       const graph = {
         adapterVersion: STYLEX_NEXT_ADAPTER_VERSION, attemptId: "fixture", auxiliaryTraceAssets: [asset], compilerSha256,
-        cssInputs: [], emptyEntryBootstraps: [], entrypoints: [entry], frameworkAssets: [], graphId: "node-rsc",
+        cssInputs: [], delegatedEntryBootstraps: [], emptyEntryBootstraps: [], entrypoints: [entry], frameworkAssets: [], graphId: "node-rsc",
         javascriptChunks: [javascript.path], kind: "hraness-stylex-next-graph", mode: "discovery", modules,
         nextVersion: STYLEX_NEXT_REQUIRED_VERSION, outputDirectory: ".next", outputs: [javascript, map, initial],
         packages: [], rules: emptyRules, rulesSha256: stylexRulesSha256(emptyRules), schemaVersion: 1,
@@ -719,7 +719,7 @@ describe("Next adapter contracts", () => {
       compilerSha256,
       cssInputs: [],
       entrypoints: [],
-      emptyEntryBootstraps: [],
+      delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
       frameworkAssets: [],
       javascriptChunks: [],
       graphId: "edge-rsc",
