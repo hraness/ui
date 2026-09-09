@@ -12,7 +12,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { delimiter, join, relative, resolve, sep } from "node:path";
+import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 
 import { chromium } from "playwright-core";
 
@@ -170,6 +170,51 @@ function nextTarget(value: unknown, description: string): NextTarget {
 
 type Artifact = Readonly<{ bytes: number; path: string; sha256: string }>;
 
+// Keep only selected, already verified evidence in memory until the ordinary
+// consumer cleanup succeeds. No environment or arbitrary dependency capture.
+const retainedEvidence = new Map<string, Buffer>();
+const browserOutcomes: unknown[] = [];
+function retainEvidence(path: string, bytes: Buffer): void {
+  logicalPath(path, "Next retained evidence path");
+  const prior = retainedEvidence.get(path);
+  if (prior !== undefined) {
+    assert.ok(prior.equals(bytes), `Next retained evidence changed: ${path}`);
+    return;
+  }
+  assert.ok(retainedEvidence.size < 4096 && bytes.length + [...retainedEvidence.values()].reduce((sum, value) => sum + value.length, 0) <= 64 * 1024 * 1024, "Next retained proof exceeds its bound");
+  retainedEvidence.set(path, Buffer.from(bytes));
+}
+
+async function retainOrdinaryEvidence(root: string, path: string, destination: string): Promise<void> {
+  logicalPath(path, "Next selected evidence input");
+  const absolute = resolve(root, path);
+  const stat = await lstat(absolute);
+  assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size <= 64 * 1024 * 1024, "Next selected evidence must be an ordinary bounded file");
+  assert.equal(await realpath(absolute), absolute, "Next selected evidence cannot traverse a symlink");
+  retainEvidence(destination, await readFile(absolute));
+}
+
+async function writeRetainedEvidence(fixtureRoot: string): Promise<void> {
+  const created = await mkdtemp(join(fixtureRoot, `next-adopter-proof-${NEXT_VERSION}-`));
+  const directory = await realpath(created);
+  assert.equal(directory, created, "Next proof directory cannot traverse a symlink");
+  const artifacts: Artifact[] = [];
+  for (const [path, bytes] of [...retainedEvidence].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) {
+    const destination = resolve(directory, path);
+    assert.equal(relative(directory, destination).split(sep).join("/"), path);
+    await mkdir(dirname(destination), { recursive: true });
+    assert.equal(await realpath(dirname(destination)), dirname(destination));
+    await writeFile(destination, bytes, { flag: "wx" });
+    const artifact = { path, bytes: bytes.length, sha256: sha256(bytes) };
+    await readArtifact(directory, artifact, "Next retained proof readback");
+    artifacts.push(artifact);
+  }
+  assert.equal(browserOutcomes.length, 8, "Next proof must retain root, two route/resize/cleanup and global-error outcomes");
+  const receipt = `${JSON.stringify({ schemaVersion: 1, nextVersion: NEXT_VERSION, state: "passed", disposableConsumerRemoved: true, artifacts, browserOutcomes }, null, 2)}\n`;
+  await writeFile(resolve(directory, "receipt.json"), receipt, { flag: "wx" });
+  console.log(`Retained packed Next ${NEXT_VERSION} evidence: ${directory}/receipt.json sha256=${sha256(receipt)}`);
+}
+
 function artifact(value: unknown, description: string): Artifact {
   const record = object(value, description);
   exactKeys(record, ["bytes", "path", "sha256"], description);
@@ -312,6 +357,9 @@ async function assertDelegatedEntries(consumer: string, graph: Record<string, un
   const evidence = object(JSON.parse(await readFile(evidencePath, "utf8")) as unknown, "Delegated native observation");
   assert.equal(evidence.attemptId, graph.attemptId);
   assert.equal(evidence.mode, graph.mode);
+  const prefix = `${graph.attemptId}/${graph.mode}`;
+  await retainOrdinaryEvidence(consumer, `.delegated-entry-proof/${graph.attemptId}-${graph.mode}.json`, `${prefix}/observation.json`);
+  await retainOrdinaryEvidence(consumer, `.delegated-entry-proof/${graph.attemptId}-${graph.mode}-topology.json`, `${prefix}/raw-topology.json`);
   assert.ok(Array.isArray(evidence.observations) && evidence.observations.length === 2);
   const observations = evidence.observations.map((value) => object(value, "Delegated native route"));
   assert.deepEqual(observations.map(({ name }) => name), ["app/delegated-one/page", "app/delegated-two/page"]);
@@ -333,7 +381,9 @@ async function assertDelegatedEntries(consumer: string, graph: Record<string, un
     const output = artifact(proof.output, "Delegated output artifact");
     assert.deepEqual(outputs.find((entry) => entry.path === path), output);
     assert.ok(chunks.includes(path) && !maps.some((entry) => entry.path === `${path}.map`));
-    assert.equal(exactUtf8(await readArtifact(outputRoot, output, "Delegated settled bootstrap"), "Delegated bootstrap"), observation.source);
+    const bootstrapBytes = await readArtifact(outputRoot, output, "Delegated settled bootstrap");
+    assert.equal(exactUtf8(bootstrapBytes, "Delegated bootstrap"), observation.source);
+    retainEvidence(`${prefix}/assets/${output.path}`, bootstrapBytes);
     assert.ok(Array.isArray(observation.owners) && observation.owners.length > 0 && observation.owners.length <= 4096);
     const owners = observation.owners.map((value) => object(value, "Delegated native owner"));
     const expectedOwners = [];
@@ -348,8 +398,11 @@ async function assertDelegatedEntries(consumer: string, graph: Record<string, un
         assert.ok(ownerOutput !== undefined && map !== undefined && chunks.includes(ownerPath));
         assert.equal(ownerOutput.sha256, file.sha256);
         assert.equal(map.sha256, file.mapSha256);
-        const ownerSource = exactUtf8(await readArtifact(outputRoot, ownerOutput, "Delegated mapped owner"), "Delegated owner");
-        await readArtifact(outputRoot, map, "Delegated genuine owner map");
+        const ownerBytes = await readArtifact(outputRoot, ownerOutput, "Delegated mapped owner");
+        const ownerSource = exactUtf8(ownerBytes, "Delegated owner");
+        const mapBytes = await readArtifact(outputRoot, map, "Delegated genuine owner map");
+        retainEvidence(`${prefix}/assets/${ownerOutput.path}`, ownerBytes);
+        retainEvidence(`${prefix}/assets/${map.path}`, mapBytes);
         assertNextSourceMapOutputLink(ownerSource, ownerPath, map.path);
       }
     }
@@ -433,6 +486,12 @@ try {
   await mkdir(temporary, { mode: 0o700 });
   const archive = resolve(work, "hraness-ui.tgz");
   await run([process.execPath, "pm", "pack", "--filename", archive, "--ignore-scripts", "--quiet"], repository, environment);
+  const archiveBytes = await readFile(archive);
+  retainEvidence("inputs/archive.json", Buffer.from(JSON.stringify({ bytes: archiveBytes.length, sha256: sha256(archiveBytes) })));
+  for (const path of ["package.json", "bun.lock", "scripts/next-adopter-smoke.ts"]) await retainOrdinaryEvidence(repository, path, `inputs/repository/${path}`);
+  for (const path of await filesBelow(resolve(repository, "fixtures/next-adopter"))) {
+    await retainOrdinaryEvidence(repository, `fixtures/next-adopter/${path}`, `inputs/fixture/${path}`);
+  }
   await writeFile(resolve(consumer, "package.json"), `${JSON.stringify({
     dependencies: {
       "@babel/core": "7.29.7",
@@ -471,6 +530,9 @@ try {
     assert.equal(await realpath(absolute), absolute, `Next ${NEXT_VERSION} creator traverses a symlink: ${path}`);
     assert.equal(sha256(await readFile(absolute)), expected, `Next ${NEXT_VERSION} installed creator differs: ${path}`);
   }
+  retainEvidence("inputs/next-creators.json", Buffer.from(JSON.stringify({ nextVersion: NEXT_VERSION, creators: [...creators].map(([path, sha256]) => ({ path, sha256 })) })));
+  await retainOrdinaryEvidence(consumer, "package.json", "inputs/consumer-package.json");
+  await retainOrdinaryEvidence(consumer, "bun.lock", "inputs/consumer-bun.lock");
   console.log(`Next ${NEXT_VERSION} verified ${String(creators.size)} exact installed creator identities before native compilation`);
   if (profile.rootParams) {
     await run([node, resolve(repository, "fixtures/next-adopter/root-params-writer-proof.mjs"),
@@ -848,6 +910,7 @@ try {
         };
       });
       assert.deepEqual(evidence, { client: "17px", lazy: "19px", node: "13px", theme: "31px" });
+      browserOutcomes.push({ kind: "root-hydration", ...evidence });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`${base}/delegated-one`, { waitUntil: "networkidle" });
       for (const instance of ["one", "two"]) {
@@ -865,6 +928,8 @@ try {
           return rail !== null && card !== null && rail.scrollLeft > 0 && Math.abs(rail.scrollLeft - card.offsetLeft) <= 1 && document.querySelector('[aria-controls="history-measure-valuation"]')?.getAttribute("aria-pressed") === "true";
         });
         assert.equal(await valuation.evaluate((element) => element.getBoundingClientRect().height >= 48), true, "Delegated shared stylesheet did not reach the real control");
+        browserOutcomes.push({ kind: "delegated-scroll", instance, ...await valuation.evaluate((element) => ({ pressed: element.getAttribute("aria-pressed"), height: element.getBoundingClientRect().height, scrollLeft: document.querySelector<HTMLElement>(".history-measure-rail")?.scrollLeft, targetOffset: document.querySelector<HTMLElement>("#history-measure-valuation")?.offsetLeft, icons: document.querySelectorAll(".history-measure-controls svg").length })) });
+        const resizeOutcomes = [];
         for (const width of [390, 900]) {
           await page.setViewportSize({ width, height: 780 });
           await page.waitForFunction(() => {
@@ -875,14 +940,18 @@ try {
             const headerHeight = header.getBoundingClientRect().height;
             return Math.abs(parseFloat(main.style.getPropertyValue("--history-header-offset")) - headerHeight) < 0.1 && Math.abs(parseFloat(main.style.getPropertyValue("--history-filter-stack-offset")) - headerHeight - filters.getBoundingClientRect().height) < 0.1;
           });
+          resizeOutcomes.push(await page.locator("[data-next-delegated]").evaluate((element) => ({ width: innerWidth, headerOffset: element.style.getPropertyValue("--history-header-offset"), stackOffset: element.style.getPropertyValue("--history-filter-stack-offset"), headerHeight: element.querySelector(".stripe-history-header")!.getBoundingClientRect().height, filterHeight: element.querySelector(".history-filters")!.getBoundingClientRect().height })));
         }
+        browserOutcomes.push({ kind: "delegated-resize", instance, measurements: resizeOutcomes });
         const oldMain = await page.locator("[data-next-delegated]").elementHandle();
         assert.ok(oldMain !== null);
         const next = instance === "one" ? "two" : "one";
         await page.getByRole("link", { name: "Second shared history route" }).click();
         await page.waitForURL(`${base}/delegated-${next}`);
         await page.locator(`[data-next-delegated="${next}"]`).waitFor();
-        assert.deepEqual(await oldMain.evaluate((element) => ({ connected: element.isConnected, header: element.style.getPropertyValue("--history-header-offset"), stack: element.style.getPropertyValue("--history-filter-stack-offset") })), { connected: false, header: "", stack: "" }, "Delegated route cleanup must detach the prior main and remove its observed offsets");
+        const cleanup = await oldMain.evaluate((element) => ({ connected: element.isConnected, header: element.style.getPropertyValue("--history-header-offset"), stack: element.style.getPropertyValue("--history-filter-stack-offset") }));
+        assert.deepEqual(cleanup, { connected: false, header: "", stack: "" }, "Delegated route cleanup must detach the prior main and remove its observed offsets");
+        browserOutcomes.push({ kind: "delegated-route-cleanup", instance, next, ...cleanup });
         await oldMain.dispose();
       }
       assert.equal(hydrationRuntimeFailed, false, `Next delegated hydration reported runtime errors: ${JSON.stringify(hydrationDiagnostics)}`);
@@ -968,6 +1037,7 @@ try {
           },
           "Next global-error border must depend only on its loaded graph-bound StyleX stylesheet",
         );
+        browserOutcomes.push({ kind: "global-error-stylesheet-negative", ...globalErrorEvidence });
       } finally {
         await globalErrorPage.close();
       }
@@ -1021,9 +1091,17 @@ try {
     assert.deepEqual(graph.entrypoints, []);
     assert.equal(graph.sourcesSha256, sha256("[]"));
   }
+  for (const attempt of ["packed-next-adopter", "packed-next-adopter-no-edge"]) {
+    for (const file of ["plan.json", "complete.json", ...["discovery", "delivery"].flatMap((mode) => [`${mode}/postprocessing.json`, ...NEXT_TARGETS.map((target) => `${mode}/${target}/graph.json`)])]) {
+      await retainOrdinaryEvidence(consumer, `.stylex-next/${attempt}/${file}`, `${attempt}/receipts/${file}`);
+    }
+  }
   successful = true;
   console.log(`Packed Next ${NEXT_VERSION} client, Node RSC, edge RSC, registered Node proxy trace and request headers, exact target/output source-map receipts, two independently observed delegated entries with mapped owner joins and working scroll/resize/icon hydration, explicit no-edge graph, dynamic /index route, lazy, exercised global-error, package union, font-URL asset linkage, CSP, and hydration proof passed`);
 } finally {
-  if (successful) await rm(work, { force: true, recursive: true });
+  if (successful) {
+    await rm(work, { force: true, recursive: true });
+    await writeRetainedEvidence(fixtureRoot);
+  }
   else process.stderr.write(`Retained failed Next adopter fixture: ${work}\n`);
 }
