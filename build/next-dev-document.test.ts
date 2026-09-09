@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { createNextDevConsumerLedger } from "./next-dev-consumers.js";
-import { createNextDevBridgeOwner } from "./next-dev-bootstrap.js";
+import { createNextDevBridgeOwner, installNextDevBridgeOwner } from "./next-dev-bootstrap.js";
+import { readNextDevBrowserOwner } from "./next-dev-browser-owner.js";
+import { createNextDevResponseHandle } from "./next-dev-responses.js";
 import { createNextDevDocumentOwner, NEXT_DEV_CONSUMER_ATTRIBUTE, NEXT_DEV_DESCRIPTOR_ATTRIBUTE } from "./next-dev-document.js";
 
 // Deterministic document doubles exercise lifecycle wiring, not native CSS,
@@ -253,6 +255,103 @@ test("the browser factory adopts authority before waiting for hydration and gate
   await bridge!.updateReady(update);
   expect(owner.getSnapshot().phase).toBe("ready");
   owner.close();
+});
+
+test("the native bootstrap owns one immutable document-local bridge without exposing a second owner", () => {
+  const document = new DocumentDouble();
+  const native = document as unknown as Document;
+  expect(() => readNextDevBrowserOwner(native)).toThrow("unavailable");
+  const owner = installNextDevBridgeOwner(native, catalogue([snapshot(1)]));
+  expect(readNextDevBrowserOwner(native)).toBe(owner);
+  expect(Object.isFrozen(owner)).toBeTrue();
+  const census = { links: document.links.length, observers: document.observers.size, timers: document.timers.size };
+  expect(() => installNextDevBridgeOwner(native, catalogue([snapshot(1)]))).toThrow("replaced");
+  expect(readNextDevBrowserOwner(native)).toBe(owner);
+  expect(owner.documentOwner.getSnapshot().phase).toBe("bootstrap");
+  expect({ links: document.links.length, observers: document.observers.size, timers: document.timers.size }).toEqual(census);
+  owner.documentOwner.close();
+  expect(owner.responseOwner.getSnapshot().phase).toBe("closed");
+  expect(document.observers.size).toBe(0);
+  expect(document.timers.size).toBe(0);
+});
+
+test("response props never publish producer authority; real catalogue and native CSS unblock only their exact request", async () => {
+  const { document, owner, bridge, authority, bootstrap, commit } = fixture(true);
+  await bootstrap();
+  authority.publish(snapshot(2, [1, 2]));
+  const current = authority.descriptor("app/page.tsx", 2);
+  const response = bridge!.responseOwner;
+  const handle = createNextDevResponseHandle();
+  let wakeups = 0;
+  let refreshes = 0;
+  const unbind = response.bindRefresh(() => { refreshes++; });
+  const before = owner.inspect();
+  expect(response.classify(current, 1).status).toBe("future");
+  expect(owner.inspect()).toEqual(before);
+  response.request(handle, current, 1, () => { wakeups++; });
+  expect(response.getSnapshot().pending).toBe(1);
+  expect(wakeups).toBe(0);
+  expect(document.links).toHaveLength(1);
+  const adopted = bridge!.adopt(catalogue([snapshot(1), snapshot(2, [1, 2])]));
+  expect(response.classify(current, 1).status).toBe("unready");
+  expect(wakeups).toBe(0);
+  document.links.find((link) => link.getAttribute("href")?.includes(hash(102)))!.load();
+  await adopted; await tick();
+  expect(response.classify(current, 1).status).toBe("ready");
+  expect(wakeups).toBe(1);
+  expect(response.getSnapshot().pending).toBe(1);
+  commit(0, 2);
+  response.responseCommitted(handle, current);
+  expect(response.getSnapshot().pending).toBe(0);
+  expect(refreshes).toBe(0);
+  unbind(); owner.close();
+});
+
+test("historical responses after native pruning request one public refresh and cannot reacquire retired CSS", async () => {
+  const { document, owner, bridge, authority, bootstrap, commit } = fixture(true);
+  await bootstrap();
+  for (const value of [snapshot(2, [1, 2]), snapshot(3, [2], 2)]) authority.publish(value);
+  const adopted = bridge!.adopt(catalogue([snapshot(1), snapshot(2, [1, 2]), snapshot(3, [2], 2)]));
+  for (const link of document.links) if (link.sheet === null) link.load();
+  await adopted; await tick();
+  commit(0, 3); commit(1, 3); await tick();
+  expect(owner.getSnapshot().active?.sequence).toBe(3);
+  const response = bridge!.responseOwner;
+  const old = authority.descriptor("app/page.tsx", 1);
+  expect(response.classify(old, 0).status).toBe("stale");
+  const before = owner.inspect();
+  let refreshes = 0;
+  const unbind = response.bindRefresh(() => { refreshes++; });
+  response.request(createNextDevResponseHandle(), old, 0, () => {});
+  response.request(createNextDevResponseHandle(), old, 0, () => {});
+  await tick(); response.changed(); await tick();
+  expect(refreshes).toBe(1);
+  expect(owner.inspect()).toEqual(before);
+  expect(document.links).toHaveLength(1);
+  bridge!.restartRequired();
+  expect(response.getSnapshot().phase).toBe("restart-required");
+  expect(response.getSnapshot().pending).toBe(0);
+  expect(owner.getSnapshot().active?.sequence).toBe(3);
+  unbind(); owner.close();
+});
+
+test("forged same-session response metadata and unknown historical authority fail closed without adding CSS", async () => {
+  for (const drift of ["hash", "session", "source", "target", "history"] as const) {
+    const { owner, bridge, authority, document, bootstrap } = fixture(true);
+    await bootstrap();
+    const descriptor = { ...authority.descriptor("app/page.tsx", 1) };
+    if (drift === "hash") descriptor.stylesheetSha256 = hash(999);
+    else if (drift === "session") descriptor.session = "f".repeat(32);
+    else if (drift === "source") descriptor.source = "app/unknown.tsx";
+    else if (drift === "target") descriptor.target = "client";
+    else descriptor.sequence = 0;
+    const before = document.links.length;
+    expect(() => bridge!.responseOwner.request(createNextDevResponseHandle(), descriptor, 0, () => {})).toThrow();
+    expect(bridge!.responseOwner.getSnapshot().phase).toBe("restart-required");
+    expect(owner.getSnapshot().phase).toBe("restart-required");
+    expect(document.links.length).toBe(before);
+    owner.close();
+  }
 });
 
 test("delayed initial SSR survives two edit/prune cycles without making DOM census depend on gated application startup", async () => {

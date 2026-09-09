@@ -90,7 +90,8 @@ function source(value: unknown): NextDevConsumerSource {
   return Object.freeze({ source: input.source, target: input.target });
 }
 
-function descriptor(value: unknown): NextDevConsumerDescriptor {
+/** Wire parsing alone grants no producer, stylesheet or commit authority. */
+export function parseNextDevConsumerDescriptor(value: unknown): NextDevConsumerDescriptor {
   const input = record(value, ["href", "includedRevisions", "kind", "revision", "schemaVersion", "sequence", "session", "source", "stylesheetSha256", "target"], "descriptor");
   requireValue(input.kind === "hraness-stylex-next-dev-consumer" && input.schemaVersion === 1, "descriptor kind or schema is unsupported");
   requireValue(typeof input.session === "string" && SESSION.test(input.session), "session must be a canonical nonce");
@@ -182,7 +183,7 @@ export function createNextDevConsumerLedger(options: Readonly<{
       kind: "hraness-stylex-next-dev-consumer", schemaVersion: 1, session });
   };
   const capturedDescriptor = (value: unknown): NextDevConsumerDescriptor => {
-    const parsed = descriptor(value);
+    const parsed = parseNextDevConsumerDescriptor(value);
     const registered = sources.get(parsed.source);
     requireValue(registered !== undefined, "unregistered consumer source");
     requireValue(JSON.stringify(parsed) === JSON.stringify(expectedDescriptor(registered, parsed.sequence)), "descriptor differs from captured producer authority");
