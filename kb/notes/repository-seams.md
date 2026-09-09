@@ -23,6 +23,16 @@ The design seam is directional. `@hraness/ui` is the primitive layer. Consumers 
 
 Consumers pin reviewed immutable releases or full commits and validate upgrades on their own schedule. Do not use sibling paths, Git submodules, or coordinated `main` workflows. Add a shared primitive only after two concrete consumers need the same stable interface. Keep Direct workbenches development-only. Freeze public interfaces before parallel work and give inventories, manifests, locks, generated artifacts, and release convergence surfaces one owner.
 
+Compiler compatibility is also an explicit package contract. The Next adapter
+qualifies exactly 16.2.12 and 16.3.3, with 16.2.12 retained as the default.
+An adopter selecting 16.3.3 sets the same exact version in its build runner and
+Next configuration; the installed framework and all creator, graph, type and
+postprocessing receipts must agree. The optional package peer declares those
+two versions, not a range of untested releases. The packed-consumer matrix
+checks each profile independently. Its static-root fixture and separate
+root-parameter writer probe do not claim dynamic-root route acceptance.
+The extraction plan records the [[plans/stable-stylex-consumer-extraction|qualification evidence and remaining delivery gates]].
+
 ## Related
 
 The normative rules remain in the root `AGENTS.md`. [[documentation-ownership|Documentation ownership]] explains how those rules relate to executable contracts and this pull-based context.

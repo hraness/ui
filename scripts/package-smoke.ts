@@ -7141,7 +7141,13 @@ async function verifyConsumer(
   );
   const installedManifest = JSON.parse(
     await readFile(join(installedPackageRoot, "package.json"), "utf8"),
-  ) as { exports?: Record<string, unknown> };
+  ) as {
+    exports?: Record<string, unknown>;
+    peerDependencies?: Record<string, unknown>;
+    peerDependenciesMeta?: Record<string, unknown>;
+  };
+  assert.equal(installedManifest.peerDependencies?.next, "16.2.12 || 16.3.3");
+  assert.deepEqual(installedManifest.peerDependenciesMeta?.next, { optional: true });
   assert.doesNotMatch(
     JSON.stringify(installedManifest),
     /tailwind/iu,

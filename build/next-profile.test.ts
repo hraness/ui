@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { describe, test } from "bun:test";
 
 import { canonicalJson, compilerSha256, sha256, stylexUnionPolicySha256 } from "./compiler.js";
@@ -8,6 +9,13 @@ import { STYLEX_NEXT_REQUIRED_VERSION, STYLEX_NEXT_PRODUCTION_VERSIONS, stylexNe
 import { stylexNextTypeEnvironment, validateStylexNextNativeTypeObservation } from "./next-typescript.js";
 
 describe("exact Next production profiles", () => {
+  test("advertises only qualified optional peers while retaining the development default", async () => {
+    const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    assert.equal(manifest.peerDependencies.next, STYLEX_NEXT_PRODUCTION_VERSIONS.join(" || "));
+    assert.deepEqual(manifest.peerDependenciesMeta.next, { optional: true });
+    assert.equal(manifest.devDependencies.next, STYLEX_NEXT_REQUIRED_VERSION);
+  });
+
   test("retains the legacy default and rejects every unqualified version without coercion", () => {
     assert.equal(STYLEX_NEXT_REQUIRED_VERSION, "16.2.12");
     assert.deepEqual(STYLEX_NEXT_PRODUCTION_VERSIONS, ["16.2.12", "16.3.3"]);
