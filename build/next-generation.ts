@@ -1,3 +1,4 @@
+import { stylexNextProfile, stylexNextVersion, type StylexNextVersion } from "./next-profile.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { link, lstat, mkdir, open, readFile, readdir, realpath, unlink, writeFile } from "node:fs/promises";
@@ -22,8 +23,6 @@ import {
   STYLEX_NEXT_ADAPTER_VERSION,
   STYLEX_NEXT_BUILD_SCHEMA_VERSION,
   STYLEX_NEXT_REQUIRED_VERSION,
-  STYLEX_NEXT_FRAMEWORK_INPUTS,
-  STYLEX_NEXT_EMPTY_ENTRY_INPUTS,
   STYLEX_NEXT_TARGETS,
   compareStylexNextStrings,
   defaultStylexNextGraphMap,
@@ -69,7 +68,7 @@ export type StylexNextAttemptPlanV1 = Readonly<{
   compilerSha256: string;
   graphMap: StylexNextGraphMapV1;
   kind: "hraness-stylex-next-attempt";
-  nextVersion: typeof STYLEX_NEXT_REQUIRED_VERSION;
+  nextVersion: StylexNextVersion;
   outputDirectory: string;
   packageManifests: readonly Readonly<{
     artifact: StylexArtifactV1;
@@ -95,6 +94,7 @@ export type StylexNextOutputLease = Readonly<{
 }>;
 
 export type PrepareStylexNextAttemptOptions = Readonly<{
+  nextVersion?: StylexNextVersion;
   attemptId: string;
   graphMap?: StylexNextGraphMapV1;
   outputDirectory?: string;
@@ -215,7 +215,7 @@ export function validateStylexNextAttemptPlan(value: unknown): StylexNextAttempt
   assert.equal(record.compilerSha256, compilerSha256);
   assert.equal(record.unionPolicySha256, stylexUnionPolicySha256, "Next attempt union policy is stale");
   assert.equal(record.kind, "hraness-stylex-next-attempt");
-  assert.equal(record.nextVersion, STYLEX_NEXT_REQUIRED_VERSION);
+  const nextVersion = stylexNextVersion(record.nextVersion);
   assert.equal(record.schemaVersion, PLAN_SCHEMA_VERSION);
   assert.ok(Array.isArray(record.packageManifests) && record.packageManifests.length > 0, "Next attempt plan requires package manifests");
   const packageManifests = record.packageManifests.map((item, index) => {
@@ -265,7 +265,7 @@ export function validateStylexNextAttemptPlan(value: unknown): StylexNextAttempt
     compilerSha256,
     graphMap: defineStylexNextGraphMap(record.graphMap),
     kind: "hraness-stylex-next-attempt",
-    nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
+    nextVersion,
     outputDirectory: normalizeLogicalPath(record.outputDirectory, "Next outputDirectory"),
     packageManifests,
     requiredSources,
@@ -369,7 +369,7 @@ export async function prepareStylexNextAttempt(options: PrepareStylexNextAttempt
     compilerSha256,
     graphMap: defineStylexNextGraphMap(options.graphMap ?? defaultStylexNextGraphMap),
     kind: "hraness-stylex-next-attempt",
-    nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
+    nextVersion: stylexNextVersion(options.nextVersion === undefined ? STYLEX_NEXT_REQUIRED_VERSION : options.nextVersion),
     outputDirectory,
     packageManifests,
     requiredSources: {
@@ -549,7 +549,7 @@ export async function writeStylexNextGraphReceipt(options: WriteStylexNextGraphR
     javascriptChunks: options.javascriptChunks,
     mode: options.mode,
     modules: moduleIdentities,
-    nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
+    nextVersion: loaded.plan.nextVersion,
     outputDirectory: normalizeLogicalPath(options.outputDirectory, "Next graph outputDirectory"),
     outputs: options.outputs,
     packages,
@@ -563,10 +563,10 @@ export async function writeStylexNextGraphReceipt(options: WriteStylexNextGraphR
   });
   const verifyCssInputs = async (): Promise<void> => {
     if (receipt.emptyEntryBootstraps.length > 0) {
-      const inputs = await readStylexNextEmptyEntryInputs(rootDirectory);
+      const inputs = await readStylexNextEmptyEntryInputs(rootDirectory, loaded.plan.nextVersion);
       for (const bootstrap of receipt.emptyEntryBootstraps) assert.deepEqual(inputs, bootstrap.inputs, "Next empty entry creator changed before graph receipt commit");
     }
-    for (const framework of receipt.frameworkAssets) assert.deepEqual(await readNextFrameworkInput(rootDirectory, framework.role), framework.input, "Next framework input changed before graph receipt commit");
+    for (const framework of receipt.frameworkAssets) assert.deepEqual(await readNextFrameworkInput(rootDirectory, framework.role, loaded.plan.nextVersion), framework.input, "Next framework input changed before graph receipt commit");
     for (const input of receipt.cssInputs) {
       assert.deepEqual(
         await artifactForFile(rootDirectory, input.path),
@@ -609,22 +609,22 @@ export async function writeStylexNextGraphReceipt(options: WriteStylexNextGraphR
   return receipt;
 }
 
-async function readNextFrameworkInput(root: string, role: StylexNextFrameworkRole): Promise<StylexArtifactV1> {
+async function readNextFrameworkInput(root: string, role: StylexNextFrameworkRole, nextVersion: StylexNextVersion): Promise<StylexArtifactV1> {
   const metadata: unknown = JSON.parse(await readFile(await resolveRootRelativeInput(root, "node_modules/next/package.json"), "utf8"));
   const next = plainObject(metadata, "Next framework package metadata");
   assert.equal(next.name, "next");
-  assert.equal(next.version, STYLEX_NEXT_REQUIRED_VERSION, "Next framework package version differs from its pinned emitter contract");
-  const [path, hash] = STYLEX_NEXT_FRAMEWORK_INPUTS[role];
+  assert.equal(next.version, nextVersion, "Next framework package version differs from its pinned emitter contract");
+  const [path, hash] = stylexNextProfile(nextVersion).frameworkInputs[role];
   const input = await artifactForFile(root, `node_modules/next/${path}`);
   assert.equal(input.sha256, hash, "Next framework input differs from its pinned original bytes");
   return input;
 }
 
-export async function readStylexNextEmptyEntryInputs(root: string): Promise<readonly StylexArtifactV1[]> {
+export async function readStylexNextEmptyEntryInputs(root: string, nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION): Promise<readonly StylexArtifactV1[]> {
   const metadata = plainObject(JSON.parse(await readFile(await resolveRootRelativeInput(root, "node_modules/next/package.json"), "utf8")) as unknown, "Next empty entry package metadata");
   assert.equal(metadata.name, "next");
-  assert.equal(metadata.version, STYLEX_NEXT_REQUIRED_VERSION, "Next empty entry package version changed");
-  return await Promise.all(STYLEX_NEXT_EMPTY_ENTRY_INPUTS.map(async ([path, hash]) => {
+  assert.equal(metadata.version, nextVersion, "Next empty entry package version changed");
+  return await Promise.all(stylexNextProfile(nextVersion).emptyEntryInputs.map(async ([path, hash]) => {
     const input = await artifactForFile(root, `node_modules/next/${path}`);
     assert.equal(input.sha256, hash, "Next empty entry creator differs from pinned original bytes");
     return input;
@@ -637,13 +637,14 @@ export async function proveStylexNextEmptyEntryBootstrap(
   graph: StylexNextEmptyEntryGraphV1,
   output: StylexArtifactV1,
   source: Uint8Array,
+  nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION,
 ): Promise<StylexNextEmptyEntryBootstrapV1> {
   assert.equal(target, "client", "Only Next client graphs may contain empty entry bootstraps");
   assert.deepEqual({ bytes: source.byteLength, sha256: sha256(source) }, { bytes: output.bytes, sha256: output.sha256 }, "Next empty entry output bytes changed");
   const text = Buffer.from(source).toString("utf8");
   assert.ok(Buffer.from(text).equals(Buffer.from(source)), "Next empty entry must retain exact UTF-8 bytes");
   validateStylexNextEmptyEntryPayload(graph, text);
-  return validateStylexNextEmptyEntryBootstrap({ graph, inputs: await readStylexNextEmptyEntryInputs(root), output });
+  return validateStylexNextEmptyEntryBootstrap({ graph, inputs: await readStylexNextEmptyEntryInputs(root, nextVersion), output }, nextVersion);
 }
 
 export async function verifySettledStylexNextEmptyEntryBootstrap(
@@ -651,12 +652,13 @@ export async function verifySettledStylexNextEmptyEntryBootstrap(
   outputRoot: string,
   target: StylexNextTarget,
   value: StylexNextEmptyEntryBootstrapV1,
+  nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION,
 ): Promise<void> {
-  const recorded = validateStylexNextEmptyEntryBootstrap(value);
+  const recorded = validateStylexNextEmptyEntryBootstrap(value, nextVersion);
   const output = await artifactForFile(outputRoot, recorded.output.path);
   assert.deepEqual(output, recorded.output, "Next empty entry output changed after compilation");
   const source = await readFile(await resolveRootRelativeInput(outputRoot, recorded.output.path));
-  assert.deepEqual(await proveStylexNextEmptyEntryBootstrap(root, target, recorded.graph, output, source), recorded, "Next empty entry provenance changed after compilation");
+  assert.deepEqual(await proveStylexNextEmptyEntryBootstrap(root, target, recorded.graph, output, source, nextVersion), recorded, "Next empty entry provenance changed after compilation");
 }
 
 /** Classify only non-chunk JavaScript after the compiler has required chunk maps. */
@@ -665,11 +667,12 @@ export async function proveStylexNextFrameworkAsset(
   target: StylexNextTarget,
   output: StylexArtifactV1,
   source: Uint8Array,
+  nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION,
 ): Promise<StylexNextFrameworkAssetV1> {
   const role = stylexNextFrameworkRole(output.path, target);
   assert.ok(role !== undefined, `Unmapped Next JavaScript has no reviewed framework role: ${output.path}`);
   assert.deepEqual({ bytes: source.byteLength, sha256: sha256(source) }, { bytes: output.bytes, sha256: output.sha256 }, "Next framework output bytes differ from the emitted asset");
-  const input = await readNextFrameworkInput(root, role);
+  const input = await readNextFrameworkInput(root, role, nextVersion);
   const text = Buffer.from(source).toString("utf8");
   assert.ok(Buffer.from(text).equals(Buffer.from(source)), "Next framework JavaScript must retain exact UTF-8 bytes");
   validateStylexNextFrameworkPayload(role, output.path, text);
@@ -682,11 +685,12 @@ export async function verifySettledStylexNextFrameworkAsset(
   outputRoot: string,
   target: StylexNextTarget,
   recorded: StylexNextFrameworkAssetV1,
+  nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION,
 ): Promise<void> {
   const output = await artifactForFile(outputRoot, recorded.output.path);
   assert.deepEqual(output, recorded.output, "Next framework output changed after compilation");
   const source = await readFile(await resolveRootRelativeInput(outputRoot, recorded.output.path));
-  assert.deepEqual(await proveStylexNextFrameworkAsset(root, target, output, source), recorded, "Next framework output provenance changed after compilation");
+  assert.deepEqual(await proveStylexNextFrameworkAsset(root, target, output, source, nextVersion), recorded, "Next framework output provenance changed after compilation");
 }
 
 async function graphReceipts(
@@ -695,6 +699,7 @@ async function graphReceipts(
 ): Promise<readonly Readonly<{ receipt: StylexNextGraphReceiptV1; receiptSha256: string }>[]> {
   return await Promise.all(STYLEX_NEXT_TARGETS.map(async (target) => {
     const graph = await canonicalFile(join(loaded.root, mode, target, "graph.json"), validateStylexNextGraphReceipt, `Next ${mode} ${target} graph receipt`);
+    assert.equal(graph.value.nextVersion, loaded.plan.nextVersion, "Next graph profile differs from plan");
     assert.equal(graph.value.attemptId, loaded.plan.attemptId, "Next graph attempt differs from plan");
     assert.equal(graph.value.mode, mode, "Next graph mode differs from directory");
     assert.equal(graph.value.target, target, "Next graph target differs from directory");
@@ -731,16 +736,16 @@ async function verifySettledGraphOutputs(
           assert.ok(!graphs.some(({ receipt }) => receipt.outputs.some((output) => output.path === path)), "Next proxy rename destination has a competing graph owner");
         }
       }
-      auxiliaryTraceSnapshots.push(await observeStylexNextAuxiliaryTraceSnapshot(root, outputRoot, asset, asset.entrypoint === "proxy" ? receipt : undefined));
+      auxiliaryTraceSnapshots.push(await observeStylexNextAuxiliaryTraceSnapshot(root, outputRoot, asset, asset.entrypoint === "proxy" ? receipt : undefined, loaded.plan.nextVersion));
     }
     for (const framework of receipt.frameworkAssets) {
       if (framework.role === "ssg-manifest") {
         assert.equal(receipt.target, "client", "Only the Next client graph owns native SSG postprocessing");
         assert.equal(ssg.length, 0, "Next graphs contain competing SSG postprocessing owners");
-        ssg.push(await proveStylexNextSsgPostprocessing(root, outputRoot, framework));
-      } else await verifySettledStylexNextFrameworkAsset(root, outputRoot, receipt.target, framework);
+        ssg.push(await proveStylexNextSsgPostprocessing(root, outputRoot, framework, loaded.plan.nextVersion));
+      } else await verifySettledStylexNextFrameworkAsset(root, outputRoot, receipt.target, framework, loaded.plan.nextVersion);
     }
-    for (const bootstrap of receipt.emptyEntryBootstraps) await verifySettledStylexNextEmptyEntryBootstrap(root, outputRoot, receipt.target, bootstrap);
+    for (const bootstrap of receipt.emptyEntryBootstraps) await verifySettledStylexNextEmptyEntryBootstrap(root, outputRoot, receipt.target, bootstrap, loaded.plan.nextVersion);
     for (const output of receipt.outputs) {
       const previous = union.get(output.path);
       if (previous === undefined) union.set(output.path, output);
@@ -771,7 +776,7 @@ async function verifySettledGraphOutputs(
     graphs: graphs.map(({ receipt, receiptSha256 }) => ({ graphId: receipt.graphId, receiptSha256, target: receipt.target })),
     kind: "hraness-stylex-next-postprocessing",
     mode,
-    nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
+    nextVersion: loaded.plan.nextVersion,
     outputDirectory,
     planSha256: sha256(`${canonicalJson(loaded.plan)}\n`),
     schemaVersion: 1,
@@ -970,7 +975,7 @@ async function validateStylexNextCompletion(
     discovery: discovery.map(graphIdentity),
     finalCss,
     kind: "hraness-stylex-next-build",
-    nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
+    nextVersion: loaded.plan.nextVersion,
     outputDirectory: loaded.plan.outputDirectory,
     packages: loaded.plan.packageManifests.map(({ identity }) => identity),
     postprocessing: {
@@ -1022,7 +1027,9 @@ export async function readStylexNextGraphReceipt(
   target: StylexNextTarget,
 ): Promise<StylexNextGraphReceiptV1> {
   const loaded = await loadAttempt(attempt);
-  return (await canonicalFile(join(loaded.root, mode, target, "graph.json"), validateStylexNextGraphReceipt, `Next ${mode} ${target} graph receipt`)).value;
+  const graph = (await canonicalFile(join(loaded.root, mode, target, "graph.json"), validateStylexNextGraphReceipt, `Next ${mode} ${target} graph receipt`)).value;
+  assert.equal(graph.nextVersion, loaded.plan.nextVersion, "Next graph profile differs from plan");
+  return graph;
 }
 
 /** Proves completed compiler ownership even when the later native typecheck fails. */

@@ -1,3 +1,4 @@
+import { stylexNextProfile, stylexNextVersion } from "../build/next-profile.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -11,7 +12,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
+import { delimiter, join, relative, resolve, sep } from "node:path";
 
 import { chromium } from "playwright-core";
 
@@ -25,7 +26,9 @@ import {
 
 const BUN_VERSION = "1.3.14";
 const NODE_VERSION_PREFIX = "24.";
-const NEXT_VERSION = "16.2.12";
+const arguments_ = process.argv.slice(2);
+assert.ok(arguments_.length === 0 || (arguments_.length === 1 && arguments_[0] === "--next-version=16.3.3"), "Next smoke accepts only its two exact production profile rows");
+const NEXT_VERSION = stylexNextVersion(arguments_.length === 0 ? "16.2.12" : "16.3.3");
 const PORT = 39_154;
 const NEXT_TARGETS = ["client", "edge-rsc", "node-rsc"] as const;
 type NextTarget = (typeof NEXT_TARGETS)[number];
@@ -228,6 +231,9 @@ async function readArtifact(root: string, expected: Artifact, description: strin
 }
 
 async function assertNodeProxyTrace(consumer: string, graph: Record<string, unknown>, postprocessing: Record<string, unknown>): Promise<Artifact> {
+  const profile = stylexNextProfile(NEXT_VERSION);
+  assert.equal(graph.nextVersion, NEXT_VERSION);
+  assert.equal(postprocessing.nextVersion, NEXT_VERSION);
   assert.equal(graph.target, "node-rsc");
   const javascript = "server/proxy.js";
   const tracePath = `${javascript}.nft.json`;
@@ -250,8 +256,8 @@ async function assertNodeProxyTrace(consumer: string, graph: Record<string, unkn
   assert.equal(initial.path, tracePath);
   assert.deepEqual(outputs.find(({ path }) => path === tracePath), initial);
   const creator = artifact(trace.creator, "Next proxy trace creator");
-  assert.equal(creator.path, "node_modules/next/dist/build/webpack/plugins/next-trace-entrypoints-plugin.js");
-  assert.equal(creator.sha256, "6178f6d18b0b96c38cff2b0df1494aabdcdee37d631e62e77974f14e244f2c5b");
+  assert.equal(creator.path, `node_modules/next/${profile.auxiliaryTraceCreator[0]}`);
+  assert.equal(creator.sha256, profile.auxiliaryTraceCreator[1]);
   await readArtifact(consumer, creator, "Next proxy pinned native creator");
   assert.ok(Array.isArray(postprocessing.auxiliaryTraceSnapshots) && postprocessing.auxiliaryTraceSnapshots.length <= 100_000);
   const snapshots = postprocessing.auxiliaryTraceSnapshots
@@ -270,8 +276,8 @@ async function assertNodeProxyTrace(consumer: string, graph: Record<string, unkn
   const rename = object(snapshot.proxyRename, "Next proxy rename proof");
   exactKeys(rename, ["absent", "creator", "initial", "output", "sourceMap"], "Next proxy rename proof");
   const renameCreator = artifact(rename.creator, "Next proxy rename creator");
-  assert.equal(renameCreator.path, "node_modules/next/dist/build/index.js");
-  assert.equal(renameCreator.sha256, "52cb337f5b0037a81ff0452cfbeb55760d3eafd026a5d5dc5f1c6cc5c4fe35c4");
+  assert.equal(renameCreator.path, `node_modules/next/${profile.proxyRenameCreator[0]}`);
+  assert.equal(renameCreator.sha256, profile.proxyRenameCreator[1]);
   await readArtifact(consumer, renameCreator, "Next proxy native rename creator");
   const compiled = artifact(rename.initial, "Next proxy compiled JavaScript");
   assert.deepEqual(compiled, outputs.find(({ path }) => path === javascript));
@@ -384,10 +390,29 @@ try {
   await run([process.execPath, "install", "--ignore-scripts"], consumer, environment);
   const nextManifest = JSON.parse(await readFile(resolve(consumer, "node_modules/next/package.json"), "utf8")) as { version?: unknown };
   assert.equal(nextManifest.version, NEXT_VERSION);
+  const profile = stylexNextProfile(NEXT_VERSION);
+  const creators = new Map<string, string>();
+  for (const [path, expected] of [...Object.values(profile.frameworkInputs), profile.auxiliaryTraceCreator,
+    profile.proxyRenameCreator, ...profile.emptyEntryInputs, ...profile.ssgInputs, ...Object.entries(profile.typeInputs)]) {
+    assert.ok(creators.get(path) === undefined || creators.get(path) === expected, `Next ${NEXT_VERSION} has conflicting creator pins: ${path}`);
+    creators.set(path, expected);
+  }
+  for (const [path, expected] of [...creators].sort(([left], [right]) => left.localeCompare(right))) {
+    const absolute = resolve(consumer, "node_modules/next", path);
+    assert.ok((await lstat(absolute)).isFile(), `Next ${NEXT_VERSION} creator is not an ordinary file: ${path}`);
+    assert.equal(await realpath(absolute), absolute, `Next ${NEXT_VERSION} creator traverses a symlink: ${path}`);
+    assert.equal(sha256(await readFile(absolute)), expected, `Next ${NEXT_VERSION} installed creator differs: ${path}`);
+  }
+  console.log(`Next ${NEXT_VERSION} verified ${String(creators.size)} exact installed creator identities before native compilation`);
+  if (profile.rootParams) {
+    await run([node, resolve(repository, "fixtures/next-adopter/root-params-writer-proof.mjs"),
+      await realpath(resolve(consumer, "node_modules/next")), resolve(work, "root-params-writer-proof")], consumer, environment);
+  }
   await cp(resolve(repository, "fixtures/next-adopter/app"), resolve(consumer, "app"), { recursive: true });
   await cp(resolve(repository, "fixtures/next-adopter/proxy.ts"), resolve(consumer, "proxy.ts"));
   await cp(resolve(repository, "fixtures/next-adopter/next.config.mjs"), resolve(consumer, "next.config.mjs"));
   await cp(resolve(repository, "fixtures/next-adopter/build.mjs"), resolve(consumer, "build.mjs"));
+  await writeFile(resolve(consumer, "profile.mjs"), `export const nextVersion = ${JSON.stringify(NEXT_VERSION)};\n`, { flag: "wx" });
   await cp(resolve(repository, "fixtures/next-adopter/build-no-edge.mjs"), resolve(consumer, "build-no-edge.mjs"));
   await mkdir(resolve(consumer, "node_modules/@fixture"), { recursive: true });
   await cp(resolve(repository, "fixtures/next-adopter/theme-package"), resolve(consumer, "node_modules/@fixture/theme"), { recursive: true });
@@ -396,10 +421,30 @@ try {
   await run([node, "./build.mjs"], consumer, environment);
 
   const attemptRoot = resolve(consumer, ".stylex-next/packed-next-adopter");
+  for (const mode of ["discovery", "delivery"] as const) {
+    const phase = resolve(attemptRoot, "typescript", mode);
+    const before = object(JSON.parse(await readFile(resolve(phase, "before-webpack.json"), "utf8")) as unknown, "Next native type observation");
+    assert.equal(before.nextVersion, NEXT_VERSION);
+    assert.deepEqual(before.nativeInputs, profile.typeInputs);
+    const inventory = object(JSON.parse(await readFile(resolve(phase, "types.json"), "utf8")) as unknown, "Next native type inventory");
+    assert.equal(inventory.nextVersion, NEXT_VERSION);
+    const distDir = mode === "delivery" ? ".next" : ".stylex-next/packed-next-adopter/next-discovery";
+    assert.ok(Array.isArray(before.artifacts));
+    const names = before.artifacts.map((value) => artifact(value, "Next native type input").path);
+    for (const name of profile.requiredNativeTypeNames) assert.ok(names.includes(`${distDir}/types/${name}`));
+    const rootParams = resolve(consumer, distDir, "types/root-params.d.ts");
+    if (profile.rootParams) {
+      const bytes = await readFile(rootParams);
+      assert.equal(bytes.toString(), "// Type definitions for Next.js root params (next/root-params)\n// No root params detected.\nexport {}\n");
+      const item = before.artifacts.map((value) => artifact(value, "Next native type input")).find(({ path }) => path === `${distDir}/types/root-params.d.ts`);
+      assert.deepEqual(item, { path: `${distDir}/types/root-params.d.ts`, bytes: bytes.byteLength, sha256: sha256(bytes) });
+    } else assert.ok(!names.some((path) => path.endsWith("/root-params.d.ts")));
+  }
   const completePath = resolve(attemptRoot, "complete.json");
   const completeSource = await readFile(completePath);
   const complete = object(JSON.parse(exactUtf8(completeSource, "Next complete record")) as unknown, "Next complete record");
   assert.equal(complete.kind, "hraness-stylex-next-build");
+  assert.equal(complete.nextVersion, NEXT_VERSION);
   assert.equal(complete.state, "complete");
   assert.equal(complete.attemptId, "packed-next-adopter");
   assert.equal(complete.outputDirectory, ".next");
@@ -409,6 +454,7 @@ try {
   const planPath = resolve(attemptRoot, "plan.json");
   const planSource = await readFile(planPath);
   const plan = object(JSON.parse(exactUtf8(planSource, "Next attempt plan")) as unknown, "Next attempt plan");
+  assert.equal(plan.nextVersion, NEXT_VERSION);
   assert.equal(plan.attemptId, complete.attemptId, "Next plan and complete record name different attempts");
   assert.equal(plan.outputDirectory, complete.outputDirectory, "Next plan and complete record name different outputs");
   const graphMap = object(plan.graphMap, "Next attempt graph map");
@@ -458,6 +504,7 @@ try {
     "Next delivery postprocessing receipt",
   );
   assert.equal(deliveryPostprocessing.mode, "delivery");
+  assert.equal(deliveryPostprocessing.nextVersion, NEXT_VERSION);
   assert.equal(deliveryPostprocessing.attemptId, complete.attemptId);
   assert.equal(deliveryPostprocessing.outputDirectory, complete.outputDirectory);
   assert.equal(deliveryPostprocessing.planSha256, sha256(planSource), "Next delivery postprocessing is not bound to the fresh plan bytes");
@@ -478,6 +525,7 @@ try {
     "Next discovery postprocessing receipt",
   );
   assert.equal(discoveryPostprocessing.mode, "discovery");
+  assert.equal(discoveryPostprocessing.nextVersion, NEXT_VERSION);
   assert.equal(discoveryPostprocessing.attemptId, complete.attemptId);
   const discoveryOutputDirectory = logicalPath(discoveryPostprocessing.outputDirectory, "Next discovery output directory");
   assert.equal(discoveryPostprocessing.planSha256, sha256(planSource), "Next discovery postprocessing is not bound to the fresh plan bytes");
@@ -495,6 +543,7 @@ try {
     const graphSource = await readFile(graphPath);
     assert.equal(sha256(graphSource), identity.receiptSha256, `${description} differs from complete.json`);
     const graph = object(JSON.parse(exactUtf8(graphSource, description)) as unknown, description);
+    assert.equal(graph.nextVersion, NEXT_VERSION);
     assert.equal(graph.attemptId, complete.attemptId);
     assert.equal(graph.mode, "discovery");
     assert.equal(graph.target, identity.target);
@@ -547,6 +596,7 @@ try {
     const graphSource = await readFile(graphPath);
     assert.equal(sha256(graphSource), identity.receiptSha256, `Next ${identity.target} graph receipt differs from complete.json`);
     const graph = object(JSON.parse(exactUtf8(graphSource, `Next ${identity.target} graph receipt`)) as unknown, `Next ${identity.target} graph receipt`);
+    assert.equal(graph.nextVersion, NEXT_VERSION);
     assert.equal(graph.attemptId, complete.attemptId);
     assert.equal(graph.mode, "delivery");
     assert.equal(graph.target, identity.target);
@@ -830,15 +880,19 @@ try {
   await run([node, "./build-no-edge.mjs"], consumer, environment);
   const noEdgeAttempt = resolve(consumer, ".stylex-next/packed-next-adopter-no-edge");
   const noEdgePlan = JSON.parse(await readFile(resolve(noEdgeAttempt, "plan.json"), "utf8")) as {
+    nextVersion?: unknown;
     requiredSources?: Record<string, unknown>;
   };
+  assert.equal(noEdgePlan.nextVersion, NEXT_VERSION);
   assert.deepEqual(noEdgePlan.requiredSources?.["edge-rsc"], []);
   const noEdgeComplete = JSON.parse(await readFile(resolve(noEdgeAttempt, "complete.json"), "utf8")) as {
     delivery?: { target?: unknown }[];
     discovery?: { target?: unknown }[];
     state?: unknown;
+    nextVersion?: unknown;
   };
   assert.equal(noEdgeComplete.state, "complete");
+  assert.equal(noEdgeComplete.nextVersion, NEXT_VERSION);
   assert.deepEqual(noEdgeComplete.discovery?.map(({ target }) => target), ["client", "edge-rsc", "node-rsc"]);
   assert.deepEqual(noEdgeComplete.delivery?.map(({ target }) => target), ["client", "edge-rsc", "node-rsc"]);
   for (const mode of ["discovery", "delivery"] as const) {
@@ -857,7 +911,7 @@ try {
     assert.equal(graph.sourcesSha256, sha256("[]"));
   }
   successful = true;
-  console.log("Packed Next client, Node RSC, edge RSC, registered Node proxy trace and request headers, exact target/output source-map receipts, explicit no-edge graph, dynamic /index route, lazy, exercised global-error, package union, font-URL asset linkage, CSP, and hydration proof passed");
+  console.log(`Packed Next ${NEXT_VERSION} client, Node RSC, edge RSC, registered Node proxy trace and request headers, exact target/output source-map receipts, explicit no-edge graph, dynamic /index route, lazy, exercised global-error, package union, font-URL asset linkage, CSP, and hydration proof passed`);
 } finally {
   if (successful) await rm(work, { force: true, recursive: true });
   else process.stderr.write(`Retained failed Next adopter fixture: ${work}\n`);

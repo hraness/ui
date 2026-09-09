@@ -164,6 +164,18 @@ async function materializeSsg(root: string, outputDirectory: string) {
 }
 
 describe("StyleX Next generation", () => {
+  test("rejects an explicit null profile rather than writing a default-version attempt", async () => {
+    const context = await createFixture();
+    await assert.rejects(prepareStylexNextAttempt({
+      attemptId: "null-profile",
+      nextVersion: null,
+      packageManifests: [context.manifestPath],
+      requiredSources: { client: ["src/app.tsx"], "edge-rsc": [], "node-rsc": [] },
+      rootDirectory: context.root,
+    } as never), /exactly/u);
+    await assert.rejects(readFile(join(context.root, ".stylex-next", "null-profile", "plan.json")), /ENOENT/u);
+  });
+
   test("rejects stale adapter, union policy, or schemas after an attacker rehashes the plan", async () => {
     const context = await createFixture();
     const attempt = await prepareStylexNextAttempt({

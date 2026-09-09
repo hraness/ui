@@ -1,3 +1,4 @@
+import { stylexNextProfile, type StylexNextVersion } from "./next-profile.js";
 import assert from "node:assert/strict";
 import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
@@ -8,7 +9,6 @@ import { normalizeLogicalPath, sha256 } from "./compiler.js";
 import {
   STYLEX_NEXT_REQUIRED_VERSION,
   STYLEX_NEXT_SSG_INITIAL_SOURCE,
-  STYLEX_NEXT_SSG_INPUTS,
   serializeStylexNextSsgRoutes,
   type StylexNextFrameworkAssetV1,
   type StylexNextSsgPostprocessingV1,
@@ -103,10 +103,10 @@ export function deriveStylexNextSsgRoutes(prerenderValue: unknown, routesValue: 
 
 type ReadRole = "installed-creator" | "installed-package" | "generated-output";
 
-async function readBounded(root: string, logical: string, role: ReadRole): Promise<Readonly<{ artifact: StylexArtifactV1; source: string }>> {
+async function readBounded(root: string, logical: string, role: ReadRole, nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION): Promise<Readonly<{ artifact: StylexArtifactV1; source: string }>> {
   const path = normalizeLogicalPath(logical);
   const creator = role === "installed-creator"
-    ? STYLEX_NEXT_SSG_INPUTS.find(([input]) => path === `node_modules/next/${input}`)
+    ? stylexNextProfile(nextVersion).ssgInputs.find(([input]) => path === `node_modules/next/${input}`)
     : undefined;
   if (role === "installed-creator") assert.ok(creator !== undefined, "Next SSG installed creator path is not a pinned input");
   if (role === "installed-package") assert.equal(path, "node_modules/next/package.json", "Next SSG installed package path changed");
@@ -160,15 +160,16 @@ export async function proveStylexNextSsgPostprocessing(
   root: string,
   outputRoot: string,
   initial: StylexNextFrameworkAssetV1,
+  nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION,
 ): Promise<StylexNextSsgPostprocessingV1> {
   assert.equal(initial.role, "ssg-manifest", "Next postprocessing only owns the SSG role");
   const nextPackage = await readBounded(root, "node_modules/next/package.json", "installed-package");
   const packageMetadata = object(JSON.parse(nextPackage.source) as unknown, "Next package metadata");
   assert.equal(packageMetadata.name, "next");
-  assert.equal(packageMetadata.version, STYLEX_NEXT_REQUIRED_VERSION, "Next SSG package version changed");
+  assert.equal(packageMetadata.version, nextVersion, "Next SSG package version changed");
   const creators: StylexArtifactV1[] = [];
-  for (const [path] of STYLEX_NEXT_SSG_INPUTS) {
-    const input = await readBounded(root, `node_modules/next/${path}`, "installed-creator");
+  for (const [path] of stylexNextProfile(nextVersion).ssgInputs) {
+    const input = await readBounded(root, `node_modules/next/${path}`, "installed-creator", nextVersion);
     creators.push(input.artifact);
   }
   assert.deepEqual(initial.input, creators.find(({ path }) => path === initial.input.path), "Next SSG original creator changed");

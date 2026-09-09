@@ -1,3 +1,4 @@
+import { stylexNextVersion, type StylexNextVersion } from "./next-profile.js";
 import assert from "node:assert/strict";
 import { readFile, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -11,7 +12,6 @@ import {
   sha256,
 } from "./compiler.js";
 import {
-  STYLEX_NEXT_REQUIRED_VERSION,
   STYLEX_NEXT_EMPTY_ENTRY_LOADER,
   compareStylexNextStrings,
   defineStylexNextGraphMap,
@@ -243,9 +243,10 @@ export function stylexNextJavaScriptChunks(
     .filter((path) => /\.(?:c|m)?js$/u.test(path)))].sort();
 }
 
-export function requireStylexNextChunkMaps(chunks: readonly string[], outputs: readonly StylexArtifactV1[], bootstraps: readonly StylexNextEmptyEntryBootstrapV1[] = []): void {
+export function requireStylexNextChunkMaps(chunks: readonly string[], outputs: readonly StylexArtifactV1[], nextVersion: StylexNextVersion, bootstraps: readonly StylexNextEmptyEntryBootstrapV1[] = []): void {
+  stylexNextVersion(nextVersion);
   for (const value of bootstraps) {
-    const record = validateStylexNextEmptyEntryBootstrap(value);
+    const record = validateStylexNextEmptyEntryBootstrap(value, nextVersion);
     assert.ok(chunks.includes(record.output.path), "Next empty entry cannot leave the chunk inventory");
     assert.deepEqual(outputs.find(({ path }) => path === record.output.path), record.output);
     assert.ok(!outputs.some(({ path }) => path === `${record.output.path}.map`), "Next mapped chunk cannot use the empty entry category");
@@ -690,7 +691,7 @@ async function verifyCssGraph(
     if (mode === "delivery") {
       const plan = await readStylexNextAttemptPlan(attempt);
       assert.ok(paths.includes(generated), "Next delivery client graph omitted generated StyleX CSS");
-      assert.equal(plan.nextVersion, STYLEX_NEXT_REQUIRED_VERSION);
+      stylexNextVersion(plan.nextVersion);
     }
   }
 }
@@ -758,15 +759,15 @@ export class StylexNextWebpackPlugin {
             for (const graph of graphs) assert.deepEqual(graph, graphs[0], "Next empty entry asset has conflicting chunk owners");
             const output = outputs.find((output) => output.path === path)!;
             const asset = assets.find((asset) => resolveStylexNextOutputPath(passOutputRoot, compilerOutputPath, asset.name) === path)!;
-            emptyEntryBootstraps.push(await proveStylexNextEmptyEntryBootstrap(root, this.#options.target, graphs[0]!, output, bytes(asset.source)));
+            emptyEntryBootstraps.push(await proveStylexNextEmptyEntryBootstrap(root, this.#options.target, graphs[0]!, output, bytes(asset.source), plan.nextVersion));
           }
-          requireStylexNextChunkMaps(javascriptChunks, outputs, emptyEntryBootstraps);
+          requireStylexNextChunkMaps(javascriptChunks, outputs, plan.nextVersion, emptyEntryBootstraps);
           const frameworkAssets = await Promise.all(outputs
             .filter(({ path }) => /\.(?:c|m)?js$/u.test(path) && !javascriptChunks.includes(path) && !maps.some((map) => map.path === `${path}.map`))
             .map(async (output) => {
               const asset = assets.find((asset) => resolveStylexNextOutputPath(passOutputRoot, compilerOutputPath, asset.name) === output.path);
               assert.ok(asset !== undefined);
-              return await proveStylexNextFrameworkAsset(root, this.#options.target, output, bytes(asset.source));
+              return await proveStylexNextFrameworkAsset(root, this.#options.target, output, bytes(asset.source), plan.nextVersion);
             }));
           frameworkAssets.sort((left, right) => compareStylexNextStrings(left.output.path, right.output.path));
           for (const map of maps) {
@@ -786,7 +787,7 @@ export class StylexNextWebpackPlugin {
             const asset = assets.find((asset) => resolveStylexNextOutputPath(passOutputRoot, compilerOutputPath, asset.name) === output.path);
             assert.ok(asset !== undefined);
             assertStylexNextAuxiliaryTraceOwnership(compilation, asset, compilerOutputPath);
-            return await captureStylexNextAuxiliaryTraceAsset(root, entry.name, output, bytes(asset.source));
+            return await captureStylexNextAuxiliaryTraceAsset(root, entry.name, output, bytes(asset.source), plan.nextVersion);
           }));
           await writeStylexNextGraphReceipt({
             attempt,

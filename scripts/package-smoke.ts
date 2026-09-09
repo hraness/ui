@@ -7199,6 +7199,7 @@ async function verifyConsumer(
     "build/next-loader.ts",
     "build/next-plugin.ts",
     "build/next-process.ts",
+    "build/next-profile.ts",
     "build/next-ssg.ts",
     "build/next-auxiliary.ts",
     "build/next-typescript.ts",
