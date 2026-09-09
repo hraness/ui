@@ -227,7 +227,7 @@ async function readArtifact(root: string, expected: Artifact, description: strin
   return source;
 }
 
-async function assertNodeProxyTrace(consumer: string, graph: Record<string, unknown>, postprocessing: Record<string, unknown>): Promise<void> {
+async function assertNodeProxyTrace(consumer: string, graph: Record<string, unknown>, postprocessing: Record<string, unknown>): Promise<Artifact> {
   assert.equal(graph.target, "node-rsc");
   const javascript = "server/proxy.js";
   const tracePath = `${javascript}.nft.json`;
@@ -259,13 +259,31 @@ async function assertNodeProxyTrace(consumer: string, graph: Record<string, unkn
     .filter(({ asset }) => object(asset, "Next proxy snapshot asset").entrypoint === "proxy");
   assert.equal(snapshots.length, 1);
   const snapshot = snapshots[0]!;
-  exactKeys(snapshot, ["asset", "output", "semantics"], "Next proxy snapshot");
+  exactKeys(snapshot, ["asset", "output", "proxyRename", "semantics"], "Next proxy snapshot");
   assert.deepEqual(snapshot.asset, trace);
   assert.equal(snapshot.semantics, "observation-only");
   const output = artifact(snapshot.output, "Next proxy settled trace");
-  assert.equal(output.path, tracePath);
+  assert.equal(output.path, "server/middleware.js.nft.json");
   assert.equal(postprocessing.outputDirectory, graph.outputDirectory);
-  await readArtifact(resolve(consumer, logicalPath(graph.outputDirectory, "Next proxy output directory")), output, "Next proxy settled trace");
+  const outputRoot = resolve(consumer, logicalPath(graph.outputDirectory, "Next proxy output directory"));
+  await readArtifact(outputRoot, output, "Next proxy settled trace");
+  const rename = object(snapshot.proxyRename, "Next proxy rename proof");
+  exactKeys(rename, ["absent", "creator", "initial", "output", "sourceMap"], "Next proxy rename proof");
+  const renameCreator = artifact(rename.creator, "Next proxy rename creator");
+  assert.equal(renameCreator.path, "node_modules/next/dist/build/index.js");
+  assert.equal(renameCreator.sha256, "52cb337f5b0037a81ff0452cfbeb55760d3eafd026a5d5dc5f1c6cc5c4fe35c4");
+  await readArtifact(consumer, renameCreator, "Next proxy native rename creator");
+  const compiled = artifact(rename.initial, "Next proxy compiled JavaScript");
+  assert.deepEqual(compiled, outputs.find(({ path }) => path === javascript));
+  const renamed = artifact(rename.output, "Next proxy renamed JavaScript");
+  assert.deepEqual(renamed, { ...compiled, path: "server/middleware.js" });
+  await readArtifact(outputRoot, renamed, "Next proxy renamed JavaScript");
+  const map = artifact(rename.sourceMap, "Next proxy unchanged map");
+  assert.deepEqual(map, outputs.find(({ path }) => path === `${javascript}.map`));
+  await readArtifact(outputRoot, map, "Next proxy unchanged map");
+  assert.deepEqual(rename.absent, [javascript, tracePath]);
+  for (const path of [javascript, tracePath]) await assert.rejects(lstat(resolve(outputRoot, path)), { code: "ENOENT" });
+  return renamed;
 }
 
 const themeSetup = String.raw`import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -538,7 +556,7 @@ try {
     assert.deepEqual(modules.map(({ path }) => path), requiredSources[identity.target], `Next ${identity.target} graph differs from the planned source census`);
     assert.equal(graph.sourcesSha256, sha256(JSON.stringify(modules)), `Next ${identity.target} source inventory hash is stale`);
     const outputs = orderedArtifacts(graph.outputs, `Next ${identity.target} outputs`);
-    if (identity.target === "node-rsc") await assertNodeProxyTrace(consumer, graph, deliveryPostprocessing);
+    const proxyOutput = identity.target === "node-rsc" ? await assertNodeProxyTrace(consumer, graph, deliveryPostprocessing) : undefined;
     if (identity.target === "client") {
       assert.ok(Array.isArray(graph.entrypoints) && graph.entrypoints.length > 0 && graph.entrypoints.length <= 4096, "Next client entrypoints must be a nonempty bounded array");
       const entrypoints = graph.entrypoints.map((value, index) => object(value, `Next client entrypoint ${String(index)}`));
@@ -571,7 +589,7 @@ try {
       assert.ok(outputArtifact !== undefined, `Next source map ${sourceMap.path} has no same-graph output owner`);
       const [mapSource, outputSource] = await Promise.all([
         readArtifact(outputRoot, sourceMap, `Next source map ${sourceMap.path}`),
-        readArtifact(outputRoot, outputArtifact, `Next mapped output ${outputPath}`),
+        readArtifact(outputRoot, outputPath === "server/proxy.js" ? proxyOutput! : outputArtifact, `Next mapped output ${outputPath}`),
       ]);
       const outputText = exactUtf8(outputSource, `Next mapped output ${outputPath}`);
       assertNextSourceMapOutputLink(outputText, outputPath, sourceMap.path);

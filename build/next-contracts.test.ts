@@ -11,6 +11,7 @@ import {
 import {
   STYLEX_NEXT_ADAPTER_VERSION,
   STYLEX_NEXT_AUXILIARY_TRACE_CREATOR,
+  STYLEX_NEXT_PROXY_RENAME_CREATOR,
   STYLEX_NEXT_GRAPH_SCHEMA_VERSION,
   STYLEX_NEXT_MODULE_SCHEMA_VERSION,
   STYLEX_NEXT_REQUIRED_VERSION,
@@ -687,6 +688,26 @@ describe("Next adapter contracts", () => {
         ...asset, entrypoint, initial: { ...initial, path: `server/${entrypoint}.js.nft.json` },
       }));
     }
+    const proxyRename = {
+      absent: ["server/proxy.js", "server/proxy.js.nft.json"],
+      creator: { bytes: 1, path: `node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`, sha256: STYLEX_NEXT_PROXY_RENAME_CREATOR[1] },
+      initial: javascript, output: { ...javascript, path: "server/middleware.js" }, sourceMap: map,
+    };
+    const snapshot = { asset, output: { ...initial, path: "server/middleware.js.nft.json" }, proxyRename, semantics: "observation-only" };
+    assert.deepEqual(validateStylexNextAuxiliaryTraceSnapshot(snapshot), snapshot);
+    for (const change of [
+      { proxyRename: undefined }, { output: initial },
+      ...[
+        { absent: [] }, { absent: ["server/proxy.js"] }, { absent: [...proxyRename.absent].reverse() },
+        { creator: { ...proxyRename.creator, sha256: sha256("changed") } },
+        { creator: { ...proxyRename.creator, path: "node_modules/next/dist/build/entries.js" } },
+        { initial: { ...javascript, path: "server/other.js" } },
+        { output: { ...proxyRename.output, sha256: sha256("changed") } },
+        { output: { ...proxyRename.output, path: "server/other.js" } },
+        { sourceMap: { ...map, path: "server/middleware.js.map" } }, { arbitraryRename: true },
+      ].map((change) => ({ proxyRename: { ...proxyRename, ...change } })),
+      { asset: { ...asset, entrypoint: "app/page", initial: { ...initial, path: "server/app/page.js.nft.json" } } },
+    ]) assert.throws(() => validateStylexNextAuxiliaryTraceSnapshot({ ...snapshot, ...change }));
   });
 
   test("represents an observed-empty production target with an explicit empty graph", () => {
