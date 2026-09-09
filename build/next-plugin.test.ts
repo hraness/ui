@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 
 import { describe, test } from "bun:test";
 import { sha256 } from "./compiler.js";
-import { STYLEX_NEXT_EMPTY_ENTRY_LOADER } from "./next-contracts.js";
+import { STYLEX_NEXT_EMPTY_ENTRY_LOADER, type StylexNextEmptyEntryGraphV1 } from "./next-contracts.js";
+import { STYLEX_NEXT_PRODUCTION_VERSIONS, stylexNextProfile } from "./next-profile.js";
 
 import {
   assertStylexNextAuxiliaryTraceOwnership,
@@ -281,11 +282,26 @@ describe("StyleX Next output provenance", () => {
       { bytes: 1, path, sha256: "a".repeat(64) },
       { bytes: 1, path: `${path}.map`, sha256: "b".repeat(64) },
     ]);
-    assert.doesNotThrow(() => requireStylexNextChunkMaps(chunks, outputs));
+    assert.doesNotThrow(() => requireStylexNextChunkMaps(chunks, outputs, "16.2.12"));
     for (const missing of chunks) assert.throws(
-      () => requireStylexNextChunkMaps(chunks, outputs.filter(({ path }) => path !== `${missing}.map`)),
+      () => requireStylexNextChunkMaps(chunks, outputs.filter(({ path }) => path !== `${missing}.map`), "16.2.12"),
       /chunk omitted its external source map/u,
     );
+  });
+
+  test("chunk-map enforcement requires the selected empty-entry profile at its actual validation boundary", () => {
+    const graph: StylexNextEmptyEntryGraphV1 = { chunkIds: [1], dependencies: [], entryModuleId: 2, entrypoints: ["empty"], loader: STYLEX_NEXT_EMPTY_ENTRY_LOADER, loaderOptions: "server=false", originalSource: { bytes: 0, sha256: sha256("") } };
+    const output = { path: "static/empty.js", bytes: 0, sha256: sha256("") };
+    const chunks = [output.path];
+    for (const nextVersion of STYLEX_NEXT_PRODUCTION_VERSIONS) {
+      const inputs = stylexNextProfile(nextVersion).emptyEntryInputs.map(([path, hash]) => ({ path: `node_modules/next/${path}`, bytes: 1, sha256: hash }));
+      const bootstraps = [{ graph, inputs, output }];
+      assert.doesNotThrow(() => requireStylexNextChunkMaps(chunks, [output], nextVersion, bootstraps));
+      assert.throws(() => requireStylexNextChunkMaps(chunks, [output], nextVersion === "16.2.12" ? "16.3.3" : "16.2.12", bootstraps), /pinned Next bytes/u);
+      assert.throws(() => requireStylexNextChunkMaps(chunks, [output], nextVersion), /omitted its external source map/u);
+      assert.throws(() => requireStylexNextChunkMaps(chunks, [output, { ...output, path: `${output.path}.map` }], nextVersion, bootstraps), /mapped chunk/u);
+    }
+    assert.throws(() => requireStylexNextChunkMaps(chunks, [output], undefined as never), /exactly/u);
   });
   test("resolves Next server parent segments against compiler.outputPath", () => {
     const passRoot = resolve("/fixture/app/.next");

@@ -19,11 +19,13 @@ import {
   validateStylexSourceMapPath,
 } from "./compiler.js";
 
+import { STYLEX_NEXT_REQUIRED_VERSION, STYLEX_NEXT_FRAMEWORK_INPUTS, stylexNextProfile, stylexNextVersion, type StylexNextVersion } from "./next-profile.js";
+export { STYLEX_NEXT_REQUIRED_VERSION, STYLEX_NEXT_FRAMEWORK_INPUTS, STYLEX_NEXT_AUXILIARY_TRACE_CREATOR, STYLEX_NEXT_PROXY_RENAME_CREATOR, STYLEX_NEXT_EMPTY_ENTRY_INPUTS, STYLEX_NEXT_SSG_INPUTS } from "./next-profile.js";
+
 export const STYLEX_NEXT_ADAPTER_VERSION = "hraness-stylex-next-v2" as const;
 export const STYLEX_NEXT_MODULE_SCHEMA_VERSION = 1 as const;
 export const STYLEX_NEXT_GRAPH_SCHEMA_VERSION = 1 as const;
 export const STYLEX_NEXT_BUILD_SCHEMA_VERSION = 2 as const;
-export const STYLEX_NEXT_REQUIRED_VERSION = "16.2.12" as const;
 export const STYLEX_NEXT_TARGETS = ["client", "edge-rsc", "node-rsc"] as const;
 
 /** Match Array<string>.sort() in canonical receipts, without locale collation. */
@@ -191,20 +193,6 @@ export type StylexNextEntrypointV1 = Readonly<{
 // These are the audited Next 16.2.12 emitters, not filename-only exemptions.
 // Their payloads must also satisfy validateStylexNextFrameworkPayload, and an
 // emitted webpack chunk can never use this exception.
-export const STYLEX_NEXT_FRAMEWORK_INPUTS = {
-  "build-manifest": ["dist/build/webpack/plugins/build-manifest-plugin.js", "692c330f4409ea48f411627f578942ca8dcf2d24eb4df11d58b110257f580ed1"],
-  "client-reference-manifest": ["dist/build/webpack/plugins/flight-manifest-plugin.js", "2da1604d0f0d8f58db53b486e880a81279f7ce9c7af429994c5c9083c6dca83c"],
-  "dynamic-css-manifest": ["dist/build/webpack/plugins/react-loadable-plugin.js", "499bedae83deb834a9095733b19f54285b1510a0360cf6b391eb6dd08193f319"],
-  "interception-rewrite-manifest": ["dist/build/webpack/plugins/middleware-plugin.js", "a5f6ba8cf8b1b172f9ed80f157ddfb20d27653f57c513ad8bdc3438a2e6c8cc7"],
-  "middleware-build-manifest": ["dist/build/webpack/plugins/build-manifest-plugin.js", "692c330f4409ea48f411627f578942ca8dcf2d24eb4df11d58b110257f580ed1"],
-  "next-font-manifest": ["dist/build/webpack/plugins/next-font-manifest-plugin.js", "54be807a169ba5d46651e8d324daac1feb7b9bd2340d6f8ecf539072ddcfe413"],
-  "polyfill-nomodule": ["dist/build/polyfills/polyfill-nomodule.js", "0973c1d64c88adc8e3c950410cb58b288f72118d5965b78049438deb8f2f9683"],
-  "react-loadable-manifest": ["dist/build/webpack/plugins/react-loadable-plugin.js", "499bedae83deb834a9095733b19f54285b1510a0360cf6b391eb6dd08193f319"],
-  "server-reference-manifest": ["dist/build/webpack/plugins/flight-client-entry-plugin.js", "706cc85161af67344b454f0c32d4e0080a97910a3f6e81f71e23d181aa48cc60"],
-  "ssg-manifest": ["dist/build/webpack/plugins/build-manifest-plugin.js", "692c330f4409ea48f411627f578942ca8dcf2d24eb4df11d58b110257f580ed1"],
-} as const;
-for (const input of Object.values(STYLEX_NEXT_FRAMEWORK_INPUTS)) Object.freeze(input);
-Object.freeze(STYLEX_NEXT_FRAMEWORK_INPUTS);
 
 export type StylexNextFrameworkRole = keyof typeof STYLEX_NEXT_FRAMEWORK_INPUTS;
 export type StylexNextFrameworkAssetV1 = Readonly<{
@@ -213,16 +201,8 @@ export type StylexNextFrameworkAssetV1 = Readonly<{
   role: StylexNextFrameworkRole;
 }>;
 
-export const STYLEX_NEXT_AUXILIARY_TRACE_CREATOR = Object.freeze([
-  "dist/build/webpack/plugins/next-trace-entrypoints-plugin.js",
-  "6178f6d18b0b96c38cff2b0df1494aabdcdee37d631e62e77974f14e244f2c5b",
-] as const);
 
 // The pinned post-build writer renames only the Node proxy JS and NFT files.
-export const STYLEX_NEXT_PROXY_RENAME_CREATOR = Object.freeze([
-  "dist/build/index.js",
-  "52cb337f5b0037a81ff0452cfbeb55760d3eafd026a5d5dc5f1c6cc5c4fe35c4",
-] as const);
 
 export type StylexNextProxyRenameV1 = Readonly<{
   absent: readonly ["server/proxy.js", "server/proxy.js.nft.json"];
@@ -250,12 +230,6 @@ export type StylexNextAuxiliaryTraceSnapshotV1 = Readonly<{
 
 // An empty client-entry loader has no original characters to map. Pin every
 // creator in its webpack/minifier chain; this is separate from manifest assets.
-export const STYLEX_NEXT_EMPTY_ENTRY_INPUTS = Object.freeze([
-  Object.freeze(["dist/build/webpack/loaders/next-flight-client-entry-loader.js", "b5e8df94598e87dfd8be3a6676473bd3fb03731471cfe9525e2236a3f2c6ad40"] as const),
-  Object.freeze(["dist/build/webpack/plugins/flight-client-entry-plugin.js", "706cc85161af67344b454f0c32d4e0080a97910a3f6e81f71e23d181aa48cc60"] as const),
-  Object.freeze(["dist/build/webpack/plugins/minify-webpack-plugin/src/index.js", "650f861407d459333cc56ce12b78aa12cb8cf4da34a7b03d0dd90bb287263458"] as const),
-  Object.freeze(["dist/compiled/webpack/bundle5.js", "4293b6eb020382002a67bccdc2ccdaf6760fe041dd42de314e20fea7ca5a7ab7"] as const),
-]);
 export const STYLEX_NEXT_EMPTY_ENTRY_LOADER = "node_modules/next/dist/build/webpack/loaders/next-flight-client-entry-loader.js" as const;
 export type StylexNextEmptyEntryGraphV1 = Readonly<{
   chunkIds: readonly number[];
@@ -312,11 +286,11 @@ export function validateStylexNextEmptyEntryGraph(value: unknown): StylexNextEmp
   return { chunkIds, dependencies, entryModuleId: webpackId(record.entryModuleId), entrypoints, loader: STYLEX_NEXT_EMPTY_ENTRY_LOADER, loaderOptions: "server=false", originalSource };
 }
 
-export function validateStylexNextEmptyEntryBootstrap(value: unknown): StylexNextEmptyEntryBootstrapV1 {
+export function validateStylexNextEmptyEntryBootstrap(value: unknown, nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION): StylexNextEmptyEntryBootstrapV1 {
   const record = object(value, "Next empty entry bootstrap");
   keys(record, ["graph", "inputs", "output"], "Next empty entry bootstrap");
   const inputs = artifacts(record.inputs, "Next empty entry inputs");
-  assert.deepEqual(inputs.map(({ path, sha256 }) => [path, sha256]), STYLEX_NEXT_EMPTY_ENTRY_INPUTS.map(([path, hash]) => [`node_modules/next/${path}`, hash]), "Next empty entry creator inputs differ from pinned Next bytes");
+  assert.deepEqual(inputs.map(({ path, sha256 }) => [path, sha256]), stylexNextProfile(nextVersion).emptyEntryInputs.map(([path, hash]) => [`node_modules/next/${path}`, hash]), "Next empty entry creator inputs differ from pinned Next bytes");
   return { graph: validateStylexNextEmptyEntryGraph(record.graph), inputs, output: artifact(record.output, "Next empty entry output") };
 }
 
@@ -655,7 +629,7 @@ export type StylexNextGraphReceiptV1 = Readonly<{
   javascriptChunks: readonly string[];
   mode: StylexNextProductionMode;
   modules: readonly StylexNextModuleIdentityV1[];
-  nextVersion: typeof STYLEX_NEXT_REQUIRED_VERSION;
+  nextVersion: StylexNextVersion;
   outputDirectory: string;
   outputs: readonly StylexArtifactV1[];
   packages: readonly StylexPackageIdentityV1[];
@@ -676,16 +650,6 @@ export type StylexNextGraphIdentityV1 = Readonly<{
 
 // Native Next writes this one asset again after webpack has finished. These
 // inputs bind both creators and the exact route-to-Set serialization algorithm.
-export const STYLEX_NEXT_SSG_INPUTS = Object.freeze([
-  Object.freeze(["dist/build/generate-routes-manifest.js", "3f0dd0b6de1e9ed575287e06938ec5f29eb9aff7f09e9753e32d5f75a3356a63"] as const),
-  Object.freeze(["dist/build/index.js", "52cb337f5b0037a81ff0452cfbeb55760d3eafd026a5d5dc5f1c6cc5c4fe35c4"] as const),
-  Object.freeze(["dist/build/manifests/formatter/format-manifest.js", "faaffe04142094339e505513e4bd87e38bccc738ebbee515c7ff35defd1aba08"] as const),
-  Object.freeze(["dist/build/webpack/plugins/build-manifest-plugin-utils.js", "5b78265200c7de40ead5e72a861c4e760ccf88f2b08c160158397df7d6e0a833"] as const),
-  Object.freeze(STYLEX_NEXT_FRAMEWORK_INPUTS["ssg-manifest"]),
-  Object.freeze(["dist/build/webpack/plugins/minify-webpack-plugin/src/index.js", "650f861407d459333cc56ce12b78aa12cb8cf4da34a7b03d0dd90bb287263458"] as const),
-  Object.freeze(["dist/compiled/devalue/devalue.umd.js", "5ad710b029a96bce551c39237bd04d23ac09b44f0e702afc9fcc2809b4160c2d"] as const),
-  Object.freeze(["dist/shared/lib/i18n/normalize-locale-path.js", "40cbb5497856644b8cae7ea217d2d2677bc01f910db9d598852a214cc4496031"] as const),
-]);
 // The pinned production minifier combines the raw creator's two statements.
 export const STYLEX_NEXT_SSG_INITIAL_SOURCE = "self.__SSG_MANIFEST=new Set,self.__SSG_MANIFEST_CB&&self.__SSG_MANIFEST_CB();" as const;
 
@@ -736,7 +700,7 @@ export type StylexNextPostprocessingReceiptV1 = Readonly<{
   graphs: readonly StylexNextGraphIdentityV1[];
   kind: "hraness-stylex-next-postprocessing";
   mode: StylexNextProductionMode;
-  nextVersion: typeof STYLEX_NEXT_REQUIRED_VERSION;
+  nextVersion: StylexNextVersion;
   outputDirectory: string;
   planSha256: string;
   schemaVersion: 1;
@@ -751,7 +715,7 @@ export type StylexNextBuildRecordV1 = Readonly<{
   discovery: readonly StylexNextGraphIdentityV1[];
   finalCss: StylexArtifactV1;
   kind: "hraness-stylex-next-build";
-  nextVersion: typeof STYLEX_NEXT_REQUIRED_VERSION;
+  nextVersion: StylexNextVersion;
   outputDirectory: string;
   packages: readonly StylexPackageIdentityV1[];
   postprocessing: Readonly<{ delivery: StylexArtifactV1; discovery: StylexArtifactV1 }>;
@@ -1003,7 +967,7 @@ export function validateStylexNextGraphReceipt(value: unknown): StylexNextGraphR
   assert.equal(record.compilerSha256, compilerSha256, "Next graph compiler hash is stale");
   assert.equal(record.kind, "hraness-stylex-next-graph");
   assert.ok(record.mode === "delivery" || record.mode === "discovery", "Next graph receipt mode must be production");
-  assert.equal(record.nextVersion, STYLEX_NEXT_REQUIRED_VERSION, "Next graph version is unsupported");
+  const nextVersion = stylexNextVersion(record.nextVersion);
   assert.equal(record.schemaVersion, STYLEX_NEXT_GRAPH_SCHEMA_VERSION);
   const target = parseStylexNextTarget(record.target, "Next graph target");
   const modules = moduleIdentities(record.modules);
@@ -1035,7 +999,7 @@ export function validateStylexNextGraphReceipt(value: unknown): StylexNextGraphR
   assert.ok(javascriptChunks.every((path) => /\.(?:c|m)?js$/u.test(path) && outputs.some((output) => output.path === path)), "Next JavaScript chunks must be emitted JavaScript assets");
   assert.ok(parsedEntrypoints.every((entry) => entry.javascript.every((path) => javascriptChunks.includes(path))), "Every Next entrypoint JavaScript output must belong to a chunk");
   assert.ok(Array.isArray(record.auxiliaryTraceAssets) && record.auxiliaryTraceAssets.length <= 100_000, "Next auxiliaryTraceAssets must be a bounded array");
-  const auxiliaryTraceAssets = record.auxiliaryTraceAssets.map(validateStylexNextAuxiliaryTraceAsset);
+  const auxiliaryTraceAssets = record.auxiliaryTraceAssets.map((value) => validateStylexNextAuxiliaryTraceAsset(value, nextVersion));
   const auxiliaryPaths = auxiliaryTraceAssets.map(({ initial }) => initial.path);
   assert.deepEqual(auxiliaryPaths, [...new Set(auxiliaryPaths)].sort(), "Next auxiliary trace assets must be unique and path sorted");
   assert.deepEqual(auxiliaryPaths, outputs.filter(({ path }) => path.endsWith(".nft.json")).map(({ path }) => path), "Every Next NFT output must have the exact auxiliary trace classification");
@@ -1049,7 +1013,7 @@ export function validateStylexNextGraphReceipt(value: unknown): StylexNextGraphR
     assert.ok(!sourceMaps.some(({ path }) => path === asset.initial.path || path === `${asset.initial.path}.map`), "Next auxiliary metadata cannot waive a source map");
   }
   assert.ok(Array.isArray(record.emptyEntryBootstraps), "Next emptyEntryBootstraps must be an array");
-  const emptyEntryBootstraps = record.emptyEntryBootstraps.map(validateStylexNextEmptyEntryBootstrap);
+  const emptyEntryBootstraps = record.emptyEntryBootstraps.map((value) => validateStylexNextEmptyEntryBootstrap(value, nextVersion));
   assert.deepEqual(emptyEntryBootstraps.map(({ output }) => output.path), [...new Set(emptyEntryBootstraps.map(({ output }) => output.path))].sort(), "Next empty entry outputs must be unique and path sorted");
   for (const bootstrap of emptyEntryBootstraps) {
     assert.equal(target, "client", "Only Next client graphs may prove empty entry bootstraps");
@@ -1079,9 +1043,9 @@ export function validateStylexNextGraphReceipt(value: unknown): StylexNextGraphR
     const role = entry.role as StylexNextFrameworkRole;
     const input = artifact(entry.input, "Next framework input");
     const output = artifact(entry.output, "Next framework output");
-    const [path, hash] = STYLEX_NEXT_FRAMEWORK_INPUTS[role];
+    const [path, hash] = stylexNextProfile(nextVersion).frameworkInputs[role];
     assert.equal(input.path, `node_modules/next/${path}`, "Next framework input path differs from its pinned role");
-    assert.equal(input.sha256, hash, "Next framework input hash differs from Next 16.2.12");
+    assert.equal(input.sha256, hash, "Next framework input hash differs from its selected Next profile");
     assert.equal(stylexNextFrameworkRole(output.path, target), role, "Next framework output path or target differs from its role");
     assert.deepEqual(outputs.find(({ path }) => path === output.path), output, "Next framework output bytes must match its graph output");
     assert.ok(!javascriptChunks.includes(output.path), "A Next JavaScript chunk cannot use a framework map exception");
@@ -1122,7 +1086,7 @@ export function validateStylexNextGraphReceipt(value: unknown): StylexNextGraphR
     javascriptChunks,
     mode: record.mode,
     modules,
-    nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
+    nextVersion,
     outputDirectory: normalizeLogicalPath(record.outputDirectory, "Next graph outputDirectory"),
     outputs,
     packages: identities(record.packages, "Next graph packages"),
@@ -1162,7 +1126,7 @@ export function validateStylexNextBuildRecord(value: unknown): StylexNextBuildRe
   assert.equal(record.compilerSha256, compilerSha256, "Next build compiler hash is stale");
   assert.equal(record.unionPolicySha256, stylexUnionPolicySha256, "Next build union policy is stale");
   assert.equal(record.kind, "hraness-stylex-next-build");
-  assert.equal(record.nextVersion, STYLEX_NEXT_REQUIRED_VERSION);
+  const nextVersion = stylexNextVersion(record.nextVersion);
   assert.equal(record.schemaVersion, STYLEX_NEXT_BUILD_SCHEMA_VERSION);
   assert.equal(record.state, "complete");
   const discovery = graphIdentities(record.discovery, "Next build discovery");
@@ -1190,7 +1154,7 @@ export function validateStylexNextBuildRecord(value: unknown): StylexNextBuildRe
     discovery,
     finalCss: artifact(record.finalCss, "Next build finalCss"),
     kind: "hraness-stylex-next-build",
-    nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
+    nextVersion,
     outputDirectory: normalizeLogicalPath(record.outputDirectory, "Next build outputDirectory"),
     packages: identities(record.packages, "Next build packages"),
     postprocessing: postprocessingArtifacts,
@@ -1201,7 +1165,7 @@ export function validateStylexNextBuildRecord(value: unknown): StylexNextBuildRe
   };
 }
 
-export function validateStylexNextAuxiliaryTraceAsset(value: unknown): StylexNextAuxiliaryTraceAssetV1 {
+export function validateStylexNextAuxiliaryTraceAsset(value: unknown, nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION): StylexNextAuxiliaryTraceAssetV1 {
   const record = object(value, "Next auxiliary trace asset");
   keys(record, ["creator", "entrypoint", "initial", "kind"], "Next auxiliary trace asset");
   assert.equal(record.kind, "next-node-dependency-trace", "Next auxiliary trace kind is unsupported");
@@ -1210,8 +1174,8 @@ export function validateStylexNextAuxiliaryTraceAsset(value: unknown): StylexNex
   // "proxy". Graph validation still requires its exact registered JS chunk.
   assert.ok(entrypoint === "proxy" || /^(?:app|pages)\/.+/u.test(entrypoint), "Next auxiliary trace must name an app, pages, or exact proxy server entrypoint");
   const creator = artifact(record.creator, "Next auxiliary trace creator");
-  assert.equal(creator.path, `node_modules/next/${STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]}`, "Next auxiliary trace creator path differs from its pinned owner");
-  assert.equal(creator.sha256, STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[1], "Next auxiliary trace creator differs from Next 16.2.12");
+  assert.equal(creator.path, `node_modules/next/${stylexNextProfile(nextVersion).auxiliaryTraceCreator[0]}`, "Next auxiliary trace creator path differs from its pinned owner");
+  assert.equal(creator.sha256, stylexNextProfile(nextVersion).auxiliaryTraceCreator[1], "Next auxiliary trace creator differs from its selected Next profile");
   const initial = artifact(record.initial, "Next auxiliary trace initial artifact");
   assert.equal(initial.path, `server/${entrypoint}.js.nft.json`, "Next auxiliary trace path differs from its server entrypoint");
   assert.ok(initial.path.length <= 4096, "Next auxiliary trace artifact path exceeds its bound");
@@ -1219,10 +1183,10 @@ export function validateStylexNextAuxiliaryTraceAsset(value: unknown): StylexNex
   return { creator, entrypoint, initial, kind: "next-node-dependency-trace" };
 }
 
-export function validateStylexNextAuxiliaryTraceSnapshot(value: unknown): StylexNextAuxiliaryTraceSnapshotV1 {
+export function validateStylexNextAuxiliaryTraceSnapshot(value: unknown, nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION): StylexNextAuxiliaryTraceSnapshotV1 {
   const record = object(value, "Next auxiliary trace snapshot");
   assert.equal(record.semantics, "observation-only", "Next auxiliary trace snapshot cannot claim dependency or deployment proof");
-  const asset = validateStylexNextAuxiliaryTraceAsset(record.asset);
+  const asset = validateStylexNextAuxiliaryTraceAsset(record.asset, nextVersion);
   const proxy = asset.entrypoint === "proxy";
   keys(record, proxy ? ["asset", "output", "proxyRename", "semantics"] : ["asset", "output", "semantics"], "Next auxiliary trace snapshot");
   const output = artifact(record.output, "Next auxiliary trace final artifact");
@@ -1232,8 +1196,8 @@ export function validateStylexNextAuxiliaryTraceSnapshot(value: unknown): Stylex
     const rename = object(record.proxyRename, "Next proxy rename");
     keys(rename, ["absent", "creator", "initial", "output", "sourceMap"], "Next proxy rename");
     const creator = artifact(rename.creator, "Next proxy rename creator");
-    assert.equal(creator.path, `node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`, "Next proxy rename creator path changed");
-    assert.equal(creator.sha256, STYLEX_NEXT_PROXY_RENAME_CREATOR[1], "Next proxy rename creator differs from Next 16.2.12");
+    assert.equal(creator.path, `node_modules/next/${stylexNextProfile(nextVersion).proxyRenameCreator[0]}`, "Next proxy rename creator path changed");
+    assert.equal(creator.sha256, stylexNextProfile(nextVersion).proxyRenameCreator[1], "Next proxy rename creator differs from its selected Next profile");
     const initial = artifact(rename.initial, "Next proxy initial JavaScript");
     assert.equal(initial.path, "server/proxy.js", "Next proxy initial JavaScript path changed");
     const final = artifact(rename.output, "Next proxy final JavaScript");
@@ -1253,11 +1217,11 @@ export function validateStylexNextPostprocessingReceipt(value: unknown): StylexN
   assert.equal(record.adapterVersion, STYLEX_NEXT_ADAPTER_VERSION);
   assert.equal(record.compilerSha256, compilerSha256);
   assert.equal(record.kind, "hraness-stylex-next-postprocessing");
-  assert.equal(record.nextVersion, STYLEX_NEXT_REQUIRED_VERSION);
+  const nextVersion = stylexNextVersion(record.nextVersion);
   assert.equal(record.schemaVersion, 1);
   assert.ok(record.mode === "discovery" || record.mode === "delivery", "Next postprocessing requires a production mode");
   assert.ok(Array.isArray(record.auxiliaryTraceSnapshots) && record.auxiliaryTraceSnapshots.length <= 100_000, "Next auxiliaryTraceSnapshots must be a bounded array");
-  const auxiliaryTraceSnapshots = record.auxiliaryTraceSnapshots.map(validateStylexNextAuxiliaryTraceSnapshot);
+  const auxiliaryTraceSnapshots = record.auxiliaryTraceSnapshots.map((value) => validateStylexNextAuxiliaryTraceSnapshot(value, nextVersion));
   const auxiliaryPaths = auxiliaryTraceSnapshots.map(({ output }) => output.path);
   assert.deepEqual(auxiliaryPaths, [...new Set(auxiliaryPaths)].sort(), "Next auxiliary snapshots must be unique and path sorted");
   assert.ok(Array.isArray(record.ssg) && record.ssg.length <= 1, "Next postprocessing permits at most one client SSG asset");
@@ -1272,7 +1236,7 @@ export function validateStylexNextPostprocessingReceipt(value: unknown): StylexN
     const initialOutput = artifact(initial.output, "Next SSG initial output");
     assert.deepEqual(initialOutput, { bytes: Buffer.byteLength(STYLEX_NEXT_SSG_INITIAL_SOURCE), path: `static/${buildId}/_ssgManifest.js`, sha256: sha256(STYLEX_NEXT_SSG_INITIAL_SOURCE) }, "Next SSG initial asset differs from the pinned creator");
     const creators = artifacts(item.creators, "Next SSG creators");
-    assert.deepEqual(creators.map(({ path, sha256 }) => [path, sha256]), STYLEX_NEXT_SSG_INPUTS.map(([path, hash]) => [`node_modules/next/${path}`, hash]), "Next SSG creators differ from the pinned inputs");
+    assert.deepEqual(creators.map(({ path, sha256 }) => [path, sha256]), stylexNextProfile(nextVersion).ssgInputs.map(([path, hash]) => [`node_modules/next/${path}`, hash]), "Next SSG creators differ from the pinned inputs");
     const initialInput = artifact(initial.input, "Next SSG initial input");
     assert.deepEqual(initialInput, creators.find(({ path }) => path === `node_modules/next/${STYLEX_NEXT_FRAMEWORK_INPUTS["ssg-manifest"][0]}`), "Next SSG initial creator is not bound");
     const inputs = artifacts(item.inputs, "Next SSG inputs");
@@ -1302,7 +1266,7 @@ export function validateStylexNextPostprocessingReceipt(value: unknown): StylexN
     graphs: graphIdentities(record.graphs, "Next postprocessing graphs"),
     kind: "hraness-stylex-next-postprocessing",
     mode: record.mode,
-    nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
+    nextVersion,
     outputDirectory: normalizeLogicalPath(record.outputDirectory, "Next postprocessing output directory"),
     planSha256: digest(record.planSha256, "Next postprocessing plan hash"),
     schemaVersion: 1,

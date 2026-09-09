@@ -1,6 +1,8 @@
+import { nextVersion } from "./profile.mjs";
 import { runStylexNextBuild } from "@hraness/ui/stylex-build/next";
 
 const complete = await runStylexNextBuild({
+  nextVersion,
   attemptId: "packed-next-adopter",
   packageManifests: [
     "node_modules/@fixture/theme/dist/stylex-manifest.json",

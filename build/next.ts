@@ -1,3 +1,4 @@
+import { stylexNextVersion, type StylexNextVersion } from "./next-profile.js";
 import assert from "node:assert/strict";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -36,6 +37,7 @@ import {
   endStylexNextTypeScriptLifecycle,
   observeStylexNextTypeScriptInputs,
   projectStylexNextTypeScript,
+  readStylexNextTypeScriptVersion,
   settleStylexNextTypeScriptPass,
   type StylexNextTypeScriptLifecycle,
 } from "./next-typescript.js";
@@ -51,6 +53,7 @@ export type StylexNextRequiredSources = Readonly<{
 }>;
 
 export type StylexNextConfigOptions = Readonly<{
+  nextVersion?: StylexNextVersion;
   graphMap?: StylexNextGraphMapV1;
   outputDirectory?: string;
   packageManifests: readonly string[];
@@ -92,6 +95,7 @@ type NextConfig = Record<string, unknown> & Readonly<{
 }>;
 
 type ParsedConfigOptions = Readonly<{
+  nextVersion: StylexNextVersion;
   graphMap: StylexNextGraphMapV1;
   outputDirectory: string;
   packageManifests: readonly string[];
@@ -121,7 +125,7 @@ function configOptions(value: StylexNextConfigOptions): ParsedConfigOptions {
   const record = object(value, "StyleX Next config options");
   assert.deepEqual(
     Object.keys(record).sort(),
-    Object.keys(record).sort().filter((key) => ["graphMap", "outputDirectory", "packageManifests", "rootDirectory", "stateDirectory"].includes(key)),
+    Object.keys(record).sort().filter((key) => ["graphMap", "nextVersion", "outputDirectory", "packageManifests", "rootDirectory", "stateDirectory"].includes(key)),
     "StyleX Next config options contain unknown keys",
   );
   assert.ok(typeof record.rootDirectory === "string" && resolve(record.rootDirectory) === record.rootDirectory, "StyleX Next rootDirectory must be absolute");
@@ -137,6 +141,7 @@ function configOptions(value: StylexNextConfigOptions): ParsedConfigOptions {
   );
   return {
     graphMap: defineStylexNextGraphMap(record.graphMap ?? defaultStylexNextGraphMap),
+    nextVersion: stylexNextVersion(record.nextVersion === undefined ? STYLEX_NEXT_REQUIRED_VERSION : record.nextVersion),
     outputDirectory,
     packageManifests,
     rootDirectory: resolve(record.rootDirectory),
@@ -282,6 +287,7 @@ function configureWebpack(
 export function withStylexNext<T extends NextConfig>(config: T, rawOptions: StylexNextConfigOptions): T {
   const options = configOptions(rawOptions);
   const pass = passFromEnvironment(options.rootDirectory);
+  assert.equal(readStylexNextTypeScriptVersion(pass.attempt), options.nextVersion, "Next config profile differs from the build attempt");
   assert.equal(config.turbopack, undefined, "StyleX Next production receipts reject Turbopack configuration");
   assert.ok(config.distDir === undefined || config.distDir === options.outputDirectory, "StyleX Next outputDirectory differs from next.config distDir");
   const originalWebpack = config.webpack;
@@ -311,14 +317,14 @@ export function withStylexNext<T extends NextConfig>(config: T, rawOptions: Styl
   } as T;
 }
 
-async function nextInstallation(root: string): Promise<Readonly<{ bin: string; packageRoot: string }>> {
+async function nextInstallation(root: string, nextVersion: StylexNextVersion): Promise<Readonly<{ bin: string; packageRoot: string }>> {
   const require = createRequire(join(root, "package.json"));
   const manifestPath = await realpath(require.resolve("next/package.json"));
   const packageRoot = dirname(manifestPath);
   const raw: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
   const manifest = object(raw, "Installed Next package manifest");
   assert.equal(manifest.name, "next", "Resolved Next package has the wrong name");
-  assert.equal(manifest.version, STYLEX_NEXT_REQUIRED_VERSION, `StyleX Next requires exactly next@${STYLEX_NEXT_REQUIRED_VERSION}`);
+  assert.equal(manifest.version, nextVersion, `StyleX Next requires its selected exact next@${nextVersion} profile`);
   const bin = await realpath(join(packageRoot, "dist", "bin", "next"));
   const binStat = await stat(bin);
   assert.ok(binStat.isFile(), "Installed Next CLI must be an ordinary file");
@@ -364,7 +370,7 @@ export async function runStylexNextBuild(rawOptions: RunStylexNextBuildOptions):
   assert.deepEqual(
     Object.keys(runRecord).sort(),
     Object.keys(runRecord).sort().filter((key) => [
-      "attemptId", "graphMap", "outputDirectory", "packageManifests", "requiredSources", "rootDirectory", "stateDirectory",
+      "attemptId", "graphMap", "nextVersion", "outputDirectory", "packageManifests", "requiredSources", "rootDirectory", "stateDirectory",
     ].includes(key)),
     "StyleX Next build options contain unknown keys; the adapter always runs the exact full production build",
   );
@@ -375,6 +381,7 @@ export async function runStylexNextBuild(rawOptions: RunStylexNextBuildOptions):
   const major = Number(process.versions.node.split(".", 1)[0]);
   assert.equal(major, 24, "StyleX Next build orchestration requires Node 24");
   const options = configOptions({
+    ...(rawOptions.nextVersion === undefined ? {} : { nextVersion: rawOptions.nextVersion }),
     ...(rawOptions.graphMap === undefined ? {} : { graphMap: rawOptions.graphMap }),
     ...(rawOptions.outputDirectory === undefined ? {} : { outputDirectory: rawOptions.outputDirectory }),
     packageManifests: rawOptions.packageManifests,
@@ -383,7 +390,7 @@ export async function runStylexNextBuild(rawOptions: RunStylexNextBuildOptions):
   });
   const root = await realpath(options.rootDirectory);
   assert.equal(root, options.rootDirectory, "StyleX Next rootDirectory must not traverse a symlink");
-  const installation = await nextInstallation(root);
+  const installation = await nextInstallation(root, options.nextVersion);
   const nextRelative = relative(root, installation.packageRoot).split(sep).join("/");
   assert.ok(
     nextRelative.length > 0
@@ -394,6 +401,7 @@ export async function runStylexNextBuild(rawOptions: RunStylexNextBuildOptions):
   );
   const attempt = await prepareStylexNextAttempt({
     attemptId: rawOptions.attemptId,
+    nextVersion: options.nextVersion,
     graphMap: options.graphMap,
     outputDirectory: options.outputDirectory,
     packageManifests: options.packageManifests,
@@ -402,7 +410,7 @@ export async function runStylexNextBuild(rawOptions: RunStylexNextBuildOptions):
     stateDirectory: options.stateDirectory,
   });
   const plan = await readStylexNextAttemptPlan(attempt);
-  assert.equal(plan.nextVersion, STYLEX_NEXT_REQUIRED_VERSION);
+  assert.equal(plan.nextVersion, options.nextVersion);
   const lease = await acquireStylexNextOutputLease(root, options.outputDirectory, plan.attemptId);
   let uncollected = false;
   try {
@@ -431,3 +439,5 @@ export async function runStylexNextBuild(rawOptions: RunStylexNextBuildOptions):
 }
 
 export { STYLEX_NEXT_ADAPTER_VERSION, STYLEX_NEXT_REQUIRED_VERSION };
+
+export type { StylexNextVersion } from "./next-profile.js";

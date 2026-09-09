@@ -164,6 +164,18 @@ async function materializeSsg(root: string, outputDirectory: string) {
 }
 
 describe("StyleX Next generation", () => {
+  test("rejects an explicit null profile rather than writing a default-version attempt", async () => {
+    const context = await createFixture();
+    await assert.rejects(prepareStylexNextAttempt({
+      attemptId: "null-profile",
+      nextVersion: null,
+      packageManifests: [context.manifestPath],
+      requiredSources: { client: ["src/app.tsx"], "edge-rsc": [], "node-rsc": [] },
+      rootDirectory: context.root,
+    } as never), /exactly/u);
+    await assert.rejects(readFile(join(context.root, ".stylex-next", "null-profile", "plan.json")), /ENOENT/u);
+  });
+
   test("rejects stale adapter, union policy, or schemas after an attacker rehashes the plan", async () => {
     const context = await createFixture();
     const attempt = await prepareStylexNextAttempt({
@@ -856,61 +868,74 @@ describe("StyleX Next generation", () => {
     return { context, proxy, attempt, tracePath, finalTracePath, initial, final, finalSource, changedSource, auxiliary, graphSources };
   }
 
-  for (const entrypoint of ["app/page", "proxy"] as const) test(`seals ${entrypoint} final observations without rebinding initial graphs or completion evidence`, async () => {
-    const { context, proxy, attempt, tracePath, finalTracePath, initial, final, finalSource, changedSource, auxiliary, graphSources } = await prepareAuxiliaryCompletionFixture(entrypoint);
-    const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
-    const discoverySeal = await readFile(discoverySealPath, "utf8");
-    const nodeGraph = await readStylexNextGraphReceipt(attempt, "discovery", "node-rsc");
-    const compiledProxy = nodeGraph.outputs.find(({ path }) => path === "server/proxy.js");
-    const snapshot = { asset: auxiliary, output: final, semantics: "observation-only", ...(proxy ? { proxyRename: {
-      absent: ["server/proxy.js", "server/proxy.js.nft.json"],
-      creator: await artifactForFile(context.root, `node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`),
-      initial: compiledProxy, output: { ...compiledProxy, path: "server/middleware.js" },
-      sourceMap: nodeGraph.sourceMaps.find(({ path }) => path === "server/proxy.js.map"),
-    } } : {}) } as const;
-    const settled = validateStylexNextPostprocessingReceipt(JSON.parse(discoverySeal));
-    assert.deepEqual(settled.auxiliaryTraceSnapshots, [snapshot]);
-    assert.deepEqual(settled.ssg, [], "Auxiliary observations must not enter the SSG derivation proof");
-    const discoveryTracePath = join(attempt.directory, "next-discovery", finalTracePath);
-    const completePath = join(attempt.directory, "complete.json");
-    await writeFile(discoveryTracePath, changedSource);
-    await assert.rejects(completeStylexNextBuild(attempt, context.root), /discovery postprocessing changed after settlement/u);
-    await assert.rejects(readFile(completePath), /ENOENT/u);
-    await assert.rejects(readFile(join(attempt.directory, "delivery/postprocessing.json")), /ENOENT/u);
-    assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
-    await writeFile(discoveryTracePath, finalSource);
+  // Keep each full transaction pair on its own fresh fixture and unchanged
+  // default deadline. A timed-out multi-case test can otherwise race afterEach
+  // while its abandoned completion promise still reads the fixture.
+  for (const entrypoint of ["app/page", "proxy"] as const) {
+    test(`rejects ${entrypoint} discovery observation drift before creating delivery or completion seals`, async () => {
+      const { context, attempt, finalTracePath, changedSource } = await prepareAuxiliaryCompletionFixture(entrypoint);
+      const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
+      const discoverySeal = await readFile(discoverySealPath, "utf8");
+      await writeFile(join(attempt.directory, "next-discovery", finalTracePath), changedSource);
+      await assert.rejects(completeStylexNextBuild(attempt, context.root), /discovery postprocessing changed after settlement/u);
+      await assert.rejects(readFile(join(attempt.directory, "complete.json")), /ENOENT/u);
+      await assert.rejects(readFile(join(attempt.directory, "delivery/postprocessing.json")), /ENOENT/u);
+      assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
+    });
 
-    for (const mode of ["discovery", "delivery"] as const) {
-      const trace = mode === "discovery" ? discoveryTracePath : join(context.root, ".next", finalTracePath);
+    for (const mutationMode of ["discovery", "delivery"] as const) test(`seals ${entrypoint} after late ${mutationMode} rejection without rebinding initial graphs or failed seals`, async () => {
+      const { context, proxy, attempt, tracePath, finalTracePath, initial, final, finalSource, changedSource, auxiliary, graphSources } = await prepareAuxiliaryCompletionFixture(entrypoint);
+      const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
+      const discoverySeal = await readFile(discoverySealPath, "utf8");
+      const nodeGraph = await readStylexNextGraphReceipt(attempt, "discovery", "node-rsc");
+      const compiledProxy = nodeGraph.outputs.find(({ path }) => path === "server/proxy.js");
+      const snapshot = { asset: auxiliary, output: final, semantics: "observation-only", ...(proxy ? { proxyRename: {
+        absent: ["server/proxy.js", "server/proxy.js.nft.json"],
+        creator: await artifactForFile(context.root, `node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`),
+        initial: compiledProxy, output: { ...compiledProxy, path: "server/middleware.js" },
+        sourceMap: nodeGraph.sourceMaps.find(({ path }) => path === "server/proxy.js.map"),
+      } } : {}) } as const;
+      const settled = validateStylexNextPostprocessingReceipt(JSON.parse(discoverySeal));
+      assert.deepEqual(settled.auxiliaryTraceSnapshots, [snapshot]);
+      assert.deepEqual(settled.ssg, [], "Auxiliary observations must not enter the SSG derivation proof");
+      const trace = mutationMode === "discovery"
+        ? join(attempt.directory, "next-discovery", finalTracePath)
+        : join(context.root, ".next", finalTracePath);
+      const completePath = join(attempt.directory, "complete.json");
       let callbackReached = false;
       await assert.rejects(completeStylexNextBuild(attempt, context.root, async () => {
         callbackReached = true;
         await writeFile(trace, changedSource);
-      }), mode === "discovery"
+      }), mutationMode === "discovery"
         ? /discovery postprocessing changed after settlement/u
         : /build evidence changed before complete-record commit/u);
       assert.equal(callbackReached, true);
       await assert.rejects(readFile(completePath), /ENOENT/u);
       assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
-      const deliverySeal = validateStylexNextPostprocessingReceipt(JSON.parse(await readFile(join(attempt.directory, "delivery/postprocessing.json"), "utf8")));
+      const deliverySealPath = join(attempt.directory, "delivery/postprocessing.json");
+      const deliverySealSource = await readFile(deliverySealPath, "utf8");
+      const deliverySeal = validateStylexNextPostprocessingReceipt(JSON.parse(deliverySealSource));
       assert.deepEqual(deliverySeal.auxiliaryTraceSnapshots, [snapshot], "A failed completion must not refresh the final observation");
       await writeFile(trace, finalSource);
-    }
 
-    const complete = await completeStylexNextBuild(attempt, context.root);
-    assert.equal(complete.state, "complete");
-    for (const mode of ["discovery", "delivery"] as const) {
-      const graphSource = graphSources.get(mode)!;
-      assert.equal(await readFile(join(attempt.directory, mode, "node-rsc/graph.json"), "utf8"), graphSource);
-      assert.equal(complete[mode].find(({ target }) => target === "node-rsc")!.receiptSha256, sha256(graphSource));
-      const graph = await readStylexNextGraphReceipt(attempt, mode, "node-rsc");
-      assert.deepEqual(graph.outputs.find(({ path }) => path === tracePath), initial);
-      assert.deepEqual(complete.postprocessing[mode], await artifactForFile(context.root, `.stylex-next/auxiliary/${mode}/postprocessing.json`));
-      const postprocessing = validateStylexNextPostprocessingReceipt(JSON.parse(await readFile(join(attempt.directory, mode, "postprocessing.json"), "utf8")));
-      assert.deepEqual(postprocessing.auxiliaryTraceSnapshots, [snapshot]);
-    }
-    assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
-  });
+      // Sequential failed completion -> repaired retry remains the same test:
+      // the retry must collide with and reuse the failed attempt's exact seal.
+      const complete = await completeStylexNextBuild(attempt, context.root);
+      assert.equal(complete.state, "complete");
+      for (const mode of ["discovery", "delivery"] as const) {
+        const graphSource = graphSources.get(mode)!;
+        assert.equal(await readFile(join(attempt.directory, mode, "node-rsc/graph.json"), "utf8"), graphSource);
+        assert.equal(complete[mode].find(({ target }) => target === "node-rsc")!.receiptSha256, sha256(graphSource));
+        const graph = await readStylexNextGraphReceipt(attempt, mode, "node-rsc");
+        assert.deepEqual(graph.outputs.find(({ path }) => path === tracePath), initial);
+        assert.deepEqual(complete.postprocessing[mode], await artifactForFile(context.root, `.stylex-next/auxiliary/${mode}/postprocessing.json`));
+        const postprocessing = validateStylexNextPostprocessingReceipt(JSON.parse(await readFile(join(attempt.directory, mode, "postprocessing.json"), "utf8")));
+        assert.deepEqual(postprocessing.auxiliaryTraceSnapshots, [snapshot]);
+      }
+      assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
+      assert.equal(await readFile(deliverySealPath, "utf8"), deliverySealSource, "Successful retry must preserve the failed completion's delivery seal bytes");
+    });
+  }
 
   // Each late mutation owns a fresh complete fixture and the default test deadline.
   // Combining all eight full completion transactions hides the failing case and

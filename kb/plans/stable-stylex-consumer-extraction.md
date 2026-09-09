@@ -528,7 +528,7 @@ shipping a partial prefix, mode, or fixture workaround.
   source or compiler defect and required this plan correction plus a fresh
   generated-artifact seal and canonical gate before delivery.
 
-## Current validation phase
+## September 6 validation checkpoint
 
 The combined-metadata direction, bounded implementation join, public API,
 standards-based package surface, dependency boundary, generated inventory, and
@@ -542,3 +542,29 @@ terminal package/Vite/browser fixtures, canonical full gate, current-main pull
 request, protected merge, and immutable release remain. Those steps must
 preserve the retained failing matrix, the ordinary precompiled stylesheet route,
 and the transactional all-graph contract above.
+
+## September 9 exact Next profile qualification
+
+The shared extraction and component work has since shipped through immutable
+UI releases, including v0.5.9 and v0.5.10. The current follow-on PR #65 qualifies
+Next 16.3.3 alongside the unchanged 16.2.12 default. It retains exact framework
+creator hashes and complete discovery/delivery, graph, source-map, native
+TypeScript, proxy, SSG and postprocessing joins. The newer native root-parameter
+writer is tested independently for its finite return-type combinations; the
+complete static-root fixture proves the empty declaration without claiming
+dynamic-root route acceptance.
+
+At source commit `43ce2e024f192e64c03f821c0664c288373fe5c7`, the complete local
+Next matrix passed both exact versions, including proxy routing, browser
+hydration, CSP, lazy/global-error assets and the separate no-edge build. CI run
+`34387412021` passed the canonical gate on an identical integration tree,
+including 684 tests, 32,032 assertions, all package and adopter matrices, gallery
+acceptance, generated-artifact cleanliness, packing and installed imports.
+
+Release preparation updates the package, lock peer metadata and artifact check
+to advertise exactly `16.2.12 || 16.3.3`, keeps the development/default version
+at 16.2.12, and adds a manifest regression. Version v0.5.11 is a candidate until
+its own generated seal, final gate, current-head CI, protected merge and
+immutable release succeed. Earlier green evidence does not replace those
+changed-tree gates. Product adoption and production verification remain owned
+by each consumer and are not implied by this package qualification.

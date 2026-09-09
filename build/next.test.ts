@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, test } from "bun:test";
 
-import { stylexNextDeliveryEntries } from "./next-contracts.js";
+import { canonicalJson, compilerSha256, stylexUnionPolicySha256 } from "./compiler.js";
+import { STYLEX_NEXT_ADAPTER_VERSION, STYLEX_NEXT_REQUIRED_VERSION, defaultStylexNextGraphMap, stylexNextDeliveryEntries } from "./next-contracts.js";
 import { STYLEX_NEXT_GENERATED_ENTRY_SOURCE } from "./next-generation.js";
 import { runStylexNextBuild, withStylexNext } from "./next.js";
 import { beginStylexNextTypeScriptLifecycle, endStylexNextTypeScriptLifecycle } from "./next-typescript.js";
@@ -36,7 +37,12 @@ async function setupTypeScriptLifecycle(rootDirectory: string, mode: "discovery"
   writeFileSync(join(rootDirectory, "tsconfig.json"), '{"compilerOptions":{"strict":true},"include":["app/**/*.ts"]}\n');
   writeFileSync(join(rootDirectory, "app", "page.ts"), "export const page = 1;\n");
   symlinkSync(join(process.cwd(), "node_modules"), join(rootDirectory, "node_modules"), "dir");
-  const plan = "{}\n";
+  const plan = canonicalJson({
+    adapterVersion: STYLEX_NEXT_ADAPTER_VERSION, attemptId: "fixture", compilerSha256,
+    graphMap: defaultStylexNextGraphMap, kind: "hraness-stylex-next-attempt", nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
+    outputDirectory: ".next", packageManifests: [{ artifact: { path: "package-manifest.json", bytes: 0, sha256: "0".repeat(64) }, identity: { name: "@fixture/ui", version: "1.0.0", manifestSha256: "0".repeat(64) } }],
+    requiredSources: { client: ["app/page.ts"], "edge-rsc": [], "node-rsc": [] }, schemaVersion: 2, unionPolicySha256: stylexUnionPolicySha256,
+  }) + "\n";
   const planSha256 = createHash("sha256").update(plan).digest("hex");
   writeFileSync(join(attemptDirectory, "plan.json"), plan);
   writeFileSync(join(attemptDirectory, "generated", "entry.mjs"), STYLEX_NEXT_GENERATED_ENTRY_SOURCE);
@@ -85,6 +91,30 @@ async function deliveryEntryCallback(rootDirectory: string, initialEntry: unknow
 }
 
 describe("StyleX Next production runtime", () => {
+  test("rejects a different config profile and noncanonical or hash-changed attempt before configuring webpack", async () => {
+    const environment = environmentSnapshot();
+    const rootDirectory = realpathSync(mkdtempSync(join(tmpdir(), "stylex-next-profile-config-")));
+    const lifecycle = await setupTypeScriptLifecycle(rootDirectory, "discovery");
+    const path = join(rootDirectory, ".stylex-next", "fixture", "plan.json");
+    const original = readFileSync(path);
+    const options = { packageManifests: ["node_modules/@hraness/ui/dist/stylex-manifest.json"], rootDirectory };
+    try {
+      assert.throws(() => withStylexNext({}, { ...options, nextVersion: "16.3.3" }), /config profile/u);
+      assert.throws(() => withStylexNext({}, { ...options, nextVersion: "16.3.4" } as never), /exactly/u);
+      assert.throws(() => withStylexNext({}, { ...options, nextVersion: null } as never), /exactly/u);
+      const changed = Buffer.concat([original, Buffer.from(" ")]);
+      writeFileSync(path, changed);
+      assert.throws(() => withStylexNext({}, options), /plan hash changed/u);
+      process.env.HRANESS_STYLEX_NEXT_PLAN_SHA256 = createHash("sha256").update(changed).digest("hex");
+      assert.throws(() => withStylexNext({}, options), /plan is not canonical/u);
+    } finally {
+      writeFileSync(path, original);
+      endStylexNextTypeScriptLifecycle(lifecycle);
+      restoreEnvironment(environment);
+      rmSync(rootDirectory, { force: true, recursive: true });
+    }
+  });
+
   test("appends the delivery entry only to physical App Router stylesheet owners", async () => {
     const generated = "/fixture/generated/entry.mjs";
     const entries = {

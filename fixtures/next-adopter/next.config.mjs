@@ -1,3 +1,4 @@
+import { nextVersion } from "./profile.mjs";
 import { withStylexNext } from "@hraness/ui/stylex-build/next";
 import { PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER } from "next/constants.js";
 
@@ -23,6 +24,7 @@ export default function nextConfig(phase) {
     throw new Error("This compiled fixture supports production build and start only; development/HMR is not configured.");
   }
   return withStylexNext(config, {
+    nextVersion,
     packageManifests: [
       "node_modules/@fixture/theme/dist/stylex-manifest.json",
       "node_modules/@hraness/ui/dist/stylex-manifest.json",

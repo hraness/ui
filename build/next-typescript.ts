@@ -1,3 +1,4 @@
+import { stylexNextProfile, stylexNextVersion, type StylexNextVersion } from "./next-profile.js";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -11,7 +12,6 @@ import type * as TypeScript from "typescript";
 
 import { canonicalJson, normalizeLogicalPath } from "./compiler.js";
 import {
-  STYLEX_NEXT_REQUIRED_VERSION,
   STYLEX_NEXT_TARGETS,
   graphIdForStylexNextTarget,
   validateStylexNextGraphReceipt,
@@ -26,15 +26,6 @@ import {
 
 // The phase boundary below is immediately after these native writers and before
 // webpack. A filename or a generated-looking comment alone never owns a type.
-const NATIVE_INPUTS = {
-  "dist/build/index.js": "52cb337f5b0037a81ff0452cfbeb55760d3eafd026a5d5dc5f1c6cc5c4fe35c4",
-  "dist/build/webpack/plugins/next-types-plugin/index.js": "13423b82cc011e96aa60b086b3e48ed8e74773d87b7a8748ae99de844abd5eb8",
-  "dist/lib/typescript/writeConfigurationDefaults.js": "a634ad2820c47afd37f26382bc1986ca6895cf8cb251d2023889893674d3704d",
-  "dist/lib/typescript/writeAppTypeDeclarations.js": "bfaa647d1011ff22f39fac8f8bfdaac4637afe784826ec56f6fb53a757d5baeb",
-  "dist/server/lib/router-utils/route-types-utils.js": "d3a25af9b04fa6551d3961f88d4899d69c4cf0144262822ac1c8890f6ee11098",
-  "dist/server/lib/router-utils/typegen.js": "5671ce0ea3fc6fc5fdc0fe7d2a98bf8cd77aff67b0d101375973dbc47a06d447",
-  "dist/server/lib/router-utils/cache-life-type-utils.js": "81d55d26cd176ebb6e81e864e8acef656ad1d601802c839e8e32aa5053bf2caa",
-} as const;
 
 type Artifact = Readonly<{ path: string; bytes: number; sha256: string }>;
 type Snapshot = Readonly<{ source: string | null; mode: number | null }>;
@@ -61,7 +52,7 @@ type TypeInventory = Readonly<{
   distDir: string;
   kind: "hraness-next-generated-types";
   mode: StylexNextProductionMode;
-  nextVersion: typeof STYLEX_NEXT_REQUIRED_VERSION;
+  nextVersion: StylexNextVersion;
   planSha256: string;
   schemaVersion: 1;
 }>;
@@ -221,14 +212,23 @@ function loadLifecycle(root: string, attempt: StylexNextAttemptHandle): Lifecycl
   return result;
 }
 
-function installed(root: string): Readonly<{ require: NodeJS.Require; ts: typeof TypeScript }> {
+export function readStylexNextTypeScriptVersion(attempt: StylexNextAttemptHandle): StylexNextVersion {
+  const bytes = ordinary(join(attempt.directory, "plan.json"));
+  assert.equal(hash(bytes), attempt.planSha256, "TypeScript plan hash changed");
+  const value: unknown = JSON.parse(bytes.toString());
+  assert.ok(bytes.equals(Buffer.from(`${canonicalJson(value)}\n`)), "TypeScript plan is not canonical");
+  return validateStylexNextAttemptPlan(value).nextVersion;
+}
+
+function installed(root: string, attempt: StylexNextAttemptHandle): Readonly<{ require: NodeJS.Require; ts: typeof TypeScript }> {
+  const nextVersion = readStylexNextTypeScriptVersion(attempt);
   const require = createRequire(join(root, "package.json"));
   const packagePath = require.resolve("next/package.json");
   const manifest = record(JSON.parse(ordinary(realpathSync(packagePath)).toString()) as unknown, "Installed Next package");
   assert.equal(manifest.name, "next");
-  assert.equal(manifest.version, STYLEX_NEXT_REQUIRED_VERSION);
+  assert.equal(manifest.version, nextVersion, "Installed Next TypeScript profile differs from plan");
   const nextRoot = dirname(realpathSync(packagePath));
-  for (const [path, expected] of Object.entries(NATIVE_INPUTS)) {
+  for (const [path, expected] of Object.entries(stylexNextProfile(nextVersion).typeInputs)) {
     assert.equal(hash(ordinary(join(nextRoot, path))), expected, `Next TypeScript producer changed: ${path}`);
   }
   const ts = require("typescript") as typeof TypeScript;
@@ -250,7 +250,7 @@ export async function beginStylexNextTypeScriptLifecycle(
   writeFileSync(join(root, LOCK_NAME), lockSource, { flag: "wx", mode: 0o644 });
   try {
     const nextEnv = snapshot(join(root, "next-env.d.ts"));
-    const { require, ts } = installed(root);
+    const { require, ts } = installed(root, attempt);
     directory(lifecycleDirectory(attempt));
     const seed = join(lifecycleDirectory(attempt), "default-seed.json");
     writeFileSync(seed, "{}\n", { flag: "wx", mode: 0o644 });
@@ -309,32 +309,31 @@ function parseInventory(value: unknown): TypeInventory {
   const item = record(value, "Generated TypeScript inventory");
   exactKeys(item, ["artifacts", "distDir", "kind", "mode", "nextVersion", "planSha256", "schemaVersion"], "Generated TypeScript inventory");
   assert.equal(item.kind, "hraness-next-generated-types");
-  assert.equal(item.nextVersion, STYLEX_NEXT_REQUIRED_VERSION);
+  const nextVersion = stylexNextVersion(item.nextVersion);
   assert.equal(item.schemaVersion, 1);
   assert.ok(item.mode === "discovery" || item.mode === "delivery");
   assert.match(string(item.planSha256, "TypeScript inventory plan hash"), /^[a-f0-9]{64}$/u);
   const distDir = normalizeLogicalPath(item.distDir, "TypeScript inventory output directory");
   const result = generatedArtifacts(item.artifacts);
   for (const file of result) assert.ok(file.path.startsWith(`${distDir}/types/`), "TypeScript inventory escaped the exact native type directory");
-  return { artifacts: result, distDir, kind: "hraness-next-generated-types", mode: item.mode, nextVersion: STYLEX_NEXT_REQUIRED_VERSION, planSha256: item.planSha256 as string, schemaVersion: 1 };
+  return { artifacts: result, distDir, kind: "hraness-next-generated-types", mode: item.mode, nextVersion, planSha256: item.planSha256 as string, schemaVersion: 1 };
 }
 
-const NATIVE_TYPE_NAMES = ["cache-life.d.ts", "link.d.ts", "routes.d.ts", "validator.ts"] as const;
 
-function nativeObservation(value: unknown, planSha256: string, mode: StylexNextProductionMode, distDir: string): readonly Artifact[] {
+export function validateStylexNextNativeTypeObservation(value: unknown, planSha256: string, mode: StylexNextProductionMode, distDir: string, nextVersion: StylexNextVersion): readonly Artifact[] {
   const item = record(value, "Next native type writer observation");
   exactKeys(item, ["artifacts", "distDir", "kind", "mode", "nativeInputs", "nextVersion", "planSha256", "schemaVersion"], "Next native type writer observation");
   assert.equal(item.kind, "hraness-next-native-type-writers");
   assert.equal(item.schemaVersion, 1);
   assert.equal(item.planSha256, planSha256);
-  assert.equal(item.nextVersion, STYLEX_NEXT_REQUIRED_VERSION);
+  assert.equal(item.nextVersion, nextVersion, "Native type observation profile differs from plan");
   assert.equal(item.mode, mode);
   assert.equal(item.distDir, distDir);
-  assert.deepEqual(item.nativeInputs, NATIVE_INPUTS, "Next native type writer pins changed");
+  assert.deepEqual(item.nativeInputs, stylexNextProfile(nextVersion).typeInputs, "Next native type writer pins changed");
   const files = generatedArtifacts(item.artifacts);
-  const allowed = new Set(NATIVE_TYPE_NAMES.map((name) => `${distDir}/types/${name}`));
-  assert.ok(files.length >= 2 && files.length <= 4 && files.every(({ path }) => allowed.has(path)), "Native type writer observation contains an unknown artifact");
-  for (const name of ["routes.d.ts", "validator.ts"]) assert.ok(files.some(({ path }) => path === `${distDir}/types/${name}`), "Native type writer observation is incomplete");
+  const allowed = new Set(stylexNextProfile(nextVersion).nativeTypeNames.map((name) => `${distDir}/types/${name}`));
+  assert.ok(files.length >= stylexNextProfile(nextVersion).requiredNativeTypeNames.length && files.length <= allowed.size && files.every(({ path }) => allowed.has(path)), "Native type writer observation contains an unknown artifact");
+  for (const name of stylexNextProfile(nextVersion).requiredNativeTypeNames) assert.ok(files.some(({ path }) => path === `${distDir}/types/${name}`), "Native type writer observation is incomplete");
   return files;
 }
 
@@ -350,6 +349,7 @@ function historicalTypes(root: string, stateDirectory: string, prior: string, mo
   const distDir = mode === "delivery" ? plan.outputDirectory : `${priorPath}/next-discovery`;
   assert.equal(inventory.planSha256, planSha256, "Generated TypeScript inventory lost its exact attempt provenance");
   assert.equal(inventory.mode, mode);
+  assert.equal(inventory.nextVersion, plan.nextVersion, "Historical type inventory profile differs from plan");
   assert.equal(inventory.distDir, distDir, "Generated TypeScript inventory output differs from its actual plan");
   const projection = parseProjection(json(join(phase, "projection.json")));
   assert.equal(projection.planSha256, planSha256);
@@ -383,11 +383,12 @@ function historicalTypes(root: string, stateDirectory: string, prior: string, mo
   assert.deepEqual(projected.include, [`${fromProjection(`${distDir}/types`)}/**/*.ts`]);
   assert.deepEqual(projected.exclude, []);
   assert.ok(projection.configFiles.some(({ path }) => path === selected), "Historical projection lost its selected configuration record");
-  const owned = new Map(nativeObservation(json(join(phase, "before-webpack.json")), planSha256, mode, distDir).map((file) => [file.path, file]));
+  const owned = new Map(validateStylexNextNativeTypeObservation(json(join(phase, "before-webpack.json")), planSha256, mode, distDir, plan.nextVersion).map((file) => [file.path, file]));
   for (const target of STYLEX_NEXT_TARGETS) {
     const targetDirectory = join(prior, mode, target);
     const graph = validateStylexNextGraphReceipt(json(join(targetDirectory, "graph.json")));
     assert.equal(graph.attemptId, plan.attemptId);
+    assert.equal(graph.nextVersion, plan.nextVersion, "Historical type graph profile differs from plan");
     assert.equal(graph.mode, mode);
     assert.equal(graph.target, target);
     assert.equal(graph.graphId, graphIdForStylexNextTarget(target, plan.graphMap));
@@ -482,7 +483,7 @@ function parseProjection(value: unknown): Projection {
   };
 }
 
-function expectedNextEnv(config: Readonly<Record<string, unknown>>, distDir: string, prior: Snapshot): string {
+export function stylexNextTypeEnvironment(config: Readonly<Record<string, unknown>>, distDir: string, prior: Snapshot, nextVersion: StylexNextVersion): string {
   const images = config.images === undefined ? {} : record(config.images, "Next images configuration");
   const experimental = config.experimental === undefined ? {} : record(config.experimental, "Next experimental configuration");
   for (const [name, value] of [["disableStaticImages", images.disableStaticImages], ["strictRouteTypes", experimental.strictRouteTypes], ["typedRoutes", config.typedRoutes]] as const) {
@@ -491,6 +492,7 @@ function expectedNextEnv(config: Readonly<Record<string, unknown>>, distDir: str
   const lines = ['/// <reference types="next" />'];
   if (images.disableStaticImages !== true) lines.push('/// <reference types="next/image-types/global" />');
   lines.push(`import "./${distDir}/types/routes.d.ts";`);
+  if (stylexNextProfile(nextVersion).rootParams) lines.push(`import "./${distDir}/types/root-params.d.ts";`);
   if (experimental.strictRouteTypes === true) {
     lines.push(`import "./${distDir}/types/cache-life.d.ts";`, `import "./${distDir}/types/validator.ts";`);
     if (config.typedRoutes === true) lines.push(`import "./${distDir}/types/link.d.ts";`);
@@ -521,7 +523,7 @@ export function projectStylexNextTypeScript(options: Readonly<{
   const phase = phaseDirectory(attempt, mode);
   directory(phase);
   const receiptPath = join(phase, "projection.json");
-  const environment = expectedNextEnv(config, distDir, lifecycle.nextEnv);
+  const environment = stylexNextTypeEnvironment(config, distDir, lifecycle.nextEnv, readStylexNextTypeScriptVersion(attempt));
   if (existsSync(receiptPath)) {
     const prior = parseProjection(json(receiptPath));
     assert.equal(prior.authoredConfig, authoredConfig);
@@ -534,7 +536,7 @@ export function projectStylexNextTypeScript(options: Readonly<{
     if (prior.seed !== null) verifyArtifact(root, prior.seed);
     return normalizeLogicalPath(prior.projectedConfig.path, "Projected TypeScript configuration");
   }
-  const { ts } = installed(root);
+  const { ts } = installed(root, attempt);
   const authoredConfigExisted = existsSync(authoredPath);
   assert.equal(realpathSync(dirname(authoredPath)), dirname(authoredPath), "TypeScript config parent must be a physical directory");
   const suffix = `${attempt.planSha256.slice(0, 16)}-${mode}`;
@@ -580,14 +582,16 @@ export function observeStylexNextTypeScriptInputs(
   loadLifecycle(root, attempt);
   const phase = phaseDirectory(attempt, mode);
   const projection = parseProjection(json(join(phase, "projection.json")));
-  installed(root);
-  const files = ["cache-life.d.ts", "routes.d.ts", "validator.ts", "link.d.ts"]
+  installed(root, attempt);
+  const nextVersion = readStylexNextTypeScriptVersion(attempt);
+  const profile = stylexNextProfile(nextVersion);
+  const files = profile.nativeTypeNames
     .map((name) => join(root, projection.distDir, "types", name)).filter(existsSync);
-  assert.ok(files.some((path) => path.endsWith("/routes.d.ts")) && files.some((path) => path.endsWith("/validator.ts")), "Next did not create active native route types before webpack");
+  assert.ok(profile.requiredNativeTypeNames.every((name) => files.some((path) => path === join(root, projection.distDir, "types", name))), "Next did not create active native route types before webpack");
   canonical(join(phase, "before-webpack.json"), {
     artifacts: files.map((path) => artifact(root, path)).sort(compareArtifacts), distDir: projection.distDir,
-    kind: "hraness-next-native-type-writers", mode, nativeInputs: NATIVE_INPUTS,
-    nextVersion: STYLEX_NEXT_REQUIRED_VERSION, planSha256: attempt.planSha256, schemaVersion: 1,
+    kind: "hraness-next-native-type-writers", mode, nativeInputs: profile.typeInputs,
+    nextVersion: readStylexNextTypeScriptVersion(attempt), planSha256: attempt.planSha256, schemaVersion: 1,
   });
 }
 
@@ -659,7 +663,7 @@ export async function settleStylexNextTypeScriptPass(
     // Failed/partial compilers retain a census, never an exclusion authority.
     canonical(join(phase, "observed-types.json"), { artifacts: observed, semantics: "observation-only" });
     if (existsSync(beforePath) && graphPaths.every(existsSync)) {
-      const owned = new Map(nativeObservation(json(beforePath), attempt.planSha256, mode, projection.distDir).map((file) => [file.path, file]));
+      const owned = new Map(validateStylexNextNativeTypeObservation(json(beforePath), attempt.planSha256, mode, projection.distDir, readStylexNextTypeScriptVersion(attempt)).map((file) => [file.path, file]));
       for (const graph of await readStylexNextTypeScriptGraphReceipts(attempt, root, mode)) {
         assert.equal(graph.outputDirectory, projection.distDir);
         for (const output of graph.outputs.filter(({ path }) => path.startsWith("types/"))) {
@@ -673,11 +677,11 @@ export async function settleStylexNextTypeScriptPass(
       assert.deepEqual(observed, inventory, "Native type inventory has an unowned, missing, or changed artifact");
       canonical(join(phase, "types.json"), {
         artifacts: inventory, distDir: projection.distDir, kind: "hraness-next-generated-types", mode,
-        nextVersion: STYLEX_NEXT_REQUIRED_VERSION, planSha256: attempt.planSha256, schemaVersion: 1,
+        nextVersion: readStylexNextTypeScriptVersion(attempt), planSha256: attempt.planSha256, schemaVersion: 1,
       } satisfies TypeInventory);
     }
     const selected = resolve(root, projection.seed?.path ?? projection.authoredConfig);
-    const { parsed, configFiles } = parseConfig(root, selected, installed(root).ts);
+    const { parsed, configFiles } = parseConfig(root, selected, installed(root, attempt).ts);
     assert.deepEqual(configFiles, projection.configFiles, "TypeScript configuration inheritance changed during the native pass");
     assert.deepEqual(sourceCensus(root, parsed, knownTypes(root, projection.stateDirectory)), projection.sourceFiles, "Authored TypeScript source selection changed during the native pass");
   } catch (error) {
