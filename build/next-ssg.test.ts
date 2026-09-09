@@ -181,6 +181,41 @@ describe("Next native SSG postprocessing", () => {
     }
   });
 
+  test("admits only the exact 16.3 classification fields without changing SSG route selection", () => {
+    const expected = { locales: ["en", "fr"], routes: ["/", "/[slug]", "/a"] };
+    const input = (metadata: Record<string, unknown>) => prerender({
+      "/en": { ...metadata, srcRoute: null }, "/FR/a": metadata, "/en/a": metadata,
+      "/en/derived": { ...metadata, srcRoute: "/[slug]" },
+    }, { "/[slug]": metadata });
+    const classifications = [{}, ...["route", "fallback", "shell", "page"].flatMap(routeType =>
+      ["empty", "initial", "complete"].flatMap(response => ["blocking", "resuming", "static"].flatMap(compute =>
+        [{ routeType, response, compute }, { routeType, response, compute, htmlSize: 0 }, { routeType, response, compute, htmlSize: 9031 }])) )];
+    for (const metadata of classifications) {
+      assert.deepEqual(deriveStylexNextSsgRoutes(input(metadata), manifest(["en", "fr"]), "16.3.3"), expected);
+      if (Object.keys(metadata).length === 0) {
+        assert.deepEqual(deriveStylexNextSsgRoutes(input(metadata), manifest(["en", "fr"])), expected);
+      } else {
+        assert.throws(() => deriveStylexNextSsgRoutes(input(metadata), manifest(["en", "fr"]), "16.2.12"), /unknown field/u);
+      }
+    }
+    assert.throws(() => deriveStylexNextSsgRoutes(input({}), manifest(), null as never), /exactly/u);
+  });
+
+  test("rejects partial, foreign and malformed 16.3 classification metadata in both route tables", () => {
+    const valid = { routeType: "page", response: "complete", compute: "static", htmlSize: 9031 };
+    const invalid: Record<string, unknown>[] = [
+      { ...valid, unknown: true }, { ...valid, routeType: "unknown" }, { ...valid, response: "streaming" },
+      { ...valid, compute: "edge" }, { ...valid, routeType: null }, { ...valid, response: 1 },
+      ...[-1, 0.1, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, "9031", null, undefined].map(htmlSize => ({ ...valid, htmlSize })),
+      { htmlSize: 1 },
+    ];
+    for (const missing of ["routeType", "response", "compute"]) invalid.push(Object.fromEntries(Object.entries(valid).filter(([name]) => name !== missing)));
+    for (const metadata of invalid) for (const dynamic of [false, true]) {
+      const input = dynamic ? prerender({}, { "/[slug]": metadata }) : prerender({ "/a": metadata });
+      assert.throws(() => deriveStylexNextSsgRoutes(input, manifest(), "16.3.3"));
+    }
+  });
+
   test("matches the pinned devalue Set subset without evaluating emitted JavaScript", async () => {
     assert.equal(serializeStylexNextSsgRoutes, contractSerializeStylexNextSsgRoutes, "Filesystem settlement and receipt validation must share one serializer");
     const serializerPath = "dist/compiled/devalue/devalue.umd.js";
