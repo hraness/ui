@@ -129,6 +129,51 @@ async function generation(
   });
 }
 
+async function reactDomSelfRootFixture() {
+  const context = await fixture();
+  for (const [name, paths] of Object.entries({
+    react: ["package.json", "index.js", "cjs/react.production.js", "cjs/react.development.js"],
+    "react-dom": ["package.json", "index.js", "client.js", "cjs/react-dom.production.js", "cjs/react-dom.development.js", "cjs/react-dom-client.production.js", "cjs/react-dom-client.development.js"],
+    scheduler: ["package.json", "index.js", "cjs/scheduler.production.js", "cjs/scheduler.development.js"],
+  })) {
+    for (const path of paths) {
+      await write(join(context.root, "node_modules", name, path), await readFile(resolve(import.meta.dir, "../node_modules", name, path), "utf8"));
+    }
+  }
+  const entry = join(context.root, "src/entry.ts");
+  await write(entry, "import { createRoot } from 'react-dom/client'; import { flushSync } from 'react-dom'; export const native = { createRoot, flushSync }; export const later = () => import('react-dom');\n");
+  return { ...context, entry };
+}
+
+function rawReactDomSelfRoot(result: Awaited<ReturnType<typeof Bun.build>>) {
+  const inputs = result.metafile!.inputs;
+  const keyFor = (suffix: string) => Object.keys(inputs).find(path => path === suffix || path.endsWith(`/${suffix}`));
+  const client = keyFor("node_modules/react-dom/cjs/react-dom-client.production.js");
+  const root = keyFor("node_modules/react-dom/index.js");
+  const entry = keyFor("src/entry.ts");
+  assert.ok(client !== undefined && root !== undefined && entry !== undefined, "native ReactDOM importer and root must both be authoritative");
+  let self = 0;
+  for (const [from, input] of Object.entries(inputs)) {
+    input.imports = input.imports.map(edge => {
+      if (edge.kind !== "import-statement" || (edge.original !== "react-dom" && edge.path !== "react-dom")) return edge;
+      if (from === client) {
+        self += 1;
+        return { kind: "import-statement", path: "react-dom" } as never;
+      }
+      // Remove a genuine witness without inventing a target or changing kind.
+      // Other native resolved paths remain resolved; only the self edge is raw.
+      const { original: _original, ...withoutOriginal } = edge;
+      return withoutOriginal;
+    });
+  }
+  expect(self).toBe(1);
+  expect(Object.values(inputs).flatMap(input => input.imports).filter(edge => edge.kind === "import-statement" && edge.original === "react-dom")).toHaveLength(0);
+  // Bun preserves this genuine other-kind spelling but points to an output
+  // chunk. It is deliberately NOT an authoritative input witness.
+  expect(Object.values(inputs).flatMap(input => input.imports).some(edge => edge.kind === "dynamic-import" && edge.original === "react-dom")).toBe(true);
+  return { inputs, client, root, entry };
+}
+
 function expectation(
   root: string,
   graphId: string,
@@ -3526,6 +3571,120 @@ describe("collectBunStylexGraph", () => {
       }
     }
   });
+
+  for (const kind of ["client", "ssr"] as const) {
+    test(`settles the exact raw ReactDOM self-root require in ${kind} without borrowing witnesses`, async () => {
+      const context = await reactDomSelfRootFixture();
+      const handle = await generation(context, `react-dom-self-root-${kind}`, [expectation(context.root, kind, kind, context.entry)]);
+      const clientPath = "node_modules/react-dom/cjs/react-dom-client.production.js";
+      const indexPath = "node_modules/react-dom/index.js";
+      expect(sha256(await readFile(join(context.root, clientPath)))).toBe("3e472cce088eb5f01d931ba75ac64b27b52bd46a009e0657b56b45c97ed42044");
+      expect(await readFile(join(context.root, clientPath), "utf8")).toContain('require("react-dom")');
+      expect(sha256(await readFile(join(context.root, indexPath)))).toBe("ba1a3e33489f868371561777607e3ee5091df0f7ea3f1a10f789d6b86e4c1505");
+      expect(await readFile(join(context.root, indexPath), "utf8")).toContain("checkDCE();");
+      const original = Bun.build.bind(Bun);
+      const build = spyOn(Bun, "build").mockImplementation(async options => {
+        const result = await original(options);
+        rawReactDomSelfRoot(result);
+        return result;
+      });
+      try {
+        const receipt = await collectBunStylexGraph({ generation: handle, graphId: kind, rootDirectory: context.root });
+        expect(receipt.edges).toContainEqual({ external: false, from: `input:${clientPath}`, kind: "import-statement", to: `input:${indexPath}` });
+        expect(receipt.edges).toContainEqual({ external: false, from: `input:${indexPath}`, kind: "import-statement", to: "input:node_modules/react-dom/cjs/react-dom.production.js" });
+        expect(receipt.edges.some(edge => edge.from === `input:${clientPath}` && edge.to === "input:node_modules/react-dom/cjs/react-dom.production.js")).toBe(false);
+        expect(receipt.inputs.filter(input => input.path === indexPath)).toHaveLength(1);
+      } finally { build.mockRestore(); }
+    });
+  }
+
+  for (const variant of [
+    "attributes", "original", "require-kind", "dynamic-kind", "wrong-importer", "root-omitted",
+    "manifest-bytes", "root-bytes", "importer-bytes", "require-export", "browser-root",
+    "nested-scope", "paths-alias", "workspace-self", "hidden-closer",
+    "late-manifest", "late-root-bytes", "late-importer-bytes", "late-root-mode", "late-scope", "late-config",
+  ] as const) {
+    test(`rejects unproved raw ReactDOM self-root ${variant}`, async () => {
+      const context = await reactDomSelfRootFixture();
+      const packageRoot = join(context.root, "node_modules/react-dom");
+      const manifestPath = join(packageRoot, "package.json");
+      const rootPath = join(packageRoot, "index.js");
+      const importerPath = join(packageRoot, "cjs/react-dom-client.production.js");
+      if (variant === "manifest-bytes" || variant === "root-bytes" || variant === "importer-bytes") {
+        const path = variant === "manifest-bytes" ? manifestPath : variant === "root-bytes" ? rootPath : importerPath;
+        await writeFile(path, `${await readFile(path, "utf8")}\n`);
+      } else if (variant === "require-export" || variant === "browser-root") {
+        const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+        if (variant === "require-export") manifest.exports["."] = { require: "./cjs/react-dom.production.js", import: "./index.js", default: "./index.js" };
+        else manifest.browser["./INDEX.js"] = false;
+        await writeFile(manifestPath, JSON.stringify(manifest));
+      } else if (variant === "nested-scope") {
+        await write(join(packageRoot, "cjs/package.json"), JSON.stringify({ name: "react-dom" }));
+      } else if (variant === "paths-alias") {
+        await write(join(context.root, "tsconfig.json"), JSON.stringify({ compilerOptions: { paths: { "react-dom": ["./node_modules/react-dom/index.js"] } } }));
+      } else if (variant === "workspace-self") {
+        await write(join(context.root, "package.json"), JSON.stringify({ name: "react-dom" }));
+      }
+      const handle = await generation(context, `react-dom-negative-${variant}`, [expectation(context.root, "client", "client", context.entry)]);
+      const original = Bun.build.bind(Bun);
+      let mutated = false;
+      const build = spyOn(Bun, "build").mockImplementation(async options => {
+        const result = await original(options);
+        const { inputs, client, root, entry } = rawReactDomSelfRoot(result);
+        const selfEdge = inputs[client]!.imports.find(edge => edge.path === "react-dom")!;
+        if (variant === "attributes") Object.assign(selfEdge, { with: { type: "json" } });
+        else if (variant === "original") Object.assign(selfEdge, { original: "react-dom" });
+        else if (variant === "require-kind") Object.assign(selfEdge, { kind: "require-call" });
+        else if (variant === "dynamic-kind") Object.assign(selfEdge, { kind: "dynamic-import" });
+        else if (variant === "wrong-importer") {
+          inputs[client]!.imports = inputs[client]!.imports.filter(edge => edge !== selfEdge);
+          // The root has a browser map, so the generic importer guard must not
+          // be bypassed merely because it is another ReactDOM CJS input.
+          inputs[root]!.imports.push(selfEdge);
+        } else if (variant === "root-omitted") {
+          delete inputs[root];
+          for (const input of Object.values(inputs)) input.imports = input.imports.filter(edge => edge.path !== root);
+          for (const output of Object.values(result.metafile!.outputs)) delete output.inputs[root];
+        } else if (variant === "hidden-closer") {
+          const hidden = join(packageRoot, "cjs/node_modules/react-dom");
+          await write(join(hidden, "package.json"), JSON.stringify({ name: "react-dom", main: "index.js" }));
+          await write(join(hidden, "index.js"), "module.exports = {};\n");
+        }
+        // Supply a competing cross-kind target in the adversarial metadata.
+        // It must never rescue an unsupported self edge or replace the index.
+        if (variant === "require-kind") inputs[entry]!.imports.push({ kind: "dynamic-import", original: "react-dom", path: root } as never);
+        if (variant.startsWith("late-")) {
+          const output = result.outputs[0]!;
+          const arrayBuffer = output.arrayBuffer.bind(output);
+          Object.defineProperty(output, "arrayBuffer", { configurable: true, value: async () => {
+            const bytes = await arrayBuffer();
+            if (!mutated) {
+              mutated = true;
+              if (variant === "late-root-mode") chmodSync(rootPath, 0o600);
+              else if (variant === "late-scope") writeFileSync(join(packageRoot, "cjs/package.json"), JSON.stringify({ name: "react-dom" }));
+              else if (variant === "late-config") writeFileSync(join(context.root, "tsconfig.json"), JSON.stringify({ compilerOptions: { paths: { "react-dom": ["./elsewhere"] } } }));
+              else {
+                const path = variant === "late-manifest" ? manifestPath : variant === "late-root-bytes" ? rootPath : importerPath;
+                writeFileSync(path, `${await readFile(path, "utf8")}\n`);
+              }
+            }
+            return bytes;
+          } });
+        }
+        return result;
+      });
+      try {
+        const failure = variant.startsWith("late-")
+          ? /Bun raw fallback (?:source|package scope|resolver-visible|root resolution)|Bun root resolution configuration changed/u
+          : variant === "root-omitted"
+            ? /Bun output chunks\/index-.* cites an unknown entrypoint input/u
+            : /Bun metafile import.*is unresolved.*react-dom/u;
+        await expect(collectBunStylexGraph({ generation: handle, graphId: "client", rootDirectory: context.root })).rejects.toThrow(failure);
+        if (variant.startsWith("late-")) expect(mutated).toBe(true);
+        expect(await receiptExists(handle, "client")).toBe(false);
+      } finally { build.mockRestore(); }
+    });
+  }
 
   test("settles native React SSR imports from the real compiled UI runtime", async () => {
     const root = await realpath(resolve(import.meta.dir, ".."));

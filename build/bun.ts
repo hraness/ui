@@ -755,6 +755,30 @@ function witnessedBareInputTargets(
   return { exact: witnesses, specifiers };
 }
 
+function unresolvedInputEvidence(
+  imported: ParsedImport,
+  from: string,
+  known: ReadonlySet<string>,
+  witnesses: BareInputWitnesses,
+  inputFileSnapshots: ReadonlyMap<string, LoadedInputFileSnapshot>,
+): string {
+  // Counts and closed flags only: never include source, environment, manifest
+  // contents, or additional filesystem paths in a failed-resolution diagnostic.
+  const installation = packageInstallationRoot(from);
+  const root = installation === undefined ? undefined : posix.join(installation, "index.js");
+  const packageName = strictBarePackageRoot(imported.path);
+  return JSON.stringify({
+    attributes: imported.hasAttributes,
+    original: imported.original !== undefined,
+    requireCall: imported.kind === "require-call",
+    sameKindWitnesses: witnesses.exact.get(bareImportWitnessKey(imported.kind, imported.path))?.size ?? 0,
+    anyKindWitness: witnesses.specifiers.has(imported.path),
+    selfPackage: packageName !== undefined && packageBelowNodeModules(from) === packageName,
+    indexAuthoritative: root !== undefined && known.has(root),
+    indexObserved: root !== undefined && inputFileSnapshots.has(root),
+  });
+}
+
 function jsonRecord(value: unknown): Record<string, unknown> | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const prototype = Object.getPrototypeOf(value) as unknown;
@@ -895,6 +919,7 @@ function capturedPackageRootExportTarget(
   packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
   buildConditions: readonly string[],
   buildTarget: "browser" | "bun",
+  importCondition: "import" | "require" = "import",
 ): string | undefined {
   const manifest = packageScopeSnapshots.get(posix.join(installationRoot, "package.json"));
   if (manifest === undefined) return undefined;
@@ -911,7 +936,7 @@ function capturedPackageRootExportTarget(
     if (rootBranch.kind !== "match") return undefined;
     const activeConditions = new Set([
       ...buildConditions,
-      "import",
+      importCondition,
       ...(buildTarget === "browser" ? ["browser"] : ["bun", "node-addons", "node"]),
     ]);
     const resolution = conditionalPackageExportTarget(rootBranch.branch, activeConditions);
@@ -1379,6 +1404,54 @@ function retainRawBareInputFallbackUse(
   return target;
 }
 
+// This is an observed native self-reference, not a transparent selector: the
+// public root executes checkDCE before loading its production child. Bun reports
+// the pinned CJS require as import-statement; the source, not that metadata label,
+// selects the require export conditions. Never replace that root with the child
+// or promote a merely observed file to input.
+const reactDomSelfRootProfile = {
+  manifest: "d926f158e1be15885aaeac259c39567a46f6525fbdd14c380528486c31459996",
+  importer: "3e472cce088eb5f01d931ba75ac64b27b52bd46a009e0657b56b45c97ed42044",
+  root: "ba1a3e33489f868371561777607e3ee5091df0f7ea3f1a10f789d6b86e4c1505",
+} as const;
+
+function capturedReactDomSelfRoot(
+  from: string,
+  installationRoot: string,
+  known: ReadonlySet<string>,
+  rootDirectory: string,
+  packageScopes: ReadonlyMap<string, PackageScope>,
+  packageScopeSnapshots: ReadonlyMap<string, ResolutionFileSnapshot>,
+  inputFileSnapshots: ReadonlyMap<string, LoadedInputFileSnapshot>,
+  buildConditions: readonly string[],
+  buildTarget: "browser" | "bun",
+): Readonly<{ target: string; scopes: readonly ResolutionFileSnapshot[]; files: readonly LoadedInputFileSnapshot[] }> | undefined {
+  if (from !== posix.join(installationRoot, "cjs/react-dom-client.production.js") || !known.has(from)) return undefined;
+  const manifestPath = posix.join(installationRoot, "package.json");
+  const manifest = packageScopeSnapshots.get(manifestPath);
+  if (manifest?.kind !== "file" || manifest.sha256 !== reactDomSelfRootProfile.manifest) return undefined;
+  const record = strictJsonObjectFromSnapshot(manifest).record;
+  if (record?.name !== "react-dom" || record.version !== "19.2.3" || !Object.hasOwn(record, "exports")) return undefined;
+  const target = capturedPackageRootExportTarget(
+    "react-dom", installationRoot, known, rootDirectory, inputFileSnapshots,
+    packageScopeSnapshots, buildConditions, buildTarget, "require",
+  );
+  if (target !== posix.join(installationRoot, "index.js")) return undefined;
+  const files: LoadedInputFileSnapshot[] = [];
+  const scopes: ResolutionFileSnapshot[] = [];
+  for (const [path, expectedHash] of [[from, reactDomSelfRootProfile.importer], [target, reactDomSelfRootProfile.root]] as const) {
+    const file = capturedJavascriptInputFileSnapshot(path, rootDirectory, inputFileSnapshots);
+    const scope = packageScopes.get(path);
+    if (file?.snapshot.kind !== "file" || file.snapshot.sha256 !== expectedHash || scope?.name !== "react-dom") return undefined;
+    const captured = matchingCapturedPackageScopeSnapshots(scope, packageScopeSnapshots, "Bun ReactDOM self-root scope");
+    // A closer package scope (even with the same name) is not the pinned root.
+    if (captured?.at(-1)?.path !== manifestPath) return undefined;
+    files.push(file);
+    scopes.push(...captured);
+  }
+  return { target, scopes, files };
+}
+
 async function resolvedInputTarget(
   imported: ParsedImport,
   from: string,
@@ -1435,6 +1508,29 @@ async function resolvedInputTarget(
       ) !== installationRoot
     ) return undefined;
     return target;
+  }
+  if (
+    imported.path === "react-dom"
+    && imported.kind === "import-statement"
+    && imported.original === undefined
+    && !imported.hasAttributes
+    && installationRoots.length === 1
+    && fallbackPolicy.enabled
+    && fallbackPolicy.packageName !== packageName
+    && !fallbackPolicy.pathPatterns.some(pattern => pathPatternMatches(pattern, imported.path))
+  ) {
+    const installationRoot = installationRoots[0]!;
+    const selfRoot = capturedReactDomSelfRoot(
+      from, installationRoot, known, rootDirectory, packageScopes,
+      packageScopeSnapshots, inputFileSnapshots, buildConditions, buildTarget,
+    );
+    if (selfRoot !== undefined && await resolverVisibleInstallation(rootDirectory, from, packageName, resolverCache) === installationRoot) {
+      return retainRawBareInputFallbackUse(
+        rawFallbackUses, imported, from, selfRoot.target, packageName,
+        installationRoot, selfRoot.scopes, packageScopes, packageScopeSnapshots,
+        [], selfRoot.files,
+      );
+    }
   }
   if (
     imported.original !== undefined
@@ -2894,7 +2990,7 @@ export async function collectBunStylexGraph(options: CollectBunStylexGraphOption
       ) continue;
       assert.ok(
         input !== undefined || output !== undefined || speculativeInput !== undefined,
-        `Bun metafile import from ${from} is unresolved: ${imported.path}`,
+        `Bun metafile import from ${from} is unresolved: ${imported.path}; evidence=${unresolvedInputEvidence(imported, from, inputSet, inputWitnesses, inputFileSnapshots)}`,
       );
       // Bun can retain an absolute import record for a barrel export whose
       // module it loaded and then removed from the authoritative metafile.
