@@ -31,4 +31,5 @@ export {
 } from "./surfaces.js";
 export * from "./toast.js";
 export * from "./toolbar.js";
+export * from "./visually-hidden.js";
 export { cn } from "./lib/utils.js";

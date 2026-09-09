@@ -331,6 +331,30 @@ Substack, Threads, X, and YouTube marks used beside visible profile labels.
 controls that own their accessible names. Icon-only `SegmentedControl` labels
 are centered independently of inline text baselines.
 
+Use `VisuallyHidden` for nonfocusable text that must retain its native
+semantics and remain available to assistive technology:
+
+```tsx
+import { VisuallyHidden } from "@hraness/ui";
+import "@hraness/ui/styles.css";
+
+<VisuallyHidden as="h1">Project library</VisuallyHidden>;
+<VisuallyHidden role="status" aria-live="polite">
+  Showing 12 projects
+</VisuallyHidden>;
+```
+
+It renders one native `span` by default. Set `as` to `div`, `p`, or `h1`
+through `h6` when that element carries the intended semantics. Native
+attributes, children, refs, and caller classes remain on that element.
+The stable `hraness-visually-hidden` hook and `data-slot="visually-hidden"`
+identify the component; the hook alone does not supply hiding styles.
+Load the complete package stylesheet shown above, or the complete finalized
+stylesheet from a compiler-adopter graph. Hiding uses the shared compiled
+StyleX recipe without generated inline styles. Do not use it around focusable
+children or as a reveal-on-focus helper. Use `SkipLink` for focus-revealed
+navigation.
+
 Add one quiet AI handoff to a project or individual content page by passing
 its canonical absolute HTTPS URL:
 

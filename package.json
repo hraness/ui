@@ -159,6 +159,7 @@
     "src/toolbar.stylex.ts",
     "src/toolbar.tsx",
     "src/visually-hidden.stylex.ts",
+    "src/visually-hidden.tsx",
     "README.md",
     "LICENSE"
   ],
