@@ -69,6 +69,7 @@ export type StylexCompilerContractV1 = Readonly<{
     importSources: readonly ["@stylexjs/stylex"];
     logicalRoot: "<graph-root>";
     moduleResolution: "commonJS";
+    propertyValidationMode: "throw";
     sourceType: "unambiguous";
     styleResolution: "property-specificity";
     sxPropName: false;

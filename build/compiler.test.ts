@@ -15,6 +15,7 @@ import {
   canonicalJson,
   compilerContract,
   compilerSha256,
+  createStylexTransformCollector,
   readStylexPackageManifest,
   serializeStylexPackageRules,
   serializeStylexRules,
@@ -26,6 +27,7 @@ import {
   serializeStylexPackageRules as serializeStylexPackageRulesFromPublicBuild,
   type StylexStandaloneSerializerV1 as PublicStylexStandaloneSerializerV1,
 } from "./index.js";
+import { stylexCompilerOptions } from "../scripts/stylex-config.js";
 
 const roots: string[] = [];
 const rule = ["x-package", { ltr: ".x-package{color:red}" }, 1000] as const satisfies StylexRuleV1;
@@ -71,6 +73,75 @@ function manifestValue(
 }
 
 describe("package StyleX compiler contract", () => {
+  test("binds fail-fast property validation and rejects silent or unbound compiler identities", () => {
+    expect(compilerContract.transform.propertyValidationMode).toBe("throw");
+    expect(stylexCompilerOptions(process.cwd()).propertyValidationMode).toBe("throw");
+    const valid = manifestValue();
+    const { propertyValidationMode: omitted, ...legacyTransform } = compilerContract.transform;
+    void omitted;
+    for (const transform of [legacyTransform,
+      { ...compilerContract.transform, propertyValidationMode: "silent" },
+      { ...compilerContract.transform, propertyValidationMode: "warn" },
+    ]) {
+      const compiler = { ...compilerContract, transform };
+      expect(() => validateStylexPackageManifest({ ...valid, compiler,
+        compilerSha256: sha256(canonicalJson(compiler)) })).toThrow(/compiler contract differs/u);
+    }
+  });
+
+  test("rejects every pinned unsupported shorthand instead of silently omitting its rule", async () => {
+    const collector = createStylexTransformCollector(process.cwd());
+    const path = join(process.cwd(), "src", "property-validation-fixture.stylex.ts");
+    const declarations = {
+      all: "unset", animation: "spin 1s linear", background: "red",
+      border: "1px solid red", borderInline: "1px solid red", borderBlock: "1px solid red",
+      borderTop: "1px solid red", borderRight: "1px solid red", borderBottom: "1px solid red", borderLeft: "1px solid red",
+      borderInlineStart: "1px solid red", borderInlineEnd: "1px solid red",
+      borderHorizontal: "1px solid red", borderVertical: "1px solid red",
+      borderBlockStart: "1px solid red", borderBlockEnd: "1px solid red", borderStart: "1px solid red", borderEnd: "1px solid red",
+    };
+    for (const [property, value] of Object.entries(declarations)) {
+      const source = `import * as stylex from "@stylexjs/stylex";
+        export const styles = stylex.create({ root: { color: "blue", ${property}: ${JSON.stringify(value)} } });`;
+      await expect(collector.transform(source, path)).rejects.toThrow(/not supported/u);
+    }
+    expect(collector.seal()).toEqual([]);
+  });
+
+  test("rejects unsupported nested pseudo and media properties in both transform paths", async () => {
+    for (const declaration of ['border: { default: "1px solid red", ":hover": "2px solid blue" }',
+      '":focus-visible": { borderTop: "1px solid red" }',
+      '"@media (forced-colors: active)": { border: "1px solid CanvasText" }']) {
+      for (const mapped of [false, true]) {
+        const collector = createStylexTransformCollector(process.cwd());
+        const logical = "src/property-validation-fixture.stylex.ts";
+        const source = `import * as stylex from "@stylexjs/stylex";
+          export const styles = stylex.create({ root: { ${declaration} } });`;
+        const pending = mapped ? collector.transformWithMap(source, join(process.cwd(), logical), { logicalSourceFileName: logical })
+          : collector.transform(source, join(process.cwd(), logical));
+        await expect(pending).rejects.toThrow(/not supported/u);
+        expect(collector.seal()).toEqual([]);
+      }
+    }
+  });
+
+  test("preserves explicit border longhands, conditional rules and supported font shorthands", async () => {
+    const collector = createStylexTransformCollector(process.cwd());
+    const result = await collector.transform(`import * as stylex from "@stylexjs/stylex";
+      export const styles = stylex.create({ root: {
+        borderWidth: "1px", borderStyle: "solid", borderColor: { default: "red", ":hover": "blue" },
+        font: "inherit", fontSize: "16px", "min-inline-size": "0px",
+      } });`, join(process.cwd(), "src/property-validation-fixture.stylex.ts"));
+    const css = serializeStylexRules(collector.seal());
+    for (const declaration of ["border-width:1px", "border-style:solid", "font:inherit", "font-size:16px", "min-inline-size:0"]) {
+      expect(css.replaceAll(/\s+/gu, "")).toContain(declaration);
+    }
+    expect(css).toMatch(/border-color:\s*(?:red|#f00);/u);
+    expect(css).toMatch(/border-color:\s*(?:blue|#00f);/u);
+    expect(css).toContain(":hover");
+    expect(result.code).not.toContain("stylex.create(");
+  });
+
   test("binds the parser repair and enabled media ordering into every package manifest", () => {
     expect(compilerContract.transform.enableMediaQueryOrder).toBeTrue();
     expect(compilerContract.tools.stylexBabelCompatibility).toEqual({
