@@ -41,7 +41,11 @@ test("native probes reject redirect transport and retain the exact missing-input
   expect(smoke).toContain('context.routeWebSocket("**/*"');
   expect(smoke).toContain('url.pathname === "/_next/webpack-hmr"');
   const probes = [...verifier.matchAll(/request\.get\([^;\n]+/gu)].map(match => match[0]);
-  expect(probes.length).toBe(5);
+  // One cold unvisited-route warm-up, four repair/recovery probes, and one
+  // explicit stable-variable restart probe all remain redirect-forbidden.
+  expect(probes).toHaveLength(6);
+  expect(probes.filter(probe => probe.includes("${origin}/unvisited"))).toHaveLength(1);
+  expect(probes.filter(probe => probe.includes('`${origin}/`'))).toHaveLength(5);
   for (const probe of probes) expect(probe).toContain("maxRedirects: 0");
   expect(verifier).toContain('stages.push("missing-resolution-candidate-recovery")');
   expect(verifier).toContain('"app/created-later.tsx"');
