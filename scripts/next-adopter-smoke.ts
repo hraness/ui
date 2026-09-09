@@ -40,6 +40,7 @@ const FIXTURE_REQUIRED_SOURCES: Readonly<Record<NextTarget, readonly string[]>> 
     "app/layout.tsx",
     "app/lazy.tsx",
     "app/page.tsx",
+    "proxy.ts",
   ],
 };
 const FIXTURE_AUTHORED_SOURCES = [...new Set(NEXT_TARGETS.flatMap((target) => FIXTURE_REQUIRED_SOURCES[target]))].sort();
@@ -226,6 +227,65 @@ async function readArtifact(root: string, expected: Artifact, description: strin
   return source;
 }
 
+async function assertNodeProxyTrace(consumer: string, graph: Record<string, unknown>, postprocessing: Record<string, unknown>): Promise<Artifact> {
+  assert.equal(graph.target, "node-rsc");
+  const javascript = "server/proxy.js";
+  const tracePath = `${javascript}.nft.json`;
+  const outputs = orderedArtifacts(graph.outputs, "Next proxy graph outputs");
+  assert.ok(orderedLogicalPaths(graph.javascriptChunks, "Next proxy graph chunks").includes(javascript));
+  assert.ok(orderedArtifacts(graph.sourceMaps, "Next proxy graph maps").some(({ path }) => path === `${javascript}.map`));
+  assert.ok(moduleIdentities(graph.modules, "Next proxy graph modules").some(({ path }) => path === "proxy.ts"));
+  assert.ok(Array.isArray(graph.entrypoints) && graph.entrypoints.length <= 4096);
+  const owners = graph.entrypoints.map((value) => object(value, "Next proxy entrypoint")).filter(({ name }) => name === "proxy");
+  assert.equal(owners.length, 1);
+  assert.ok(orderedLogicalPaths(owners[0]!.files, "Next proxy entry files").includes(javascript));
+  assert.ok(orderedLogicalPaths(owners[0]!.javascript, "Next proxy entry JavaScript").includes(javascript));
+  assert.ok(Array.isArray(graph.auxiliaryTraceAssets) && graph.auxiliaryTraceAssets.length <= 100_000);
+  const traces = graph.auxiliaryTraceAssets.map((value) => object(value, "Next proxy trace")).filter(({ entrypoint }) => entrypoint === "proxy");
+  assert.equal(traces.length, 1);
+  const trace = traces[0]!;
+  exactKeys(trace, ["creator", "entrypoint", "initial", "kind"], "Next proxy trace");
+  assert.equal(trace.kind, "next-node-dependency-trace");
+  const initial = artifact(trace.initial, "Next proxy initial trace");
+  assert.equal(initial.path, tracePath);
+  assert.deepEqual(outputs.find(({ path }) => path === tracePath), initial);
+  const creator = artifact(trace.creator, "Next proxy trace creator");
+  assert.equal(creator.path, "node_modules/next/dist/build/webpack/plugins/next-trace-entrypoints-plugin.js");
+  assert.equal(creator.sha256, "6178f6d18b0b96c38cff2b0df1494aabdcdee37d631e62e77974f14e244f2c5b");
+  await readArtifact(consumer, creator, "Next proxy pinned native creator");
+  assert.ok(Array.isArray(postprocessing.auxiliaryTraceSnapshots) && postprocessing.auxiliaryTraceSnapshots.length <= 100_000);
+  const snapshots = postprocessing.auxiliaryTraceSnapshots
+    .map((value) => object(value, "Next proxy trace snapshot"))
+    .filter(({ asset }) => object(asset, "Next proxy snapshot asset").entrypoint === "proxy");
+  assert.equal(snapshots.length, 1);
+  const snapshot = snapshots[0]!;
+  exactKeys(snapshot, ["asset", "output", "proxyRename", "semantics"], "Next proxy snapshot");
+  assert.deepEqual(snapshot.asset, trace);
+  assert.equal(snapshot.semantics, "observation-only");
+  const output = artifact(snapshot.output, "Next proxy settled trace");
+  assert.equal(output.path, "server/middleware.js.nft.json");
+  assert.equal(postprocessing.outputDirectory, graph.outputDirectory);
+  const outputRoot = resolve(consumer, logicalPath(graph.outputDirectory, "Next proxy output directory"));
+  await readArtifact(outputRoot, output, "Next proxy settled trace");
+  const rename = object(snapshot.proxyRename, "Next proxy rename proof");
+  exactKeys(rename, ["absent", "creator", "initial", "output", "sourceMap"], "Next proxy rename proof");
+  const renameCreator = artifact(rename.creator, "Next proxy rename creator");
+  assert.equal(renameCreator.path, "node_modules/next/dist/build/index.js");
+  assert.equal(renameCreator.sha256, "52cb337f5b0037a81ff0452cfbeb55760d3eafd026a5d5dc5f1c6cc5c4fe35c4");
+  await readArtifact(consumer, renameCreator, "Next proxy native rename creator");
+  const compiled = artifact(rename.initial, "Next proxy compiled JavaScript");
+  assert.deepEqual(compiled, outputs.find(({ path }) => path === javascript));
+  const renamed = artifact(rename.output, "Next proxy renamed JavaScript");
+  assert.deepEqual(renamed, { ...compiled, path: "server/middleware.js" });
+  await readArtifact(outputRoot, renamed, "Next proxy renamed JavaScript");
+  const map = artifact(rename.sourceMap, "Next proxy unchanged map");
+  assert.deepEqual(map, outputs.find(({ path }) => path === `${javascript}.map`));
+  await readArtifact(outputRoot, map, "Next proxy unchanged map");
+  assert.deepEqual(rename.absent, [javascript, tracePath]);
+  for (const path of [javascript, tracePath]) await assert.rejects(lstat(resolve(outputRoot, path)), { code: "ENOENT" });
+  return renamed;
+}
+
 const themeSetup = String.raw`import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -325,6 +385,7 @@ try {
   const nextManifest = JSON.parse(await readFile(resolve(consumer, "node_modules/next/package.json"), "utf8")) as { version?: unknown };
   assert.equal(nextManifest.version, NEXT_VERSION);
   await cp(resolve(repository, "fixtures/next-adopter/app"), resolve(consumer, "app"), { recursive: true });
+  await cp(resolve(repository, "fixtures/next-adopter/proxy.ts"), resolve(consumer, "proxy.ts"));
   await cp(resolve(repository, "fixtures/next-adopter/next.config.mjs"), resolve(consumer, "next.config.mjs"));
   await cp(resolve(repository, "fixtures/next-adopter/build.mjs"), resolve(consumer, "build.mjs"));
   await cp(resolve(repository, "fixtures/next-adopter/build-no-edge.mjs"), resolve(consumer, "build-no-edge.mjs"));
@@ -374,9 +435,9 @@ try {
     orderedLogicalPaths(requiredRecord[target], `Next attempt required sources ${target}`),
   ])) as Readonly<Record<NextTarget, readonly string[]>>;
   assert.deepEqual(requiredSources, FIXTURE_REQUIRED_SOURCES, "Next attempt changed the fixture's exact target source census");
-  const physicalFixtureSources = (await filesBelow(resolve(consumer, "app")))
+  const physicalFixtureSources = [...(await filesBelow(resolve(consumer, "app")))
     .filter((path) => path.endsWith(".tsx"))
-    .map((path) => `app/${path}`);
+    .map((path) => `app/${path}`), "proxy.ts"].sort();
   assert.deepEqual(
     [...new Set(NEXT_TARGETS.flatMap((target) => requiredSources[target]))].sort(),
     physicalFixtureSources,
@@ -450,6 +511,7 @@ try {
       `Next discovery ${identity.target} graph does not bind its complete map inventory`,
     );
     orderedLogicalPaths(graph.javascriptChunks, `Next discovery ${identity.target} JavaScript chunks`);
+    if (identity.target === "node-rsc") await assertNodeProxyTrace(consumer, graph, discoveryPostprocessing);
   }
 
   const outputFiles = await filesBelow(resolve(consumer, ".next"));
@@ -494,6 +556,7 @@ try {
     assert.deepEqual(modules.map(({ path }) => path), requiredSources[identity.target], `Next ${identity.target} graph differs from the planned source census`);
     assert.equal(graph.sourcesSha256, sha256(JSON.stringify(modules)), `Next ${identity.target} source inventory hash is stale`);
     const outputs = orderedArtifacts(graph.outputs, `Next ${identity.target} outputs`);
+    const proxyOutput = identity.target === "node-rsc" ? await assertNodeProxyTrace(consumer, graph, deliveryPostprocessing) : undefined;
     if (identity.target === "client") {
       assert.ok(Array.isArray(graph.entrypoints) && graph.entrypoints.length > 0 && graph.entrypoints.length <= 4096, "Next client entrypoints must be a nonempty bounded array");
       const entrypoints = graph.entrypoints.map((value, index) => object(value, `Next client entrypoint ${String(index)}`));
@@ -526,7 +589,7 @@ try {
       assert.ok(outputArtifact !== undefined, `Next source map ${sourceMap.path} has no same-graph output owner`);
       const [mapSource, outputSource] = await Promise.all([
         readArtifact(outputRoot, sourceMap, `Next source map ${sourceMap.path}`),
-        readArtifact(outputRoot, outputArtifact, `Next mapped output ${outputPath}`),
+        readArtifact(outputRoot, outputPath === "server/proxy.js" ? proxyOutput! : outputArtifact, `Next mapped output ${outputPath}`),
       ]);
       const outputText = exactUtf8(outputSource, `Next mapped output ${outputPath}`);
       assertNextSourceMapOutputLink(outputText, outputPath, sourceMap.path);
@@ -585,6 +648,7 @@ try {
     for (const path of ["/", "/edge", "/index/manifest-proof"]) {
       const response = await fetch(`${base}${path}`);
       assert.equal(response.status, 200);
+      assert.equal(response.headers.get("x-stylex-node-proxy"), path, "The registered Node proxy must preserve the request path");
       const csp = response.headers.get("content-security-policy") ?? "";
       assert.match(csp, /style-src 'self'(?:;|$)/u);
       assert.doesNotMatch(csp, /style-src[^;]*'unsafe-inline'/u);
@@ -619,7 +683,8 @@ try {
         if (message.type() === "error" || message.type() === "warning") recordHydrationDiagnostic(message.type(), message.text());
       });
       try {
-        await page.goto(base, { waitUntil: "networkidle" });
+        const response = await page.goto(base, { waitUntil: "networkidle" });
+        assert.equal(response?.headers()["x-stylex-node-proxy"], "/", "The browser document must pass through the compiled Node proxy");
         await page.locator('[data-next-hydrated="true"]').waitFor();
         await page.locator('[data-next-lazy="ready"]').waitFor();
       } catch (error) {
@@ -777,6 +842,9 @@ try {
   assert.deepEqual(noEdgeComplete.discovery?.map(({ target }) => target), ["client", "edge-rsc", "node-rsc"]);
   assert.deepEqual(noEdgeComplete.delivery?.map(({ target }) => target), ["client", "edge-rsc", "node-rsc"]);
   for (const mode of ["discovery", "delivery"] as const) {
+    const nodeGraph = object(JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "node-rsc/graph.json"), "utf8")) as unknown, "Next no-edge Node graph");
+    const postprocessing = object(JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "postprocessing.json"), "utf8")) as unknown, "Next no-edge postprocessing");
+    await assertNodeProxyTrace(consumer, nodeGraph, postprocessing);
     const graph = JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "edge-rsc/graph.json"), "utf8")) as {
       entrypoints?: unknown[];
       modules?: unknown[];
@@ -789,7 +857,7 @@ try {
     assert.equal(graph.sourcesSha256, sha256("[]"));
   }
   successful = true;
-  console.log("Packed Next client, Node RSC, edge RSC, exact target/output source-map receipts, explicit no-edge graph, dynamic /index route, lazy, exercised global-error, package union, font-URL asset linkage, CSP, and hydration proof passed");
+  console.log("Packed Next client, Node RSC, edge RSC, registered Node proxy trace and request headers, exact target/output source-map receipts, explicit no-edge graph, dynamic /index route, lazy, exercised global-error, package union, font-URL asset linkage, CSP, and hydration proof passed");
 } finally {
   if (successful) await rm(work, { force: true, recursive: true });
   else process.stderr.write(`Retained failed Next adopter fixture: ${work}\n`);

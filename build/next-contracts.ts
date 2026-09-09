@@ -218,6 +218,20 @@ export const STYLEX_NEXT_AUXILIARY_TRACE_CREATOR = Object.freeze([
   "6178f6d18b0b96c38cff2b0df1494aabdcdee37d631e62e77974f14e244f2c5b",
 ] as const);
 
+// The pinned post-build writer renames only the Node proxy JS and NFT files.
+export const STYLEX_NEXT_PROXY_RENAME_CREATOR = Object.freeze([
+  "dist/build/index.js",
+  "52cb337f5b0037a81ff0452cfbeb55760d3eafd026a5d5dc5f1c6cc5c4fe35c4",
+] as const);
+
+export type StylexNextProxyRenameV1 = Readonly<{
+  absent: readonly ["server/proxy.js", "server/proxy.js.nft.json"];
+  creator: StylexArtifactV1;
+  initial: StylexArtifactV1;
+  output: StylexArtifactV1;
+  sourceMap: StylexArtifactV1;
+}>;
+
 /** Framework dependency metadata, never a dependency-selection authorization. */
 export type StylexNextAuxiliaryTraceAssetV1 = Readonly<{
   creator: StylexArtifactV1;
@@ -230,6 +244,7 @@ export type StylexNextAuxiliaryTraceAssetV1 = Readonly<{
 export type StylexNextAuxiliaryTraceSnapshotV1 = Readonly<{
   asset: StylexNextAuxiliaryTraceAssetV1;
   output: StylexArtifactV1;
+  proxyRename?: StylexNextProxyRenameV1;
   semantics: "observation-only";
 }>;
 
@@ -1191,7 +1206,9 @@ export function validateStylexNextAuxiliaryTraceAsset(value: unknown): StylexNex
   keys(record, ["creator", "entrypoint", "initial", "kind"], "Next auxiliary trace asset");
   assert.equal(record.kind, "next-node-dependency-trace", "Next auxiliary trace kind is unsupported");
   const entrypoint = normalizeLogicalPath(record.entrypoint, "Next auxiliary trace entrypoint");
-  assert.ok(/^(?:app|pages)\/.+/u.test(entrypoint), "Next auxiliary trace must name an app or pages server entrypoint");
+  // Next 16.2.12 registers a root or src/proxy.ts as the literal Node entry
+  // "proxy". Graph validation still requires its exact registered JS chunk.
+  assert.ok(entrypoint === "proxy" || /^(?:app|pages)\/.+/u.test(entrypoint), "Next auxiliary trace must name an app, pages, or exact proxy server entrypoint");
   const creator = artifact(record.creator, "Next auxiliary trace creator");
   assert.equal(creator.path, `node_modules/next/${STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]}`, "Next auxiliary trace creator path differs from its pinned owner");
   assert.equal(creator.sha256, STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[1], "Next auxiliary trace creator differs from Next 16.2.12");
@@ -1204,12 +1221,29 @@ export function validateStylexNextAuxiliaryTraceAsset(value: unknown): StylexNex
 
 export function validateStylexNextAuxiliaryTraceSnapshot(value: unknown): StylexNextAuxiliaryTraceSnapshotV1 {
   const record = object(value, "Next auxiliary trace snapshot");
-  keys(record, ["asset", "output", "semantics"], "Next auxiliary trace snapshot");
   assert.equal(record.semantics, "observation-only", "Next auxiliary trace snapshot cannot claim dependency or deployment proof");
   const asset = validateStylexNextAuxiliaryTraceAsset(record.asset);
+  const proxy = asset.entrypoint === "proxy";
+  keys(record, proxy ? ["asset", "output", "proxyRename", "semantics"] : ["asset", "output", "semantics"], "Next auxiliary trace snapshot");
   const output = artifact(record.output, "Next auxiliary trace final artifact");
-  assert.equal(output.path, asset.initial.path, "Next auxiliary trace final path changed");
+  assert.equal(output.path, proxy ? "server/middleware.js.nft.json" : asset.initial.path, "Next auxiliary trace final path changed");
   assert.ok(output.bytes <= 16 * 1024 * 1024, "Next auxiliary trace final artifact exceeds its byte bound");
+  if (proxy) {
+    const rename = object(record.proxyRename, "Next proxy rename");
+    keys(rename, ["absent", "creator", "initial", "output", "sourceMap"], "Next proxy rename");
+    const creator = artifact(rename.creator, "Next proxy rename creator");
+    assert.equal(creator.path, `node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`, "Next proxy rename creator path changed");
+    assert.equal(creator.sha256, STYLEX_NEXT_PROXY_RENAME_CREATOR[1], "Next proxy rename creator differs from Next 16.2.12");
+    const initial = artifact(rename.initial, "Next proxy initial JavaScript");
+    assert.equal(initial.path, "server/proxy.js", "Next proxy initial JavaScript path changed");
+    const final = artifact(rename.output, "Next proxy final JavaScript");
+    assert.deepEqual(final, { ...initial, path: "server/middleware.js" }, "Next proxy rename must preserve exact JavaScript bytes");
+    const sourceMap = artifact(rename.sourceMap, "Next proxy source map");
+    assert.equal(sourceMap.path, "server/proxy.js.map", "Next proxy rename must preserve its original source-map path");
+    const absent = ["server/proxy.js", "server/proxy.js.nft.json"] as const;
+    assert.deepEqual(rename.absent, absent, "Next proxy rename must prove both original paths absent");
+    return { asset, output, proxyRename: { absent, creator, initial, output: final, sourceMap }, semantics: "observation-only" };
+  }
   return { asset, output, semantics: "observation-only" };
 }
 

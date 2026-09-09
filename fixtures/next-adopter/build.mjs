@@ -17,6 +17,7 @@ const complete = await runStylexNextBuild({
       "app/layout.tsx",
       "app/lazy.tsx",
       "app/page.tsx",
+      "proxy.ts",
     ],
   },
   rootDirectory: process.cwd(),

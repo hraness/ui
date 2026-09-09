@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.9"
+    "@hraness/ui": "github:hraness/ui#v0.5.10"
   }
 }
 ```
@@ -285,7 +285,9 @@ List the complete repository-owned source census for each production target. Kee
 
 The delivery pass preserves webpack source-map chaining and lets Next own CSS deduplication, splitting, filenames, route manifests, and `<link>` delivery. The adapter verifies emitted entrypoint-to-CSS links from webpack's public compilation data; it does not edit private Next manifests, install a global module hook, or inject an inline style. The production receipt therefore remains compatible with a strict `style-src 'self'` policy.
 
-`complete` means the StyleX graph proof is complete. It is not a whole-build integrity, dependency-safety, or deployment-readiness attestation. Next rewrites server dependency traces after webpack; the adapter records their exact initial artifacts and settled final hashes separately as `observation-only` auxiliary metadata. Only traces belonging to registered Node server entries qualify. These observations never exempt JavaScript, CSS, source maps, or linked assets from their strict checks, and the adapter never follows trace file lists to select or copy dependencies. Next standalone packaging and provider deployments still require their own dependency-selection, packaging, browser, and deployment acceptance checks.
+`complete` means the StyleX graph proof is complete. It is not a whole-build integrity, dependency-safety, or deployment-readiness attestation. Next rewrites server dependency traces after webpack; the adapter records their exact initial artifacts and settled final hashes separately as `observation-only` auxiliary metadata. Only traces belonging to registered Node app, pages, or the exact `proxy` server entry qualify. A root or `src/proxy.ts` remains in the Node source census and retains its JavaScript, source map, and request behavior; other root entry names are not admitted by this boundary. The native fixture covers root `proxy.ts`; a product using the `src` layout still needs its own native qualification. These observations never exempt JavaScript, CSS, source maps, or linked assets from their strict checks, and the adapter never follows trace file lists to select or copy dependencies. Next standalone packaging and provider deployments still require their own dependency-selection, packaging, browser, and deployment acceptance checks.
+
+Next 16.2.12 renames the registered proxy's `server/proxy.js` and dependency trace to `server/middleware.js` and its trace after webpack, without renaming `server/proxy.js.map`. A proxy-only `proxyRename` branch in the postprocessing snapshot binds the exact native writer, unchanged JavaScript and map bytes, and absence of both original paths. The original graph keeps its compiler-owned names; no other runtime asset is renamed or exempted. Older snapshot readers do not accept this new branch. The final trace file list remains an observation, including any native self-reference rewrite.
 
 Development and HMR are a separate, unreceipted boundary. This production adapter deliberately rejects `next dev`, Turbopack, Rspack, and a build config loaded outside `runStylexNextBuild`; a development run cannot be presented as production graph evidence. `next start` uses the unchanged runtime configuration without the build wrapper or private build-attempt environment variables. If you select a custom output directory, use the same `distDir` for serving it. A compiled local preview requires a successful rebuild, an owned server restart, and manual refresh. Build into a new output generation while an existing generation is being served; do not claim HMR or preserved application state. An uncompiled development surface may continue to use the package's precompiled stylesheet route, but it cannot evaluate product-owned StyleX recipes that require compilation.
 

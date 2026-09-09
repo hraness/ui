@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -20,6 +20,7 @@ import {
 import {
   STYLEX_NEXT_ADAPTER_VERSION,
   STYLEX_NEXT_AUXILIARY_TRACE_CREATOR,
+  STYLEX_NEXT_PROXY_RENAME_CREATOR,
   STYLEX_NEXT_FRAMEWORK_INPUTS,
   STYLEX_NEXT_EMPTY_ENTRY_INPUTS,
   STYLEX_NEXT_EMPTY_ENTRY_LOADER,
@@ -751,12 +752,16 @@ describe("StyleX Next generation", () => {
     );
   }, 30_000);
 
-  test("seals final auxiliary observations without rebinding initial graphs or completion evidence", async () => {
+  async function prepareAuxiliaryCompletionFixture(entrypoint: "app/page" | "proxy") {
     const context = await createFixture();
+    const proxy = entrypoint === "proxy";
+    const nodeSource = proxy ? "proxy.ts" : "src/app.tsx";
+    const nodeSourcePath = join(context.root, nodeSource);
+    if (proxy) await writeFile(nodeSourcePath, context.source);
     const attempt = await prepareStylexNextAttempt({
       attemptId: "auxiliary",
       packageManifests: [context.manifestPath],
-      requiredSources: { client: ["src/app.tsx"], "edge-rsc": [], "node-rsc": ["src/app.tsx"] },
+      requiredSources: { client: ["src/app.tsx"], "edge-rsc": [], "node-rsc": [nodeSource] },
       rootDirectory: context.root,
     });
     const creatorPath = join(context.root, "node_modules/next", STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]);
@@ -764,7 +769,9 @@ describe("StyleX Next generation", () => {
     assert.equal(sha256(creatorSource), STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[1]);
     await mkdir(dirname(creatorPath), { recursive: true });
     await writeFile(creatorPath, creatorSource);
-    const tracePath = "server/app/page.js.nft.json";
+    if (proxy) await writeFile(join(context.root, "node_modules/next", STYLEX_NEXT_PROXY_RENAME_CREATOR[0]), await readFile(new URL(`../node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`, import.meta.url)));
+    const tracePath = `server/${entrypoint}.js.nft.json`;
+    const finalTracePath = proxy ? "server/middleware.js.nft.json" : tracePath;
     const initialSource = '{"version":1,"files":["initial.js"]}';
     // These names remain opaque observations. The fixture deliberately creates none of them.
     const finalSource = '{"version":1,"files":["z-final.js","../../shared.js","a-final.js"]}';
@@ -773,10 +780,10 @@ describe("StyleX Next generation", () => {
       bytes: Buffer.byteLength(source), path: tracePath, sha256: sha256(source),
     });
     const initial = traceArtifact(initialSource);
-    const final = traceArtifact(finalSource);
+    const final = { ...traceArtifact(finalSource), path: finalTracePath };
     assert.notEqual(initial.sha256, final.sha256);
     assert.equal(Buffer.byteLength(finalSource), Buffer.byteLength(changedSource));
-    const auxiliary = await captureStylexNextAuxiliaryTraceAsset(context.root, "app/page", initial, initialSource);
+    const auxiliary = await captureStylexNextAuxiliaryTraceAsset(context.root, entrypoint, initial, initialSource);
     const graphSources = new Map<"discovery" | "delivery", string>();
 
     for (const mode of ["discovery", "delivery"] as const) {
@@ -787,7 +794,7 @@ describe("StyleX Next generation", () => {
         : undefined;
       for (const target of STYLEX_NEXT_TARGETS) {
         const empty = target === "edge-rsc";
-        const javascript = target === "node-rsc" ? "server/app/page.js" : "static/client.js";
+        const javascript = target === "node-rsc" ? `server/${entrypoint}.js` : "static/client.js";
         const css = target === "client" && mode === "delivery" ? ["static/stylex.css"] : [];
         const sources = new Map<string, string>();
         if (!empty) {
@@ -801,7 +808,7 @@ describe("StyleX Next generation", () => {
           }
           await transformStylexNextModule({
             options: { attemptDirectory: attempt.directory, mode, planSha256: attempt.planSha256, rootDirectory: context.root, target },
-            resourcePath: context.sourcePath,
+            resourcePath: target === "node-rsc" ? nodeSourcePath : context.sourcePath,
             source: context.source,
           });
         }
@@ -816,7 +823,7 @@ describe("StyleX Next generation", () => {
           emptyEntryBootstraps: [],
           entrypoints: empty ? [] : [{
             css, files: [javascript, ...css], javascript: [javascript],
-            name: target === "client" ? "app/layout" : "app/page", stylexCss: css,
+            name: target === "client" ? "app/layout" : entrypoint, stylexCss: css,
           }],
           frameworkAssets: [],
           javascriptChunks: empty ? [] : [javascript],
@@ -834,21 +841,37 @@ describe("StyleX Next generation", () => {
       const graph = await readStylexNextGraphReceipt(attempt, mode, "node-rsc");
       assert.deepEqual(graph.auxiliaryTraceAssets, [auxiliary]);
       assert.deepEqual(graph.outputs.find(({ path }) => path === tracePath), initial);
-      assert.deepEqual(graph.entrypoints[0]!.javascript, ["server/app/page.js"]);
-      assert.deepEqual(graph.javascriptChunks, ["server/app/page.js"]);
+      assert.deepEqual(graph.entrypoints[0]!.javascript, [`server/${entrypoint}.js`]);
+      assert.deepEqual(graph.javascriptChunks, [`server/${entrypoint}.js`]);
       // Model the native post-child rewrite only after the immutable compilation receipt exists.
-      await writeFile(join(outputRoot, tracePath), finalSource);
+      if (proxy) {
+        await rename(join(outputRoot, "server/proxy.js"), join(outputRoot, "server/middleware.js"));
+        await rename(join(outputRoot, tracePath), join(outputRoot, finalTracePath));
+      }
+      await writeFile(join(outputRoot, finalTracePath), finalSource);
       if (mode === "discovery") await finalizeStylexNextDiscovery(attempt, context.root);
       assert.equal(await readFile(graphPath, "utf8"), graphSources.get(mode));
     }
 
+    return { context, proxy, attempt, tracePath, finalTracePath, initial, final, finalSource, changedSource, auxiliary, graphSources };
+  }
+
+  for (const entrypoint of ["app/page", "proxy"] as const) test(`seals ${entrypoint} final observations without rebinding initial graphs or completion evidence`, async () => {
+    const { context, proxy, attempt, tracePath, finalTracePath, initial, final, finalSource, changedSource, auxiliary, graphSources } = await prepareAuxiliaryCompletionFixture(entrypoint);
     const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
     const discoverySeal = await readFile(discoverySealPath, "utf8");
-    const snapshot = { asset: auxiliary, output: final, semantics: "observation-only" } as const;
+    const nodeGraph = await readStylexNextGraphReceipt(attempt, "discovery", "node-rsc");
+    const compiledProxy = nodeGraph.outputs.find(({ path }) => path === "server/proxy.js");
+    const snapshot = { asset: auxiliary, output: final, semantics: "observation-only", ...(proxy ? { proxyRename: {
+      absent: ["server/proxy.js", "server/proxy.js.nft.json"],
+      creator: await artifactForFile(context.root, `node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`),
+      initial: compiledProxy, output: { ...compiledProxy, path: "server/middleware.js" },
+      sourceMap: nodeGraph.sourceMaps.find(({ path }) => path === "server/proxy.js.map"),
+    } } : {}) } as const;
     const settled = validateStylexNextPostprocessingReceipt(JSON.parse(discoverySeal));
     assert.deepEqual(settled.auxiliaryTraceSnapshots, [snapshot]);
     assert.deepEqual(settled.ssg, [], "Auxiliary observations must not enter the SSG derivation proof");
-    const discoveryTracePath = join(attempt.directory, "next-discovery", tracePath);
+    const discoveryTracePath = join(attempt.directory, "next-discovery", finalTracePath);
     const completePath = join(attempt.directory, "complete.json");
     await writeFile(discoveryTracePath, changedSource);
     await assert.rejects(completeStylexNextBuild(attempt, context.root), /discovery postprocessing changed after settlement/u);
@@ -858,7 +881,7 @@ describe("StyleX Next generation", () => {
     await writeFile(discoveryTracePath, finalSource);
 
     for (const mode of ["discovery", "delivery"] as const) {
-      const trace = mode === "discovery" ? discoveryTracePath : join(context.root, ".next", tracePath);
+      const trace = mode === "discovery" ? discoveryTracePath : join(context.root, ".next", finalTracePath);
       let callbackReached = false;
       await assert.rejects(completeStylexNextBuild(attempt, context.root, async () => {
         callbackReached = true;
@@ -888,6 +911,48 @@ describe("StyleX Next generation", () => {
     }
     assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
   });
+
+  // Each late mutation owns a fresh complete fixture and the default test deadline.
+  // Combining all eight full completion transactions hides the failing case and
+  // lets a timed-out test race its fixture cleanup while later transactions run.
+  for (const mode of ["discovery", "delivery"] as const) {
+    for (const [path, expected] of [
+      ["server/middleware.js", /changed JavaScript/u],
+      ["server/proxy.js.map", /changed its original map/u],
+      ["server/proxy.js", /original path must be absent/u],
+      ["server/proxy.js.nft.json", /original path must be absent/u],
+    ] as const) test(`rejects late proxy ${mode} ${path} drift before completion`, async () => {
+      const { context, attempt, graphSources } = await prepareAuxiliaryCompletionFixture("proxy");
+      const outputRoot = mode === "discovery" ? join(attempt.directory, "next-discovery") : join(context.root, ".next");
+      const absolute = join(outputRoot, path);
+      const originallyAbsent = path === "server/proxy.js" || path === "server/proxy.js.nft.json";
+      const before = originallyAbsent ? undefined : await readFile(absolute);
+      const completePath = join(attempt.directory, "complete.json");
+      const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
+      const discoverySeal = await readFile(discoverySealPath, "utf8");
+      let callbackReached = false;
+      await assert.rejects(completeStylexNextBuild(attempt, context.root, async () => {
+        callbackReached = true;
+        await writeFile(absolute, before ? Buffer.concat([before, Buffer.from("\n")]) : "late");
+      }), expected);
+      assert.equal(callbackReached, true);
+      await assert.rejects(readFile(completePath), /ENOENT/u);
+      assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
+      const deliverySealPath = join(attempt.directory, "delivery/postprocessing.json");
+      const deliverySeal = await readFile(deliverySealPath, "utf8");
+      if (before) await writeFile(absolute, before);
+      else await unlink(absolute);
+      const complete = await completeStylexNextBuild(attempt, context.root);
+      assert.equal(complete.state, "complete");
+      assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
+      assert.equal(await readFile(deliverySealPath, "utf8"), deliverySeal);
+      for (const phase of ["discovery", "delivery"] as const) {
+        const graphSource = graphSources.get(phase)!;
+        assert.equal(await readFile(join(attempt.directory, phase, "node-rsc/graph.json"), "utf8"), graphSource);
+        assert.equal(complete[phase].find(({ target }) => target === "node-rsc")!.receiptSha256, sha256(graphSource));
+      }
+    });
+  }
 
   test("stops delivery when a transformed module changes between passes", async () => {
     const context = await createFixture();

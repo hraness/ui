@@ -726,7 +726,12 @@ async function verifySettledGraphOutputs(
     assert.equal(receipt.outputDirectory, outputDirectory, `Next ${mode} ${receipt.target} output directory differs from the attempt`);
     for (const asset of receipt.auxiliaryTraceAssets) {
       assert.ok(!auxiliaryTraceSnapshots.some((snapshot) => snapshot.asset.initial.path === asset.initial.path), "Next auxiliary trace has competing graph owners");
-      auxiliaryTraceSnapshots.push(await observeStylexNextAuxiliaryTraceSnapshot(root, outputRoot, asset));
+      if (asset.entrypoint === "proxy") {
+        for (const path of ["server/middleware.js", "server/middleware.js.nft.json"]) {
+          assert.ok(!graphs.some(({ receipt }) => receipt.outputs.some((output) => output.path === path)), "Next proxy rename destination has a competing graph owner");
+        }
+      }
+      auxiliaryTraceSnapshots.push(await observeStylexNextAuxiliaryTraceSnapshot(root, outputRoot, asset, asset.entrypoint === "proxy" ? receipt : undefined));
     }
     for (const framework of receipt.frameworkAssets) {
       if (framework.role === "ssg-manifest") {
@@ -745,12 +750,16 @@ async function verifySettledGraphOutputs(
   for (const expected of union.values()) {
     const postprocessed = ssg.find(({ initial }) => initial.output.path === expected.path);
     const auxiliary = auxiliaryTraceSnapshots.find(({ asset }) => asset.initial.path === expected.path);
+    const proxy = auxiliaryTraceSnapshots.find(({ proxyRename }) => proxyRename?.initial.path === expected.path)?.proxyRename;
     assert.ok(postprocessed === undefined || auxiliary === undefined, "A proven framework asset cannot be auxiliary metadata");
+    assert.ok(proxy === undefined || (postprocessed === undefined && auxiliary === undefined), "A mapped proxy chunk cannot be framework or auxiliary metadata");
     if (postprocessed !== undefined) assert.deepEqual(expected, postprocessed.initial.output, "Next SSG postprocessing does not match the immutable compiled graph");
     if (auxiliary !== undefined) assert.deepEqual(expected, auxiliary.asset.initial, "Next auxiliary observation lost its original graph artifact");
+    if (proxy !== undefined) assert.deepEqual(expected, proxy.initial, "Next proxy native rename differs from its immutable compiled graph");
+    const settled = postprocessed?.output ?? auxiliary?.output ?? proxy?.output ?? expected;
     assert.deepEqual(
-      await artifactForFile(outputRoot, expected.path),
-      postprocessed?.output ?? auxiliary?.output ?? expected,
+      await artifactForFile(outputRoot, settled.path),
+      settled,
       `Next ${mode} output changed or disappeared after compilation: ${expected.path}`,
     );
   }

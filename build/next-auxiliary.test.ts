@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { link, lstat, mkdir, mkdtemp, readFile, realpath, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "bun:test";
 
-import { sha256 } from "./compiler.js";
-import { STYLEX_NEXT_AUXILIARY_TRACE_CREATOR } from "./next-contracts.js";
+import { compilerSha256, sha256, stylexRulesSha256 } from "./compiler.js";
+import { STYLEX_NEXT_ADAPTER_VERSION, STYLEX_NEXT_AUXILIARY_TRACE_CREATOR, STYLEX_NEXT_PROXY_RENAME_CREATOR, STYLEX_NEXT_REQUIRED_VERSION, validateStylexNextGraphReceipt } from "./next-contracts.js";
 import {
   captureStylexNextAuxiliaryTraceAsset,
   observeStylexNextAuxiliaryTraceSnapshot,
@@ -21,7 +21,7 @@ const source = '{"version":1,"files":["first.js"]}';
 const path = "server/app/page.js.nft.json";
 const initial = { bytes: Buffer.byteLength(source), path, sha256: sha256(source) };
 
-async function fixture(hardlinkedCreator = false) {
+async function fixture(hardlinkedCreator = false, entrypoint = "app/page") {
   const root = await realpath(await mkdtemp(join(tmpdir(), "ui-next-auxiliary-")));
   roots.push(root);
   const creatorPath = join(root, "node_modules/next", STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]);
@@ -32,14 +32,97 @@ async function fixture(hardlinkedCreator = false) {
   const creatorAlias = join(root, "installed-creator-alias.js");
   if (hardlinkedCreator) await link(creatorPath, creatorAlias);
   const outputRoot = join(root, ".next");
-  const outputPath = join(outputRoot, path);
+  const entryInitial = { ...initial, path: `server/${entrypoint}.js.nft.json` };
+  const outputPath = join(outputRoot, entryInitial.path);
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, source);
-  const asset = await captureStylexNextAuxiliaryTraceAsset(root, "app/page", initial, source);
+  const asset = await captureStylexNextAuxiliaryTraceAsset(root, entrypoint, entryInitial, source);
   return { asset, creatorAlias, creatorPath, creatorSource, outputPath, outputRoot, root };
 }
 
+async function proxyFixture() {
+  const context = await fixture(false, "proxy");
+  const creator = join(context.root, "node_modules/next", STYLEX_NEXT_PROXY_RENAME_CREATOR[0]);
+  const creatorBytes = await readFile(new URL(`../node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`, import.meta.url));
+  await writeFile(creator, creatorBytes);
+  const javascript = "export const proxy = true;\n//# sourceMappingURL=proxy.js.map\n";
+  const map = '{"version":3,"sources":["proxy.ts"],"names":[],"mappings":"AAAA","file":"proxy.js"}';
+  const artifact = (path: string, value: string) => ({ bytes: Buffer.byteLength(value), path, sha256: sha256(value) });
+  const initial = artifact("server/proxy.js", javascript);
+  const sourceMap = artifact("server/proxy.js.map", map);
+  await writeFile(join(context.outputRoot, initial.path), javascript);
+  await writeFile(join(context.outputRoot, sourceMap.path), map);
+  const modules = [{ path: "proxy.ts", receiptSha256: sha256("proxy-module") }];
+  const graph = validateStylexNextGraphReceipt({
+    adapterVersion: STYLEX_NEXT_ADAPTER_VERSION, attemptId: "proxy", auxiliaryTraceAssets: [context.asset], compilerSha256,
+    cssInputs: [], emptyEntryBootstraps: [], frameworkAssets: [], graphId: "node-rsc", kind: "hraness-stylex-next-graph",
+    entrypoints: [{ css: [], files: [initial.path], javascript: [initial.path], name: "proxy", stylexCss: [] }],
+    javascriptChunks: [initial.path], mode: "discovery", modules, nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
+    outputDirectory: ".next", outputs: [initial, sourceMap, context.asset.initial].sort((a, b) => a.path.localeCompare(b.path)),
+    packages: [], rules: [], rulesSha256: stylexRulesSha256([]), schemaVersion: 1,
+    sourceMaps: [sourceMap], sourcesSha256: sha256(JSON.stringify(modules)), target: "node-rsc", webpackVersion: "5.99.0",
+  });
+  const finalJs = join(context.outputRoot, "server/middleware.js");
+  const finalTrace = join(context.outputRoot, "server/middleware.js.nft.json");
+  await rename(join(context.outputRoot, initial.path), finalJs);
+  await rename(context.outputPath, finalTrace);
+  return { ...context, creator, creatorBytes, finalJs, finalTrace, graph, initial, javascript, map, sourceMap };
+}
+
 describe("Next framework auxiliary trace observations", () => {
+  test("binds the registered proxy trace to initial bytes and observation-only final metadata", async () => {
+    const context = await proxyFixture();
+    const observe = () => observeStylexNextAuxiliaryTraceSnapshot(context.root, context.outputRoot, context.asset, context.graph);
+    assert.equal(context.asset.entrypoint, "proxy");
+    assert.equal(context.asset.initial.path, "server/proxy.js.nft.json");
+    const original = await observe();
+    assert.deepEqual(original.output, { ...context.asset.initial, path: "server/middleware.js.nft.json" });
+    assert.deepEqual(original.proxyRename?.initial, context.initial);
+    assert.deepEqual(original.proxyRename?.output, { ...context.initial, path: "server/middleware.js" });
+    assert.deepEqual(original.proxyRename?.sourceMap, context.sourceMap);
+    const final = '{"version":1,"files":["../../../unread-proxy-dependency","absent.js"]}';
+    await writeFile(context.finalTrace, final);
+    const snapshot = await observe();
+    assert.deepEqual(snapshot.asset, context.asset);
+    assert.deepEqual(snapshot.output, { bytes: Buffer.byteLength(final), path: "server/middleware.js.nft.json", sha256: sha256(final) });
+    assert.deepEqual(snapshot.proxyRename, original.proxyRename);
+    assert.equal(snapshot.semantics, "observation-only");
+    await assert.rejects(captureStylexNextAuxiliaryTraceAsset(context.root, "proxy", { ...context.asset.initial, path: "server/app/page.js.nft.json" }, source), /entrypoint/u);
+    await writeFile(context.creatorPath, `${context.creatorSource.toString("utf8")}\n`);
+    await assert.rejects(observe(), /pinned source bytes/u);
+  });
+
+  test("requires the exact proxy rename proof and rejects byte, map, creator, path and linked-output drift", async () => {
+    const context = await proxyFixture();
+    const observe = () => observeStylexNextAuxiliaryTraceSnapshot(context.root, context.outputRoot, context.asset, context.graph);
+    await assert.rejects(observeStylexNextAuxiliaryTraceSnapshot(context.root, context.outputRoot, context.asset), /immutable graph proof/u);
+    for (const path of ["server/proxy.js", "server/proxy.js.nft.json"]) {
+      const old = join(context.outputRoot, path);
+      await writeFile(old, "unexpected");
+      await assert.rejects(observe(), /original path must be absent/u);
+      await unlink(old);
+      await symlink(join(context.root, "missing"), old);
+      await assert.rejects(observe(), /original path must be absent/u);
+      await unlink(old);
+    }
+    for (const [path, bytes] of [[context.finalJs, context.javascript], [join(context.outputRoot, context.sourceMap.path), context.map], [context.creator, context.creatorBytes]] as const) {
+      await writeFile(path, `${bytes.toString()}\n`);
+      await assert.rejects(observe(), /changed JavaScript|changed its original map|pinned source bytes/u);
+      await writeFile(path, bytes);
+    }
+    const alias = join(context.root, "output-alias");
+    await link(context.finalJs, alias);
+    await assert.rejects(observe(), /single-link/u);
+    await unlink(alias);
+    await rename(context.finalJs, alias);
+    await symlink(alias, context.finalJs);
+    await assert.rejects(observe(), /symlink/u);
+    await unlink(context.finalJs);
+    await rename(alias, context.finalJs);
+    await assert.rejects(observeStylexNextAuxiliaryTraceSnapshot(context.root, context.outputRoot, context.asset, { ...context.graph, sourceMaps: [] }), /map/u);
+    await observe();
+  });
+
   test("accepts stable hardlinked installed creators only at the pinned source hash", async () => {
     const context = await fixture(true);
     const creator = await lstat(context.creatorPath);
