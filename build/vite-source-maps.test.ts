@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { basename, dirname, resolve } from "node:path";
 
 import { canonicalJson, sha256 } from "./compiler.js";
-import { createViteSourceMapPaths, validateViteSourceMap } from "./vite-source-maps.js";
+import { createViteSourceMapPaths, validateViteSourceMap, viteSourceMapProjectionChunkPath } from "./vite-source-maps.js";
 
 const content = "export const answer = 42;\n";
 const sourceIdentity = { bytes: Buffer.byteLength(content), sha256: sha256(content) };
@@ -49,6 +49,43 @@ describe("Vite external source-map contract", () => {
     expect(() => validateViteSourceMap(item.map, { ...item, paths, code: content })).toThrow(/bypassed native/u);
   });
 
+  test("joins each engine's exact native callback coordinate without accepting the other chunk identity", () => {
+    const chunkPath = "assets/entry-BkSbaUkx.js";
+    const preliminaryChunkPath = "assets/entry-!~{000}~.js";
+    for (const engine of ["rollup", "rolldown"] as const) {
+      const meta = { rollupVersion: engine === "rollup" ? "4.63.1" : "4.23.0",
+        ...(engine === "rolldown" ? { rolldownVersion: "1.2.7" } : {}) };
+      const expected = engine === "rollup" ? preliminaryChunkPath : chunkPath;
+      const other = engine === "rollup" ? chunkPath : preliminaryChunkPath;
+      const projectionChunkPath = viteSourceMapProjectionChunkPath(meta, chunkPath, preliminaryChunkPath);
+      expect(projectionChunkPath).toBe(expected);
+      const paths = createViteSourceMapPaths({ rootDirectory: "/fixture/project", stagingDirectory: "/fixture/project/staging",
+        publishedDirectory: "/fixture/project/published/graphs/client", inputIdentity: (path) => path === "src/entry.ts" ? sourceIdentity : undefined });
+      const source = paths.transform("../../src/entry.ts", `/fixture/project/staging/${expected}.map`);
+      const map = { version: 3, file: basename(chunkPath), sources: [source], sourcesContent: [content], names: [], mappings: "AAAA" };
+      const options = { chunkPath, projectionChunkPath, code: content, paths };
+      expect(validateViteSourceMap(map, options)).toBe(canonicalJson(map));
+      expect(() => validateViteSourceMap(map, { ...options, projectionChunkPath: other })).toThrow(/bypassed native chunk/u);
+      expect(() => validateViteSourceMap(map, { ...options, projectionChunkPath: "assets/foreign.js" })).toThrow(/bypassed native chunk/u);
+      expect(() => validateViteSourceMap({ ...map, sources: [], sourcesContent: [], mappings: "" }, options)).toThrow(/omitted/u);
+    }
+  });
+
+  test("requires native engine and both normalized chunk identities even when only one selects the witness", () => {
+    for (const meta of [null, [], {}, { rollupVersion: "" }, { rollupVersion: 4 },
+      { rollupVersion: "4.23.0", rolldownVersion: undefined }, { rollupVersion: "4.23.0", rolldownVersion: "" },
+      { rollupVersion: "4.23.0", rolldownVersion: 1 }]) {
+      expect(() => viteSourceMapProjectionChunkPath(meta, "assets/entry.js", "assets/preliminary.js")).toThrow(/identity/u);
+    }
+    for (const meta of [{ rollupVersion: "4.63.1" }, { rollupVersion: "4.23.0", rolldownVersion: "1.2.7" }]) {
+      for (const path of ["", "/outside.js", "../outside.js", "assets/../outside.js", "assets\\entry.js"]) {
+        expect(() => viteSourceMapProjectionChunkPath(meta, path, "assets/preliminary.js")).toThrow();
+        expect(() => viteSourceMapProjectionChunkPath(meta, "assets/entry.js", path)).toThrow();
+      }
+      expect(() => viteSourceMapProjectionChunkPath(meta, "assets/entry.js", undefined)).toThrow();
+    }
+  });
+
   test("accepts validated native map instances but rejects omitted sources, mappings and chunk witnesses", () => {
     const item = fixture();
     class NativeMap {
@@ -58,7 +95,7 @@ describe("Vite external source-map contract", () => {
     expect(validateViteSourceMap(native, { ...item, code: content })).toBe(canonicalJson(item.map));
     expect(() => validateViteSourceMap({ ...item.map, sources: [], sourcesContent: [], mappings: "" }, { ...item, code: content })).toThrow(/omitted/u);
     expect(() => validateViteSourceMap({ ...item.map, mappings: "" }, { ...item, code: content })).toThrow(/omits mappings/u);
-    expect(() => validateViteSourceMap(item.map, { ...item, code: content, preliminaryChunkPath: "assets/other.js" })).toThrow(/bypassed native chunk/u);
+    expect(() => validateViteSourceMap(item.map, { ...item, code: content, projectionChunkPath: "assets/other.js" })).toThrow(/bypassed native chunk/u);
     expect(() => validateViteSourceMap(item.map, { ...item, code: content, requiredSources: ["src/absent.ts"] })).toThrow(/omits rendered/u);
   });
 

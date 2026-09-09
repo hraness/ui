@@ -5,6 +5,22 @@ import { canonicalJson, normalizeLogicalPath, sha256 } from "./compiler.js";
 
 type InputIdentity = Readonly<{ bytes: number; sha256: string }>;
 
+/** Bind the callback coordinate to the native engine, never a witness fallback.
+ * Rollup projects before replacing hash placeholders; Rolldown projects after
+ * final chunk naming. Both still expose their preliminary chunk identity. */
+export function viteSourceMapProjectionChunkPath(meta: unknown, chunkPath: string, preliminaryChunkPath: unknown): string {
+  assert.ok(typeof meta === "object" && meta !== null && !Array.isArray(meta), "Vite source-map bundler identity is unavailable");
+  assert.ok("rollupVersion" in meta && typeof meta.rollupVersion === "string" && meta.rollupVersion.length > 0,
+    "Vite source-map bundler identity is unavailable");
+  const preliminary = normalizeLogicalPath(preliminaryChunkPath, "Vite native preliminary chunk identity");
+  const final = normalizeLogicalPath(chunkPath, "Vite native final chunk identity");
+  if ("rolldownVersion" in meta) {
+    assert.ok(typeof meta.rolldownVersion === "string" && meta.rolldownVersion.length > 0, "Vite source-map Rolldown identity is unavailable");
+    return final;
+  }
+  return preliminary;
+}
+
 function relativePath(value: unknown, description: string): string {
   assert.ok(typeof value === "string" && value.length > 0 && value.trim() === value
     && !isAbsolute(value) && !/[\\:%?#\u0000-\u001f\u007f]/u.test(value),
@@ -38,20 +54,20 @@ export function createViteSourceMapPaths(options: Readonly<{
     witnessed.set(outputPath, sources);
     return relative(dirname(resolve(options.publishedDirectory, outputPath)), absolute).split(sep).join("/");
   };
-  const source = (mapPath: string, value: unknown, preliminaryMapPath = mapPath): Readonly<{ logical: string; identity: InputIdentity }> => {
+  const source = (mapPath: string, value: unknown, projectionMapPath = mapPath): Readonly<{ logical: string; identity: InputIdentity }> => {
     normalizeLogicalPath(mapPath, "Vite map output");
     const absolute = resolve(dirname(resolve(options.publishedDirectory, mapPath)), relativePath(value, "Vite published map source"));
     const logical = below(options.rootDirectory, absolute, "Vite published source-map input");
-    assert.equal(witnessed.get(preliminaryMapPath)?.has(logical), true, `Vite source-map source bypassed native chunk path projection: ${logical}`);
+    assert.equal(witnessed.get(projectionMapPath)?.has(logical), true, `Vite source-map source bypassed native chunk path projection: ${logical}`);
     const identity = options.inputIdentity(logical);
     assert.ok(identity !== undefined, `Vite source-map input witness disappeared: ${logical}`);
     assert.equal(value, relative(dirname(resolve(options.publishedDirectory, mapPath)), absolute).split(sep).join("/"),
       "Vite published map source is not the canonical relative path");
     return { logical, identity };
   };
-  const assertComplete = (preliminaryMapPath: string, logicalSources: readonly string[]): void => {
+  const assertComplete = (projectionMapPath: string, logicalSources: readonly string[]): void => {
     assert.equal(new Set(logicalSources).size, logicalSources.length, "Vite source map contains duplicate source identities");
-    assert.deepEqual([...logicalSources].sort(), [...(witnessed.get(preliminaryMapPath) ?? [])].sort(),
+    assert.deepEqual([...logicalSources].sort(), [...(witnessed.get(projectionMapPath) ?? [])].sort(),
       "Vite source map omitted or introduced native chunk sources");
   };
   return { assertComplete, source, transform };
@@ -118,7 +134,7 @@ function validateMappings(mappings: string, names: readonly string[], sources: r
 
 export function validateViteSourceMap(value: unknown, options: Readonly<{
   chunkPath: string;
-  preliminaryChunkPath?: string;
+  projectionChunkPath?: string;
   requiredSources?: readonly string[];
   code: string;
   paths: MapPaths;
@@ -150,9 +166,9 @@ export function validateViteSourceMap(value: unknown, options: Readonly<{
   assert.equal(record.sources.length, record.sourcesContent.length, "Vite source-map source contents are incomplete");
   const contents = record.sourcesContent;
   const logicalSources: string[] = [];
-  const preliminaryMapPath = `${options.preliminaryChunkPath ?? options.chunkPath}.map`;
+  const projectionMapPath = `${options.projectionChunkPath ?? options.chunkPath}.map`;
   const sources = record.sources.map((path: unknown, index: number) => {
-    const source = options.paths.source(`${options.chunkPath}.map`, path, preliminaryMapPath);
+    const source = options.paths.source(`${options.chunkPath}.map`, path, projectionMapPath);
     logicalSources.push(source.logical);
     const content: unknown = contents[index];
     assert.equal(typeof content, "string", `Vite source-map embedded source is unavailable: ${source.logical}`);
@@ -160,7 +176,7 @@ export function validateViteSourceMap(value: unknown, options: Readonly<{
       `Vite source-map embedded source differs from its loaded file: ${source.logical}`);
     return content as string;
   });
-  options.paths.assertComplete(preliminaryMapPath, logicalSources);
+  options.paths.assertComplete(projectionMapPath, logicalSources);
   for (const required of options.requiredSources ?? []) {
     assert.ok(logicalSources.includes(required), `Vite source map omits rendered file input: ${required}`);
   }

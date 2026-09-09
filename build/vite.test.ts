@@ -315,7 +315,7 @@ describe("stylexVite external source maps (native)", () => {
   });
 
   test("rejects mutated maps, missing companions and late native path overrides", async () => {
-    for (const mutation of ["map-bytes", "map-linkage", "missing", "path-projection", "erase-mappings", "empty-sources", "duplicate-json"] as const) {
+    for (const mutation of ["map-bytes", "map-linkage", "missing", "path-projection", "chunk-projection", "erase-mappings", "empty-sources", "duplicate-json"] as const) {
       const context = await fixture();
       const entry = join(context.root, "src/entry.ts");
       await write(entry, "globalThis.fixture = 42;\n");
@@ -328,11 +328,12 @@ describe("stylexVite external source maps (native)", () => {
             if (mutation === "path-projection") return { ...output, sourcemapPathTransform: () => "private.ts" };
             return null;
           },
-          generateBundle: { order: ["erase-mappings", "empty-sources", "duplicate-json"].includes(mutation) ? "pre" : "post", handler(_output, bundle) {
+          generateBundle: { order: ["chunk-projection", "erase-mappings", "empty-sources", "duplicate-json"].includes(mutation) ? "pre" : "post", handler(_output, bundle) {
             const chunk = Object.values(bundle).find((value) => value.type === "chunk");
             assert.ok(chunk?.type === "chunk");
             const key = `${chunk.fileName}.map`;
             if (mutation === "missing") delete bundle[key];
+            else if (mutation === "chunk-projection") chunk.preliminaryFileName = "assets/foreign.js";
             else if (mutation === "map-linkage") chunk.map = null;
             else if (mutation === "map-bytes") {
               const map = bundle[key];
