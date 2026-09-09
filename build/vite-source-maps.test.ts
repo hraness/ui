@@ -53,6 +53,8 @@ describe("Vite external source-map contract", () => {
     const companion = { ...map, ignoreList: [1] };
     const bytes = JSON.stringify(companion);
     expect(validateViteSourceMapPair(map, companion, options)).toBe(canonicalJson(companion));
+    expect(validateViteSourceMapPair(map, companion, { ...options,
+      bundlerMeta: { ...options.bundlerMeta, rolldownVersion: "1.2.8" } })).toBe(canonicalJson(companion));
     expect(JSON.stringify(companion)).toBe(bytes);
     expect(Object.hasOwn(map, "ignoreList")).toBe(false);
     for (const ignores of [{ ignoreList: [1] }, { x_google_ignoreList: [1] }, { ignoreList: [1], x_google_ignoreList: [1] }]) {
@@ -85,7 +87,7 @@ describe("Vite external source-map contract", () => {
     }
     expect(() => validateViteSourceMapPair({ ...map, ignoreList: [0] }, companion, options)).toThrow();
     for (const bundlerMeta of [null, {}, { rollupVersion: "4.63.1", viteVersion: "7.3.6" },
-      { rolldownVersion: "1.2.8", viteVersion: "8.2.1" }, { rolldownVersion: "1.2.7", viteVersion: "8.2.2" }]) {
+      { rolldownVersion: "1.2.9", viteVersion: "8.2.1" }, { rolldownVersion: "1.2.7", viteVersion: "8.2.2" }]) {
       expect(() => validateViteSourceMapPair(map, companion, { ...options, bundlerMeta })).toThrow(/companion differs/u);
     }
     expect(() => validateViteSourceMapPair(map, { ...map, x_google_ignoreList: [1] }, options)).toThrow(/companion differs/u);

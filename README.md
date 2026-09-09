@@ -196,6 +196,8 @@ graph. Finalization rejects a missing, duplicate, or foreign graph stylesheet.
 
 The finalizer validates package and graph identities, rejects missing or stale graph receipts and mixed partial CSS, unions all raw rule metadata, and calls the pinned StyleX serializer once. It preserves the full finite priority inventory rather than mapping it to a fixed range. Build-tool modules remain outside the UI runtime entry, runtime CSS injection stays disabled, and the compiler contract pins property-specificity resolution and its Babel, StyleX, and Lightning CSS versions.
 
+The qualified native matrix is Vite 7.3.6 with Rollup 4.63.1, and Vite 8.2.1 with Rolldown 1.2.7 or 1.2.8. Pin the matching transitive engine in the consumer lockfile; Vite's dependency range alone can select an unqualified bundler release.
+
 The Vite adapter disables source maps by default. Opt in with `stylexVite({
 generation, graphId, rootDirectory, sourceMaps: "external" })`; do not set Vite's
 `build.sourcemap` or bundler output options yourself. This profile requires the

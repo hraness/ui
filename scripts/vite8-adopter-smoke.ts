@@ -7,8 +7,8 @@ import {
 } from "../fixtures/vite8-adopter/custody.ts";
 import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import { runViteBrowserWorker } from "../fixtures/vite8-adopter/browser-control.ts";
+import { viteMatrixToolchains, type ViteMatrixToolchain } from "../fixtures/vite8-adopter/toolchain.ts";
 
-const VITE_VERSIONS = ["7.3.6", "8.2.1"] as const;
 const SOURCE_MAP_PROFILES = ["disabled", "external"] as const;
 type SourceMapProfile = (typeof SOURCE_MAP_PROFILES)[number];
 const PINNED = {
@@ -78,13 +78,15 @@ type MatrixReceipt = Readonly<{
   sourceMaps: SourceMapProfile;
   mappedSources: readonly string[];
   vite: string;
+  toolchain: ViteMatrixToolchain;
 }>;
 
-function parseReceipt(value: unknown, expectedVersion: string, profile: SourceMapProfile): MatrixReceipt {
+function parseReceipt(value: unknown, toolchain: ViteMatrixToolchain, profile: SourceMapProfile): MatrixReceipt {
   assert.ok(typeof value === "object" && value !== null && !Array.isArray(value));
   const record = value as Record<string, unknown>;
-  assert.deepEqual(Object.keys(record).sort(), ["clientHrefs", "externalImports", "finalDirectory", "foundationHref", "graphReceipts", "mappedSources", "negatives", "sourceMaps", "vite"]);
-  assert.equal(record.vite, expectedVersion);
+  assert.deepEqual(Object.keys(record).sort(), ["clientHrefs", "externalImports", "finalDirectory", "foundationHref", "graphReceipts", "mappedSources", "negatives", "sourceMaps", "toolchain", "vite"]);
+  assert.equal(record.vite, toolchain.vite);
+  assert.deepEqual(record.toolchain, toolchain);
   assert.equal(record.sourceMaps, profile);
   assert.equal(record.finalDirectory, profile === "external" ? "output/vite-production-maps" : "output/vite-production-matrix");
   assert.ok(Array.isArray(record.mappedSources));
@@ -188,16 +190,18 @@ try {
   await run([process.execPath, "pm", "pack", "--filename", archive, "--ignore-scripts", "--quiet"], repository, environment);
   const archiveHash = createHash("sha256").update(await readFile(archive)).digest("hex");
   const results: unknown[] = [];
-  for (const version of VITE_VERSIONS) {
-    const consumer = join(work, `vite-${version}`);
+  for (const toolchain of viteMatrixToolchains) {
+    const version = toolchain.vite;
+    const consumer = join(work, `vite-${version}-${toolchain.bundler}-${toolchain.version}`);
     await mkdir(consumer);
     for (const file of sourceFiles) await writeNew(join(consumer, file), await readFile(join(source, file)));
     await writeNew(join(consumer, "package.json"), `${JSON.stringify({
       name: "hraness-vite-production-compatibility", private: true, type: "module",
       dependencies: { ...PINNED, "@hraness/ui": `file:${archive}`, vite: version },
+      overrides: { [toolchain.bundler]: toolchain.version },
     }, null, 2)}\n`);
     await run([process.execPath, "install", "--ignore-scripts"], consumer, environment);
-    for (const [name, expected] of Object.entries({ ...PINNED, vite: version })) {
+    for (const [name, expected] of Object.entries({ ...PINNED, vite: version, [toolchain.bundler]: toolchain.version })) {
       const metadata: unknown = JSON.parse(await readFile(join(consumer, "node_modules", name, "package.json"), "utf8"));
       assert.ok(typeof metadata === "object" && metadata !== null && "version" in metadata);
       assert.equal(metadata.version, expected, `Unexpected ${name} version`);
@@ -214,8 +218,8 @@ try {
       await run([node, "./node_modules/typescript/bin/tsc", "-p", config], consumer, environment);
     }
     for (const profile of SOURCE_MAP_PROFILES) {
-      await run([node, "./build.mjs", version, profile], consumer, environment);
-      const receipt = parseReceipt(JSON.parse(await readFile(join(consumer, `matrix-receipt-${profile}.json`), "utf8")), version, profile);
+      await run([node, "./build.mjs", version, profile, toolchain.version], consumer, environment);
+      const receipt = parseReceipt(JSON.parse(await readFile(join(consumer, `matrix-receipt-${profile}.json`), "utf8")), toolchain, profile);
       const finalDirectory = join(consumer, receipt.finalDirectory);
       const outputs = await directoryIdentity(finalDirectory);
       const browserEvidence = join(consumer, `browser-${profile}`);

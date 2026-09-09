@@ -8,11 +8,13 @@ import {
   prepareStylexProducedTemplate, sealStylexProducedTemplate, STYLEX_TEMPLATE_CSS_PLACEHOLDER,
 } from "@hraness/ui/stylex-build";
 import { stylexVite } from "@hraness/ui/stylex-build/vite";
+import { assertViteMatrixNativeToolchain, viteMatrixToolchain } from "./toolchain.ts";
 
 assert.equal(globalThis.Bun, undefined);
 assert.match(process.versions.node, /^24\./u);
 assert.ok(["7.3.6", "8.2.1"].includes(version));
 assert.equal(version, process.argv[2]);
+const toolchain = viteMatrixToolchain(version, process.argv[4]);
 const sourceMaps = process.argv[3];
 assert.ok(sourceMaps === "disabled" || sourceMaps === "external");
 const generationId = sourceMaps === "external" ? "vite-production-maps" : "vite-production-matrix";
@@ -30,13 +32,19 @@ const generation = await createStylexGeneration({
 });
 const receipts = [];
 for (const graph of expectedGraphs) {
+  const observedHooks = [];
   await build({
     configFile: false, logLevel: "silent",
     build: { minify: true, sourcemap: false, target: "es2022", ...(graph.kind === "ssr" ? { ssr: resolve(root, "src/server.ts") } : {}) },
     ssr: { noExternal: ["@hraness/ui"] },
     plugins: [stylexVite({ generation, graphId: graph.id, rootDirectory: root,
-      ...(sourceMaps === "external" ? { sourceMaps } : {}) })],
+      ...(sourceMaps === "external" ? { sourceMaps } : {}) }), {
+      name: "assert-qualified-native-toolchain",
+      generateBundle() { assertViteMatrixNativeToolchain(this.meta, toolchain); observedHooks.push("generate"); },
+      writeBundle() { assertViteMatrixNativeToolchain(this.meta, toolchain); observedHooks.push("write"); },
+    }],
   });
+  assert.deepEqual(observedHooks, ["generate", "write"]);
   const receipt = JSON.parse(await readFile(join(generation.directory, ".stylex-generation/receipts", `${graph.id}.json`), "utf8"));
   assert.equal(receipt.adapter, "vite");
   assert.equal(receipt.target, graph.kind);
@@ -253,5 +261,5 @@ await writeFile(`matrix-receipt-${sourceMaps}.json`, `${canonicalJson({
   finalDirectory: `output/${generationId}`, foundationHref: `/graphs/client/${foundation}`,
   clientHrefs: [`/graphs/client/${clientEntry}`, `/graphs/client/${secondEntry}`, `/graphs/client/${lazyEntry}`],
   graphReceipts: receipts.map((receipt) => ({ id: receipt.graphId, inputs: receipt.inputs.length, outputs: receipt.outputs.length, rules: receipt.rules.length })),
-  externalImports, negatives, sourceMaps, mappedSources: [...mappedSources].sort(), vite: version,
+  externalImports, negatives, sourceMaps, mappedSources: [...mappedSources].sort(), toolchain, vite: version,
 })}\n`, { flag: "wx" });

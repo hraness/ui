@@ -218,7 +218,7 @@ export function validateViteSourceMap(value: unknown, options: Readonly<{
 }
 
 /** Vite's lazy-import rewrite serializes the full standardized ignoreList, but
- * Rolldown 1.2.7 drops that field when binding the rewritten chunk.map. Join
+ * Rolldown 1.2.7 and 1.2.8 drop that field when binding the rewritten chunk.map. Join
  * only that observed loss to complete native callback evidence. Never rewrite
  * the emitted companion or relax equality of any other map field. */
 export function validateViteSourceMapPair(nativeValue: unknown, companionValue: unknown,
@@ -239,7 +239,8 @@ export function validateViteSourceMapPair(nativeValue: unknown, companionValue: 
     "Vite source-map companion omitted native ignore decisions");
   if (nativeIdentity === companionIdentity) return companionIdentity;
   const meta = options.bundlerMeta;
-  assert.ok(typeof meta === "object" && meta !== null && "rolldownVersion" in meta && meta.rolldownVersion === "1.2.7"
+  assert.ok(typeof meta === "object" && meta !== null && "rolldownVersion" in meta
+    && (meta.rolldownVersion === "1.2.7" || meta.rolldownVersion === "1.2.8")
     && "viteVersion" in meta && meta.viteVersion === "8.2.1"
     && !Object.hasOwn(native, "ignoreList") && Object.hasOwn(companion, "ignoreList"),
   "Vite source-map companion differs from the native chunk map");
