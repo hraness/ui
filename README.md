@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.8"
+    "@hraness/ui": "github:hraness/ui#v0.5.9"
   }
 }
 ```
@@ -116,7 +116,7 @@ The built-in recipes are already compiled, so ordinary consumers do not need a S
 
 Compiler adopters install the package's exact build-tool peers: `@babel/core@7.29.7`, `@stylexjs/babel-plugin@0.19.0`, `lightningcss@1.33.0`, and `@types/babel__core@7.20.5`. TypeScript projects using the Bun adapter also install `@types/bun@1.3.14`; Vite adapter projects install Vite 7.3.6 or 8.2.1 and compatible Node types (`@types/node@^20.19.0 || >=22.12.0`). These peers are optional for ordinary precompiled-stylesheet consumers.
 
-The Vite production matrix checks both pinned versions under Node 24 with TypeScript 6.0.3. It covers native client, lazy, multi-entry and SSR builds, public Bundler and NodeNext declarations, package/caller rule union, hydration and browser interaction. Vite 8 uses Rolldown's public module metadata. Both `rollupOptions` and `rolldownOptions` remain subject to the same input, output and external-import restrictions. Source maps must be disabled: hidden, inline, copied and late-enabled maps fail closed. This is not development, HMR, React-plugin or arbitrary Vite-version evidence. Native signal regressions verify child/browser/server collection; successful matrix receipts remain outside disposable consumer directories.
+The Vite production matrix checks both pinned versions under Node 24 with TypeScript 6.0.3, with maps disabled and with the explicit `sourceMaps: "external"` profile. It covers native client, lazy, multi-entry and SSR builds, public Bundler and NodeNext declarations, package/caller rule union, hydration and browser interaction. Vite 8 uses Rolldown's public module metadata. Both `rollupOptions` and `rolldownOptions` remain subject to the same input, output and external-import restrictions. Source maps remain disabled by default; external maps require the adapter-owned profile and in-root publication. Hidden, inline, copied and late-enabled maps fail closed. This is not development, HMR, React-plugin or arbitrary Vite-version evidence. Native signal regressions verify child/browser/server collection; successful matrix receipts remain outside disposable consumer directories.
 
 Package authors use the lower-level exports from `@hraness/ui/stylex-build` inside their own build: `createStylexTransformCollector` compiles package source, `serializeStylexPackageRules` produces that package's independently usable CSS under a package-owned `components.*` namespace, and the artifact and manifest helpers bind the resulting JavaScript, CSS, raw rules, and `compilerFoundation` without independently serialized StyleX rules. That standalone CSS remains the plugin-free package route. Each package must choose a distinct namespace and publish its manifest with the package.
 
@@ -195,6 +195,22 @@ template must link. They can differ when an SSR graph renders HTML for a client
 graph. Finalization rejects a missing, duplicate, or foreign graph stylesheet.
 
 The finalizer validates package and graph identities, rejects missing or stale graph receipts and mixed partial CSS, unions all raw rule metadata, and calls the pinned StyleX serializer once. It preserves the full finite priority inventory rather than mapping it to a fixed range. Build-tool modules remain outside the UI runtime entry, runtime CSS injection stays disabled, and the compiler contract pins property-specificity resolution and its Babel, StyleX, and Lightning CSS versions.
+
+The qualified native matrix is Vite 7.3.6 with Rollup 4.63.1, and Vite 8.2.1 with Rolldown 1.2.7 or 1.2.8. Pin the matching transitive engine in the consumer lockfile; Vite's dependency range alone can select an unqualified bundler release.
+
+The Vite adapter disables source maps by default. Opt in with `stylexVite({
+generation, graphId, rootDirectory, sourceMaps: "external" })`; do not set Vite's
+`build.sourcemap` or bundler output options yourself. This profile requires the
+generation output directory inside `rootDirectory` and emits an external map
+beside every JavaScript chunk. Native mappings retain their original source
+content, names and coordinates. The adapter projects only their relative source
+paths to the final `graphs/<graphId>/` publication layout before native chunk
+hashing, so moving staging into the final generation does not break provenance.
+It verifies loaded-file content, map/chunk pairing, mapping coordinates and exact
+output bytes before sealing the receipt. URL, encoded, outside-root, unobserved
+and copied source-map inputs are unsupported, as are CSS maps and copied
+JavaScript assets in this profile. Moving the published tree relative to its
+source tree afterward requires a separate consumer-owned source-map policy.
 
 The compiler also binds a narrowly scoped StyleX 0.19.0 parser compatibility repair. It verifies the installed Babel plugin's exact source bytes before accepting an explicit terminal EOF token after a complete media query. The repaired plugin runs in memory without modifying installed dependencies or global loader hooks. Media-query ordering remains enabled, malformed trailing input remains invalid, and the same compiler implementation runs under Bun and Node. Source and repair hashes form part of the compiler identity, so adopters must rebuild package manifests and graph receipts together when upgrading from an earlier compiler release.
 

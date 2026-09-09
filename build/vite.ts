@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { isBuiltin } from "node:module";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { parseSync } from "@babel/core";
 import { transform as inspectCss } from "lightningcss";
@@ -31,11 +31,13 @@ import {
   prepareStylexGraph,
   writeStylexGraphReceipt,
 } from "./generation.js";
+import { createViteSourceMapPaths, validateViteSourceMapPair, viteSourceMapProjectionChunkPath } from "./vite-source-maps.js";
 
 export type StylexViteOptions = Readonly<{
   generation: StylexGenerationHandleV1;
   graphId: string;
   rootDirectory: string;
+  sourceMaps?: "external";
 }>;
 
 type CssDependency = Readonly<{ kind: "css-import" | "css-url"; url: string }>;
@@ -364,6 +366,7 @@ type EmittedChunk = Readonly<{
   fileName: string;
   imports: readonly string[];
   isEntry: boolean;
+  preliminaryFileName?: string;
   map: unknown;
   modules: Readonly<Record<string, unknown>>;
   type: "chunk";
@@ -374,7 +377,7 @@ type BundleSnapshot = Readonly<{
   linkage: string;
 }>;
 
-function rejectJavaScriptSourceMapComments(source: string, path: string): void {
+function rejectJavaScriptSourceMapComments(source: string, path: string, companion?: string): void {
   const plugins: ("jsx" | "typescript")[] = [];
   if (/\.[cm]?tsx?$/iu.test(path)) plugins.push("typescript");
   if (/\.[cm]?[jt]sx$/iu.test(path)) plugins.push("jsx");
@@ -383,9 +386,15 @@ function rejectJavaScriptSourceMapComments(source: string, path: string): void {
     parserOpts: { plugins, allowReturnOutsideFunction: true },
   });
   assert.ok(parsed !== null, `Vite output JavaScript could not be inspected: ${path}`);
-  for (const comment of parsed.comments ?? []) {
-    assert.doesNotMatch(comment.value, /^\s*[@#]\s*sourceMappingURL\s*=/u,
-      `StyleX Vite does not support source-map references: ${path}`);
+  const annotations = (parsed.comments ?? []).filter((comment) => /^\s*[@#]\s*sourceMappingURL\s*=/u.test(comment.value));
+  if (companion === undefined) {
+    assert.equal(annotations.length, 0, `StyleX Vite does not support source-map references: ${path}`);
+  } else {
+    assert.equal(annotations.length, 1, `Vite chunk requires exactly one source-map reference: ${path}`);
+    const annotation = annotations[0]!;
+    assert.equal(annotation.type, "CommentLine", "Vite source-map reference must be the native terminal line comment");
+    assert.equal(annotation.value.trim(), `# sourceMappingURL=${companion}`, `Vite source-map reference differs from its companion: ${path}`);
+    assert.ok(typeof annotation.end === "number" && source.slice(annotation.end).trim() === "", "Vite source-map reference must be terminal");
   }
 }
 
@@ -447,34 +456,64 @@ function rejectCssSourceMapComments(source: string, path: string): void {
 function snapshotBundle(
   bundle: Readonly<Record<string, EmittedAsset | EmittedChunk>>,
   rootDirectory: string,
+  bundlerMeta: unknown,
+  mapPaths?: ReturnType<typeof createViteSourceMapPaths>,
 ): readonly BundleSnapshot[] {
+  const mapIdentities = new Map<string, string>();
+  if (mapPaths !== undefined) {
+    for (const chunk of Object.values(bundle)) {
+      if (chunk.type !== "chunk") continue;
+      const mapPath = `${chunk.fileName}.map`;
+      const asset = bundle[mapPath];
+      assert.ok(asset?.type === "asset" && asset.fileName === mapPath, `Vite chunk lacks its exact source-map companion: ${chunk.fileName}`);
+      assert.deepEqual(emittedAssetProvenance(asset, rootDirectory), [], "Vite source-map companions may not be copied source assets");
+      const projectionChunkPath = viteSourceMapProjectionChunkPath(bundlerMeta, chunk.fileName, chunk.preliminaryFileName);
+      const requiredSources = Object.entries(chunk.modules).flatMap(([id, metadata]) => {
+        const logical = rootInputPath(id, rootDirectory);
+        const module = moduleRecord(metadata);
+        assert.ok(typeof module.renderedLength === "number" && Number.isSafeInteger(module.renderedLength) && module.renderedLength >= 0,
+          "Vite mapped chunk must expose native rendered module lengths");
+        return logical !== undefined && module.renderedLength > 0 ? [logical] : [];
+      });
+      const options: Parameters<typeof validateViteSourceMapPair>[2] = { chunkPath: chunk.fileName,
+        projectionChunkPath, requiredSources, code: chunk.code, paths: mapPaths, bundlerMeta };
+      const raw = typeof asset.source === "string" ? asset.source : Buffer.from(asset.source).toString("utf8");
+      const parsed: unknown = JSON.parse(raw);
+      assert.equal(raw, JSON.stringify(parsed), "Vite source-map companion must use the exact native JSON serialization without duplicate keys");
+      const identity = validateViteSourceMapPair(chunk.map, parsed, options);
+      mapIdentities.set(mapPath, identity);
+    }
+  }
   // Rolldown does not preserve bundle object identity between hooks. Snapshot
   // bytes and public linkage values, never an output object or backing buffer.
   return Object.values(bundle).map((output) => {
     const path = normalizeLogicalPath(output.fileName, "Vite output path");
-    assert.ok(!/\.map$/iu.test(path), `StyleX Vite does not support source-map output: ${path}`);
+    const map = mapIdentities.get(path);
+    assert.ok(!/\.map$/iu.test(path) || map !== undefined, `StyleX Vite does not support unpaired source-map output: ${path}`);
     const bytes = output.type === "chunk"
       ? Buffer.from(output.code)
       : typeof output.source === "string" ? Buffer.from(output.source) : Buffer.from(output.source);
     if (output.type === "chunk" || emittedJavaScriptFilter.test(path)) {
-      rejectJavaScriptSourceMapComments(bytes.toString("utf8"), path);
+      assert.ok(mapPaths === undefined || output.type === "chunk", "External Vite maps do not support copied JavaScript assets");
+      rejectJavaScriptSourceMapComments(bytes.toString("utf8"), path, mapPaths === undefined ? undefined : `${basename(path)}.map`);
     } else if (/\.css$/iu.test(path)) {
       rejectCssSourceMapComments(bytes.toString("utf8"), path);
     }
     let linkage: string;
     if (output.type === "chunk") {
-      assert.ok(output.map === null || output.map === undefined, `StyleX Vite does not support chunk source maps: ${path}`);
+      assert.ok(mapPaths !== undefined || output.map === null || output.map === undefined, `StyleX Vite does not support chunk source maps: ${path}`);
       linkage = canonicalJson({
         dynamicImports: [...output.dynamicImports],
         facade: output.facadeModuleId === null ? null : graphName(output.facadeModuleId, rootDirectory),
         imports: [...output.imports],
         isEntry: output.isEntry,
         modules: Object.keys(output.modules).map((id) => graphName(id, rootDirectory)).sort(compareStrings),
+        ...(mapPaths === undefined ? {} : { sourceMap: mapIdentities.get(`${path}.map`) }),
         type: output.type,
       });
     } else {
       linkage = canonicalJson({
-        provenance: /\.css$/iu.test(path) ? [] : emittedAssetProvenance(output, rootDirectory),
+        provenance: /\.css$/iu.test(path) || map !== undefined ? [] : emittedAssetProvenance(output, rootDirectory),
         type: output.type,
       });
     }
@@ -508,19 +547,33 @@ function assertOwnedOutputDirectory(
     dir?: string | undefined;
     file?: string | undefined;
     sourcemap?: boolean | "hidden" | "inline" | undefined;
+    sourcemapPathTransform?: ((sourcePath: string, mapPath: string) => string) | undefined;
+    // Rollup and Rolldown expose different option unions. This is a foreign
+    // value until the exact adapter-owned callback identity is checked below.
+    sourcemapIgnoreList?: unknown;
   }>,
   outputDirectory: string,
+  mapPaths?: ReturnType<typeof createViteSourceMapPaths>,
 ): void {
   assert.equal(outputOptions.file, undefined, "StyleX Vite does not support a single-file output override");
   assert.ok(typeof outputOptions.dir === "string", "StyleX Vite requires an owned Rollup output directory");
   assert.equal(resolve(outputOptions.dir), outputDirectory, "Rollup output escaped the owned graph staging root");
   assert.ok(
-    outputOptions.sourcemap === undefined || outputOptions.sourcemap === false,
-    "StyleX Vite requires Rollup sourcemap output to remain disabled",
+    mapPaths === undefined
+      ? outputOptions.sourcemap === undefined || outputOptions.sourcemap === false
+      : outputOptions.sourcemap === true,
+    mapPaths === undefined
+      ? "StyleX Vite requires Rollup sourcemap output to remain disabled"
+      : "StyleX Vite requires Rollup sourcemap output to match its owned profile",
   );
+  if (mapPaths !== undefined) {
+    assert.equal(outputOptions.sourcemapPathTransform, mapPaths.transform, "Vite source-map path projection was replaced");
+    assert.equal(outputOptions.sourcemapIgnoreList, mapPaths.ignore, "Vite source-map ignore callback was replaced");
+  }
 }
 
 export function stylexVite(options: StylexViteOptions): Plugin {
+  assert.ok(options.sourceMaps === undefined || options.sourceMaps === "external", "StyleX Vite sourceMaps must be external or omitted");
   const rootDirectory = resolve(options.rootDirectory);
   const collector = createStylexTransformCollector(rootDirectory);
   const transformed = new Set<string>();
@@ -542,6 +595,7 @@ export function stylexVite(options: StylexViteOptions): Plugin {
   let loaded: Awaited<ReturnType<typeof loadStylexGeneration>> | undefined;
   let resolvedConfig: ResolvedConfig | undefined;
   let generatedBundle: readonly BundleSnapshot[] | undefined;
+  let mapPaths: ReturnType<typeof createViteSourceMapPaths> | undefined;
 
   const snapshotInput = (logical: string, bytes: string | Uint8Array): void => {
     const snapshot = {
@@ -575,7 +629,9 @@ export function stylexVite(options: StylexViteOptions): Plugin {
     assert.equal(config.build.assetsInlineLimit, 0, "StyleX Vite must disable implicit asset inlining");
     assert.equal(config.build.cssCodeSplit, false, "StyleX Vite must emit one complete graph stylesheet");
     assert.equal(resolve(config.build.outDir), plannedOutput.outputDirectory, "Resolved Vite outDir differs from the graph staging root");
-    assert.equal(config.build.sourcemap, false, "StyleX Vite must disable sourcemap output");
+    assert.equal(config.build.sourcemap, options.sourceMaps === "external", options.sourceMaps === "external"
+      ? "StyleX Vite sourcemap output differs from its owned profile"
+      : "StyleX Vite must disable sourcemap output");
     assert.equal(config.build.write, true, "StyleX Vite requires filesystem output for receipt sealing");
     const graph = loaded.expectedGraph(options.graphId);
     const bundlers = bundlerOptionRecords(config.build);
@@ -606,6 +662,14 @@ export function stylexVite(options: StylexViteOptions): Plugin {
         outputDirectory: join(options.generation.directory, ...outputRoot.split("/")),
         outputRoot,
       };
+      if (options.sourceMaps === "external") {
+        mapPaths = createViteSourceMapPaths({
+          rootDirectory,
+          stagingDirectory: plannedOutput.outputDirectory,
+          publishedDirectory: join(dirname(options.generation.directory), loaded.plan.generationId, "graphs", graph.id),
+          inputIdentity: (path) => inputSnapshots.get(path),
+        });
+      }
       configured = true;
       return {
         publicDir: false,
@@ -617,7 +681,7 @@ export function stylexVite(options: StylexViteOptions): Plugin {
           emptyOutDir: false,
           outDir: plannedOutput.outputDirectory,
           rollupOptions: { input: graph.entrypoints.map((entrypoint) => resolve(rootDirectory, entrypoint)) },
-          sourcemap: false,
+          sourcemap: options.sourceMaps === "external",
           write: true,
         },
       };
@@ -626,6 +690,15 @@ export function stylexVite(options: StylexViteOptions): Plugin {
       validateResolvedConfig(config);
       resolvedConfig = config;
       resolved = true;
+    },
+    outputOptions(output) {
+      if (mapPaths === undefined) return null;
+      assert.equal(output.sourcemapPathTransform, undefined, "StyleX Vite owns source-map path projection");
+      assert.equal(output.sourcemap, true, "StyleX Vite external source maps must remain enabled");
+      assert.ok(output.sourcemapExcludeSources === undefined || output.sourcemapExcludeSources === false,
+        "StyleX Vite source maps require exact embedded input contents");
+      assert.equal(output.sourcemapBaseUrl, undefined, "StyleX Vite source maps must be local companions");
+      return { ...output, sourcemapPathTransform: mapPaths.transform, sourcemapIgnoreList: mapPaths.ignore };
     },
     moduleParsed(info) {
       assert.equal(moduleCollectionEnded, false, "Vite parsed a module after terminal collection");
@@ -716,6 +789,12 @@ export function stylexVite(options: StylexViteOptions): Plugin {
       assert.ok(logical !== undefined);
       assert.equal(transformed.has(logical), false, `Vite transformed ${logical} more than once`);
       transformed.add(logical);
+      if (mapPaths !== undefined) {
+        // The bundler resolves each transform map relative to this module's
+        // directory. A basename avoids duplicating its repository subdirectory.
+        const result = await collector.transformWithMap(code, clean, { logicalSourceFileName: basename(clean) });
+        return { code: result.code, map: canonicalJson(result.map) };
+      }
       const result = await collector.transform(code, clean);
       return { code: result.code, map: null };
     },
@@ -728,16 +807,18 @@ export function stylexVite(options: StylexViteOptions): Plugin {
         const outputPlan = plannedOutput;
         assert.ok(loadedGeneration !== undefined && finalConfig !== undefined && outputPlan !== undefined);
         validateResolvedConfig(finalConfig);
-        assertOwnedOutputDirectory(outputOptions, outputPlan.outputDirectory);
+        assertOwnedOutputDirectory(outputOptions, outputPlan.outputDirectory, mapPaths);
         assert.equal(prepared, undefined, "StyleX Vite graph staging may be prepared only once");
         const preparedGraph = await prepareStylexGraph(options.generation, options.graphId);
         assert.deepEqual(preparedGraph, outputPlan, "Prepared Vite graph location differs from its configured output location");
         prepared = preparedGraph;
         assert.equal(sealedRules, undefined, "StyleX Vite may generate one bundle only");
         sealedRules = collector.seal();
+        const bundleSnapshot = snapshotBundle(bundle, rootDirectory, this.meta, mapPaths);
         for (const output of Object.values(bundle)) {
           if (output.type !== "asset") continue;
           const asset = output as EmittedAsset;
+          if (mapPaths !== undefined && /\.map$/u.test(asset.fileName)) continue;
           const generatedCss = /\.css$/iu.test(asset.fileName);
           // With cssCodeSplit disabled, Vite reports the synthetic bundle label
           // `style.css` as an original file name. The actual CSS sources are
@@ -768,7 +849,7 @@ export function stylexVite(options: StylexViteOptions): Plugin {
             }
           }
         }
-        generatedBundle = snapshotBundle(bundle, rootDirectory);
+        generatedBundle = bundleSnapshot;
       },
     },
     configureServer() {
@@ -784,13 +865,14 @@ export function stylexVite(options: StylexViteOptions): Plugin {
         const loadedGeneration = loaded;
         const preparedGraph = prepared;
         assert.ok(preparedGraph !== undefined && loadedGeneration !== undefined);
-        assertOwnedOutputDirectory(outputOptions, preparedGraph.outputDirectory);
+        assertOwnedOutputDirectory(outputOptions, preparedGraph.outputDirectory, mapPaths);
         const graph = loadedGeneration.expectedGraph(options.graphId);
         const rules = sealedRules;
         assert.ok(rules !== undefined, "Vite bundle rules were not sealed before receipt publication");
         for (const output of Object.values(bundle)) {
           if (output.type !== "asset") continue;
           const asset = output as EmittedAsset;
+          if (mapPaths !== undefined && /\.map$/u.test(asset.fileName)) continue;
           const path = normalizeLogicalPath(asset.fileName, "Vite output path");
           const generatedCss = /\.css$/iu.test(path);
           const provenance = generatedCss ? [] : emittedAssetProvenance(asset, rootDirectory);
@@ -921,7 +1003,7 @@ export function stylexVite(options: StylexViteOptions): Plugin {
         }
         const outputs = await Promise.all(outputPaths.map((path) => artifactForFile(preparedGraph.outputDirectory, path)));
         assert.ok(generatedBundle !== undefined, "StyleX Vite bundle snapshot was not sealed");
-        assert.deepEqual(snapshotBundle(bundle, rootDirectory), generatedBundle,
+        assert.deepEqual(snapshotBundle(bundle, rootDirectory, this.meta, mapPaths), generatedBundle,
           "Vite bundle bytes or linkage changed after the generated snapshot");
         assert.deepEqual(outputs, generatedBundle.map(({ artifact }) => artifact),
           "Vite settled output differs from its generated byte snapshot");

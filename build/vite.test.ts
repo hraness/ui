@@ -23,7 +23,7 @@ import {
   sha256,
   stylexRulesSha256,
 } from "./compiler.js";
-import { createStylexGeneration } from "./generation.js";
+import { createStylexGeneration, finalizeStylexGeneration } from "./generation.js";
 import { stylexVite } from "./vite.js";
 
 const roots: string[] = [];
@@ -270,6 +270,139 @@ async function writeDependencyPackage(
   })}\n`);
   await write(join(root, "index.js"), source);
 }
+
+describe("stylexVite external source maps (native)", () => {
+  test("seals an authentic empty native chunk without inventing source callbacks", async () => {
+    const context = await fixture();
+    const entry = join(context.root, "src/empty.ts");
+    await write(entry, "export {};\n");
+    const graph = graphExpectation(context, "external-empty", "client", [entry]);
+    const generationValue = await generation(context, graph);
+    await viteBuild({ configFile: false, logLevel: "silent", build: { minify: false },
+      plugins: [stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root, sourceMaps: "external" })] });
+    const receipt = await readReceipt(generationValue, graph.id);
+    const publication = await finalizeStylexGeneration({ generation: generationValue, outputDirectory: context.generationOutput, rootDirectory: context.root });
+    const maps = receipt.outputs.filter(({ path }) => /\.[cm]?js\.map$/u.test(path));
+    expect(maps.length).toBe(1);
+    const map = JSON.parse(await readFile(join(publication, "graphs", graph.id, maps[0]!.path), "utf8"));
+    expect(map.sources).toEqual([]);
+    expect(map.sourcesContent).toEqual([]);
+    expect(map.mappings).toBe("");
+  });
+
+  test("preserves real client, lazy and SSR source provenance after atomic publication", async () => {
+    for (const kind of ["client", "ssr"] as const) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      const lazy = join(context.root, "src/lazy.ts");
+      await write(entry, [
+        'import * as stylex from "@stylexjs/stylex";',
+        'const styles = stylex.create({ root: { color: "red" } });',
+        'globalThis.fixture = stylex.props(styles.root);',
+        'globalThis.lazy = () => import("./lazy");',
+      ].join("\n"));
+      await write(lazy, 'export const lazyAnswer = "lazy mapped source";\n');
+      const graph = graphExpectation(context, `external-${kind}`, kind, [entry]);
+      const generationValue = await generation(context, graph);
+      await viteBuild({ configFile: false, logLevel: "silent",
+        build: { minify: false, ...(kind === "ssr" ? { ssr: entry } : {}) },
+        plugins: [stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root, sourceMaps: "external" })],
+      });
+      const receipt = await readReceipt(generationValue, graph.id);
+      const publication = await finalizeStylexGeneration({ generation: generationValue, outputDirectory: context.generationOutput, rootDirectory: context.root });
+      const mapped = new Set<string>();
+      for (const artifact of receipt.outputs.filter(({ path }) => /\.[cm]?js$/u.test(path))) {
+        const javascript = join(publication, "graphs", graph.id, artifact.path);
+        const mapPath = `${javascript}.map`;
+        const code = await readFile(javascript, "utf8");
+        const map = JSON.parse(await readFile(mapPath, "utf8")) as { sources: string[]; sourcesContent: string[]; mappings: string };
+        expect(code).toContain(`//# sourceMappingURL=${artifact.path.split("/").at(-1)}.map`);
+        expect(receipt.outputs.some(({ path }) => path === `${artifact.path}.map`)).toBe(true);
+        for (const [index, source] of map.sources.entries()) {
+          const absolute = resolve(dirname(mapPath), source);
+          mapped.add(absolute);
+          expect(map.sourcesContent[index]).toBe(await readFile(absolute, "utf8"));
+          expect(source).not.toContain(".hraness-stylex-");
+          expect(source).not.toContain(context.root);
+        }
+        expect(await artifactForFile(join(publication, "graphs", graph.id), artifact.path)).toEqual(artifact);
+      }
+      expect(mapped.has(entry)).toBe(true);
+      expect(mapped.has(lazy)).toBe(true);
+    }
+  });
+
+  test("rejects every foreign ignore-list shape at the native output boundary", async () => {
+    const foreignValues: readonly unknown[] = [
+      "node_modules", /node_modules/u, ["node_modules", /vendor/u],
+      false, undefined, null, 0, () => false,
+    ];
+    for (const foreignValue of foreignValues) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "globalThis.fixture = 42;\n");
+      const graph = graphExpectation(context, "foreign-ignore-list", "client", [entry]);
+      const generationValue = await generation(context, graph);
+      await expect(viteBuild({ configFile: false, logLevel: "silent",
+        plugins: [stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root, sourceMaps: "external" }), {
+          name: "foreign-ignore-list",
+          generateBundle: { order: "pre", handler(output) {
+            Object.assign(output, { sourcemapIgnoreList: foreignValue });
+          } },
+        }],
+      })).rejects.toThrow("Vite source-map ignore callback was replaced");
+      expect(await receiptExists(generationValue, graph.id)).toBe(false);
+    }
+  });
+
+  test("rejects mutated maps, missing companions and late native path overrides", async () => {
+    for (const mutation of ["map-bytes", "map-linkage", "missing", "path-projection", "ignore-callback", "chunk-projection", "erase-mappings", "empty-sources", "duplicate-json"] as const) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "globalThis.fixture = 42;\n");
+      const graph = graphExpectation(context, "external-negative", "client", [entry]);
+      const generationValue = await generation(context, graph);
+      await expect(viteBuild({ configFile: false, logLevel: "silent",
+        plugins: [stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root, sourceMaps: "external" }), {
+          name: `external-map-${mutation}`,
+          outputOptions(output) {
+            if (mutation === "path-projection") return { ...output, sourcemapPathTransform: () => "private.ts" };
+            if (mutation === "ignore-callback") return { ...output, sourcemapIgnoreList: () => false };
+            return null;
+          },
+          generateBundle: { order: ["chunk-projection", "erase-mappings", "empty-sources", "duplicate-json"].includes(mutation) ? "pre" : "post", handler(_output, bundle) {
+            const chunk = Object.values(bundle).find((value) => value.type === "chunk");
+            assert.ok(chunk?.type === "chunk");
+            const key = `${chunk.fileName}.map`;
+            if (mutation === "missing") delete bundle[key];
+            else if (mutation === "chunk-projection") chunk.preliminaryFileName = "assets/foreign.js";
+            else if (mutation === "map-linkage") chunk.map = null;
+            else if (mutation === "map-bytes") {
+              const map = bundle[key];
+              assert.ok(map?.type === "asset");
+              map.source = "{}";
+            } else if (["erase-mappings", "empty-sources", "duplicate-json"].includes(mutation)) {
+              const mapAsset = bundle[key];
+              assert.ok(mapAsset?.type === "asset" && chunk.map !== null);
+              if (mutation === "duplicate-json") {
+                const raw = typeof mapAsset.source === "string" ? mapAsset.source : Buffer.from(mapAsset.source).toString("utf8");
+                mapAsset.source = `{\"sources\":[\"/private/unobserved.ts\"],${raw.slice(1)}`;
+              } else {
+                chunk.map.mappings = "";
+                if (mutation === "empty-sources") {
+                  chunk.map.sources = [];
+                  chunk.map.sourcesContent = [];
+                }
+                mapAsset.source = JSON.stringify(chunk.map);
+              }
+            }
+          } },
+        }],
+      })).rejects.toThrow();
+      expect(await receiptExists(generationValue, graph.id)).toBe(false);
+    }
+  });
+});
 
 describe("stylexVite terminal module census (pure)", () => {
   type Info = Record<string, unknown>;

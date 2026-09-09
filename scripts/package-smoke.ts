@@ -7204,6 +7204,7 @@ async function verifyConsumer(
     "build/next-typescript.ts",
     "build/next.ts",
     "build/vite.ts",
+    "build/vite-source-maps.ts",
     "dist/build/bun.js",
     "dist/build/index.js",
     "dist/build/next-loader.cjs",

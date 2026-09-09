@@ -1,6 +1,6 @@
 {
   "name": "@hraness/ui",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "description": "Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.",
   "license": "MIT",
   "type": "module",
@@ -80,6 +80,7 @@
     "build/next.ts",
     "build/stylex-babel-compat.ts",
     "build/vite.ts",
+    "build/vite-source-maps.ts",
     "dist",
     "src/ask-ai.stylex.ts",
     "src/ask-ai.tsx",

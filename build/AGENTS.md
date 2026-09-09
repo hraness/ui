@@ -4,6 +4,7 @@
 - `compiler.ts` owns the pinned Babel and StyleX transform, raw-rule validation, immutable package serialization, and the versioned final rule-union policy.
 - `generation.ts` prepares generation-scoped staging, validates package and graph records, and atomically publishes one complete output.
 - `bun.ts` and `vite.ts` are the supported one-shot caller build adapters.
+- `vite-source-maps.ts` verifies opt-in external JavaScript map provenance and projects native staging paths to the final generation layout.
 - `next.ts`, `next-contracts.ts`, `next-generation.ts`, `next-plugin.ts`, and `next-loader.*` own the production Next.js discovery, delivery, graph, and receipt boundary.
 - `next-ssg.ts` derives the native SSG manifest settlement; `next-auxiliary.ts` records observation-only Next dependency-trace snapshots without following their file lists.
 - `next-typescript.ts` owns phase-local TypeScript input projections, exact native type provenance, and physical-project-root environment-file preservation.
@@ -22,6 +23,7 @@
 - Keep graph outputs and receipts inside a new generation-scoped staging directory. Publish only after every expected graph, template, artifact hash, and stylesheet boundary is complete and verified.
 - Reject watch, serve, HMR, stale or late receipts, incomplete graphs, conflicting rules, output collisions, and any compiler-adopting graph that contains standalone package recipe CSS.
 - Keep absolute paths, timestamps, process identifiers, and temporary names out of canonical record bytes.
+- Keep Vite maps disabled by default. The external-map profile owns its output options, requires in-root publication, preserves native mapping data and exact embedded file bytes, and pairs every map with its generated chunk. Rebase only source paths to the final generation layout before native hashing; copied maps, CSS maps, external or unobserved sources and late output drift remain errors.
 - Keep compiler dependencies outside `src/index.ts` and every production UI runtime output. Build-tool entry points are explicit opt-in imports.
 - Preserve the plugin-free `@hraness/ui/styles.css` route. Compiler adopters use one foundation stylesheet and one finalized recipe artifact.
 - Keep the Next adapter pinned to Next 16.2.12 with webpack and genuine Node 24. Run complete discovery and delivery builds for the client, Node RSC, and Edge RSC targets. Bind each target to the exact repository-source census in the hash-bound plan; an empty target is valid only when the compiler observes no repository source and still emits both target receipts.
