@@ -91,11 +91,12 @@ describe("Vite external source-map contract", () => {
     const item = fixture();
     for (const mutation of [
       { toUrl: "private payload" }, { toUrl: undefined }, { toUrl: null }, { toUrl: {} },
+      { toString: "private payload" }, { toString: undefined }, { toString: null }, { toString: {} },
       { extra: undefined }, { extra: () => "private payload" }, { toJSON: () => item.map },
       { debugId: "unsupported" }, { [Symbol("unsupported")]: undefined },
     ]) expect(() => validateViteSourceMap({ ...item.map, ...mutation }, { ...item, code: content })).toThrow();
     let getterCalls = 0;
-    for (const key of ["sources", "sourceRoot", "toUrl"]) {
+    for (const key of ["sources", "sourceRoot", "toUrl", "toString"]) {
       const map = { ...item.map };
       Object.defineProperty(map, key, { enumerable: true, get: () => { getterCalls += 1; return undefined; } });
       expect(() => validateViteSourceMap(map, { ...item, code: content })).toThrow(/data properties/u);
@@ -104,6 +105,25 @@ describe("Vite external source-map contract", () => {
     const hidden = { ...item.map };
     Object.defineProperty(hidden, "sources", { enumerable: false, value: item.map.sources });
     expect(() => validateViteSourceMap(hidden, { ...item, code: content })).toThrow(/data properties/u);
+  });
+
+  test("normalizes Rolldown's own map helpers without executing them or changing JSON map data", () => {
+    const item = fixture();
+    let calls = 0;
+    const native = { ...item.map,
+      toString() { calls += 1; throw new Error("native method must not be invoked"); },
+      toUrl() { calls += 1; throw new Error("native method must not be invoked"); },
+    };
+    expect(Object.keys(native)).toEqual([...Object.keys(item.map), "toString", "toUrl"]);
+    expect(JSON.parse(JSON.stringify(native))).toEqual(item.map);
+    expect(validateViteSourceMap(native, { ...item, code: content })).toBe(canonicalJson(item.map));
+    expect(calls).toBe(0);
+    for (const key of ["toString", "toUrl"]) {
+      const hidden = { ...item.map };
+      Object.defineProperty(hidden, key, { enumerable: false, value: () => { calls += 1; } });
+      expect(() => validateViteSourceMap(hidden, { ...item, code: content })).toThrow(/data properties/u);
+    }
+    expect(calls).toBe(0);
   });
 
   test("rejects incomplete, foreign, malformed and content-drift maps", () => {

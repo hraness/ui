@@ -128,16 +128,16 @@ export function validateViteSourceMap(value: unknown, options: Readonly<{
   const optional = ["sourceRoot", "ignoreList", "x_google_ignoreList"];
   const record: Record<string, unknown> = {};
   for (const key of Reflect.ownKeys(value)) {
-    assert.ok(typeof key === "string" && (required.includes(key) || optional.includes(key) || key === "toUrl"),
+    assert.ok(typeof key === "string" && (required.includes(key) || optional.includes(key) || key === "toUrl" || key === "toString"),
       "Vite source map has unknown fields");
     const field: PropertyDescriptor = Object.getOwnPropertyDescriptor(value, key)!;
     assert.ok(field.enumerable && Object.hasOwn(field, "value"), "Vite source-map fields must be enumerable data properties");
-    // Vite 7's lazy-import rewrite adds an own toUrl function to its native
-    // composed map. Its SourceMap also owns undefined optional fields. Native
-    // JSON.stringify omits both; do the same without invoking native methods or
+    // Vite 7's lazy-import rewrite adds an own toUrl function; Vite 8's
+    // Rolldown map also owns toString. SourceMap can own undefined optional
+    // fields. Native JSON.stringify omits these; do the same without invoking methods or
     // dropping any unknown or defined map data from the validated identity.
-    if (key === "toUrl") {
-      assert.equal(typeof field.value, "function", "Vite native source-map toUrl must be a function");
+    if (key === "toUrl" || key === "toString") {
+      assert.equal(typeof field.value, "function", "Vite native source-map helper must be a function");
     } else if (field.value !== undefined || required.includes(key)) {
       record[key] = field.value;
     }

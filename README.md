@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.8"
+    "@hraness/ui": "github:hraness/ui#v0.5.9"
   }
 }
 ```
@@ -116,7 +116,7 @@ The built-in recipes are already compiled, so ordinary consumers do not need a S
 
 Compiler adopters install the package's exact build-tool peers: `@babel/core@7.29.7`, `@stylexjs/babel-plugin@0.19.0`, `lightningcss@1.33.0`, and `@types/babel__core@7.20.5`. TypeScript projects using the Bun adapter also install `@types/bun@1.3.14`; Vite adapter projects install Vite 7.3.6 or 8.2.1 and compatible Node types (`@types/node@^20.19.0 || >=22.12.0`). These peers are optional for ordinary precompiled-stylesheet consumers.
 
-The Vite production matrix checks both pinned versions under Node 24 with TypeScript 6.0.3. It covers native client, lazy, multi-entry and SSR builds, public Bundler and NodeNext declarations, package/caller rule union, hydration and browser interaction. Vite 8 uses Rolldown's public module metadata. Both `rollupOptions` and `rolldownOptions` remain subject to the same input, output and external-import restrictions. Source maps must be disabled: hidden, inline, copied and late-enabled maps fail closed. This is not development, HMR, React-plugin or arbitrary Vite-version evidence. Native signal regressions verify child/browser/server collection; successful matrix receipts remain outside disposable consumer directories.
+The Vite production matrix checks both pinned versions under Node 24 with TypeScript 6.0.3, with maps disabled and with the explicit `sourceMaps: "external"` profile. It covers native client, lazy, multi-entry and SSR builds, public Bundler and NodeNext declarations, package/caller rule union, hydration and browser interaction. Vite 8 uses Rolldown's public module metadata. Both `rollupOptions` and `rolldownOptions` remain subject to the same input, output and external-import restrictions. Source maps remain disabled by default; external maps require the adapter-owned profile and in-root publication. Hidden, inline, copied and late-enabled maps fail closed. This is not development, HMR, React-plugin or arbitrary Vite-version evidence. Native signal regressions verify child/browser/server collection; successful matrix receipts remain outside disposable consumer directories.
 
 Package authors use the lower-level exports from `@hraness/ui/stylex-build` inside their own build: `createStylexTransformCollector` compiles package source, `serializeStylexPackageRules` produces that package's independently usable CSS under a package-owned `components.*` namespace, and the artifact and manifest helpers bind the resulting JavaScript, CSS, raw rules, and `compilerFoundation` without independently serialized StyleX rules. That standalone CSS remains the plugin-free package route. Each package must choose a distinct namespace and publish its manifest with the package.
 
