@@ -272,6 +272,24 @@ async function writeDependencyPackage(
 }
 
 describe("stylexVite external source maps (native)", () => {
+  test("seals an authentic empty native chunk without inventing source callbacks", async () => {
+    const context = await fixture();
+    const entry = join(context.root, "src/empty.ts");
+    await write(entry, "export {};\n");
+    const graph = graphExpectation(context, "external-empty", "client", [entry]);
+    const generationValue = await generation(context, graph);
+    await viteBuild({ configFile: false, logLevel: "silent", build: { minify: false },
+      plugins: [stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root, sourceMaps: "external" })] });
+    const receipt = await readReceipt(generationValue, graph.id);
+    const publication = await finalizeStylexGeneration({ generation: generationValue, outputDirectory: context.generationOutput, rootDirectory: context.root });
+    const maps = receipt.outputs.filter(({ path }) => /\.[cm]?js\.map$/u.test(path));
+    expect(maps.length).toBe(1);
+    const map = JSON.parse(await readFile(join(publication, "graphs", graph.id, maps[0]!.path), "utf8"));
+    expect(map.sources).toEqual([]);
+    expect(map.sourcesContent).toEqual([]);
+    expect(map.mappings).toBe("");
+  });
+
   test("preserves real client, lazy and SSR source provenance after atomic publication", async () => {
     for (const kind of ["client", "ssr"] as const) {
       const context = await fixture();
@@ -315,7 +333,7 @@ describe("stylexVite external source maps (native)", () => {
   });
 
   test("rejects mutated maps, missing companions and late native path overrides", async () => {
-    for (const mutation of ["map-bytes", "map-linkage", "missing", "path-projection", "chunk-projection", "erase-mappings", "empty-sources", "duplicate-json"] as const) {
+    for (const mutation of ["map-bytes", "map-linkage", "missing", "path-projection", "ignore-callback", "chunk-projection", "erase-mappings", "empty-sources", "duplicate-json"] as const) {
       const context = await fixture();
       const entry = join(context.root, "src/entry.ts");
       await write(entry, "globalThis.fixture = 42;\n");
@@ -326,6 +344,7 @@ describe("stylexVite external source maps (native)", () => {
           name: `external-map-${mutation}`,
           outputOptions(output) {
             if (mutation === "path-projection") return { ...output, sourcemapPathTransform: () => "private.ts" };
+            if (mutation === "ignore-callback") return { ...output, sourcemapIgnoreList: () => false };
             return null;
           },
           generateBundle: { order: ["chunk-projection", "erase-mappings", "empty-sources", "duplicate-json"].includes(mutation) ? "pre" : "post", handler(_output, bundle) {

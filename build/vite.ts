@@ -31,7 +31,7 @@ import {
   prepareStylexGraph,
   writeStylexGraphReceipt,
 } from "./generation.js";
-import { createViteSourceMapPaths, validateViteSourceMap, viteSourceMapProjectionChunkPath } from "./vite-source-maps.js";
+import { createViteSourceMapPaths, validateViteSourceMapPair, viteSourceMapProjectionChunkPath } from "./vite-source-maps.js";
 
 export type StylexViteOptions = Readonly<{
   generation: StylexGenerationHandleV1;
@@ -475,13 +475,12 @@ function snapshotBundle(
           "Vite mapped chunk must expose native rendered module lengths");
         return logical !== undefined && module.renderedLength > 0 ? [logical] : [];
       });
-      const options: Parameters<typeof validateViteSourceMap>[1] = { chunkPath: chunk.fileName,
-        projectionChunkPath, requiredSources, code: chunk.code, paths: mapPaths };
-      const identity = validateViteSourceMap(chunk.map, options);
+      const options: Parameters<typeof validateViteSourceMapPair>[2] = { chunkPath: chunk.fileName,
+        projectionChunkPath, requiredSources, code: chunk.code, paths: mapPaths, bundlerMeta };
       const raw = typeof asset.source === "string" ? asset.source : Buffer.from(asset.source).toString("utf8");
       const parsed: unknown = JSON.parse(raw);
       assert.equal(raw, JSON.stringify(parsed), "Vite source-map companion must use the exact native JSON serialization without duplicate keys");
-      assert.equal(validateViteSourceMap(parsed, options), identity, "Vite source-map companion differs from the native chunk map");
+      const identity = validateViteSourceMapPair(chunk.map, parsed, options);
       mapIdentities.set(mapPath, identity);
     }
   }
@@ -549,6 +548,7 @@ function assertOwnedOutputDirectory(
     file?: string | undefined;
     sourcemap?: boolean | "hidden" | "inline" | undefined;
     sourcemapPathTransform?: ((sourcePath: string, mapPath: string) => string) | undefined;
+    sourcemapIgnoreList?: boolean | ((sourcePath: string, mapPath: string) => boolean) | undefined;
   }>,
   outputDirectory: string,
   mapPaths?: ReturnType<typeof createViteSourceMapPaths>,
@@ -564,7 +564,10 @@ function assertOwnedOutputDirectory(
       ? "StyleX Vite requires Rollup sourcemap output to remain disabled"
       : "StyleX Vite requires Rollup sourcemap output to match its owned profile",
   );
-  if (mapPaths !== undefined) assert.equal(outputOptions.sourcemapPathTransform, mapPaths.transform, "Vite source-map path projection was replaced");
+  if (mapPaths !== undefined) {
+    assert.equal(outputOptions.sourcemapPathTransform, mapPaths.transform, "Vite source-map path projection was replaced");
+    assert.equal(outputOptions.sourcemapIgnoreList, mapPaths.ignore, "Vite source-map ignore callback was replaced");
+  }
 }
 
 export function stylexVite(options: StylexViteOptions): Plugin {
@@ -693,7 +696,7 @@ export function stylexVite(options: StylexViteOptions): Plugin {
       assert.ok(output.sourcemapExcludeSources === undefined || output.sourcemapExcludeSources === false,
         "StyleX Vite source maps require exact embedded input contents");
       assert.equal(output.sourcemapBaseUrl, undefined, "StyleX Vite source maps must be local companions");
-      return { ...output, sourcemapPathTransform: mapPaths.transform };
+      return { ...output, sourcemapPathTransform: mapPaths.transform, sourcemapIgnoreList: mapPaths.ignore };
     },
     moduleParsed(info) {
       assert.equal(moduleCollectionEnded, false, "Vite parsed a module after terminal collection");

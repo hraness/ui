@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { basename, dirname, resolve } from "node:path";
 
 import { canonicalJson, sha256 } from "./compiler.js";
-import { createViteSourceMapPaths, validateViteSourceMap, viteSourceMapProjectionChunkPath } from "./vite-source-maps.js";
+import { createViteSourceMapPaths, validateViteSourceMap, validateViteSourceMapPair, viteSourceMapProjectionChunkPath } from "./vite-source-maps.js";
 
 const content = "export const answer = 42;\n";
 const sourceIdentity = { bytes: Buffer.byteLength(content), sha256: sha256(content) };
@@ -31,6 +31,89 @@ describe("Vite external source-map contract", () => {
 
   test("rejects publication outside the source root", () => {
     expect(() => createViteSourceMapPaths({ rootDirectory: "/root/app", stagingDirectory: "/root/staging", publishedDirectory: "/elsewhere/output", inputIdentity: () => sourceIdentity })).toThrow();
+  });
+
+  function ignoreFixture(witness = "complete") {
+    const paths = createViteSourceMapPaths({ rootDirectory: "/project", stagingDirectory: "/project/staging",
+      publishedDirectory: "/project/published/graphs/client", inputIdentity: (path) =>
+        ["src/entry.ts", "node_modules/vendor/index.js"].includes(path) ? sourceIdentity : undefined });
+    const rawSources = ["../src/entry.ts", "../node_modules/vendor/index.js"];
+    const sources = rawSources.map((source, index) => {
+      if (witness === "complete" || (witness === "partial" && index === 1)) paths.ignore(source, "/project/staging/entry.js.map");
+      return paths.transform(source, "/project/staging/entry.js.map");
+    });
+    const map = { version: 3, file: "entry.js", sources, sourcesContent: [content, content], names: [], mappings: "AAAA,ACAA" };
+    const options = { paths, chunkPath: "entry.js", code: content,
+      bundlerMeta: { rollupVersion: "4.23.0", rolldownVersion: "1.2.7", viteVersion: "8.2.1" } };
+    return { map, options };
+  }
+
+  test("joins only Rolldown's witnessed lazy-map ignore loss while preserving the complete emitted map", () => {
+    const { map, options } = ignoreFixture();
+    const companion = { ...map, ignoreList: [1] };
+    const bytes = JSON.stringify(companion);
+    expect(validateViteSourceMapPair(map, companion, options)).toBe(canonicalJson(companion));
+    expect(JSON.stringify(companion)).toBe(bytes);
+    expect(Object.hasOwn(map, "ignoreList")).toBe(false);
+    for (const ignores of [{ ignoreList: [1] }, { x_google_ignoreList: [1] }, { ignoreList: [1], x_google_ignoreList: [1] }]) {
+      const native = { ...map, ...ignores };
+      expect(validateViteSourceMapPair(native, native, options)).toBe(canonicalJson(native));
+    }
+    const google = { ...map, x_google_ignoreList: [1] };
+    expect(validateViteSourceMapPair(google, google, { ...options, bundlerMeta: { rollupVersion: "4.63.1", viteVersion: "7.3.6" } }))
+      .toBe(canonicalJson(google));
+    const reordered = { ...map, sources: [...map.sources].reverse() };
+    expect(validateViteSourceMapPair(reordered, { ...reordered, ignoreList: [0] }, options))
+      .toBe(canonicalJson({ ...reordered, ignoreList: [0] }));
+  });
+
+  test("ignore-list normalization cannot hide callback omissions, first-party hiding, aliases or unrelated map drift", () => {
+    const { map, options } = ignoreFixture();
+    const companion = { ...map, ignoreList: [1] };
+    for (const witness of ["missing", "partial"]) {
+      const fixture = ignoreFixture(witness);
+      expect(() => validateViteSourceMapPair(fixture.map, { ...fixture.map, ignoreList: [1] }, fixture.options)).toThrow(/callback/u);
+    }
+    expect(() => validateViteSourceMapPair(map, map, options)).toThrow(/omitted native ignore/u);
+    for (const indexes of [[], [0], [0, 1], [1, 1], [2], [-1]]) {
+      expect(() => validateViteSourceMapPair(map, { ...map, ignoreList: indexes }, options)).toThrow();
+      expect(() => validateViteSourceMapPair({ ...map, x_google_ignoreList: indexes }, companion, options)).toThrow();
+    }
+    expect(() => validateViteSourceMapPair(map, { ...companion, x_google_ignoreList: [0] }, options)).toThrow();
+    for (const mutation of [{ names: ["extra"] }, { mappings: "AAAA,CCAA" }, { sourceRoot: "" }, { file: "foreign.js" }, { extra: "unknown" }]) {
+      expect(() => validateViteSourceMapPair(map, { ...companion, ...mutation }, options)).toThrow();
+    }
+    expect(() => validateViteSourceMapPair({ ...map, ignoreList: [0] }, companion, options)).toThrow();
+    for (const bundlerMeta of [null, {}, { rollupVersion: "4.63.1", viteVersion: "7.3.6" },
+      { rolldownVersion: "1.2.8", viteVersion: "8.2.1" }, { rolldownVersion: "1.2.7", viteVersion: "8.2.2" }]) {
+      expect(() => validateViteSourceMapPair(map, companion, { ...options, bundlerMeta })).toThrow(/companion differs/u);
+    }
+    expect(() => validateViteSourceMapPair(map, { ...map, x_google_ignoreList: [1] }, options)).toThrow(/companion differs/u);
+  });
+
+  test("all-false native ignore decisions still require exact source and chunk coverage", () => {
+    const item = fixture();
+    const mapPath = `${item.stagingDirectory}/${item.chunkPath}.map`;
+    expect(item.paths.ignore("../../../../../../../src/entry.ts", mapPath)).toBe(false);
+    const options = { ...item, code: content, bundlerMeta: { rolldownVersion: "1.2.7", viteVersion: "8.2.1" } };
+    expect(validateViteSourceMapPair(item.map, item.map, options)).toBe(canonicalJson(item.map));
+    expect(validateViteSourceMapPair(item.map, { ...item.map, ignoreList: [] }, options)).toBe(canonicalJson({ ...item.map, ignoreList: [] }));
+    expect(() => item.paths.ignoredIndexes("assets/foreign.js.map", ["src/entry.ts"])).toThrow(/not observed/u);
+    expect(() => item.paths.ignoredIndexes(`${item.chunkPath}.map`, [])).toThrow(/census/u);
+  });
+
+  test("authentic empty chunks need no callbacks but erased or unobserved rendered sources still fail", () => {
+    const paths = createViteSourceMapPaths({ rootDirectory: "/project", stagingDirectory: "/project/staging",
+      publishedDirectory: "/project/published", inputIdentity: () => sourceIdentity });
+    const map = { version: 3, file: "empty.js", sources: [], sourcesContent: [], names: [], mappings: "" };
+    const options = { chunkPath: "empty.js", code: "", paths, bundlerMeta: { rolldownVersion: "1.2.7", viteVersion: "8.2.1" } };
+    expect(validateViteSourceMapPair(map, map, options)).toBe(canonicalJson(map));
+    expect(() => validateViteSourceMapPair(map, map, { ...options, requiredSources: ["src/entry.ts"] })).toThrow(/rendered/u);
+    paths.transform("../src/entry.ts", "/project/staging/empty.js.map");
+    expect(() => validateViteSourceMapPair(map, map, options)).toThrow(/omitted/u);
+    expect(() => paths.ignoredIndexes("empty.js.map", [])).toThrow(/not observed/u);
+    paths.ignore("../src/entry.ts", "/project/staging/empty.js.map");
+    expect(() => paths.ignoredIndexes("empty.js.map", [])).toThrow(/census/u);
   });
 
   test("rejects outside, unobserved, encoded and URL sources and foreign map output", () => {

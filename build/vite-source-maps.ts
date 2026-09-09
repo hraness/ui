@@ -43,12 +43,28 @@ export function createViteSourceMapPaths(options: Readonly<{
 }>) {
   below(options.rootDirectory, options.publishedDirectory, "Vite source-map publication directory");
   const witnessed = new Map<string, Set<string>>();
-  const transform = (sourcePath: string, mapPath: string): string => {
+  const ignoreDecisions = new Map<string, Map<string, boolean>>();
+  const nativeSource = (sourcePath: string, mapPath: string) => {
     const outputPath = below(options.stagingDirectory, resolve(mapPath), "Vite source-map staging path");
     assert.ok(/\.[cm]?js\.map$/u.test(outputPath), "Vite source maps require JavaScript chunk companions");
     const absolute = resolve(dirname(mapPath), relativePath(sourcePath, "Vite native map source"));
     const logical = below(options.rootDirectory, absolute, "Vite source-map input");
     assert.ok(options.inputIdentity(logical) !== undefined, `Vite source-map input lacks a loaded-file witness: ${logical}`);
+    return { outputPath, absolute, logical };
+  };
+  const ignore = (sourcePath: string, mapPath: string): boolean => {
+    const { outputPath, logical } = nativeSource(sourcePath, mapPath);
+    // Preserve the native dependency default at its original callback coordinate,
+    // before the publication path projection or Vite's lazy-import map rewrite.
+    const decision = sourcePath.includes("node_modules");
+    const decisions = ignoreDecisions.get(outputPath) ?? new Map<string, boolean>();
+    if (decisions.has(logical)) assert.equal(decisions.get(logical), decision, "Vite source-map ignore decision changed");
+    decisions.set(logical, decision);
+    ignoreDecisions.set(outputPath, decisions);
+    return decision;
+  };
+  const transform = (sourcePath: string, mapPath: string): string => {
+    const { outputPath, absolute, logical } = nativeSource(sourcePath, mapPath);
     const sources = witnessed.get(outputPath) ?? new Set<string>();
     sources.add(logical);
     witnessed.set(outputPath, sources);
@@ -70,7 +86,16 @@ export function createViteSourceMapPaths(options: Readonly<{
     assert.deepEqual([...logicalSources].sort(), [...(witnessed.get(projectionMapPath) ?? [])].sort(),
       "Vite source map omitted or introduced native chunk sources");
   };
-  return { assertComplete, source, transform };
+  const ignoredIndexes = (projectionMapPath: string, logicalSources: readonly string[]): readonly number[] => {
+    const decisions = ignoreDecisions.get(projectionMapPath);
+    // Native empty chunks have no sources and therefore invoke neither hook.
+    // An erased nonempty map still has path/decision witnesses and fails below.
+    if (decisions === undefined && logicalSources.length === 0 && !witnessed.has(projectionMapPath)) return [];
+    assert.ok(decisions !== undefined, "Vite source-map ignore callback was not observed");
+    assert.deepEqual([...decisions.keys()].sort(), [...logicalSources].sort(), "Vite source-map ignore callback census is incomplete");
+    return logicalSources.flatMap((logical, index) => decisions.get(logical) === true ? [index] : []);
+  };
+  return { assertComplete, ignoredIndexes, ignore, source, transform };
 }
 
 type MapPaths = ReturnType<typeof createViteSourceMapPaths>;
@@ -190,4 +215,35 @@ export function validateViteSourceMap(value: unknown, options: Readonly<{
   }
   validateMappings(record.mappings as string, record.names as string[], sources, options.code);
   return canonicalJson(record);
+}
+
+/** Vite's lazy-import rewrite serializes the full standardized ignoreList, but
+ * Rolldown 1.2.7 drops that field when binding the rewritten chunk.map. Join
+ * only that observed loss to complete native callback evidence. Never rewrite
+ * the emitted companion or relax equality of any other map field. */
+export function validateViteSourceMapPair(nativeValue: unknown, companionValue: unknown,
+  options: Parameters<typeof validateViteSourceMap>[1] & Readonly<{ bundlerMeta: unknown }>): string {
+  const nativeIdentity = validateViteSourceMap(nativeValue, options);
+  const companionIdentity = validateViteSourceMap(companionValue, options);
+  const native = JSON.parse(nativeIdentity) as Record<string, unknown>;
+  const companion = JSON.parse(companionIdentity) as Record<string, unknown>;
+  const logicalSources = (companion.sources as string[]).map((source) => options.paths.source(`${options.chunkPath}.map`, source,
+    `${options.projectionChunkPath ?? options.chunkPath}.map`).logical);
+  const expected = options.paths.ignoredIndexes(`${options.projectionChunkPath ?? options.chunkPath}.map`, logicalSources);
+  for (const map of [native, companion]) {
+    for (const key of ["ignoreList", "x_google_ignoreList"]) {
+      if (Object.hasOwn(map, key)) assert.deepEqual(map[key], expected, "Vite source-map ignore list differs from native callback decisions");
+    }
+  }
+  assert.ok(expected.length === 0 || Object.hasOwn(companion, "ignoreList") || Object.hasOwn(companion, "x_google_ignoreList"),
+    "Vite source-map companion omitted native ignore decisions");
+  if (nativeIdentity === companionIdentity) return companionIdentity;
+  const meta = options.bundlerMeta;
+  assert.ok(typeof meta === "object" && meta !== null && "rolldownVersion" in meta && meta.rolldownVersion === "1.2.7"
+    && "viteVersion" in meta && meta.viteVersion === "8.2.1"
+    && !Object.hasOwn(native, "ignoreList") && Object.hasOwn(companion, "ignoreList"),
+  "Vite source-map companion differs from the native chunk map");
+  assert.equal(canonicalJson({ ...native, ignoreList: companion.ignoreList }), companionIdentity,
+    "Vite source-map companion differs beyond the witnessed native ignore-list loss");
+  return companionIdentity;
 }
