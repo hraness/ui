@@ -9,6 +9,8 @@ import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import { runViteBrowserWorker } from "../fixtures/vite8-adopter/browser-control.ts";
 
 const VITE_VERSIONS = ["7.3.6", "8.2.1"] as const;
+const SOURCE_MAP_PROFILES = ["disabled", "external"] as const;
+type SourceMapProfile = (typeof SOURCE_MAP_PROFILES)[number];
 const PINNED = {
   "@babel/core": "7.29.7",
   "@types/babel__core": "7.20.5",
@@ -73,21 +75,35 @@ type MatrixReceipt = Readonly<{
   graphReceipts: readonly Readonly<{ id: string; inputs: number; outputs: number; rules: number }>[];
   externalImports: readonly string[];
   negatives: readonly string[];
+  sourceMaps: SourceMapProfile;
+  mappedSources: readonly string[];
   vite: string;
 }>;
 
-function parseReceipt(value: unknown, expectedVersion: string): MatrixReceipt {
+function parseReceipt(value: unknown, expectedVersion: string, profile: SourceMapProfile): MatrixReceipt {
   assert.ok(typeof value === "object" && value !== null && !Array.isArray(value));
   const record = value as Record<string, unknown>;
-  assert.deepEqual(Object.keys(record).sort(), ["clientHrefs", "externalImports", "finalDirectory", "foundationHref", "graphReceipts", "negatives", "vite"]);
+  assert.deepEqual(Object.keys(record).sort(), ["clientHrefs", "externalImports", "finalDirectory", "foundationHref", "graphReceipts", "mappedSources", "negatives", "sourceMaps", "vite"]);
   assert.equal(record.vite, expectedVersion);
-  assert.equal(record.finalDirectory, "output/vite-production-matrix");
+  assert.equal(record.sourceMaps, profile);
+  assert.equal(record.finalDirectory, profile === "external" ? "output/vite-production-maps" : "output/vite-production-matrix");
+  assert.ok(Array.isArray(record.mappedSources));
+  assert.deepEqual(record.mappedSources, [...new Set(record.mappedSources)].sort());
+  for (const path of record.mappedSources) {
+    assert.ok(typeof path === "string" && /^(?:src|node_modules)\/[A-Za-z0-9_@.\/-]+$/u.test(path));
+    assert.ok(path.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".."));
+  }
+  if (profile === "external") {
+    for (const source of ["src/client.ts", "src/secondary.ts", "src/lazy.ts", "src/server.ts", "src/view.ts"]) {
+      assert.ok(record.mappedSources.includes(source), `Missing packed map source ${source}`);
+    }
+  } else assert.deepEqual(record.mappedSources, []);
   assert.ok(typeof record.foundationHref === "string" && /^\/graphs\/client\/[A-Za-z0-9_.\/-]+\.css$/u.test(record.foundationHref));
   assert.ok(Array.isArray(record.clientHrefs) && record.clientHrefs.length === 3);
   for (const href of record.clientHrefs) assert.ok(typeof href === "string" && /^\/graphs\/client\/[A-Za-z0-9_.\/-]+\.[cm]?js$/u.test(href));
   assert.equal(new Set(record.clientHrefs).size, 3);
   assert.deepEqual(record.externalImports, ["node:assert/strict", "node:fs/promises", "react", "react-dom/server"]);
-  assert.deepEqual(record.negatives, [
+  assert.deepEqual(record.negatives, profile === "external" ? ["mapped-missing-companion", "mapped-late-bytes"] : [
     "map-true", "map-hidden", "map-inline",
     "rollupoptions-input", "rollupoptions-output", "rollupoptions-external",
     "rolldownoptions-input", "rolldownoptions-output", "rolldownoptions-external",
@@ -105,7 +121,7 @@ function parseReceipt(value: unknown, expectedVersion: string): MatrixReceipt {
   return record as MatrixReceipt;
 }
 
-async function verifyBrowser(directory: string, receipt: MatrixReceipt, node: string, consumer: string): Promise<unknown> {
+async function verifyBrowser(directory: string, receipt: MatrixReceipt, node: string, browserEvidence: string): Promise<unknown> {
   custody.check();
   const knownFiles = new Set(await filesBelow(directory));
   const requests = new Set<string>();
@@ -133,7 +149,7 @@ async function verifyBrowser(directory: string, receipt: MatrixReceipt, node: st
     const result = await runViteBrowserWorker(node, {
       schemaVersion: 1, mode: "acceptance", executablePath,
       origin: `http://127.0.0.1:${String(server.port)}`, foundationHref: receipt.foundationHref,
-    }, consumer, custody);
+    }, browserEvidence, custody);
     for (const path of ["/", receipt.foundationHref, "/stylex.css", ...receipt.clientHrefs]) {
       assert.ok(requests.has(path), `Browser did not request ${path}`);
     }
@@ -197,15 +213,23 @@ try {
       }, files: ["type-contract.ts"] })}\n`);
       await run([node, "./node_modules/typescript/bin/tsc", "-p", config], consumer, environment);
     }
-    await run([node, "./build.mjs", version], consumer, environment);
-    const receipt = parseReceipt(JSON.parse(await readFile(join(consumer, "matrix-receipt.json"), "utf8")), version);
-    const finalDirectory = join(consumer, receipt.finalDirectory);
-    const outputs = await directoryIdentity(finalDirectory);
-    const browser = await verifyBrowser(finalDirectory, receipt, node, consumer);
-    assert.deepEqual(await directoryIdentity(finalDirectory), outputs, "Matrix delivery changed during browser validation");
-    const result = { archiveSha256: archiveHash, lockSha256: lockHash, receipt, outputs, browser };
-    results.push(result);
-    console.log(JSON.stringify(result));
+    for (const profile of SOURCE_MAP_PROFILES) {
+      await run([node, "./build.mjs", version, profile], consumer, environment);
+      const receipt = parseReceipt(JSON.parse(await readFile(join(consumer, `matrix-receipt-${profile}.json`), "utf8")), version, profile);
+      const finalDirectory = join(consumer, receipt.finalDirectory);
+      const outputs = await directoryIdentity(finalDirectory);
+      const browserEvidence = join(consumer, `browser-${profile}`);
+      await mkdir(browserEvidence, { mode: 0o700 });
+      assert.equal(await realpath(browserEvidence), browserEvidence);
+      assert.ok((await lstat(browserEvidence)).isDirectory());
+      const browser = await verifyBrowser(finalDirectory, receipt, node, browserEvidence);
+      assert.deepEqual(await directoryIdentity(finalDirectory), outputs, "Matrix delivery changed during browser validation");
+      assert.equal(createHash("sha256").update(await readFile(archive)).digest("hex"), archiveHash, "Packed archive changed between profiles");
+      assert.equal(createHash("sha256").update(await readFile(join(consumer, "bun.lock"))).digest("hex"), lockHash, "Consumer lock changed between profiles");
+      const result = { archiveSha256: archiveHash, lockSha256: lockHash, receipt, outputs, browser };
+      results.push(result);
+      console.log(JSON.stringify(result));
+    }
   }
   await custody.close();
   custody.check();

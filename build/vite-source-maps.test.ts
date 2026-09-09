@@ -62,6 +62,50 @@ describe("Vite external source-map contract", () => {
     expect(() => validateViteSourceMap(item.map, { ...item, code: content, requiredSources: ["src/absent.ts"] })).toThrow(/omits rendered/u);
   });
 
+  test("normalizes only Vite's native lazy-map method and absent optional JSON fields", () => {
+    const item = fixture();
+    class NativeComposedMap {
+      sourceRoot = undefined;
+      toString() { return JSON.stringify(this); }
+    }
+    let calls = 0;
+    const native = Object.assign(new NativeComposedMap(), item.map, {
+      ignoreList: [0],
+      toUrl: () => { calls += 1; throw new Error("native method must not be invoked"); },
+    });
+    const serialized: unknown = JSON.parse(JSON.stringify(native));
+    expect(validateViteSourceMap(native, { ...item, code: content })).toBe(canonicalJson(serialized));
+    expect(validateViteSourceMap(serialized, { ...item, code: content })).toBe(canonicalJson(serialized));
+    expect(calls).toBe(0);
+    expect(Object.hasOwn(native, "toUrl")).toBe(true);
+    expect(Object.hasOwn(native, "sourceRoot")).toBe(true);
+    expect(native.sourcesContent).toEqual([content]);
+    expect(native.mappings).toBe(item.map.mappings);
+    for (const key of ["sourceRoot", "ignoreList", "x_google_ignoreList"]) {
+      expect(validateViteSourceMap({ ...item.map, [key]: undefined }, { ...item, code: content }))
+        .toBe(canonicalJson(item.map));
+    }
+  });
+
+  test("does not normalize unknown keys, malformed native methods or executable map data", () => {
+    const item = fixture();
+    for (const mutation of [
+      { toUrl: "private payload" }, { toUrl: undefined }, { toUrl: null }, { toUrl: {} },
+      { extra: undefined }, { extra: () => "private payload" }, { toJSON: () => item.map },
+      { debugId: "unsupported" }, { [Symbol("unsupported")]: undefined },
+    ]) expect(() => validateViteSourceMap({ ...item.map, ...mutation }, { ...item, code: content })).toThrow();
+    let getterCalls = 0;
+    for (const key of ["sources", "sourceRoot", "toUrl"]) {
+      const map = { ...item.map };
+      Object.defineProperty(map, key, { enumerable: true, get: () => { getterCalls += 1; return undefined; } });
+      expect(() => validateViteSourceMap(map, { ...item, code: content })).toThrow(/data properties/u);
+    }
+    expect(getterCalls).toBe(0);
+    const hidden = { ...item.map };
+    Object.defineProperty(hidden, "sources", { enumerable: false, value: item.map.sources });
+    expect(() => validateViteSourceMap(hidden, { ...item, code: content })).toThrow(/data properties/u);
+  });
+
   test("rejects incomplete, foreign, malformed and content-drift maps", () => {
     const item = fixture();
     for (const mutation of [

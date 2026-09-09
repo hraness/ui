@@ -124,10 +124,24 @@ export function validateViteSourceMap(value: unknown, options: Readonly<{
   paths: MapPaths;
 }>): string {
   assert.ok(typeof value === "object" && value !== null && !Array.isArray(value), "Vite source map must be an object");
-  const record = value as Record<string, unknown>;
   const required = ["version", "file", "sources", "sourcesContent", "names", "mappings"];
   const optional = ["sourceRoot", "ignoreList", "x_google_ignoreList"];
-  assert.ok(Object.keys(record).every((key) => required.includes(key) || optional.includes(key)), "Vite source map has unknown fields");
+  const record: Record<string, unknown> = {};
+  for (const key of Reflect.ownKeys(value)) {
+    assert.ok(typeof key === "string" && (required.includes(key) || optional.includes(key) || key === "toUrl"),
+      "Vite source map has unknown fields");
+    const field: PropertyDescriptor = Object.getOwnPropertyDescriptor(value, key)!;
+    assert.ok(field.enumerable && Object.hasOwn(field, "value"), "Vite source-map fields must be enumerable data properties");
+    // Vite 7's lazy-import rewrite adds an own toUrl function to its native
+    // composed map. Its SourceMap also owns undefined optional fields. Native
+    // JSON.stringify omits both; do the same without invoking native methods or
+    // dropping any unknown or defined map data from the validated identity.
+    if (key === "toUrl") {
+      assert.equal(typeof field.value, "function", "Vite native source-map toUrl must be a function");
+    } else if (field.value !== undefined || required.includes(key)) {
+      record[key] = field.value;
+    }
+  }
   assert.ok(required.every((key) => Object.hasOwn(record, key)), "Vite source map is incomplete");
   assert.equal(record.version, 3, "Vite source-map version must be 3");
   assert.equal(record.file, basename(options.chunkPath), "Vite source map belongs to another chunk");
@@ -159,5 +173,5 @@ export function validateViteSourceMap(value: unknown, options: Readonly<{
       && new Set(indexes).size === indexes.length, "Vite source-map ignore list is invalid");
   }
   validateMappings(record.mappings as string, record.names as string[], sources, options.code);
-  return canonicalJson({ ...record });
+  return canonicalJson(record);
 }
