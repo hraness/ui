@@ -752,7 +752,7 @@ describe("StyleX Next generation", () => {
     );
   }, 30_000);
 
-  for (const entrypoint of ["app/page", "proxy"] as const) test(`seals ${entrypoint} final observations without rebinding initial graphs or completion evidence`, async () => {
+  async function prepareAuxiliaryCompletionFixture(entrypoint: "app/page" | "proxy") {
     const context = await createFixture();
     const proxy = entrypoint === "proxy";
     const nodeSource = proxy ? "proxy.ts" : "src/app.tsx";
@@ -853,6 +853,11 @@ describe("StyleX Next generation", () => {
       assert.equal(await readFile(graphPath, "utf8"), graphSources.get(mode));
     }
 
+    return { context, proxy, attempt, tracePath, finalTracePath, initial, final, finalSource, changedSource, auxiliary, graphSources };
+  }
+
+  for (const entrypoint of ["app/page", "proxy"] as const) test(`seals ${entrypoint} final observations without rebinding initial graphs or completion evidence`, async () => {
+    const { context, proxy, attempt, tracePath, finalTracePath, initial, final, finalSource, changedSource, auxiliary, graphSources } = await prepareAuxiliaryCompletionFixture(entrypoint);
     const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
     const discoverySeal = await readFile(discoverySealPath, "utf8");
     const nodeGraph = await readStylexNextGraphReceipt(attempt, "discovery", "node-rsc");
@@ -892,24 +897,6 @@ describe("StyleX Next generation", () => {
       await writeFile(trace, finalSource);
     }
 
-    if (proxy) {
-      for (const mode of ["discovery", "delivery"] as const) {
-        const outputRoot = mode === "discovery" ? join(attempt.directory, "next-discovery") : join(context.root, ".next");
-        for (const path of ["server/middleware.js", "server/proxy.js.map"]) {
-          const absolute = join(outputRoot, path);
-          const before = await readFile(absolute);
-          await assert.rejects(completeStylexNextBuild(attempt, context.root, async () => { await writeFile(absolute, Buffer.concat([before, Buffer.from("\n")])); }), /changed JavaScript|changed its original map/u);
-          await assert.rejects(readFile(completePath), /ENOENT/u);
-          await writeFile(absolute, before);
-        }
-        for (const path of ["server/proxy.js", "server/proxy.js.nft.json"]) {
-          await assert.rejects(completeStylexNextBuild(attempt, context.root, async () => { await writeFile(join(outputRoot, path), "late"); }), /original path must be absent/u);
-          await assert.rejects(readFile(completePath), /ENOENT/u);
-          await unlink(join(outputRoot, path));
-        }
-      }
-    }
-
     const complete = await completeStylexNextBuild(attempt, context.root);
     assert.equal(complete.state, "complete");
     for (const mode of ["discovery", "delivery"] as const) {
@@ -924,6 +911,48 @@ describe("StyleX Next generation", () => {
     }
     assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
   });
+
+  // Each late mutation owns a fresh complete fixture and the default test deadline.
+  // Combining all eight full completion transactions hides the failing case and
+  // lets a timed-out test race its fixture cleanup while later transactions run.
+  for (const mode of ["discovery", "delivery"] as const) {
+    for (const [path, expected] of [
+      ["server/middleware.js", /changed JavaScript/u],
+      ["server/proxy.js.map", /changed its original map/u],
+      ["server/proxy.js", /original path must be absent/u],
+      ["server/proxy.js.nft.json", /original path must be absent/u],
+    ] as const) test(`rejects late proxy ${mode} ${path} drift before completion`, async () => {
+      const { context, attempt, graphSources } = await prepareAuxiliaryCompletionFixture("proxy");
+      const outputRoot = mode === "discovery" ? join(attempt.directory, "next-discovery") : join(context.root, ".next");
+      const absolute = join(outputRoot, path);
+      const originallyAbsent = path === "server/proxy.js" || path === "server/proxy.js.nft.json";
+      const before = originallyAbsent ? undefined : await readFile(absolute);
+      const completePath = join(attempt.directory, "complete.json");
+      const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
+      const discoverySeal = await readFile(discoverySealPath, "utf8");
+      let callbackReached = false;
+      await assert.rejects(completeStylexNextBuild(attempt, context.root, async () => {
+        callbackReached = true;
+        await writeFile(absolute, before ? Buffer.concat([before, Buffer.from("\n")]) : "late");
+      }), expected);
+      assert.equal(callbackReached, true);
+      await assert.rejects(readFile(completePath), /ENOENT/u);
+      assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
+      const deliverySealPath = join(attempt.directory, "delivery/postprocessing.json");
+      const deliverySeal = await readFile(deliverySealPath, "utf8");
+      if (before) await writeFile(absolute, before);
+      else await unlink(absolute);
+      const complete = await completeStylexNextBuild(attempt, context.root);
+      assert.equal(complete.state, "complete");
+      assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
+      assert.equal(await readFile(deliverySealPath, "utf8"), deliverySeal);
+      for (const phase of ["discovery", "delivery"] as const) {
+        const graphSource = graphSources.get(phase)!;
+        assert.equal(await readFile(join(attempt.directory, phase, "node-rsc/graph.json"), "utf8"), graphSource);
+        assert.equal(complete[phase].find(({ target }) => target === "node-rsc")!.receiptSha256, sha256(graphSource));
+      }
+    });
+  }
 
   test("stops delivery when a transformed module changes between passes", async () => {
     const context = await createFixture();
