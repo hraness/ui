@@ -548,7 +548,9 @@ function assertOwnedOutputDirectory(
     file?: string | undefined;
     sourcemap?: boolean | "hidden" | "inline" | undefined;
     sourcemapPathTransform?: ((sourcePath: string, mapPath: string) => string) | undefined;
-    sourcemapIgnoreList?: boolean | ((sourcePath: string, mapPath: string) => boolean) | undefined;
+    // Rollup and Rolldown expose different option unions. This is a foreign
+    // value until the exact adapter-owned callback identity is checked below.
+    sourcemapIgnoreList?: unknown;
   }>,
   outputDirectory: string,
   mapPaths?: ReturnType<typeof createViteSourceMapPaths>,

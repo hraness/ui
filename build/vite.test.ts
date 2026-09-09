@@ -332,6 +332,29 @@ describe("stylexVite external source maps (native)", () => {
     }
   });
 
+  test("rejects every foreign ignore-list shape at the native output boundary", async () => {
+    const foreignValues: readonly unknown[] = [
+      "node_modules", /node_modules/u, ["node_modules", /vendor/u],
+      false, undefined, null, 0, () => false,
+    ];
+    for (const foreignValue of foreignValues) {
+      const context = await fixture();
+      const entry = join(context.root, "src/entry.ts");
+      await write(entry, "globalThis.fixture = 42;\n");
+      const graph = graphExpectation(context, "foreign-ignore-list", "client", [entry]);
+      const generationValue = await generation(context, graph);
+      await expect(viteBuild({ configFile: false, logLevel: "silent",
+        plugins: [stylexVite({ generation: generationValue, graphId: graph.id, rootDirectory: context.root, sourceMaps: "external" }), {
+          name: "foreign-ignore-list",
+          generateBundle: { order: "pre", handler(output) {
+            Object.assign(output, { sourcemapIgnoreList: foreignValue });
+          } },
+        }],
+      })).rejects.toThrow("Vite source-map ignore callback was replaced");
+      expect(await receiptExists(generationValue, graph.id)).toBe(false);
+    }
+  });
+
   test("rejects mutated maps, missing companions and late native path overrides", async () => {
     for (const mutation of ["map-bytes", "map-linkage", "missing", "path-projection", "ignore-callback", "chunk-projection", "erase-mappings", "empty-sources", "duplicate-json"] as const) {
       const context = await fixture();
