@@ -107,6 +107,38 @@ assert.match(foundationCss, /--ui-background/u);
 assert.doesNotMatch(foundationCss, /@layer\s+components\.hraness-ui\.priority/u);
 const mappedSources = new Set();
 const companions = new Set();
+// Receipts use private staging roots; final publication uses this exact graph
+// projection. Bind the complete map artifact to one output, then its own inputs.
+function assertPublishedMapInput(graphs, artifact, logical) {
+  const matches = graphs.flatMap((graph) => graph.outputs
+    .filter((output) => artifact.path === `graphs/${graph.graphId}/${output.path}`)
+    .map((output) => ({ graph, output })));
+  assert.equal(matches.length, 1, `Published map must identify one graph output: ${artifact.path}`);
+  const { graph, output } = matches[0];
+  assert.deepEqual({ bytes: artifact.bytes, sha256: artifact.sha256 }, { bytes: output.bytes, sha256: output.sha256 },
+    `Published map differs from its graph output: ${artifact.path}`);
+  assert.ok(graph.inputs.some((input) => input.path === logical), `Map source was not a loaded graph input: ${logical}`);
+  return graph.graphId;
+}
+function verifyPublishedMapInputControls() {
+  const output = { path: "assets/client.js.map", bytes: 123, sha256: "a".repeat(64) };
+  const client = { graphId: "client", outputRoot: ".stylex-generation/graphs/client/output", outputs: [output], inputs: [{ path: "src/client.ts" }] };
+  const server = { graphId: "ssr", outputRoot: ".stylex-generation/graphs/ssr/output", outputs: [output], inputs: [{ path: "src/server.ts" }] };
+  const artifact = { ...output, path: "graphs/client/assets/client.js.map" };
+  assert.equal(assertPublishedMapInput([client, server], artifact, "src/client.ts"), "client");
+  assert.equal(assertPublishedMapInput([client, server], { ...artifact, path: "graphs/ssr/assets/client.js.map" }, "src/server.ts"), "ssr");
+  assert.throws(() => assertPublishedMapInput([client, server], artifact, "src/server.ts"), /not a loaded graph input/u);
+  assert.throws(() => assertPublishedMapInput([client, server], artifact, "src/missing.ts"), /not a loaded graph input/u);
+  assert.throws(() => assertPublishedMapInput([server], artifact, "src/client.ts"), /one graph output/u);
+  assert.throws(() => assertPublishedMapInput([{ ...client, outputs: [] }], artifact, "src/client.ts"), /one graph output/u);
+  assert.throws(() => assertPublishedMapInput([client, client], artifact, "src/client.ts"), /one graph output/u);
+  assert.throws(() => assertPublishedMapInput([{ ...client, outputs: [output, output] }], artifact, "src/client.ts"), /one graph output/u);
+  for (const path of ["graphs/client-extra/assets/client.js.map", ".stylex-generation/graphs/client/output/assets/client.js.map"])
+    assert.throws(() => assertPublishedMapInput([client, server], { ...artifact, path }, "src/client.ts"), /one graph output/u);
+  assert.throws(() => assertPublishedMapInput([client], { ...artifact, bytes: 124 }, "src/client.ts"), /differs from its graph output/u);
+  assert.throws(() => assertPublishedMapInput([client], { ...artifact, sha256: "b".repeat(64) }, "src/client.ts"), /differs from its graph output/u);
+}
+verifyPublishedMapInputControls();
 for (const artifact of [...complete.artifacts, complete.finalCss]) {
   assert.deepEqual(await artifactForFile(finalDirectory, artifact.path), artifact);
   if (sourceMaps === "disabled") assert.ok(!artifact.path.endsWith(".map"));
@@ -135,8 +167,7 @@ for (const artifact of [...complete.artifacts, complete.finalCss]) {
         assert.ok(logical !== ".." && !logical.startsWith("../") && !isAbsolute(logical));
         assert.equal(await realpath(physical), physical);
         assert.equal(map.sourcesContent[index], await readFile(physical, "utf8"));
-        const graph = receipts.find((receipt) => path.startsWith(`${receipt.outputRoot}/`));
-        assert.ok(graph?.inputs.some((input) => input.path === logical), `Map source was not a loaded graph input: ${logical}`);
+        assertPublishedMapInput(receipts, companion, logical);
         mappedSources.add(logical);
       }
     }
