@@ -97,6 +97,9 @@ test("captures unopened server/lazy sources and one complete package union befor
   expect(snapshot.css).not.toContain(options.rootDirectory);
   expect(Object.isFrozen(snapshot)).toBeTrue();
   expect(Object.isFrozen(snapshot.sources[0]?.map)).toBeTrue();
+  expect(snapshot.stylesheets).toEqual([{ path: "node_modules/@fixture/ui/src/compiler-foundation.css",
+    sha256: sha256("@layer base{body{margin:0}}\n"), source: "@layer base{body{margin:0}}\n" }]);
+  expect(Object.isFrozen(snapshot.stylesheets[0])).toBeTrue();
   expect((await session.prepare()).snapshot).toBe(snapshot);
 });
 
@@ -148,6 +151,50 @@ test("development uses the complete multi-package union before and during an ato
     await write(stylesheet, source);
     await expect(auditNextDevCss(await session.prepare(), stylesheet, source)).rejects.toThrow();
   }
+});
+
+test("chained and same-revision retained unions preserve complete coverage until explicit pruning", async () => {
+  const options = await fixture();
+  const session = createNextDevSession(options);
+  const first = requireNextDevSnapshot(await session.prepare());
+  await write(join(options.rootDirectory, "app/page.tsx"), recipe(39.375));
+  const second = requireNextDevSnapshot(await session.prepare());
+  const firstTransition = composeNextDevSnapshot(second, [first]);
+  expect(composeNextDevSnapshot(second, [firstTransition]).css).toBe(firstTransition.css);
+  await write(join(options.rootDirectory, "app/page.tsx"), recipe(40.375));
+  const third = requireNextDevSnapshot(await session.prepare());
+  const transition = composeNextDevSnapshot(third, [firstTransition]);
+  expect(transition.includedRevisions).toEqual([first.revision, second.revision, third.revision].sort());
+  for (const value of ["38.375px", "39.375px", "40.375px"]) expect(transition.css).toContain(value);
+  // Duplicate source identities must not discard the wider union. All input
+  // permutations and duplicate retained entries serialize identically.
+  for (const retained of [[firstTransition, second], [second, firstTransition], [firstTransition, firstTransition]]) {
+    expect(composeNextDevSnapshot(third, retained)).toEqual(transition);
+  }
+  const pruned = composeNextDevSnapshot(third, []);
+  expect(pruned.includedRevisions).toEqual([third.revision]);
+  expect(pruned.css).not.toContain("38.375px");
+  expect(pruned.css).not.toContain("39.375px");
+  expect(pruned.css).toContain("40.375px");
+  const overLimit = Array.from({ length: 33 }, (_, index) => sha256(`captured-revision-${index}`)).sort();
+  expect(() => composeNextDevSnapshot(third, [{ ...firstTransition, includedRevisions: overLimit }])).toThrow("finite revision bound");
+});
+
+test("captured foundation bytes remain immutable and a changed foundation cannot enter a retained union", async () => {
+  const options = await fixture();
+  const session = createNextDevSession(options);
+  const first = requireNextDevSnapshot(await session.prepare());
+  const path = "node_modules/@fixture/ui/src/compiler-foundation.css";
+  const source = "@layer base{body{margin:1px}}\n";
+  await write(join(options.rootDirectory, path), source);
+  const manifestPath = join(options.rootDirectory, options.packageManifests[0]!);
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as StylexPackageManifestV1;
+  await write(manifestPath, `${canonicalJson({ ...manifest, stylesheets: [artifact("src/compiler-foundation.css", source)] })}\n`);
+  const second = requireNextDevSnapshot(await session.prepare());
+  expect(first.stylesheets[0]?.source).toBe("@layer base{body{margin:0}}\n");
+  expect(second.stylesheets[0]).toEqual({ path, source, sha256: sha256(source) });
+  expect(() => composeNextDevSnapshot(second, [first])).toThrow("foundations changed; restart next dev");
+  expect(composeNextDevSnapshot(second, []).stylesheets).toEqual(second.stylesheets);
 });
 
 test("development rejects cross-package rule conflicts and foundation recipe contamination", async () => {

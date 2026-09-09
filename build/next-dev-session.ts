@@ -19,6 +19,7 @@ import {
   type StylexSourceMapV1,
 } from "./compiler.js";
 import type { StylexPackageManifestV1, StylexRuleV1 } from "./contracts.js";
+import type { NextDevCapturedCssInput } from "./next-dev-assets.js";
 
 export const STYLEX_NEXT_DEV_CSS_ENTRY = "/* @hraness/ui StyleX Next development stylesheet */\n";
 export const STYLEX_NEXT_DEV_CONTEXT = "@hraness/ui/stylex-next-dev/compilation-v1";
@@ -71,6 +72,7 @@ export type NextDevSnapshot = Readonly<{
   rootDirectory: string;
   rules: readonly StylexRuleV1[];
   sources: readonly NextDevSource[];
+  stylesheets: readonly NextDevCapturedCssInput[];
 }>;
 
 export type NextDevPreparation = Readonly<{
@@ -311,7 +313,9 @@ function renderSnapshotCss(
  * cannot represent both revisions, so that transition requires a dev restart.
  */
 export function composeNextDevSnapshot(candidate: NextDevSnapshot, retainedValue: readonly NextDevSnapshot[]): NextDevSnapshot {
-  const retained = [...new Map(retainedValue.filter((snapshot) => snapshot.revision !== candidate.revision).map((snapshot) => [snapshot.revision, snapshot] as const)).values()]
+  // Two sheets can share a source revision but have different union coverage.
+  // Only the caller's explicit empty retention set authorizes dropping either.
+  const retained = [...retainedValue]
     .sort((left, right) => left.revision < right.revision ? -1 : left.revision > right.revision ? 1 : 0);
   for (const snapshot of retained) {
     assert.equal(snapshot.rootDirectory, candidate.rootDirectory, "Next development transition snapshots must share one root");
@@ -319,6 +323,9 @@ export function composeNextDevSnapshot(candidate: NextDevSnapshot, retainedValue
     assert.deepEqual(snapshot.manifests.map(({ package: identity, standaloneSerializer }) => ({ identity, standaloneSerializer })),
       candidate.manifests.map(({ package: identity, standaloneSerializer }) => ({ identity, standaloneSerializer })),
       "Next development package identities or layer policies changed; restart next dev");
+    assert.deepEqual(snapshot.stylesheets.map(({ path, sha256 }) => ({ path, sha256 })),
+      candidate.stylesheets.map(({ path, sha256 }) => ({ path, sha256 })),
+      "Next development foundations changed; restart next dev");
   }
   const current = new Map(candidate.rules.map((rule) => [rule[0], rule]));
   const retainedOnly = new Map<string, StylexRuleV1>();
@@ -341,13 +348,15 @@ export function composeNextDevSnapshot(candidate: NextDevSnapshot, retainedValue
     `Next development cannot hot-update stable StyleX defineVars/createTheme declarations; restart next dev (changed rule keys: ${[...replacedRuleKeys].sort().join(", ")})`,
   );
   const rules = canonicalizeStylexRules([...retainedOnly.values(), ...candidate.rules]);
-  const includedRevisions = [...new Set([...retained.map(({ revision }) => revision), candidate.revision])].sort();
+  const includedRevisions = [...new Set([...retained.flatMap(({ includedRevisions }) => includedRevisions), ...candidate.includedRevisions])].sort();
+  assert.ok(includedRevisions.length <= 32, "Next development transition coverage exceeds its finite revision bound; restart next dev");
   const replaced = [...replacedRuleKeys].sort();
   return freeze({
     ...candidate,
     css: renderSnapshotCss(candidate.revision, includedRevisions, replaced, rules, candidate.foundations, candidate.manifests),
     includedRevisions,
     replacedRuleKeys: replaced,
+    rules,
   });
 }
 
@@ -376,6 +385,7 @@ export function createNextDevSession(input: StylexNextDevOptions): Readonly<{
       const manifests: StylexPackageManifestV1[] = [];
       const foundations: string[] = [];
       const packageInputs: { logicalPath: string; role: "runtime" | "stylesheet"; sha256: string }[] = [];
+      const stylesheets: NextDevCapturedCssInput[] = [];
       for (const path of options.packageManifests) {
         await recordAttempt(attempted, options.rootDirectory, resolve(options.rootDirectory, path), "Next development package manifest");
         const manifestPath = await ordinary(options.rootDirectory, path);
@@ -391,7 +401,13 @@ export function createNextDevSession(input: StylexNextDevOptions): Readonly<{
         assert.ok(!manifests.some((entry) => entry.package.name === manifest.package.name), "Next development package identities must be unique");
         manifests.push(manifest);
         for (const artifact of manifest.runtime) packageInputs.push({ logicalPath: nextDevLogicalPath(options.rootDirectory, resolve(packageRoot, artifact.path)), role: "runtime", sha256: artifact.sha256 });
-        for (const artifact of manifest.stylesheets) packageInputs.push({ logicalPath: nextDevLogicalPath(options.rootDirectory, resolve(packageRoot, artifact.path)), role: "stylesheet", sha256: artifact.sha256 });
+        for (const artifact of manifest.stylesheets) {
+          const logicalPath = nextDevLogicalPath(options.rootDirectory, resolve(packageRoot, artifact.path));
+          const source = await readSource(options.rootDirectory, logicalPath);
+          assert.equal(sha256(source), artifact.sha256, "Next development stylesheet changed while capturing its bytes");
+          packageInputs.push({ logicalPath, role: "stylesheet", sha256: artifact.sha256 });
+          stylesheets.push({ path: logicalPath, sha256: artifact.sha256, source });
+        }
         const foundation = await ordinary(options.rootDirectory, nextDevLogicalPath(options.rootDirectory, resolve(packageRoot, manifest.compilerFoundation)));
         foundations.push(relative(dirname(cssEntry), foundation).split(sep).join("/"));
       }
@@ -432,6 +448,7 @@ export function createNextDevSession(input: StylexNextDevOptions): Readonly<{
         rootDirectory: options.rootDirectory,
         rules,
         sources,
+        stylesheets: stylesheets.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0),
       });
       return result(null, lastGood);
     } catch (cause) {
