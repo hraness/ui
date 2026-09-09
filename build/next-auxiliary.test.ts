@@ -21,7 +21,7 @@ const source = '{"version":1,"files":["first.js"]}';
 const path = "server/app/page.js.nft.json";
 const initial = { bytes: Buffer.byteLength(source), path, sha256: sha256(source) };
 
-async function fixture(hardlinkedCreator = false) {
+async function fixture(hardlinkedCreator = false, entrypoint = "app/page") {
   const root = await realpath(await mkdtemp(join(tmpdir(), "ui-next-auxiliary-")));
   roots.push(root);
   const creatorPath = join(root, "node_modules/next", STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]);
@@ -32,14 +32,32 @@ async function fixture(hardlinkedCreator = false) {
   const creatorAlias = join(root, "installed-creator-alias.js");
   if (hardlinkedCreator) await link(creatorPath, creatorAlias);
   const outputRoot = join(root, ".next");
-  const outputPath = join(outputRoot, path);
+  const entryInitial = { ...initial, path: `server/${entrypoint}.js.nft.json` };
+  const outputPath = join(outputRoot, entryInitial.path);
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, source);
-  const asset = await captureStylexNextAuxiliaryTraceAsset(root, "app/page", initial, source);
+  const asset = await captureStylexNextAuxiliaryTraceAsset(root, entrypoint, entryInitial, source);
   return { asset, creatorAlias, creatorPath, creatorSource, outputPath, outputRoot, root };
 }
 
 describe("Next framework auxiliary trace observations", () => {
+  test("binds the registered proxy trace to initial bytes and observation-only final metadata", async () => {
+    const context = await fixture(false, "proxy");
+    const observe = () => observeStylexNextAuxiliaryTraceSnapshot(context.root, context.outputRoot, context.asset);
+    assert.equal(context.asset.entrypoint, "proxy");
+    assert.equal(context.asset.initial.path, "server/proxy.js.nft.json");
+    assert.deepEqual(await observe(), { asset: context.asset, output: context.asset.initial, semantics: "observation-only" });
+    const final = '{"version":1,"files":["../../../unread-proxy-dependency","absent.js"]}';
+    await writeFile(context.outputPath, final);
+    const snapshot = await observe();
+    assert.deepEqual(snapshot.asset, context.asset);
+    assert.deepEqual(snapshot.output, { bytes: Buffer.byteLength(final), path: context.asset.initial.path, sha256: sha256(final) });
+    assert.equal(snapshot.semantics, "observation-only");
+    await assert.rejects(captureStylexNextAuxiliaryTraceAsset(context.root, "proxy", { ...context.asset.initial, path: "server/app/page.js.nft.json" }, source), /entrypoint/u);
+    await writeFile(context.creatorPath, `${context.creatorSource.toString("utf8")}\n`);
+    await assert.rejects(observe(), /pinned source bytes/u);
+  });
+
   test("accepts stable hardlinked installed creators only at the pinned source hash", async () => {
     const context = await fixture(true);
     const creator = await lstat(context.creatorPath);

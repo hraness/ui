@@ -1191,7 +1191,9 @@ export function validateStylexNextAuxiliaryTraceAsset(value: unknown): StylexNex
   keys(record, ["creator", "entrypoint", "initial", "kind"], "Next auxiliary trace asset");
   assert.equal(record.kind, "next-node-dependency-trace", "Next auxiliary trace kind is unsupported");
   const entrypoint = normalizeLogicalPath(record.entrypoint, "Next auxiliary trace entrypoint");
-  assert.ok(/^(?:app|pages)\/.+/u.test(entrypoint), "Next auxiliary trace must name an app or pages server entrypoint");
+  // Next 16.2.12 registers a root or src/proxy.ts as the literal Node entry
+  // "proxy". Graph validation still requires its exact registered JS chunk.
+  assert.ok(entrypoint === "proxy" || /^(?:app|pages)\/.+/u.test(entrypoint), "Next auxiliary trace must name an app, pages, or exact proxy server entrypoint");
   const creator = artifact(record.creator, "Next auxiliary trace creator");
   assert.equal(creator.path, `node_modules/next/${STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]}`, "Next auxiliary trace creator path differs from its pinned owner");
   assert.equal(creator.sha256, STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[1], "Next auxiliary trace creator differs from Next 16.2.12");
