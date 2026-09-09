@@ -196,6 +196,20 @@ graph. Finalization rejects a missing, duplicate, or foreign graph stylesheet.
 
 The finalizer validates package and graph identities, rejects missing or stale graph receipts and mixed partial CSS, unions all raw rule metadata, and calls the pinned StyleX serializer once. It preserves the full finite priority inventory rather than mapping it to a fixed range. Build-tool modules remain outside the UI runtime entry, runtime CSS injection stays disabled, and the compiler contract pins property-specificity resolution and its Babel, StyleX, and Lightning CSS versions.
 
+The Vite adapter disables source maps by default. Opt in with `stylexVite({
+generation, graphId, rootDirectory, sourceMaps: "external" })`; do not set Vite's
+`build.sourcemap` or bundler output options yourself. This profile requires the
+generation output directory inside `rootDirectory` and emits an external map
+beside every JavaScript chunk. Native mappings retain their original source
+content, names and coordinates. The adapter projects only their relative source
+paths to the final `graphs/<graphId>/` publication layout before native chunk
+hashing, so moving staging into the final generation does not break provenance.
+It verifies loaded-file content, map/chunk pairing, mapping coordinates and exact
+output bytes before sealing the receipt. URL, encoded, outside-root, unobserved
+and copied source-map inputs are unsupported, as are CSS maps and copied
+JavaScript assets in this profile. Moving the published tree relative to its
+source tree afterward requires a separate consumer-owned source-map policy.
+
 The compiler also binds a narrowly scoped StyleX 0.19.0 parser compatibility repair. It verifies the installed Babel plugin's exact source bytes before accepting an explicit terminal EOF token after a complete media query. The repaired plugin runs in memory without modifying installed dependencies or global loader hooks. Media-query ordering remains enabled, malformed trailing input remains invalid, and the same compiler implementation runs under Bun and Node. Source and repair hashes form part of the compiler identity, so adopters must rebuild package manifests and graph receipts together when upgrading from an earlier compiler release.
 
 ### Next.js production adapter

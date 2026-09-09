@@ -80,6 +80,7 @@
     "build/next.ts",
     "build/stylex-babel-compat.ts",
     "build/vite.ts",
+    "build/vite-source-maps.ts",
     "dist",
     "src/ask-ai.stylex.ts",
     "src/ask-ai.tsx",
