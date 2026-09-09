@@ -340,6 +340,7 @@ assert.throws(
   /reserved StyleX rule-union namespace/u,
 );
 assert.equal(compilerContract.transform.enableMediaQueryOrder, true);
+assert.equal(compilerContract.transform.propertyValidationMode, "throw");
 assert.equal(compilerContract.tools.stylexBabelCompatibility.patchId, "stylex-0.19.0-token-parser-explicit-eof-v1");
 const parserCollector = createStylexTransformCollector(root);
 const parserPrimer = 'import * as stylex from "@stylexjs/stylex"; export const styles = stylex.create({' + Array.from({ length: 128 }, (_, index) => 'item' + index + ':{color:{default:"black","@media (forced-colors: active)":"CanvasText"},animationName:{default:"none","@media (prefers-reduced-motion: reduce)":"none"}}').join(",") + '});';

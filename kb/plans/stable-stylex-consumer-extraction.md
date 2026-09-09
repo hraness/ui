@@ -568,3 +568,35 @@ its own generated seal, final gate, current-head CI, protected merge and
 immutable release succeed. Earlier green evidence does not replace those
 changed-tree gates. Product adoption and production verification remain owned
 by each consumer and are not implied by this package qualification.
+
+## September 9 fail-fast property validation
+
+PR #65 merged as `e804c8b10984d75917d6875d4a34ab1e6df3902f` with the same
+tree as its final reviewed branch. Its post-merge canonical CI run
+`34393970619` passed. The annotated v0.5.11 tag points to that commit. Release
+run `34395885398` passed its separate canonical gate with 689 tests and 32,032
+assertions, then published immutable v0.5.11 on September 9 at 19:47 UTC.
+This does not complete the remaining product migrations.
+
+Direct and Stripe product parity checks exposed silently dropped border
+shorthands in the pinned StyleX 0.19 compiler. The upstream property-specificity
+expander catches unsupported-property errors and defaults to returning no
+rules. The follow-on compiler repair pins its supported `throw` mode in both
+the public collector and package options, includes that choice in the canonical
+compiler identity, and tests the finite unsupported shorthand inventory,
+nested conditions, both map paths, and retained supported longhands and font
+shorthands. Independent static review found no blocker. The first focused gate
+passed 84 tests with 95 assertions across compiler, source-map, and pinned-parser
+tests, followed by typecheck. The generated-artifact seal passed with 701
+canonical rules and six exact adopter stylesheets. Runtime JavaScript and
+standalone CSS remain byte-identical; the regenerated manifest and build tools
+bind the new validation policy. The canonical gate remains pending for the
+v0.5.12 candidate at this checkpoint.
+
+Deliver this change as its own current-main PR and immutable release after the
+canonical package and native adopter gates. Then rebuild design-kit and footer
+manifests against the new compiler before upgrading product graph generations.
+Do not accept old compiler identities under a recalculated manifest hash or
+alter an existing release. The rationale belongs to
+[[notes/repository-seams|repository seams]]. Product parity repairs proceed on
+their currently pinned compiler until that dependency train is validated.

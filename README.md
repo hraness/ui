@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.11"
+    "@hraness/ui": "github:hraness/ui#v0.5.12"
   }
 }
 ```
@@ -213,6 +213,8 @@ JavaScript assets in this profile. Moving the published tree relative to its
 source tree afterward requires a separate consumer-owned source-map policy.
 
 The compiler also binds a narrowly scoped StyleX 0.19.0 parser compatibility repair. It verifies the installed Babel plugin's exact source bytes before accepting an explicit terminal EOF token after a complete media query. The repaired plugin runs in memory without modifying installed dependencies or global loader hooks. Media-query ordering remains enabled, malformed trailing input remains invalid, and the same compiler implementation runs under Bun and Node. Source and repair hashes form part of the compiler identity, so adopters must rebuild package manifests and graph receipts together when upgrading from an earlier compiler release.
+
+Property validation is fail-fast: the compiler pins `propertyValidationMode: "throw"` instead of StyleX 0.19's silent default. Unsupported declarations such as `border`, `borderTop`, `background`, and `animation` stop compilation, including inside pseudo-class and media conditions. Author their supported longhands explicitly; supported shorthands such as `font` remain available. This policy is part of the compiler hash. Compiler adopters must rebuild all participating package manifests and create fresh graph generations together when upgrading from a silent-validation release. Old immutable releases and their standalone stylesheets are unchanged; the new compiler does not relabel old manifests as validated.
 
 ### Next.js production adapter
 
