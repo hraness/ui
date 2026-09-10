@@ -46,6 +46,7 @@ const FIXTURE_REQUIRED_SOURCES: Readonly<Record<NextTarget, readonly string[]>> 
     "app/lazy.tsx",
     "app/page.tsx",
     "app/shared-history/category-icon.tsx",
+    "app/shared-history/history-measure-key.tsx",
     "app/shared-history/history-measure-rail.tsx",
     "app/shared-history/history-sticky-offset-sync.tsx",
     "app/shared-history/shared-history.stylex.ts",

@@ -2,6 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { LinkButton, ThemedSurface } from "@hraness/ui";
 import Link from "next/link";
 
+import { HistoryMeasureKey } from "./history-measure-key";
 import { HistoryCategoryIcon } from "./category-icon";
 import { HistoryMeasureRail } from "./history-measure-rail";
 import { HistoryStickyOffsetSync } from "./history-sticky-offset-sync";
@@ -35,11 +36,11 @@ export function SharedHistory({ instance }: Readonly<{ instance: "one" | "two" }
       </nav>
       <ThemedSurface as="section" aria-label="Shared company history">
         <p>These cards explain the measures. They do not contain financial observations.</p>
+        <HistoryMeasureKey measures={measures} />
         <HistoryMeasureRail>
-          {measures.map(({ id, title, description, unit }) => (
+          {measures.map(({ id, title, unit }) => (
             <figure {...stylex.props(historyStyles.card)} data-measure={id} id={`history-measure-${id}`} key={id}>
               <figcaption><h2><HistoryCategoryIcon filterId={id} /> {title}</h2></figcaption>
-              <p>{description}</p>
               <dl><dt>Unit</dt><dd>{unit}</dd></dl>
             </figure>
           ))}

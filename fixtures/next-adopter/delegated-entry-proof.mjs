@@ -6,6 +6,88 @@ import { basename, resolve } from "node:path";
 const routes = ["app/delegated-one/page", "app/delegated-two/page"];
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
+function boundedList(iterable, limit, label) {
+  const values = [];
+  for (const value of iterable) {
+    assert.ok(values.length < limit, `${label} exceeds its bound`);
+    values.push(value);
+  }
+  return values;
+}
+
+function boundedText(value, limit, label) {
+  assert.ok(typeof value === "string" && !/[\ud800-\udfff]/u.test(value)
+    && Buffer.byteLength(value) <= limit, `${label} must be bounded exact text`);
+  return value;
+}
+
+/** Diagnostic facts only. Preserve native concatenation and dependency reasons
+ * before the strict zero-module assertion, without retaining source bodies. */
+export function captureFixtureTopology(compilation, routeNames, requestShortener) {
+  const graph = compilation.chunkGraph;
+  const chunks = boundedList(compilation.chunks, 4096, "Native chunks");
+  const facts = new Map();
+  let sourceBytes = 0;
+  function moduleFacts(module) {
+    if (facts.has(module)) return facts.get(module);
+    assert.ok(facts.size < 4096, "Diagnostic module inventory exceeds its bound");
+    const source = module.originalSource();
+    let originalSource = null;
+    if (source !== null) {
+      const declaredSize = source.size();
+      assert.ok(Number.isSafeInteger(declaredSize) && declaredSize >= 0 && declaredSize <= 4 * 1024 * 1024);
+      const bytes = source.source();
+      assert.ok(typeof bytes === "string" || bytes instanceof Uint8Array);
+      const length = Buffer.byteLength(bytes);
+      assert.ok(length <= 4 * 1024 * 1024 && (sourceBytes += length) <= 64 * 1024 * 1024);
+      originalSource = { bytes: length, sha256: sha256(bytes) };
+    }
+    const size = module.size();
+    assert.ok(Number.isFinite(size) && size >= 0);
+    const result = {
+      id: graph.getModuleId(module),
+      identifier: boundedText(module.identifier(), 256 * 1024, "Native module identifier"),
+      resource: module.resource === undefined ? null : boundedText(module.resource, 4096, "Native module resource"),
+      size, type: module.type, constructor: module.constructor.name,
+      owners: boundedList(graph.getModuleChunksIterable(module), 4096, "Native module owners").map((owner) => owner.id),
+      originalSource,
+      bailouts: boundedList(compilation.moduleGraph.getOptimizationBailout(module), 128, "Concatenation bailouts")
+        .map((reason) => boundedText(typeof reason === "function" ? reason(requestShortener) : reason, 16384, "Concatenation bailout")),
+      sourceBailout: module.buildInfo?.moduleConcatenationBailout === undefined ? null
+        : boundedText(module.buildInfo.moduleConcatenationBailout, 16384, "Source concatenation bailout"),
+    };
+    facts.set(module, result);
+    return result;
+  }
+  function withRelations(module) {
+    return {
+      ...moduleFacts(module),
+      nestedModules: boundedList(module.modules ?? [], 4096, "Concatenated members").map(moduleFacts),
+      dependencies: boundedList(compilation.moduleGraph.getOutgoingConnections(module), 4096, "Native outgoing connections")
+        .filter(({ resolvedModule }) => resolvedModule !== null && resolvedModule !== undefined)
+        .map(({ resolvedModule, dependency }) => ({
+          type: dependency?.type ?? null,
+          module: moduleFacts(resolvedModule),
+        })),
+      loaders: boundedList(module.loaders ?? [], 16, "Native loaders").map(({ loader, options }) => ({
+        loader: boundedText(loader, 4096, "Native loader path"),
+        options: typeof options === "string" ? boundedText(options, 256 * 1024, "Native loader options") : null,
+      })),
+    };
+  }
+  const topology = boundedList(routeNames, 64, "Diagnostic route names").map((name) => {
+    const group = compilation.entrypoints.get(name);
+    return { name, present: group !== undefined, chunks: chunks.filter((chunk) => boundedList(graph.getChunkEntryModulesWithChunkGroupIterable(chunk), 4096, "Native entries").some(([, entrypoint]) => entrypoint === group)).map((chunk) => ({
+      id: chunk.id,
+      startupChunks: boundedList(group.chunks, 4096, "Native startup chunks").map((owner) => owner.id),
+      modules: boundedList(graph.getChunkModulesIterable(chunk), 4096, "Native local modules").map(withRelations),
+      entries: boundedList(graph.getChunkEntryModulesWithChunkGroupIterable(chunk), 4096, "Native entries").map(([entry]) => withRelations(entry)),
+      runtimeModules: boundedList(graph.getChunkRuntimeModulesIterable(chunk), 4096, "Native runtime modules").map(moduleFacts),
+    })) };
+  });
+  return topology;
+}
+
 /** Fixture coverage only: the production adapter independently validates the
  * complete pinned loader grammar and graph. A nested client import is not a
  * substitute for any of these original server-visible client boundaries. */
@@ -59,20 +141,10 @@ export class DelegatedEntryFixtureProof {
         await mkdir(directory, { recursive: true });
         // Preserve actual retained-module facts before a topology assertion can
         // fail. This observation never authorizes a nonempty bootstrap.
-        const topology = routes.map((name) => {
-          const group = compilation.entrypoints.get(name);
-          return { name, chunks: chunks.filter((chunk) => [...compilation.chunkGraph.getChunkEntryModulesWithChunkGroupIterable(chunk)].some(([, entrypoint]) => entrypoint === group)).map((chunk) => ({
-            id: chunk.id,
-            modules: [...compilation.chunkGraph.getChunkModulesIterable(chunk)].map((module) => ({
-              id: compilation.chunkGraph.getModuleId(module),
-              identifier: module.identifier(),
-              size: module.size(),
-              owners: [...compilation.chunkGraph.getModuleChunksIterable(module)].map((owner) => owner.id),
-              type: module.type,
-            })),
-          })) };
-        });
-        await writeFile(resolve(directory, `${attemptId}-${mode}-topology.json`), `${JSON.stringify({ attemptId, mode, topology }, null, 2)}\n`, { flag: "wx" });
+        const topology = captureFixtureTopology(compilation, routes, compiler.requestShortener);
+        const raw = `${JSON.stringify({ attemptId, mode, topology }, null, 2)}\n`;
+        assert.ok(Buffer.byteLength(raw) <= 8 * 1024 * 1024, "Raw diagnostic exceeds its byte bound");
+        await writeFile(resolve(directory, `${attemptId}-${mode}-topology.json`), raw, { flag: "wx" });
         const observations = routes.map((name) => {
           const group = compilation.entrypoints.get(name);
           assert.ok(group, `Missing delegated fixture route ${name}`);

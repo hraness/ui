@@ -2,7 +2,7 @@
 
 The category icons, measure-rail interaction, and sticky-offset synchronization are derived from the MIT-licensed [Hraness Stripe History source](https://github.com/hraness/stripe-history/tree/39ee479daeebea668230a581553517b7ec2a1e1d/app/history). The original files are `category-icon.tsx`, `history-measure-rail.tsx`, and `history-sticky-offset-sync.tsx`.
 
-The fixture preserves their finite icon map, scrolling and reduced-motion behavior, and resize-observer lifecycle. Its local finite type replaces the product-private schema import. Product CSS is replaced by fixture-owned compiled geometry, and the cards contain measure definitions rather than financial data. The same client modules are consumed only by the two delegated routes; the root route retains its separate existing client proof. This is a representative application boundary, not a promise that webpack must always choose a particular chunk topology.
+The fixture preserves their finite icon map, scrolling and reduced-motion behavior, and resize-observer lifecycle. Its local finite type replaces the product-private schema import. Product CSS is replaced by fixture-owned compiled geometry. A server-authored definition key and the cards describe measures rather than reporting financial data. The key and the directly rendered card headings mirror the original `history-view.tsx` → `history-event-article.tsx` and direct icon import paths, without namespace or side-effect imports. The same client modules are consumed only by the two delegated routes; the root route retains its separate existing client proof. This is a representative application boundary, not a promise that webpack must always choose a particular chunk topology.
 
 MIT License
 
