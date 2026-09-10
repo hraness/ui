@@ -375,6 +375,15 @@ async function assertDelegatedEntries(consumer: string, graph: Record<string, un
     assert.equal(matching.length, 1);
     const proof = matching[0]!;
     const topology = object(proof.graph, "Delegated graph topology");
+    const clientBoundaryImports = [
+      "app/shared-history/category-icon.tsx",
+      "app/shared-history/history-measure-rail.tsx",
+      "app/shared-history/history-sticky-offset-sync.tsx",
+    ];
+    assert.deepEqual(observation.clientBoundaryImports, clientBoundaryImports);
+    assert.ok(Array.isArray(topology.imports));
+    assert.deepEqual(topology.imports.map((value) => object(value, "Delegated loader import").request)
+      .filter((request) => typeof request === "string" && request.startsWith("app/shared-history/")), clientBoundaryImports);
     assert.deepEqual(topology.chunkIds, [observation.chunkId]);
     assert.equal(topology.entryModuleId, observation.entryModuleId);
     assert.deepEqual(topology.entrypoints, [observation.name]);

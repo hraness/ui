@@ -6,6 +6,39 @@ import { basename, resolve } from "node:path";
 const routes = ["app/delegated-one/page", "app/delegated-two/page"];
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
+/** Fixture coverage only: the production adapter independently validates the
+ * complete pinned loader grammar and graph. A nested client import is not a
+ * substitute for any of these original server-visible client boundaries. */
+export function assertFixtureClientBoundaryImports(entry, root) {
+  assert.ok(Array.isArray(entry.loaders) && entry.loaders.length === 1);
+  const [loader] = entry.loaders;
+  assert.equal(loader.loader, resolve(root, "node_modules/next/dist/build/webpack/loaders/next-flight-client-entry-loader.js"));
+  assert.ok(typeof loader.options === "string" && loader.options.length <= 262144);
+  const options = new URLSearchParams(loader.options);
+  assert.deepEqual(options.getAll("server"), ["false"]);
+  assert.ok([...options.keys()].every((key) => key === "modules" || key === "server"));
+  const encodedImports = options.getAll("modules");
+  assert.ok(encodedImports.length > 0 && encodedImports.length <= 4096);
+  const imports = encodedImports.map((value) => {
+    const item = JSON.parse(value);
+    assert.ok(item !== null && typeof item === "object" && !Array.isArray(item));
+    assert.equal(typeof item.request, "string");
+    assert.ok(Array.isArray(item.ids) && item.ids.every((id) => typeof id === "string"));
+    return item;
+  });
+  const expected = [
+    ["app/shared-history/category-icon.tsx", "HistoryCategoryIcon"],
+    ["app/shared-history/history-measure-rail.tsx", "HistoryMeasureRail"],
+    ["app/shared-history/history-sticky-offset-sync.tsx", "HistoryStickyOffsetSync"],
+  ];
+  const local = imports.filter(({ request }) => request.startsWith(`${resolve(root, "app/shared-history")}/`));
+  assert.deepEqual(local.map(({ request }) => request).sort(), expected.map(([path]) => resolve(root, path)), "Native fixture entry omitted or changed a direct server-visible client boundary");
+  for (const [path, name] of expected) {
+    assert.ok(local.find(({ request }) => request === resolve(root, path)).ids.includes(name), `Native fixture entry omitted the named client export ${name}`);
+  }
+  return expected.map(([path]) => path);
+}
+
 /** Independent observation before adapter admission. This plugin never changes
  * webpack modules, optimization, assets or source maps. Missing topology fails. */
 export class DelegatedEntryFixtureProof {
@@ -46,14 +79,15 @@ export class DelegatedEntryFixtureProof {
           const candidates = chunks.filter((chunk) => [...compilation.chunkGraph.getChunkEntryModulesWithChunkGroupIterable(chunk)].some(([, entrypoint]) => entrypoint === group));
           assert.equal(candidates.length, 1, `Expected one startup chunk for ${name}`);
           const [chunk] = candidates;
-          const modules = [...compilation.chunkGraph.getChunkModulesIterable(chunk)];
-          assert.equal(modules.length, 0, `Native fixture did not produce a zero-module delegated chunk for ${name}`);
-          assert.equal(chunk.hasRuntime(), false);
-          assert.deepEqual([...compilation.chunkGraph.getChunkRuntimeModulesIterable(chunk)], []);
           const entries = [...compilation.chunkGraph.getChunkEntryModulesWithChunkGroupIterable(chunk)];
           assert.equal(entries.length, 1);
           const [[entry, entryGroup]] = entries;
           assert.equal(entryGroup, group);
+          const clientBoundaryImports = assertFixtureClientBoundaryImports(entry, process.cwd());
+          const modules = [...compilation.chunkGraph.getChunkModulesIterable(chunk)];
+          assert.equal(modules.length, 0, `Native fixture did not produce a zero-module delegated chunk for ${name}`);
+          assert.equal(chunk.hasRuntime(), false);
+          assert.deepEqual([...compilation.chunkGraph.getChunkRuntimeModulesIterable(chunk)], []);
           const owners = [...compilation.chunkGraph.getModuleChunksIterable(entry)];
           assert.ok(owners.length > 0 && owners.length <= 4096);
           const ownerProofs = owners.map((owner) => {
@@ -74,7 +108,7 @@ export class DelegatedEntryFixtureProof {
           assert.equal(compilation.getAsset(`${files[0]}.map`), undefined);
           const source = compilation.getAsset(files[0]).source.source().toString();
           assert.ok(Buffer.byteLength(source) < 4096);
-          return { name, chunkId: chunk.id, entryModuleId: compilation.chunkGraph.getModuleId(entry), output: files[0], source, owners: ownerProofs };
+          return { name, chunkId: chunk.id, entryModuleId: compilation.chunkGraph.getModuleId(entry), clientBoundaryImports, output: files[0], source, owners: ownerProofs };
         });
         const path = resolve(directory, `${attemptId}-${mode}.json`);
         await writeFile(path, `${JSON.stringify({ attemptId, compiler: compilation.name, mode, observations }, null, 2)}\n`, { flag: "wx" });
