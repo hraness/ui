@@ -20,9 +20,10 @@ import {
 } from "./compiler.js";
 
 import { STYLEX_NEXT_REQUIRED_VERSION, STYLEX_NEXT_FRAMEWORK_INPUTS, stylexNextProfile, stylexNextVersion, type StylexNextVersion } from "./next-profile.js";
+import { validateStylexNextDelegatedEntryBootstrap, type StylexNextDelegatedEntryBootstrapV1 } from "./next-delegated.js";
 export { STYLEX_NEXT_REQUIRED_VERSION, STYLEX_NEXT_FRAMEWORK_INPUTS, STYLEX_NEXT_AUXILIARY_TRACE_CREATOR, STYLEX_NEXT_PROXY_RENAME_CREATOR, STYLEX_NEXT_EMPTY_ENTRY_INPUTS, STYLEX_NEXT_SSG_INPUTS } from "./next-profile.js";
 
-export const STYLEX_NEXT_ADAPTER_VERSION = "hraness-stylex-next-v2" as const;
+export const STYLEX_NEXT_ADAPTER_VERSION = "hraness-stylex-next-v3" as const;
 export const STYLEX_NEXT_MODULE_SCHEMA_VERSION = 1 as const;
 export const STYLEX_NEXT_GRAPH_SCHEMA_VERSION = 1 as const;
 export const STYLEX_NEXT_BUILD_SCHEMA_VERSION = 2 as const;
@@ -621,6 +622,7 @@ export type StylexNextGraphReceiptV1 = Readonly<{
   auxiliaryTraceAssets: readonly StylexNextAuxiliaryTraceAssetV1[];
   compilerSha256: string;
   cssInputs: readonly StylexArtifactV1[];
+  delegatedEntryBootstraps: readonly StylexNextDelegatedEntryBootstrapV1[];
   entrypoints: readonly StylexNextEntrypointV1[];
   emptyEntryBootstraps: readonly StylexNextEmptyEntryBootstrapV1[];
   frameworkAssets: readonly StylexNextFrameworkAssetV1[];
@@ -959,7 +961,7 @@ function entrypoints(value: unknown): readonly StylexNextEntrypointV1[] {
 export function validateStylexNextGraphReceipt(value: unknown): StylexNextGraphReceiptV1 {
   const record = object(value, "Next graph receipt");
   keys(record, [
-    "adapterVersion", "attemptId", "auxiliaryTraceAssets", "compilerSha256", "cssInputs", "entrypoints", "emptyEntryBootstraps", "frameworkAssets", "graphId", "javascriptChunks", "kind",
+    "adapterVersion", "attemptId", "auxiliaryTraceAssets", "compilerSha256", "cssInputs", "delegatedEntryBootstraps", "entrypoints", "emptyEntryBootstraps", "frameworkAssets", "graphId", "javascriptChunks", "kind",
     "mode", "modules", "nextVersion", "outputDirectory", "outputs", "packages", "rules", "rulesSha256",
     "schemaVersion", "sourceMaps", "sourcesSha256", "target", "webpackVersion",
   ], "Next graph receipt");
@@ -1035,6 +1037,33 @@ export function validateStylexNextGraphReceipt(value: unknown): StylexNextGraphR
       }
     }
   }
+  assert.ok(Array.isArray(record.delegatedEntryBootstraps) && record.delegatedEntryBootstraps.length <= 4096, "Next delegatedEntryBootstraps must be a bounded array");
+  const delegatedEntryBootstraps = record.delegatedEntryBootstraps.map((value) => validateStylexNextDelegatedEntryBootstrap(value, nextVersion));
+  const delegatedPaths = delegatedEntryBootstraps.map(({ output }) => output.path);
+  assert.deepEqual(delegatedPaths, [...new Set(delegatedPaths)].sort(), "Next delegated outputs must be unique and path sorted");
+  for (const bootstrap of delegatedEntryBootstraps) {
+    assert.equal(target, "client", "Only Next client graphs may prove delegated entries");
+    assert.ok(javascriptChunks.includes(bootstrap.output.path), "Next delegated entry must remain in the chunk inventory");
+    assert.deepEqual(outputs.find(({ path }) => path === bootstrap.output.path), bootstrap.output, "Next delegated output bytes differ from graph output");
+    assert.ok(!sourceMaps.some(({ path }) => path === `${bootstrap.output.path}.map`), "A mapped chunk cannot use the delegated entry category");
+    assert.ok(!emptyEntryBootstraps.some(({ output }) => output.path === bootstrap.output.path), "Next delegated entry cannot also be an empty entry");
+    assert.deepEqual(bootstrap.graph.entrypoints, parsedEntrypoints.filter(({ javascript }) => javascript.includes(bootstrap.output.path)).map(({ name }) => name), "Next delegated entrypoint linkage differs from graph");
+    // Each entry owner is an exact dependency (validated above), so every owner
+    // JS and adjacent map also joins these complete hashed graph inventories.
+    for (const dependency of bootstrap.graph.dependencies) {
+      for (const path of dependency.files) {
+        assert.ok(javascriptChunks.includes(path) && sourceMaps.some((map) => map.path === `${path}.map`), "Next delegated startup dependency must retain a real mapped chunk");
+        assert.ok(bootstrap.graph.entrypoints.every((name) => parsedEntrypoints.find((entry) => entry.name === name)?.javascript.includes(path)), "Next delegated startup dependency is absent from its entrypoint");
+      }
+      for (const path of dependency.cssFiles) {
+        assert.ok(outputs.some((output) => output.path === path) && !javascriptChunks.includes(path), "Next delegated CSS dependency must retain its emitted stylesheet");
+        assert.ok(bootstrap.graph.entrypoints.every((name) => {
+          const entry = parsedEntrypoints.find((entry) => entry.name === name);
+          return entry?.css.includes(path) && entry.files.includes(path);
+        }), "Next delegated CSS dependency is absent from its entrypoint");
+      }
+    }
+  }
   assert.ok(Array.isArray(record.frameworkAssets), "Next frameworkAssets must be an array");
   const frameworkAssets: StylexNextFrameworkAssetV1[] = record.frameworkAssets.map((value) => {
     const entry = object(value, "Next framework asset");
@@ -1065,11 +1094,11 @@ export function validateStylexNextGraphReceipt(value: unknown): StylexNextGraphR
     "Every Next source map must retain its mapped output",
   );
   assert.ok(
-    javascriptChunks.every((path) => sourceMaps.some((map) => map.path === `${path}.map`) || emptyEntryBootstraps.some(({ output }) => output.path === path)),
+    javascriptChunks.every((path) => sourceMaps.some((map) => map.path === `${path}.map`) || emptyEntryBootstraps.some(({ output }) => output.path === path) || delegatedPaths.includes(path)),
     "Every Next JavaScript chunk must retain its external source map",
   );
   assert.ok(
-    javascriptOutputs.every(({ path }) => sourceMaps.some((map) => map.path === `${path}.map`) || frameworkAssets.some(({ output }) => output.path === path) || emptyEntryBootstraps.some(({ output }) => output.path === path)),
+    javascriptOutputs.every(({ path }) => sourceMaps.some((map) => map.path === `${path}.map`) || frameworkAssets.some(({ output }) => output.path === path) || emptyEntryBootstraps.some(({ output }) => output.path === path) || delegatedPaths.includes(path)),
     "Every unmapped Next JavaScript output must have proven framework provenance",
   );
   return {
@@ -1078,6 +1107,7 @@ export function validateStylexNextGraphReceipt(value: unknown): StylexNextGraphR
     auxiliaryTraceAssets,
     compilerSha256,
     cssInputs: artifacts(record.cssInputs, "Next graph cssInputs"),
+    delegatedEntryBootstraps,
     entrypoints: parsedEntrypoints,
     emptyEntryBootstraps,
     frameworkAssets,

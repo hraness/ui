@@ -33,9 +33,14 @@ import {
   writeStylexNextGraphReceipt,
   proveStylexNextFrameworkAsset,
   proveStylexNextEmptyEntryBootstrap,
+  proveStylexNextDelegatedEntryBootstrap,
   type StylexNextAttemptHandle,
 } from "./next-generation.js";
 import { captureStylexNextAuxiliaryTraceAsset } from "./next-auxiliary.js";
+import { captureStylexNextDelegatedEntryGraph } from "./next-delegated-capture.js";
+import { validateStylexNextDelegatedEntryBootstrap, validateStylexNextDelegatedEntryOwnerMap, type StylexNextDelegatedEntryBootstrapV1, type StylexNextDelegatedEntryGraphV1 } from "./next-delegated.js";
+import { resolveStylexNextOutputPath } from "./next-output.js";
+export { resolveStylexNextOutputPath } from "./next-output.js";
 
 export type StylexNextPluginOptions = Readonly<{
   attemptDirectory: string;
@@ -202,31 +207,6 @@ function bytes(source: WebpackAssetSource): Buffer {
   return typeof value === "string" ? Buffer.from(value) : Buffer.from(value);
 }
 
-export function resolveStylexNextOutputPath(
-  passOutputRoot: string,
-  compilerOutputPath: string,
-  emittedName: string,
-): string {
-  assert.ok(isAbsolute(passOutputRoot), "StyleX Next pass output root must be absolute");
-  assert.ok(isAbsolute(compilerOutputPath), "StyleX Next compiler output path must be absolute");
-  const passRoot = resolve(passOutputRoot);
-  const compilerRoot = resolve(compilerOutputPath);
-  const compilerRelative = relative(passRoot, compilerRoot);
-  assert.ok(
-    compilerRelative === ""
-      || (compilerRelative !== ".." && !compilerRelative.startsWith(`..${sep}`) && !isAbsolute(compilerRelative)),
-    "StyleX Next compiler output path escapes the pass output root",
-  );
-  assert.ok(typeof emittedName === "string" && emittedName.length > 0 && !emittedName.includes("\0"), "StyleX Next emitted asset name is invalid");
-  const absolute = resolve(compilerRoot, emittedName);
-  const logical = relative(passRoot, absolute).split(sep).join("/");
-  assert.ok(
-    logical.length > 0 && logical !== ".." && !logical.startsWith("../") && !isAbsolute(logical),
-    `StyleX Next emitted asset escapes the pass output root: ${emittedName}`,
-  );
-  return normalizeLogicalPath(logical, "StyleX Next output asset");
-}
-
 function outputArtifact(asset: WebpackAsset, passOutputRoot: string, compilerOutputPath: string): StylexArtifactV1 {
   const path = resolveStylexNextOutputPath(passOutputRoot, compilerOutputPath, asset.name);
   const contents = bytes(asset.source);
@@ -243,7 +223,7 @@ export function stylexNextJavaScriptChunks(
     .filter((path) => /\.(?:c|m)?js$/u.test(path)))].sort();
 }
 
-export function requireStylexNextChunkMaps(chunks: readonly string[], outputs: readonly StylexArtifactV1[], nextVersion: StylexNextVersion, bootstraps: readonly StylexNextEmptyEntryBootstrapV1[] = []): void {
+export function requireStylexNextChunkMaps(chunks: readonly string[], outputs: readonly StylexArtifactV1[], nextVersion: StylexNextVersion, bootstraps: readonly StylexNextEmptyEntryBootstrapV1[] = [], delegated: readonly StylexNextDelegatedEntryBootstrapV1[] = []): void {
   stylexNextVersion(nextVersion);
   for (const value of bootstraps) {
     const record = validateStylexNextEmptyEntryBootstrap(value, nextVersion);
@@ -251,9 +231,39 @@ export function requireStylexNextChunkMaps(chunks: readonly string[], outputs: r
     assert.deepEqual(outputs.find(({ path }) => path === record.output.path), record.output);
     assert.ok(!outputs.some(({ path }) => path === `${record.output.path}.map`), "Next mapped chunk cannot use the empty entry category");
   }
+  assert.equal(new Set(delegated.map(({ output }) => output.path)).size, delegated.length, "Next delegated output claims repeat");
+  for (const value of delegated) {
+    const record = validateStylexNextDelegatedEntryBootstrap(value, nextVersion);
+    assert.ok(chunks.includes(record.output.path), "Next delegated entry cannot leave the chunk inventory");
+    assert.deepEqual(outputs.find(({ path }) => path === record.output.path), record.output);
+    assert.ok(!outputs.some(({ path }) => path === `${record.output.path}.map`), "Next mapped chunk cannot use the delegated category");
+    assert.ok(!bootstraps.some(({ output }) => output.path === record.output.path), "Next delegated entry cannot use the empty category");
+    for (const owner of record.graph.entryOwners) for (const path of owner.files) {
+      assert.ok(chunks.includes(path) && outputs.some((output) => output.path === path) && outputs.some((output) => output.path === `${path}.map`), "Next delegated entry requires an inventoried mapped owner");
+    }
+  }
   for (const path of chunks) {
     assert.ok(outputs.some((output) => output.path === path), `Next JavaScript chunk has no emitted asset: ${path}`);
-    assert.ok(outputs.some((output) => output.path === `${path}.map`) || bootstraps.some(({ output }) => output.path === path), `Next JavaScript chunk omitted its external source map: ${path}`);
+    assert.ok(outputs.some((output) => output.path === `${path}.map`) || bootstraps.some(({ output }) => output.path === path) || delegated.some(({ output }) => output.path === path), `Next JavaScript chunk omitted its external source map: ${path}`);
+  }
+}
+
+export function assertStylexNextDelegatedEntryOwnerAssets(
+  root: string,
+  graph: StylexNextDelegatedEntryGraphV1,
+  assets: readonly WebpackAsset[],
+  passOutputRoot: string,
+  compilerOutputPath: string,
+): void {
+  for (const owner of graph.entryOwners) for (const ownerPath of owner.files) {
+    const ownerAssets = assets.filter((asset) => resolveStylexNextOutputPath(passOutputRoot, compilerOutputPath, asset.name) === ownerPath);
+    const mapAssets = assets.filter((asset) => resolveStylexNextOutputPath(passOutputRoot, compilerOutputPath, asset.name) === `${ownerPath}.map`);
+    assert.equal(ownerAssets.length, 1, "Next delegated owner must have one genuine JavaScript asset");
+    assert.equal(mapAssets.length, 1, "Next delegated owner must have one genuine adjacent map");
+    const info = ownerAssets[0]!.info as { related?: { sourceMap?: unknown } } | undefined;
+    assert.ok(typeof info?.related?.sourceMap === "string", "Next delegated owner has no registered source map relationship");
+    assert.equal(resolveStylexNextOutputPath(passOutputRoot, compilerOutputPath, info.related.sourceMap), `${ownerPath}.map`, "Next delegated owner source map relationship differs from its adjacent output");
+    validateStylexNextDelegatedEntryOwnerMap(root, graph, ownerPath, bytes(mapAssets[0]!.source));
   }
 }
 
@@ -751,17 +761,30 @@ export class StylexNextWebpackPlugin {
           const maps = outputs.filter(({ path }) => path.endsWith(".map"));
           const javascriptChunks = stylexNextJavaScriptChunks(compilation.chunks, passOutputRoot, compilerOutputPath);
           const emptyEntryBootstraps: StylexNextEmptyEntryBootstrapV1[] = [];
+          const delegatedEntryBootstraps: StylexNextDelegatedEntryBootstrapV1[] = [];
           for (const path of javascriptChunks.filter((path) => !maps.some((map) => map.path === `${path}.map`))) {
             assert.equal(this.#options.target, "client", `Next non-client JavaScript chunk omitted its map: ${path}`);
             const chunks = [...compilation.chunks].filter((chunk) => [...chunk.files].some((file) => resolveStylexNextOutputPath(passOutputRoot, compilerOutputPath, file) === path));
             assert.ok(chunks.length > 0);
-            const graphs = chunks.map((chunk) => captureStylexNextEmptyEntryGraph(compilation, chunk, root, passOutputRoot, compilerOutputPath, path));
-            for (const graph of graphs) assert.deepEqual(graph, graphs[0], "Next empty entry asset has conflicting chunk owners");
             const output = outputs.find((output) => output.path === path)!;
             const asset = assets.find((asset) => resolveStylexNextOutputPath(passOutputRoot, compilerOutputPath, asset.name) === path)!;
-            emptyEntryBootstraps.push(await proveStylexNextEmptyEntryBootstrap(root, this.#options.target, graphs[0]!, output, bytes(asset.source), plan.nextVersion));
+            // Distinct observed topologies, with no fallback between proofs.
+            // The old path still requires exactly its original empty loader.
+            const moduleFree = chunks.map((chunk) => compilation.chunkGraph.getChunkModulesIterable(chunk)[Symbol.iterator]().next().done === true);
+            assert.ok(moduleFree.every((value) => value === moduleFree[0]), "Next mapless asset has conflicting chunk categories");
+            if (moduleFree[0]) {
+              const graphs = chunks.map((chunk) => captureStylexNextDelegatedEntryGraph(compilation, chunk, root, passOutputRoot, compilerOutputPath, path));
+              for (const graph of graphs) assert.deepEqual(graph, graphs[0], "Next delegated asset has conflicting chunk owners");
+              const graph = graphs[0]!;
+              assertStylexNextDelegatedEntryOwnerAssets(root, graph, assets, passOutputRoot, compilerOutputPath);
+              delegatedEntryBootstraps.push(await proveStylexNextDelegatedEntryBootstrap(root, this.#options.target, graph, output, bytes(asset.source), plan.nextVersion));
+            } else {
+              const graphs = chunks.map((chunk) => captureStylexNextEmptyEntryGraph(compilation, chunk, root, passOutputRoot, compilerOutputPath, path));
+              for (const graph of graphs) assert.deepEqual(graph, graphs[0], "Next empty entry asset has conflicting chunk owners");
+              emptyEntryBootstraps.push(await proveStylexNextEmptyEntryBootstrap(root, this.#options.target, graphs[0]!, output, bytes(asset.source), plan.nextVersion));
+            }
           }
-          requireStylexNextChunkMaps(javascriptChunks, outputs, plan.nextVersion, emptyEntryBootstraps);
+          requireStylexNextChunkMaps(javascriptChunks, outputs, plan.nextVersion, emptyEntryBootstraps, delegatedEntryBootstraps);
           const frameworkAssets = await Promise.all(outputs
             .filter(({ path }) => /\.(?:c|m)?js$/u.test(path) && !javascriptChunks.includes(path) && !maps.some((map) => map.path === `${path}.map`))
             .map(async (output) => {
@@ -793,6 +816,7 @@ export class StylexNextWebpackPlugin {
             attempt,
             auxiliaryTraceAssets,
             cssInputs: stylesheets,
+            delegatedEntryBootstraps,
             entrypoints: entries,
             emptyEntryBootstraps,
             frameworkAssets,

@@ -188,7 +188,7 @@ describe("StyleX Next generation", () => {
     const source = await readFile(path, "utf8");
     const plan = JSON.parse(source) as Record<string, unknown>;
     assert.equal(plan.adapterVersion, STYLEX_NEXT_ADAPTER_VERSION);
-    assert.equal(plan.adapterVersion, "hraness-stylex-next-v2");
+    assert.equal(plan.adapterVersion, "hraness-stylex-next-v3");
     assert.equal(plan.schemaVersion, 2);
     assert.equal(plan.unionPolicySha256, stylexUnionPolicySha256);
     assert.equal(plan.compilerSha256, compilerSha256);
@@ -196,6 +196,7 @@ describe("StyleX Next generation", () => {
     delete missingPolicy.unionPolicySha256;
     for (const forgedPlan of [
       { ...plan, adapterVersion: "hraness-stylex-next-v1" },
+      { ...plan, adapterVersion: "hraness-stylex-next-v2" },
       { ...plan, unionPolicySha256: sha256("obsolete union policy") },
       missingPolicy,
       { ...plan, schemaVersion: 1 },
@@ -385,7 +386,7 @@ describe("StyleX Next generation", () => {
     const receipt = await writeStylexNextGraphReceipt({
       attempt,
       cssInputs: [],
-      emptyEntryBootstraps: [],
+      delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
       entrypoints: [{
         css: [], files: ["static/client.js"], javascript: ["static/client.js"], name: "app/page", stylexCss: [],
       }],
@@ -405,7 +406,7 @@ describe("StyleX Next generation", () => {
       writeStylexNextGraphReceipt({
         attempt,
         cssInputs: [],
-        emptyEntryBootstraps: [],
+        delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
         entrypoints: [{
           css: [], files: ["static/client.js"], javascript: ["static/client.js"], name: "app/page", stylexCss: [],
         }],
@@ -468,7 +469,7 @@ describe("StyleX Next generation", () => {
           css: [], files: [`static/${target}.js`], javascript: [`static/${target}.js`],
           name: target === "client" ? "app/layout" : target, stylexCss: [],
         }],
-        emptyEntryBootstraps: [],
+        delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
         frameworkAssets: ssg,
         auxiliaryTraceAssets: [],
         javascriptChunks: empty ? [] : [`static/${target}.js`],
@@ -554,7 +555,7 @@ describe("StyleX Next generation", () => {
           stylexCss: target === "client" ? ["static/stylex.css"] : [],
         }],
         mode: "delivery",
-        emptyEntryBootstraps: [],
+        delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
         frameworkAssets: ssg,
         auxiliaryTraceAssets: [],
         javascriptChunks: empty ? [] : [`static/${target}.js`],
@@ -832,7 +833,7 @@ describe("StyleX Next generation", () => {
           cssInputs: target === "client"
             ? [context.foundation, context.siteCss, ...(finalCss ? [finalCss] : [])].sort((left, right) => compareStylexNextStrings(left.path, right.path))
             : [],
-          emptyEntryBootstraps: [],
+          delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
           entrypoints: empty ? [] : [{
             css, files: [javascript, ...css], javascript: [javascript],
             name: target === "client" ? "app/layout" : entrypoint, stylexCss: css,
@@ -1007,7 +1008,7 @@ describe("StyleX Next generation", () => {
         mode: "delivery",
         outputDirectory: ".next",
         outputs: output("client"),
-        emptyEntryBootstraps: [],
+        delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
         frameworkAssets: [],
         auxiliaryTraceAssets: [],
         javascriptChunks: ["static/client.js"],

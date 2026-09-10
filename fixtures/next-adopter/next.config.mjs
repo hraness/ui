@@ -1,4 +1,5 @@
 import { nextVersion } from "./profile.mjs";
+import { DelegatedEntryFixtureProof } from "./delegated-entry-proof.mjs";
 import { withStylexNext } from "@hraness/ui/stylex-build/next";
 import { PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER } from "next/constants.js";
 
@@ -16,6 +17,10 @@ const config = {
     }];
   },
   reactStrictMode: true,
+  webpack(config, { isServer }) {
+    if (!isServer) config.plugins.push(new DelegatedEntryFixtureProof());
+    return config;
+  },
 };
 
 export default function nextConfig(phase) {

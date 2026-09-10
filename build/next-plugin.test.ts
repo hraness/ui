@@ -5,9 +5,11 @@ import { describe, test } from "bun:test";
 import { sha256 } from "./compiler.js";
 import { STYLEX_NEXT_EMPTY_ENTRY_LOADER, type StylexNextEmptyEntryGraphV1 } from "./next-contracts.js";
 import { STYLEX_NEXT_PRODUCTION_VERSIONS, stylexNextProfile } from "./next-profile.js";
+import { stylexNextDelegatedEntrySource } from "./next-delegated.js";
 
 import {
   assertStylexNextAuxiliaryTraceOwnership,
+  assertStylexNextDelegatedEntryOwnerAssets,
   resolveStylexNextOutputPath,
   requireStylexNextChunkMaps,
   stylexNextJavaScriptChunks,
@@ -314,6 +316,40 @@ describe("StyleX Next output provenance", () => {
       resolveStylexNextOutputPath(passRoot, resolve(passRoot, "static/chunks"), "app/page.css"),
       "static/chunks/app/page.css",
     );
+  });
+
+  test("delegated owner assets require the actual unique adjacent native map relationship", () => {
+    const source = stylexNextDelegatedEntrySource("/fixture", [{ request: "app/client.tsx", ids: ["Client"] }]);
+    const graph = {
+      chunkIds: [1], dependencies: [{ id: 2, files: ["static/owner.js"], cssFiles: [] }],
+      entryModuleId: 3, entryOwners: [{ id: 2, files: ["static/owner.js"] }],
+      entrypoints: ["app/page"], imports: [{ request: "app/client.tsx", ids: ["Client"] }],
+      loader: STYLEX_NEXT_EMPTY_ENTRY_LOADER, originalSource: { bytes: Buffer.byteLength(source), sha256: sha256(source) },
+    } as const;
+    const nativeMap = { version: 3, file: "static/owner.js", mappings: "AAAA", names: [], sources: ["webpack://_N_E/entry"], sourcesContent: [source] };
+    const owner = { name: "static/owner.js", source: { source: () => "mapped-owner" }, info: { related: { sourceMap: "static/owner.js.map" } } };
+    const map = { name: "static/owner.js.map", source: { source: () => JSON.stringify(nativeMap) } };
+    const check = (assets: Parameters<typeof assertStylexNextDelegatedEntryOwnerAssets>[2]) => assertStylexNextDelegatedEntryOwnerAssets("/fixture", graph, assets, "/fixture/.next", "/fixture/.next");
+    check([owner, map]);
+    for (const assets of [
+      [owner], [map], [owner, owner, map], [owner, map, map],
+      [{ ...owner, info: {} }, map],
+      [{ ...owner, info: { related: { sourceMap: "static/other.js.map" } } }, map],
+      [{ ...owner, info: { related: { sourceMap: [map.name] } } }, map],
+      [owner, { ...map, source: { source: () => JSON.stringify({ ...nativeMap, sourcesContent: ["other entry"] }) } }],
+    ]) assert.throws(() => check(assets));
+    const output = { path: "static/entry.js", bytes: 1, sha256: sha256("entry") };
+    const ownerOutput = { path: owner.name, bytes: 1, sha256: sha256("owner") };
+    const mapOutput = { path: map.name, bytes: 1, sha256: sha256("map") };
+    const chunks = [output.path, ownerOutput.path];
+    for (const nextVersion of STYLEX_NEXT_PRODUCTION_VERSIONS) {
+      const proof = { graph, output, inputs: stylexNextProfile(nextVersion).emptyEntryInputs.map(([path, sha256]) => ({ path: `node_modules/next/${path}`, bytes: 1, sha256 })) };
+      requireStylexNextChunkMaps(chunks, [output, ownerOutput, mapOutput], nextVersion, [], [proof]);
+      assert.throws(() => requireStylexNextChunkMaps(chunks, [output, ownerOutput], nextVersion, [], [proof]));
+      assert.throws(() => requireStylexNextChunkMaps([output.path], [output, ownerOutput, mapOutput], nextVersion, [], [proof]));
+      assert.throws(() => requireStylexNextChunkMaps(chunks, [output, ownerOutput, mapOutput], nextVersion, [], [proof, proof]));
+      assert.throws(() => requireStylexNextChunkMaps(chunks, [output, ownerOutput, mapOutput], nextVersion === "16.2.12" ? "16.3.3" : "16.2.12", [], [proof]));
+    }
   });
 
   test("rejects compiler roots and emitted names outside the pass output", () => {

@@ -58,6 +58,14 @@ import {
 } from "./next-contracts.js";
 import { proveStylexNextSsgPostprocessing } from "./next-ssg.js";
 import { observeStylexNextAuxiliaryTraceSnapshot } from "./next-auxiliary.js";
+import {
+  stylexNextDelegatedEntrySource,
+  validateStylexNextDelegatedEntryBootstrap,
+  validateStylexNextDelegatedEntryOwnerMap,
+  validateStylexNextDelegatedEntryPayload,
+  type StylexNextDelegatedEntryBootstrapV1,
+  type StylexNextDelegatedEntryGraphV1,
+} from "./next-delegated.js";
 
 const PLAN_SCHEMA_VERSION = 2 as const;
 export const STYLEX_NEXT_GENERATED_ENTRY_SOURCE = 'import "./stylex.css";\n' as const;
@@ -115,6 +123,7 @@ export type WriteStylexNextGraphReceiptOptions = Readonly<{
   attempt: StylexNextAttemptHandle;
   auxiliaryTraceAssets: readonly StylexNextAuxiliaryTraceAssetV1[];
   cssInputs: readonly StylexArtifactV1[];
+  delegatedEntryBootstraps: readonly StylexNextDelegatedEntryBootstrapV1[];
   entrypoints: readonly StylexNextEntrypointV1[];
   emptyEntryBootstraps: readonly StylexNextEmptyEntryBootstrapV1[];
   frameworkAssets: readonly StylexNextFrameworkAssetV1[];
@@ -541,6 +550,7 @@ export async function writeStylexNextGraphReceipt(options: WriteStylexNextGraphR
     auxiliaryTraceAssets: options.auxiliaryTraceAssets,
     compilerSha256,
     cssInputs: options.cssInputs,
+    delegatedEntryBootstraps: options.delegatedEntryBootstraps,
     entrypoints: options.entrypoints,
     emptyEntryBootstraps: options.emptyEntryBootstraps,
     frameworkAssets: options.frameworkAssets,
@@ -565,6 +575,10 @@ export async function writeStylexNextGraphReceipt(options: WriteStylexNextGraphR
     if (receipt.emptyEntryBootstraps.length > 0) {
       const inputs = await readStylexNextEmptyEntryInputs(rootDirectory, loaded.plan.nextVersion);
       for (const bootstrap of receipt.emptyEntryBootstraps) assert.deepEqual(inputs, bootstrap.inputs, "Next empty entry creator changed before graph receipt commit");
+    }
+    if (receipt.delegatedEntryBootstraps.length > 0) {
+      const inputs = await readStylexNextEmptyEntryInputs(rootDirectory, loaded.plan.nextVersion);
+      for (const bootstrap of receipt.delegatedEntryBootstraps) assert.deepEqual(inputs, bootstrap.inputs, "Next delegated entry creator changed before graph receipt commit");
     }
     for (const framework of receipt.frameworkAssets) assert.deepEqual(await readNextFrameworkInput(rootDirectory, framework.role, loaded.plan.nextVersion), framework.input, "Next framework input changed before graph receipt commit");
     for (const input of receipt.cssInputs) {
@@ -645,6 +659,41 @@ export async function proveStylexNextEmptyEntryBootstrap(
   assert.ok(Buffer.from(text).equals(Buffer.from(source)), "Next empty entry must retain exact UTF-8 bytes");
   validateStylexNextEmptyEntryPayload(graph, text);
   return validateStylexNextEmptyEntryBootstrap({ graph, inputs: await readStylexNextEmptyEntryInputs(root, nextVersion), output }, nextVersion);
+}
+
+export async function proveStylexNextDelegatedEntryBootstrap(
+  root: string,
+  target: StylexNextTarget,
+  graph: StylexNextDelegatedEntryGraphV1,
+  output: StylexArtifactV1,
+  source: Uint8Array,
+  nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION,
+): Promise<StylexNextDelegatedEntryBootstrapV1> {
+  assert.equal(target, "client", "Only Next client graphs may contain delegated entries");
+  assert.deepEqual({ bytes: source.byteLength, sha256: sha256(source) }, { bytes: output.bytes, sha256: output.sha256 }, "Next delegated entry output bytes changed");
+  const original = stylexNextDelegatedEntrySource(root, graph.imports);
+  assert.deepEqual({ bytes: Buffer.byteLength(original), sha256: sha256(original) }, graph.originalSource, "Next delegated entry source differs from the pinned eager loader grammar");
+  const text = Buffer.from(source).toString("utf8");
+  assert.ok(Buffer.from(text).equals(Buffer.from(source)), "Next delegated entry must retain exact UTF-8 bytes");
+  validateStylexNextDelegatedEntryPayload(graph, text);
+  return validateStylexNextDelegatedEntryBootstrap({ graph, inputs: await readStylexNextEmptyEntryInputs(root, nextVersion), output }, nextVersion);
+}
+
+export async function verifySettledStylexNextDelegatedEntryBootstrap(
+  root: string,
+  outputRoot: string,
+  target: StylexNextTarget,
+  value: StylexNextDelegatedEntryBootstrapV1,
+  nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION,
+): Promise<void> {
+  const recorded = validateStylexNextDelegatedEntryBootstrap(value, nextVersion);
+  const output = await artifactForFile(outputRoot, recorded.output.path);
+  assert.deepEqual(output, recorded.output, "Next delegated entry output changed after compilation");
+  const source = await readFile(await resolveRootRelativeInput(outputRoot, recorded.output.path));
+  assert.deepEqual(await proveStylexNextDelegatedEntryBootstrap(root, target, recorded.graph, output, source, nextVersion), recorded, "Next delegated entry provenance changed after compilation");
+  for (const owner of recorded.graph.entryOwners) for (const path of owner.files) {
+    validateStylexNextDelegatedEntryOwnerMap(root, recorded.graph, path, await readFile(await resolveRootRelativeInput(outputRoot, `${path}.map`)));
+  }
 }
 
 export async function verifySettledStylexNextEmptyEntryBootstrap(
@@ -746,6 +795,7 @@ async function verifySettledGraphOutputs(
       } else await verifySettledStylexNextFrameworkAsset(root, outputRoot, receipt.target, framework, loaded.plan.nextVersion);
     }
     for (const bootstrap of receipt.emptyEntryBootstraps) await verifySettledStylexNextEmptyEntryBootstrap(root, outputRoot, receipt.target, bootstrap, loaded.plan.nextVersion);
+    for (const bootstrap of receipt.delegatedEntryBootstraps) await verifySettledStylexNextDelegatedEntryBootstrap(root, outputRoot, receipt.target, bootstrap, loaded.plan.nextVersion);
     for (const output of receipt.outputs) {
       const previous = union.get(output.path);
       if (previous === undefined) union.set(output.path, output);

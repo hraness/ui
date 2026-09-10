@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.12"
+    "@hraness/ui": "github:hraness/ui#v0.5.13"
   }
 }
 ```
@@ -292,6 +292,12 @@ await runStylexNextBuild({
 List the complete repository-owned source census for each production target. Keep all three keys; use an empty array only to declare that the target must compile no repository source, such as an application with no Edge route. The adapter still requires at least one source overall and writes discovery and delivery receipts for an observed-empty target instead of skipping it.
 
 The delivery pass preserves webpack source-map chaining and lets Next own CSS deduplication, splitting, filenames, route manifests, and `<link>` delivery. The adapter verifies emitted entrypoint-to-CSS links from webpack's public compilation data; it does not edit private Next manifests, install a global module hook, or inject an inline style. The production receipt therefore remains compatible with a strict `style-src 'self'` policy.
+
+Next can move a shared client entry into a mapped dependency chunk, leaving each route with only a small startup file. The adapter records this as a separate `delegatedEntryBootstraps` proof. It verifies the registered startup dependencies, reciprocal entry-module ownership, exact pinned loader-generated imports, and the original shared JavaScript and adjacent source map. The map must retain the entry source; all owner artifacts remain in the complete hashed output inventory and are checked again after the build. This does not exempt application code from source-map checks or reinterpret an empty entry as an import-bearing one.
+
+This proof uses Next adapter version `hraness-stylex-next-v3`. Start a fresh attempt after upgrading; v2 records cannot be resumed or converted by adding an empty field. The generic package and graph schemas remain at 1, and generation/build schemas remain at 2. The packed native test requires two real delegated routes in both discovery and delivery, joins their independently observed owner/map bytes to the receipts, and exercises their scrolling, selected controls, resize handling and route cleanup under both supported Next profiles.
+
+Successful packed Next runs retain `receipt.json` in a new `.stylex-fixtures/next-adopter-proof-<version>-*/` directory after removing the disposable consumer. That receipt binds the selected native observations, emitted owner maps, graph records, fixture inputs and browser measurements. Native test failures retain their consumer for diagnosis. A passing receipt is written only after the checks and ordinary cleanup complete.
 
 `complete` means the StyleX graph proof is complete. It is not a whole-build integrity, dependency-safety, or deployment-readiness attestation. Next rewrites server dependency traces after webpack; the adapter records their exact initial artifacts and settled final hashes separately as `observation-only` auxiliary metadata. Only traces belonging to registered Node app, pages, or the exact `proxy` server entry qualify. A root or `src/proxy.ts` remains in the Node source census and retains its JavaScript, source map, and request behavior; other root entry names are not admitted by this boundary. The native fixture covers root `proxy.ts`; a product using the `src` layout still needs its own native qualification. These observations never exempt JavaScript, CSS, source maps, or linked assets from their strict checks, and the adapter never follows trace file lists to select or copy dependencies. Next standalone packaging and provider deployments still require their own dependency-selection, packaging, browser, and deployment acceptance checks.
 
