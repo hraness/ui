@@ -7,6 +7,42 @@ import ts from "typescript";
 
 const fixturePath = `${import.meta.dir}/../fixtures/next-adopter/app/shared-history/shared-history.tsx`;
 
+function assertRootNavigation(source: string): void {
+  const file = ts.createSourceFile("page.tsx", source, ts.ScriptTarget.ES2023, true, ts.ScriptKind.TSX);
+  assert.ok(!file.statements.some((statement) => ts.isExpressionStatement(statement)
+    && ts.isStringLiteral(statement.expression) && statement.expression.text === "use client"), "Root navigation remains server-authored");
+  assert.ok(file.statements.some((statement) => ts.isImportDeclaration(statement)
+    && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === "next/link"
+    && statement.importClause?.name?.text === "Link"), "Root examples require the ordinary Next Link import");
+  const hrefs: string[] = [];
+  let examples = false;
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxOpeningElement(node) && node.tagName.getText(file) === "nav") {
+      examples ||= node.attributes.properties.some((attribute) => ts.isJsxAttribute(attribute)
+        && attribute.name.getText(file) === "aria-label" && attribute.initializer !== undefined
+        && ts.isStringLiteral(attribute.initializer) && attribute.initializer.text === "Adapter examples");
+    }
+    if (ts.isJsxOpeningElement(node) && node.tagName.getText(file) === "Link") {
+      const href = node.attributes.properties.find((attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText(file) === "href");
+      assert.ok(href && ts.isJsxAttribute(href) && href.initializer && ts.isStringLiteral(href.initializer));
+      hrefs.push(href.initializer.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  assert.ok(examples, "Root examples require a named navigation landmark");
+  assert.deepEqual(hrefs, ["/delegated-one", "/delegated-two"], "Root navigation must expose both existing demos");
+}
+
+test("root navigation exposes existing demos through ordinary Next Link boundaries", async () => {
+  const source = await readFile(`${import.meta.dir}/../fixtures/next-adopter/app/page.tsx`, "utf8");
+  assertRootNavigation(source);
+  assert.throws(() => assertRootNavigation(source.replace('import Link from "next/link";', "")), /ordinary Next Link/u);
+  assert.throws(() => assertRootNavigation(source.replace('href="/delegated-two"', 'href="/missing"')), /both existing demos/u);
+  assert.throws(() => assertRootNavigation(source.replace("<Link ", "<a ").replace("</Link>", "</a>")), /both existing demos/u);
+  assert.throws(() => assertRootNavigation(`"use client";\n${source}`), /server-authored/u);
+});
+
 function assertServerComposition(source: string): void {
   const file = ts.createSourceFile(fixturePath, source, ts.ScriptTarget.ES2023, true, ts.ScriptKind.TSX);
   const imports = new Map<string, string>();

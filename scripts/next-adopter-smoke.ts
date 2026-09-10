@@ -920,9 +920,14 @@ try {
         };
       });
       assert.deepEqual(evidence, { client: "17px", lazy: "19px", node: "13px", theme: "31px" });
-      browserOutcomes.push({ kind: "root-hydration", ...evidence });
+      const exampleNavigation = page.getByRole("navigation", { name: "Adapter examples" });
+      const navigationHrefs = await exampleNavigation.getByRole("link").evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+      assert.deepEqual(navigationHrefs, ["/delegated-one", "/delegated-two"]);
+      browserOutcomes.push({ kind: "root-hydration", ...evidence, navigationHrefs });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(`${base}/delegated-one`, { waitUntil: "networkidle" });
+      await exampleNavigation.getByRole("link", { name: "Shared history one", exact: true }).click();
+      await page.waitForURL(`${base}/delegated-one`);
+      await page.locator('[data-next-delegated="one"]').waitFor();
       for (const instance of ["one", "two"]) {
         assert.equal(await page.locator("[data-next-delegated]").getAttribute("data-next-delegated"), instance);
         await page.waitForFunction(() => {

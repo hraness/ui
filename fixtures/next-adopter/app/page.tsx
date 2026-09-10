@@ -1,5 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { themeClassName } from "@fixture/theme";
+import Link from "next/link";
 
 import { ClientProof } from "./client";
 
@@ -16,6 +17,12 @@ export default function Page() {
     >
       <h1>Next StyleX adapter</h1>
       <ClientProof />
+      <nav aria-label="Adapter examples">
+        <ul>
+          <li><Link href="/delegated-one">Shared history one</Link></li>
+          <li><Link href="/delegated-two">Shared history two</Link></li>
+        </ul>
+      </nav>
     </main>
   );
 }
