@@ -7141,7 +7141,13 @@ async function verifyConsumer(
   );
   const installedManifest = JSON.parse(
     await readFile(join(installedPackageRoot, "package.json"), "utf8"),
-  ) as { exports?: Record<string, unknown> };
+  ) as {
+    exports?: Record<string, unknown>;
+    peerDependencies?: Record<string, unknown>;
+    peerDependenciesMeta?: Record<string, unknown>;
+  };
+  assert.equal(installedManifest.peerDependencies?.next, "16.2.12 || 16.3.3");
+  assert.deepEqual(installedManifest.peerDependenciesMeta?.next, { optional: true });
   assert.doesNotMatch(
     JSON.stringify(installedManifest),
     /tailwind/iu,
@@ -7202,6 +7208,8 @@ async function verifyConsumer(
     "build/generation.ts",
     "build/index.ts",
     "build/next-contracts.ts",
+    "build/next-delegated.ts",
+    "build/next-delegated-capture.ts",
     "build/next-dev-css-loader.cjs",
     "build/next-dev-loader.cjs",
     "build/next-dev-session.ts",
@@ -7210,13 +7218,16 @@ async function verifyConsumer(
     "build/next-loader.cjs",
     "build/next-loader.ts",
     "build/next-output-settlement.ts",
+    "build/next-output.ts",
     "build/next-plugin.ts",
     "build/next-process.ts",
+    "build/next-profile.ts",
     "build/next-ssg.ts",
     "build/next-auxiliary.ts",
     "build/next-typescript.ts",
     "build/next.ts",
     "build/vite.ts",
+    "build/vite-source-maps.ts",
     "dist/build/bun.js",
     "dist/build/index.js",
     "dist/build/next-dev-css-loader.cjs",

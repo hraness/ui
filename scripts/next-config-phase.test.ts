@@ -24,10 +24,10 @@ test("packed Next fixture separates clean runtime config from private build stat
     process.env.HRANESS_STYLEX_NEXT_ATTEMPT_DIRECTORY = process.cwd() + "/.stylex-next/phase-contract";
     process.env.HRANESS_STYLEX_NEXT_MODE = "discovery";
     process.env.HRANESS_STYLEX_NEXT_PLAN_SHA256 = "0".repeat(64);
-    const build = config(PHASE_PRODUCTION_BUILD);
-    assert.equal(typeof build.webpack, "function");
-    assert.deepEqual(await build.headers(), await runtime.headers());
+    assert.throws(() => config(PHASE_PRODUCTION_BUILD), /ENOENT|plan/u,
+      "synthetic environment strings do not authorize a missing canonical build plan");
     assert.equal(config(PHASE_PRODUCTION_SERVER).webpack, undefined);
+    assert.deepEqual(await config(PHASE_PRODUCTION_SERVER).headers(), await runtime.headers());
   `], { cwd: `${import.meta.dir}/..`, env: environment, stdout: "pipe", stderr: "pipe", timeout: 10_000 });
   assert.equal(child.signalCode, undefined, child.stderr.toString());
   assert.equal(child.exitCode, 0, child.stderr.toString());

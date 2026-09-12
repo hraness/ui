@@ -41,6 +41,8 @@
     "scripts/build-package.ts",
     "scripts/check-committed-dist.test.ts",
     "scripts/gallery-browser.ts",
+    "scripts/next-adopter-smoke.ts",
+    "scripts/next-config-phase.test.ts",
     "scripts/next-dev-adopter-smoke.ts",
     "scripts/next-dev-adopter-smoke.test.ts",
     "scripts/next-dev-archive.test.ts",

@@ -42,9 +42,8 @@ function context(name: string) {
   write(join(root, "package.json"), '{"type":"module"}\n');
   symlinkSync(join(process.cwd(), "node_modules"), join(root, "node_modules"), "dir");
   write(join(root, "app", "page.ts"), "export const value: number = 1;\n");
-  const plan = "{}\n";
-  const attempt = { directory: join(root, ".stylex-next", name), planSha256: hash(plan) };
-  write(join(attempt.directory, "plan.json"), plan);
+  const { directory, planSha256 } = nativePlan(root, name);
+  const attempt = { directory, planSha256 };
   const options = {
     attempt, config: {}, distDir: `.stylex-next/${name}/next-discovery`, mode: "discovery" as const,
     root, stateDirectory: ".stylex-next",
@@ -123,7 +122,7 @@ function nativeGraphFixtures(root: string, attempt: ReturnType<typeof nativePlan
     json(join(attempt.directory, mode, target, "graph.json"), {
       adapterVersion: STYLEX_NEXT_ADAPTER_VERSION, attemptId: name, auxiliaryTraceAssets: [], compilerSha256, cssInputs: [],
       entrypoints: target === "client" ? [{ name: mode === "delivery" ? "app/layout" : "main-app", css, files: ["static/client.js", "static/client.js.map", ...css], javascript: ["static/client.js"], stylexCss: css }] : [],
-      emptyEntryBootstraps: [], frameworkAssets: [], graphId: target, javascriptChunks: target === "client" ? ["static/client.js"] : [],
+      delegatedEntryBootstraps: [], emptyEntryBootstraps: [], frameworkAssets: [], graphId: target, javascriptChunks: target === "client" ? ["static/client.js"] : [],
       kind: "hraness-stylex-next-graph", mode, modules, nextVersion: STYLEX_NEXT_REQUIRED_VERSION,
       outputDirectory: distDir, outputs, packages: [attempt.identity], rules: [], rulesSha256: emptyRules, schemaVersion: 1,
       sourceMaps: outputs.filter(({ path }) => path.endsWith(".map")), sourcesSha256: hash(canonicalJson(modules)), target, webpackVersion: "5.98.0",
@@ -313,6 +312,7 @@ describe("Next native TypeScript input lifecycle", () => {
     "inventory-traversal", "before-traversal", "extra-union", "extra-before", "writer-pin",
     "projection-dist", "projection-mode", "projection-traversal", "projection-bytes", "seed-bytes",
     "graph-target", "graph-census", "module-hash", "module-filename", "surviving-type",
+    "inventory-profile", "before-profile", "graph-profile",
   ]) test(`rejects incomplete or altered historical provenance: ${attack}`, async () => {
     const fixture = context(`attack-${attack}`);
     try {
@@ -332,6 +332,9 @@ describe("Next native TypeScript input lifecycle", () => {
         value.distDir = prefix;
       };
       switch (attack) {
+        case "inventory-profile": mutateJson(inventoryPath, (value) => { value.nextVersion = "16.3.3"; }); break;
+        case "before-profile": mutateJson(beforePath, (value) => { value.nextVersion = "16.3.3"; }); break;
+        case "graph-profile": mutateJson(graphPath, (value) => { value.nextVersion = "16.3.3"; }); break;
         case "missing-graph": unlinkSync(join(prior.directory, "delivery", "node-rsc", "graph.json")); break;
         case "missing-before": unlinkSync(beforePath); break;
         case "plan-hash": mutateJson(join(prior.directory, "plan.json"), (value) => { value.outputDirectory = ".other"; }); break;

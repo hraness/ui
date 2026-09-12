@@ -1,3 +1,4 @@
+import { stylexNextProfile, type StylexNextVersion } from "./next-profile.js";
 import assert from "node:assert/strict";
 import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
@@ -8,7 +9,6 @@ import { normalizeLogicalPath, sha256 } from "./compiler.js";
 import {
   STYLEX_NEXT_REQUIRED_VERSION,
   STYLEX_NEXT_SSG_INITIAL_SOURCE,
-  STYLEX_NEXT_SSG_INPUTS,
   serializeStylexNextSsgRoutes,
   type StylexNextFrameworkAssetV1,
   type StylexNextSsgPostprocessingV1,
@@ -42,11 +42,32 @@ function routeEntries(value: unknown): readonly [string, Record<string, unknown>
   return entries.map(([key, value]) => [route(key), object(value, "Next SSG route metadata")]);
 }
 
+/** Next 16.3.3 classifies a prerender's response independently of the route
+ * selection used by writeClientSsgManifest. Validate, but never project these
+ * fields into SSG receipt data or use them as runtime/deployment evidence. */
+function validatePrerenderClassification(metadata: Record<string, unknown>): void {
+  const names = ["routeType", "response", "compute"] as const;
+  if (!names.some((name) => Object.hasOwn(metadata, name)) && !Object.hasOwn(metadata, "htmlSize")) return;
+  assert.ok(names.every((name) => Object.hasOwn(metadata, name)), "Next prerender classification must contain its complete trio");
+  for (const [name, values] of [
+    ["routeType", ["route", "fallback", "shell", "page"]],
+    ["response", ["empty", "initial", "complete"]],
+    ["compute", ["blocking", "resuming", "static"]],
+  ] as const) {
+    assert.ok(typeof metadata[name] === "string" && (values as readonly string[]).includes(metadata[name]), `Next prerender classification ${name} is unsupported`);
+  }
+  if (Object.hasOwn(metadata, "htmlSize")) {
+    assert.ok(typeof metadata.htmlSize === "number" && Number.isSafeInteger(metadata.htmlSize) && metadata.htmlSize >= 0,
+      "Next prerender classification HTML size must be a nonnegative safe integer");
+  }
+}
+
 /** Only the fields consumed by the pinned native writer become receipt data. */
-export function deriveStylexNextSsgRoutes(prerenderValue: unknown, routesValue: unknown): Readonly<{
+export function deriveStylexNextSsgRoutes(prerenderValue: unknown, routesValue: unknown, nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION): Readonly<{
   locales: readonly string[] | null;
   routes: readonly string[];
 }> {
+  const classificationKeys = stylexNextProfile(nextVersion).version === "16.3.3" ? ["routeType", "response", "compute", "htmlSize"] : [];
   const prerender = object(prerenderValue, "Next prerender manifest");
   knownKeys(prerender, ["version", "routes", "dynamicRoutes", "notFoundRoutes", "preview"], [], "Next prerender manifest");
   assert.equal(prerender.version, 4, "Next prerender manifest version changed");
@@ -86,14 +107,16 @@ export function deriveStylexNextSsgRoutes(prerenderValue: unknown, routesValue: 
   assert.ok(statics.length + dynamics.length <= MAX_ROUTES, "Next combined SSG route inventory exceeds its bound");
   const selected: string[] = [];
   for (const [path, metadata] of statics) {
-    knownKeys(metadata, [], ["dataRoute", "experimentalBypassFor", "initialHeaders", "initialStatus", "initialRevalidateSeconds", "initialExpireSeconds", "prefetchDataRoute", "srcRoute", "experimentalPPR", "renderingMode", "allowHeader"], "Next static prerender metadata");
+    knownKeys(metadata, [], ["dataRoute", "experimentalBypassFor", "initialHeaders", "initialStatus", "initialRevalidateSeconds", "initialExpireSeconds", "prefetchDataRoute", "srcRoute", "experimentalPPR", "renderingMode", "allowHeader", ...classificationKeys], "Next static prerender metadata");
+    validatePrerenderClassification(metadata);
     if (metadata.srcRoute !== undefined && metadata.srcRoute !== null) { route(metadata.srcRoute); continue; }
     const segment = path.split("/", 2)[1];
     const locale = locales?.find((locale) => locale.toLowerCase() === segment?.toLowerCase());
     selected.push(locale === undefined ? path : path.slice(locale.length + 1) || "/");
   }
   for (const [path, metadata] of dynamics) {
-    knownKeys(metadata, [], ["dataRoute", "dataRouteRegex", "experimentalBypassFor", "fallback", "remainingPrerenderableParams", "fallbackRevalidate", "fallbackExpire", "fallbackHeaders", "fallbackStatus", "fallbackRootParams", "fallbackRouteParams", "fallbackSourceRoute", "prefetchDataRoute", "prefetchDataRouteRegex", "routeRegex", "experimentalPPR", "renderingMode", "allowHeader"], "Next dynamic prerender metadata");
+    knownKeys(metadata, [], ["dataRoute", "dataRouteRegex", "experimentalBypassFor", "fallback", "remainingPrerenderableParams", "fallbackRevalidate", "fallbackExpire", "fallbackHeaders", "fallbackStatus", "fallbackRootParams", "fallbackRouteParams", "fallbackSourceRoute", "prefetchDataRoute", "prefetchDataRouteRegex", "routeRegex", "experimentalPPR", "renderingMode", "allowHeader", ...classificationKeys], "Next dynamic prerender metadata");
+    validatePrerenderClassification(metadata);
     // Next does not normalize the dynamic keys. Deduplication occurs only after
     // sorting the combined list, including legitimate localized collisions.
     selected.push(path);
@@ -103,10 +126,10 @@ export function deriveStylexNextSsgRoutes(prerenderValue: unknown, routesValue: 
 
 type ReadRole = "installed-creator" | "installed-package" | "generated-output";
 
-async function readBounded(root: string, logical: string, role: ReadRole): Promise<Readonly<{ artifact: StylexArtifactV1; source: string }>> {
+async function readBounded(root: string, logical: string, role: ReadRole, nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION): Promise<Readonly<{ artifact: StylexArtifactV1; source: string }>> {
   const path = normalizeLogicalPath(logical);
   const creator = role === "installed-creator"
-    ? STYLEX_NEXT_SSG_INPUTS.find(([input]) => path === `node_modules/next/${input}`)
+    ? stylexNextProfile(nextVersion).ssgInputs.find(([input]) => path === `node_modules/next/${input}`)
     : undefined;
   if (role === "installed-creator") assert.ok(creator !== undefined, "Next SSG installed creator path is not a pinned input");
   if (role === "installed-package") assert.equal(path, "node_modules/next/package.json", "Next SSG installed package path changed");
@@ -160,15 +183,16 @@ export async function proveStylexNextSsgPostprocessing(
   root: string,
   outputRoot: string,
   initial: StylexNextFrameworkAssetV1,
+  nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION,
 ): Promise<StylexNextSsgPostprocessingV1> {
   assert.equal(initial.role, "ssg-manifest", "Next postprocessing only owns the SSG role");
   const nextPackage = await readBounded(root, "node_modules/next/package.json", "installed-package");
   const packageMetadata = object(JSON.parse(nextPackage.source) as unknown, "Next package metadata");
   assert.equal(packageMetadata.name, "next");
-  assert.equal(packageMetadata.version, STYLEX_NEXT_REQUIRED_VERSION, "Next SSG package version changed");
+  assert.equal(packageMetadata.version, nextVersion, "Next SSG package version changed");
   const creators: StylexArtifactV1[] = [];
-  for (const [path] of STYLEX_NEXT_SSG_INPUTS) {
-    const input = await readBounded(root, `node_modules/next/${path}`, "installed-creator");
+  for (const [path] of stylexNextProfile(nextVersion).ssgInputs) {
+    const input = await readBounded(root, `node_modules/next/${path}`, "installed-creator", nextVersion);
     creators.push(input.artifact);
   }
   assert.deepEqual(initial.input, creators.find(({ path }) => path === initial.input.path), "Next SSG original creator changed");
@@ -178,7 +202,7 @@ export async function proveStylexNextSsgPostprocessing(
   assert.deepEqual(initial.output, { bytes: Buffer.byteLength(STYLEX_NEXT_SSG_INITIAL_SOURCE), path, sha256: sha256(STYLEX_NEXT_SSG_INITIAL_SOURCE) }, "Next SSG compiled asset differs from its original pinned source or BUILD_ID");
   const prerender = await readBounded(outputRoot, "prerender-manifest.json", "generated-output");
   const routes = await readBounded(outputRoot, "routes-manifest.json", "generated-output");
-  const derived = deriveStylexNextSsgRoutes(parseNativeManifest(prerender.source), parseNativeManifest(routes.source));
+  const derived = deriveStylexNextSsgRoutes(parseNativeManifest(prerender.source), parseNativeManifest(routes.source), nextVersion);
   const output = await readBounded(outputRoot, path, "generated-output");
   assert.equal(output.source, serializeStylexNextSsgRoutes(derived.routes), "Next SSG postprocessed bytes differ from the exact pinned native derivation");
   return {

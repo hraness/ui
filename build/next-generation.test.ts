@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -20,6 +20,7 @@ import {
 import {
   STYLEX_NEXT_ADAPTER_VERSION,
   STYLEX_NEXT_AUXILIARY_TRACE_CREATOR,
+  STYLEX_NEXT_PROXY_RENAME_CREATOR,
   STYLEX_NEXT_FRAMEWORK_INPUTS,
   STYLEX_NEXT_EMPTY_ENTRY_INPUTS,
   STYLEX_NEXT_EMPTY_ENTRY_LOADER,
@@ -41,6 +42,7 @@ import {
   prepareStylexNextAttempt,
   readStylexNextAttemptPlan,
   readStylexNextGraphReceipt,
+  readStylexNextBuiltinGlobalErrorInputs,
   releaseStylexNextOutputLease,
   stylexNextOutputLeasePath,
   writeStylexNextGraphReceipt,
@@ -50,6 +52,7 @@ import {
   verifySettledStylexNextEmptyEntryBootstrap,
 } from "./next-generation.js";
 import { transformStylexNextModule } from "./next-loader.js";
+import { STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY, stylexNextProfile } from "./next-profile.js";
 
 const roots: string[] = [];
 
@@ -163,6 +166,111 @@ async function materializeSsg(root: string, outputDirectory: string) {
 }
 
 describe("StyleX Next generation", () => {
+  test("rejects missing, altered, aliased or opposite-profile built-in global-error inputs", async () => {
+    const context = await createFixture();
+    const profile = stylexNextProfile("16.2.12");
+    const metadata = join(context.root, "node_modules/next/package.json");
+    await mkdir(dirname(metadata), { recursive: true });
+    await writeFile(metadata, '{"name":"next","version":"16.2.12"}');
+    await assert.rejects(readStylexNextBuiltinGlobalErrorInputs(context.root, "16.2.12"), /ENOENT/u);
+    for (const [path] of profile.builtinGlobalErrorInputs) {
+      const destination = join(context.root, "node_modules/next", path);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, await readFile(new URL(`../node_modules/next/${path}`, import.meta.url)));
+    }
+    const accepted = await readStylexNextBuiltinGlobalErrorInputs(context.root, "16.2.12");
+    assert.deepEqual(accepted.map(({ path, sha256 }) => [path, sha256]), profile.builtinGlobalErrorInputs.map(([path, hash]) => [`node_modules/next/${path}`, hash]));
+    for (const input of accepted) {
+      const path = join(context.root, input.path), original = await readFile(path);
+      await writeFile(path, Buffer.concat([original, Buffer.from("\n")]));
+      await assert.rejects(readStylexNextBuiltinGlobalErrorInputs(context.root, "16.2.12"), /pinned original bytes/u);
+      await writeFile(path, original);
+    }
+    for (const value of [{ name: "not-next", version: "16.2.12" }, { name: "next", version: "16.3.3" }]) {
+      await writeFile(metadata, JSON.stringify(value));
+      await assert.rejects(readStylexNextBuiltinGlobalErrorInputs(context.root, "16.2.12"));
+    }
+    await assert.rejects(readStylexNextBuiltinGlobalErrorInputs(context.root, "16.3.3"), /pinned original bytes/u);
+    await writeFile(metadata, '{"name":"next","version":"16.2.12"}');
+    const component = join(context.root, `node_modules/${STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY}.js`);
+    await rename(component, `${component}.retained`);
+    await symlink(`${component}.retained`, component);
+    await assert.rejects(readStylexNextBuiltinGlobalErrorInputs(context.root, "16.2.12"), /symlink/u);
+  });
+
+  test("rechecks the built-in inputs before graph publication, discovery settlement and complete-record commit", async () => {
+    const context = await createFixture();
+    const attempt = await prepareStylexNextAttempt({ attemptId: "builtin", packageManifests: [context.manifestPath],
+      requiredSources: { client: ["src/app.tsx"], "edge-rsc": [], "node-rsc": ["src/app.tsx"] }, rootDirectory: context.root });
+    const inputPaths = stylexNextProfile("16.2.12").builtinGlobalErrorInputs.map(([path]) => path);
+    const restoreInputs = async () => {
+      for (const path of inputPaths) {
+        const destination = join(context.root, "node_modules/next", path);
+        await mkdir(dirname(destination), { recursive: true });
+        await writeFile(destination, await readFile(new URL(`../node_modules/next/${path}`, import.meta.url)));
+      }
+    };
+    let finalCss: StylexArtifactV1 | undefined;
+    for (const mode of ["discovery", "delivery"] as const) {
+      const directory = mode === "discovery" ? ".stylex-next/builtin/next-discovery" : ".next";
+      for (const target of STYLEX_NEXT_TARGETS) {
+        const empty = target === "edge-rsc", client = target === "client", delivered = client && mode === "delivery";
+        if (!empty) {
+          await materializeOutputs(context.root, directory, target, delivered);
+          await transformStylexNextModule({ options: { attemptDirectory: attempt.directory, mode, planSha256: attempt.planSha256, rootDirectory: context.root, target },
+            resourcePath: context.sourcePath, source: context.source });
+        }
+        const ssg = client ? [await materializeSsg(context.root, directory)] : [];
+        const entries = empty ? [] : [{ css: delivered ? ["static/stylex.css"] : [],
+          files: delivered ? ["static/client.js", "static/stylex.css"] : [`static/${target}.js`], javascript: [`static/${target}.js`],
+          name: client ? "app/layout" : target, stylexCss: delivered ? ["static/stylex.css"] : [] },
+          ...(client ? [{ css: [], files: ["static/client.js"], javascript: ["static/client.js"], name: STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY, stylexCss: [] }] : [])];
+        const options = { attempt, cssInputs: client ? [context.foundation, context.siteCss, ...(finalCss === undefined ? [] : [finalCss])].sort((a, b) => compareStylexNextStrings(a.path, b.path)) : [],
+          entrypoints: entries, delegatedEntryBootstraps: [], emptyEntryBootstraps: [], frameworkAssets: ssg, auxiliaryTraceAssets: [],
+          javascriptChunks: empty ? [] : [`static/${target}.js`], mode, outputDirectory: directory,
+          outputs: empty ? [] : [...output(target), ...ssg.map(({ output }) => output), ...(delivered ? [{ bytes: 1, path: "static/stylex.css", sha256: sha256("c") }] : [])].sort((a, b) => compareStylexNextStrings(a.path, b.path)),
+          rootDirectory: context.root, sourceMaps: empty ? [] : sourceMaps(target), target, webpackVersion: "5.99.0" };
+        if (client && mode === "discovery") {
+          await assert.rejects(writeStylexNextGraphReceipt(options), /ENOENT/u);
+          await assert.rejects(readFile(join(attempt.directory, mode, target, "graph.json")), /ENOENT/u);
+          await restoreInputs();
+        }
+        await writeStylexNextGraphReceipt(options);
+      }
+      await writeFile(join(context.root, directory, "static/build/_ssgManifest.js"), serializeStylexNextSsgRoutes([]));
+      if (mode === "discovery") {
+        for (const path of inputPaths) {
+          await writeFile(join(context.root, "node_modules/next", path), "changed after graph publication");
+          await assert.rejects(finalizeStylexNextDiscovery(attempt, context.root), /pinned original bytes/u);
+          await assert.rejects(readFile(join(attempt.directory, "generated/stylex.css")), /ENOENT/u);
+          await restoreInputs();
+        }
+        await finalizeStylexNextDiscovery(attempt, context.root);
+        finalCss = await artifactForFile(context.root, ".stylex-next/builtin/generated/stylex.css");
+      }
+    }
+    for (const path of inputPaths) {
+      await assert.rejects(completeStylexNextBuild(attempt, context.root, async () => {
+        await writeFile(join(context.root, "node_modules/next", path), "changed during complete-record commit");
+      }), /pinned original bytes/u);
+      await assert.rejects(readFile(join(attempt.directory, "complete.json")), /ENOENT/u);
+      await restoreInputs();
+    }
+    assert.equal((await completeStylexNextBuild(attempt, context.root)).state, "complete");
+  }, 30_000);
+
+  test("rejects an explicit null profile rather than writing a default-version attempt", async () => {
+    const context = await createFixture();
+    await assert.rejects(prepareStylexNextAttempt({
+      attemptId: "null-profile",
+      nextVersion: null,
+      packageManifests: [context.manifestPath],
+      requiredSources: { client: ["src/app.tsx"], "edge-rsc": [], "node-rsc": [] },
+      rootDirectory: context.root,
+    } as never), /exactly/u);
+    await assert.rejects(readFile(join(context.root, ".stylex-next", "null-profile", "plan.json")), /ENOENT/u);
+  });
+
   test("rejects stale adapter, union policy, or schemas after an attacker rehashes the plan", async () => {
     const context = await createFixture();
     const attempt = await prepareStylexNextAttempt({
@@ -175,7 +283,7 @@ describe("StyleX Next generation", () => {
     const source = await readFile(path, "utf8");
     const plan = JSON.parse(source) as Record<string, unknown>;
     assert.equal(plan.adapterVersion, STYLEX_NEXT_ADAPTER_VERSION);
-    assert.equal(plan.adapterVersion, "hraness-stylex-next-v2");
+    assert.equal(plan.adapterVersion, "hraness-stylex-next-v3");
     assert.equal(plan.schemaVersion, 2);
     assert.equal(plan.unionPolicySha256, stylexUnionPolicySha256);
     assert.equal(plan.compilerSha256, compilerSha256);
@@ -183,6 +291,7 @@ describe("StyleX Next generation", () => {
     delete missingPolicy.unionPolicySha256;
     for (const forgedPlan of [
       { ...plan, adapterVersion: "hraness-stylex-next-v1" },
+      { ...plan, adapterVersion: "hraness-stylex-next-v2" },
       { ...plan, unionPolicySha256: sha256("obsolete union policy") },
       missingPolicy,
       { ...plan, schemaVersion: 1 },
@@ -372,7 +481,7 @@ describe("StyleX Next generation", () => {
     const receipt = await writeStylexNextGraphReceipt({
       attempt,
       cssInputs: [],
-      emptyEntryBootstraps: [],
+      delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
       entrypoints: [{
         css: [], files: ["static/client.js"], javascript: ["static/client.js"], name: "app/page", stylexCss: [],
       }],
@@ -392,7 +501,7 @@ describe("StyleX Next generation", () => {
       writeStylexNextGraphReceipt({
         attempt,
         cssInputs: [],
-        emptyEntryBootstraps: [],
+        delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
         entrypoints: [{
           css: [], files: ["static/client.js"], javascript: ["static/client.js"], name: "app/page", stylexCss: [],
         }],
@@ -455,7 +564,7 @@ describe("StyleX Next generation", () => {
           css: [], files: [`static/${target}.js`], javascript: [`static/${target}.js`],
           name: target === "client" ? "app/layout" : target, stylexCss: [],
         }],
-        emptyEntryBootstraps: [],
+        delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
         frameworkAssets: ssg,
         auxiliaryTraceAssets: [],
         javascriptChunks: empty ? [] : [`static/${target}.js`],
@@ -541,7 +650,7 @@ describe("StyleX Next generation", () => {
           stylexCss: target === "client" ? ["static/stylex.css"] : [],
         }],
         mode: "delivery",
-        emptyEntryBootstraps: [],
+        delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
         frameworkAssets: ssg,
         auxiliaryTraceAssets: [],
         javascriptChunks: empty ? [] : [`static/${target}.js`],
@@ -751,12 +860,16 @@ describe("StyleX Next generation", () => {
     );
   }, 30_000);
 
-  test("seals final auxiliary observations without rebinding initial graphs or completion evidence", async () => {
+  async function prepareAuxiliaryCompletionFixture(entrypoint: "app/page" | "proxy") {
     const context = await createFixture();
+    const proxy = entrypoint === "proxy";
+    const nodeSource = proxy ? "proxy.ts" : "src/app.tsx";
+    const nodeSourcePath = join(context.root, nodeSource);
+    if (proxy) await writeFile(nodeSourcePath, context.source);
     const attempt = await prepareStylexNextAttempt({
       attemptId: "auxiliary",
       packageManifests: [context.manifestPath],
-      requiredSources: { client: ["src/app.tsx"], "edge-rsc": [], "node-rsc": ["src/app.tsx"] },
+      requiredSources: { client: ["src/app.tsx"], "edge-rsc": [], "node-rsc": [nodeSource] },
       rootDirectory: context.root,
     });
     const creatorPath = join(context.root, "node_modules/next", STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]);
@@ -764,7 +877,9 @@ describe("StyleX Next generation", () => {
     assert.equal(sha256(creatorSource), STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[1]);
     await mkdir(dirname(creatorPath), { recursive: true });
     await writeFile(creatorPath, creatorSource);
-    const tracePath = "server/app/page.js.nft.json";
+    if (proxy) await writeFile(join(context.root, "node_modules/next", STYLEX_NEXT_PROXY_RENAME_CREATOR[0]), await readFile(new URL(`../node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`, import.meta.url)));
+    const tracePath = `server/${entrypoint}.js.nft.json`;
+    const finalTracePath = proxy ? "server/middleware.js.nft.json" : tracePath;
     const initialSource = '{"version":1,"files":["initial.js"]}';
     // These names remain opaque observations. The fixture deliberately creates none of them.
     const finalSource = '{"version":1,"files":["z-final.js","../../shared.js","a-final.js"]}';
@@ -773,10 +888,10 @@ describe("StyleX Next generation", () => {
       bytes: Buffer.byteLength(source), path: tracePath, sha256: sha256(source),
     });
     const initial = traceArtifact(initialSource);
-    const final = traceArtifact(finalSource);
+    const final = { ...traceArtifact(finalSource), path: finalTracePath };
     assert.notEqual(initial.sha256, final.sha256);
     assert.equal(Buffer.byteLength(finalSource), Buffer.byteLength(changedSource));
-    const auxiliary = await captureStylexNextAuxiliaryTraceAsset(context.root, "app/page", initial, initialSource);
+    const auxiliary = await captureStylexNextAuxiliaryTraceAsset(context.root, entrypoint, initial, initialSource);
     const graphSources = new Map<"discovery" | "delivery", string>();
 
     for (const mode of ["discovery", "delivery"] as const) {
@@ -787,7 +902,7 @@ describe("StyleX Next generation", () => {
         : undefined;
       for (const target of STYLEX_NEXT_TARGETS) {
         const empty = target === "edge-rsc";
-        const javascript = target === "node-rsc" ? "server/app/page.js" : "static/client.js";
+        const javascript = target === "node-rsc" ? `server/${entrypoint}.js` : "static/client.js";
         const css = target === "client" && mode === "delivery" ? ["static/stylex.css"] : [];
         const sources = new Map<string, string>();
         if (!empty) {
@@ -801,7 +916,7 @@ describe("StyleX Next generation", () => {
           }
           await transformStylexNextModule({
             options: { attemptDirectory: attempt.directory, mode, planSha256: attempt.planSha256, rootDirectory: context.root, target },
-            resourcePath: context.sourcePath,
+            resourcePath: target === "node-rsc" ? nodeSourcePath : context.sourcePath,
             source: context.source,
           });
         }
@@ -813,10 +928,10 @@ describe("StyleX Next generation", () => {
           cssInputs: target === "client"
             ? [context.foundation, context.siteCss, ...(finalCss ? [finalCss] : [])].sort((left, right) => compareStylexNextStrings(left.path, right.path))
             : [],
-          emptyEntryBootstraps: [],
+          delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
           entrypoints: empty ? [] : [{
             css, files: [javascript, ...css], javascript: [javascript],
-            name: target === "client" ? "app/layout" : "app/page", stylexCss: css,
+            name: target === "client" ? "app/layout" : entrypoint, stylexCss: css,
           }],
           frameworkAssets: [],
           javascriptChunks: empty ? [] : [javascript],
@@ -834,60 +949,131 @@ describe("StyleX Next generation", () => {
       const graph = await readStylexNextGraphReceipt(attempt, mode, "node-rsc");
       assert.deepEqual(graph.auxiliaryTraceAssets, [auxiliary]);
       assert.deepEqual(graph.outputs.find(({ path }) => path === tracePath), initial);
-      assert.deepEqual(graph.entrypoints[0]!.javascript, ["server/app/page.js"]);
-      assert.deepEqual(graph.javascriptChunks, ["server/app/page.js"]);
+      assert.deepEqual(graph.entrypoints[0]!.javascript, [`server/${entrypoint}.js`]);
+      assert.deepEqual(graph.javascriptChunks, [`server/${entrypoint}.js`]);
       // Model the native post-child rewrite only after the immutable compilation receipt exists.
-      await writeFile(join(outputRoot, tracePath), finalSource);
+      if (proxy) {
+        await rename(join(outputRoot, "server/proxy.js"), join(outputRoot, "server/middleware.js"));
+        await rename(join(outputRoot, tracePath), join(outputRoot, finalTracePath));
+      }
+      await writeFile(join(outputRoot, finalTracePath), finalSource);
       if (mode === "discovery") await finalizeStylexNextDiscovery(attempt, context.root);
       assert.equal(await readFile(graphPath, "utf8"), graphSources.get(mode));
     }
 
-    const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
-    const discoverySeal = await readFile(discoverySealPath, "utf8");
-    const snapshot = { asset: auxiliary, output: final, semantics: "observation-only" } as const;
-    const settled = validateStylexNextPostprocessingReceipt(JSON.parse(discoverySeal));
-    assert.deepEqual(settled.auxiliaryTraceSnapshots, [snapshot]);
-    assert.deepEqual(settled.ssg, [], "Auxiliary observations must not enter the SSG derivation proof");
-    const discoveryTracePath = join(attempt.directory, "next-discovery", tracePath);
-    const completePath = join(attempt.directory, "complete.json");
-    await writeFile(discoveryTracePath, changedSource);
-    await assert.rejects(completeStylexNextBuild(attempt, context.root), /discovery postprocessing changed after settlement/u);
-    await assert.rejects(readFile(completePath), /ENOENT/u);
-    await assert.rejects(readFile(join(attempt.directory, "delivery/postprocessing.json")), /ENOENT/u);
-    assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
-    await writeFile(discoveryTracePath, finalSource);
+    return { context, proxy, attempt, tracePath, finalTracePath, initial, final, finalSource, changedSource, auxiliary, graphSources };
+  }
 
-    for (const mode of ["discovery", "delivery"] as const) {
-      const trace = mode === "discovery" ? discoveryTracePath : join(context.root, ".next", tracePath);
+  // Keep each full transaction pair on its own fresh fixture and unchanged
+  // default deadline. A timed-out multi-case test can otherwise race afterEach
+  // while its abandoned completion promise still reads the fixture.
+  for (const entrypoint of ["app/page", "proxy"] as const) {
+    test(`rejects ${entrypoint} discovery observation drift before creating delivery or completion seals`, async () => {
+      const { context, attempt, finalTracePath, changedSource } = await prepareAuxiliaryCompletionFixture(entrypoint);
+      const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
+      const discoverySeal = await readFile(discoverySealPath, "utf8");
+      await writeFile(join(attempt.directory, "next-discovery", finalTracePath), changedSource);
+      await assert.rejects(completeStylexNextBuild(attempt, context.root), /discovery postprocessing changed after settlement/u);
+      await assert.rejects(readFile(join(attempt.directory, "complete.json")), /ENOENT/u);
+      await assert.rejects(readFile(join(attempt.directory, "delivery/postprocessing.json")), /ENOENT/u);
+      assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
+    });
+
+    for (const mutationMode of ["discovery", "delivery"] as const) test(`seals ${entrypoint} after late ${mutationMode} rejection without rebinding initial graphs or failed seals`, async () => {
+      const { context, proxy, attempt, tracePath, finalTracePath, initial, final, finalSource, changedSource, auxiliary, graphSources } = await prepareAuxiliaryCompletionFixture(entrypoint);
+      const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
+      const discoverySeal = await readFile(discoverySealPath, "utf8");
+      const nodeGraph = await readStylexNextGraphReceipt(attempt, "discovery", "node-rsc");
+      const compiledProxy = nodeGraph.outputs.find(({ path }) => path === "server/proxy.js");
+      const snapshot = { asset: auxiliary, output: final, semantics: "observation-only", ...(proxy ? { proxyRename: {
+        absent: ["server/proxy.js", "server/proxy.js.nft.json"],
+        creator: await artifactForFile(context.root, `node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`),
+        initial: compiledProxy, output: { ...compiledProxy, path: "server/middleware.js" },
+        sourceMap: nodeGraph.sourceMaps.find(({ path }) => path === "server/proxy.js.map"),
+      } } : {}) } as const;
+      const settled = validateStylexNextPostprocessingReceipt(JSON.parse(discoverySeal));
+      assert.deepEqual(settled.auxiliaryTraceSnapshots, [snapshot]);
+      assert.deepEqual(settled.ssg, [], "Auxiliary observations must not enter the SSG derivation proof");
+      const trace = mutationMode === "discovery"
+        ? join(attempt.directory, "next-discovery", finalTracePath)
+        : join(context.root, ".next", finalTracePath);
+      const completePath = join(attempt.directory, "complete.json");
       let callbackReached = false;
       await assert.rejects(completeStylexNextBuild(attempt, context.root, async () => {
         callbackReached = true;
         await writeFile(trace, changedSource);
-      }), mode === "discovery"
+      }), mutationMode === "discovery"
         ? /discovery postprocessing changed after settlement/u
         : /build evidence changed before complete-record commit/u);
       assert.equal(callbackReached, true);
       await assert.rejects(readFile(completePath), /ENOENT/u);
       assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
-      const deliverySeal = validateStylexNextPostprocessingReceipt(JSON.parse(await readFile(join(attempt.directory, "delivery/postprocessing.json"), "utf8")));
+      const deliverySealPath = join(attempt.directory, "delivery/postprocessing.json");
+      const deliverySealSource = await readFile(deliverySealPath, "utf8");
+      const deliverySeal = validateStylexNextPostprocessingReceipt(JSON.parse(deliverySealSource));
       assert.deepEqual(deliverySeal.auxiliaryTraceSnapshots, [snapshot], "A failed completion must not refresh the final observation");
       await writeFile(trace, finalSource);
-    }
 
-    const complete = await completeStylexNextBuild(attempt, context.root);
-    assert.equal(complete.state, "complete");
-    for (const mode of ["discovery", "delivery"] as const) {
-      const graphSource = graphSources.get(mode)!;
-      assert.equal(await readFile(join(attempt.directory, mode, "node-rsc/graph.json"), "utf8"), graphSource);
-      assert.equal(complete[mode].find(({ target }) => target === "node-rsc")!.receiptSha256, sha256(graphSource));
-      const graph = await readStylexNextGraphReceipt(attempt, mode, "node-rsc");
-      assert.deepEqual(graph.outputs.find(({ path }) => path === tracePath), initial);
-      assert.deepEqual(complete.postprocessing[mode], await artifactForFile(context.root, `.stylex-next/auxiliary/${mode}/postprocessing.json`));
-      const postprocessing = validateStylexNextPostprocessingReceipt(JSON.parse(await readFile(join(attempt.directory, mode, "postprocessing.json"), "utf8")));
-      assert.deepEqual(postprocessing.auxiliaryTraceSnapshots, [snapshot]);
-    }
-    assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
-  });
+      // Sequential failed completion -> repaired retry remains the same test:
+      // the retry must collide with and reuse the failed attempt's exact seal.
+      const complete = await completeStylexNextBuild(attempt, context.root);
+      assert.equal(complete.state, "complete");
+      for (const mode of ["discovery", "delivery"] as const) {
+        const graphSource = graphSources.get(mode)!;
+        assert.equal(await readFile(join(attempt.directory, mode, "node-rsc/graph.json"), "utf8"), graphSource);
+        assert.equal(complete[mode].find(({ target }) => target === "node-rsc")!.receiptSha256, sha256(graphSource));
+        const graph = await readStylexNextGraphReceipt(attempt, mode, "node-rsc");
+        assert.deepEqual(graph.outputs.find(({ path }) => path === tracePath), initial);
+        assert.deepEqual(complete.postprocessing[mode], await artifactForFile(context.root, `.stylex-next/auxiliary/${mode}/postprocessing.json`));
+        const postprocessing = validateStylexNextPostprocessingReceipt(JSON.parse(await readFile(join(attempt.directory, mode, "postprocessing.json"), "utf8")));
+        assert.deepEqual(postprocessing.auxiliaryTraceSnapshots, [snapshot]);
+      }
+      assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
+      assert.equal(await readFile(deliverySealPath, "utf8"), deliverySealSource, "Successful retry must preserve the failed completion's delivery seal bytes");
+    });
+  }
+
+  // Each late mutation owns a fresh complete fixture and the default test deadline.
+  // Combining all eight full completion transactions hides the failing case and
+  // lets a timed-out test race its fixture cleanup while later transactions run.
+  for (const mode of ["discovery", "delivery"] as const) {
+    for (const [path, expected] of [
+      ["server/middleware.js", /changed JavaScript/u],
+      ["server/proxy.js.map", /changed its original map/u],
+      ["server/proxy.js", /original path must be absent/u],
+      ["server/proxy.js.nft.json", /original path must be absent/u],
+    ] as const) test(`rejects late proxy ${mode} ${path} drift before completion`, async () => {
+      const { context, attempt, graphSources } = await prepareAuxiliaryCompletionFixture("proxy");
+      const outputRoot = mode === "discovery" ? join(attempt.directory, "next-discovery") : join(context.root, ".next");
+      const absolute = join(outputRoot, path);
+      const originallyAbsent = path === "server/proxy.js" || path === "server/proxy.js.nft.json";
+      const before = originallyAbsent ? undefined : await readFile(absolute);
+      const completePath = join(attempt.directory, "complete.json");
+      const discoverySealPath = join(attempt.directory, "discovery/postprocessing.json");
+      const discoverySeal = await readFile(discoverySealPath, "utf8");
+      let callbackReached = false;
+      await assert.rejects(completeStylexNextBuild(attempt, context.root, async () => {
+        callbackReached = true;
+        await writeFile(absolute, before ? Buffer.concat([before, Buffer.from("\n")]) : "late");
+      }), expected);
+      assert.equal(callbackReached, true);
+      await assert.rejects(readFile(completePath), /ENOENT/u);
+      assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
+      const deliverySealPath = join(attempt.directory, "delivery/postprocessing.json");
+      const deliverySeal = await readFile(deliverySealPath, "utf8");
+      if (before) await writeFile(absolute, before);
+      else await unlink(absolute);
+      const complete = await completeStylexNextBuild(attempt, context.root);
+      assert.equal(complete.state, "complete");
+      assert.equal(await readFile(discoverySealPath, "utf8"), discoverySeal);
+      assert.equal(await readFile(deliverySealPath, "utf8"), deliverySeal);
+      for (const phase of ["discovery", "delivery"] as const) {
+        const graphSource = graphSources.get(phase)!;
+        assert.equal(await readFile(join(attempt.directory, phase, "node-rsc/graph.json"), "utf8"), graphSource);
+        assert.equal(complete[phase].find(({ target }) => target === "node-rsc")!.receiptSha256, sha256(graphSource));
+      }
+    });
+  }
 
   test("stops delivery when a transformed module changes between passes", async () => {
     const context = await createFixture();
@@ -917,7 +1103,7 @@ describe("StyleX Next generation", () => {
         mode: "delivery",
         outputDirectory: ".next",
         outputs: output("client"),
-        emptyEntryBootstraps: [],
+        delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
         frameworkAssets: [],
         auxiliaryTraceAssets: [],
         javascriptChunks: ["static/client.js"],

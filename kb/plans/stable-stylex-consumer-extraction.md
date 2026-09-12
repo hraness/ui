@@ -528,7 +528,7 @@ shipping a partial prefix, mode, or fixture workaround.
   source or compiler defect and required this plan correction plus a fresh
   generated-artifact seal and canonical gate before delivery.
 
-## Current validation phase
+## September 6 validation checkpoint
 
 The combined-metadata direction, bounded implementation join, public API,
 standards-based package surface, dependency boundary, generated inventory, and
@@ -542,3 +542,61 @@ terminal package/Vite/browser fixtures, canonical full gate, current-main pull
 request, protected merge, and immutable release remain. Those steps must
 preserve the retained failing matrix, the ordinary precompiled stylesheet route,
 and the transactional all-graph contract above.
+
+## September 9 exact Next profile qualification
+
+The shared extraction and component work has since shipped through immutable
+UI releases, including v0.5.9 and v0.5.10. The current follow-on PR #65 qualifies
+Next 16.3.3 alongside the unchanged 16.2.12 default. It retains exact framework
+creator hashes and complete discovery/delivery, graph, source-map, native
+TypeScript, proxy, SSG and postprocessing joins. The newer native root-parameter
+writer is tested independently for its finite return-type combinations; the
+complete static-root fixture proves the empty declaration without claiming
+dynamic-root route acceptance.
+
+At source commit `43ce2e024f192e64c03f821c0664c288373fe5c7`, the complete local
+Next matrix passed both exact versions, including proxy routing, browser
+hydration, CSP, lazy/global-error assets and the separate no-edge build. CI run
+`34387412021` passed the canonical gate on an identical integration tree,
+including 684 tests, 32,032 assertions, all package and adopter matrices, gallery
+acceptance, generated-artifact cleanliness, packing and installed imports.
+
+Release preparation updates the package, lock peer metadata and artifact check
+to advertise exactly `16.2.12 || 16.3.3`, keeps the development/default version
+at 16.2.12, and adds a manifest regression. Version v0.5.11 is a candidate until
+its own generated seal, final gate, current-head CI, protected merge and
+immutable release succeed. Earlier green evidence does not replace those
+changed-tree gates. Product adoption and production verification remain owned
+by each consumer and are not implied by this package qualification.
+
+## September 9 fail-fast property validation
+
+PR #65 merged as `e804c8b10984d75917d6875d4a34ab1e6df3902f` with the same
+tree as its final reviewed branch. Its post-merge canonical CI run
+`34393970619` passed. The annotated v0.5.11 tag points to that commit. Release
+run `34395885398` passed its separate canonical gate with 689 tests and 32,032
+assertions, then published immutable v0.5.11 on September 9 at 19:47 UTC.
+This does not complete the remaining product migrations.
+
+Direct and Stripe product parity checks exposed silently dropped border
+shorthands in the pinned StyleX 0.19 compiler. The upstream property-specificity
+expander catches unsupported-property errors and defaults to returning no
+rules. The follow-on compiler repair pins its supported `throw` mode in both
+the public collector and package options, includes that choice in the canonical
+compiler identity, and tests the finite unsupported shorthand inventory,
+nested conditions, both map paths, and retained supported longhands and font
+shorthands. Independent static review found no blocker. The first focused gate
+passed 84 tests with 95 assertions across compiler, source-map, and pinned-parser
+tests, followed by typecheck. The generated-artifact seal passed with 701
+canonical rules and six exact adopter stylesheets. Runtime JavaScript and
+standalone CSS remain byte-identical; the regenerated manifest and build tools
+bind the new validation policy. The canonical gate remains pending for the
+v0.5.12 candidate at this checkpoint.
+
+Deliver this change as its own current-main PR and immutable release after the
+canonical package and native adopter gates. Then rebuild design-kit and footer
+manifests against the new compiler before upgrading product graph generations.
+Do not accept old compiler identities under a recalculated manifest hash or
+alter an existing release. The rationale belongs to
+[[notes/repository-seams|repository seams]]. Product parity repairs proceed on
+their currently pinned compiler until that dependency train is validated.

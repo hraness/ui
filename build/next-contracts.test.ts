@@ -11,6 +11,7 @@ import {
 import {
   STYLEX_NEXT_ADAPTER_VERSION,
   STYLEX_NEXT_AUXILIARY_TRACE_CREATOR,
+  STYLEX_NEXT_PROXY_RENAME_CREATOR,
   STYLEX_NEXT_GRAPH_SCHEMA_VERSION,
   STYLEX_NEXT_MODULE_SCHEMA_VERSION,
   STYLEX_NEXT_REQUIRED_VERSION,
@@ -35,6 +36,7 @@ import {
   validateStylexNextAuxiliaryTraceAsset,
   validateStylexNextAuxiliaryTraceSnapshot,
 } from "./next-contracts.js";
+import { STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY } from "./next-profile.js";
 
 const emptyRules = [] as const;
 const emptyEntryGraph = {
@@ -110,6 +112,20 @@ describe("Next adapter contracts", () => {
       ["main-app", "app/(.)modal/layout", "app/(.)modal/page"],
       ["main-app", "app/(one)/layout", "app/(two)/page"],
     ]) assert.throws(() => stylexNextDeliveryCssOwnerNames(entries));
+  });
+
+  test("admits only the exact built-in global-error as a non-owner without changing physical owners", () => {
+    const builtin = STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY;
+    const base = ["main-app", "app/_global-error/page", "app/layout", "app/page"];
+    assert.deepEqual(stylexNextDeliveryCssOwnerNames([...base, builtin]), ["app/layout"]);
+    assert.deepEqual(stylexNextDeliveryCssOwnerNames([...base, builtin, "app/global-error"]), ["app/global-error", "app/layout"]);
+    for (const name of [
+      `app/${builtin}`, `node_modules/${builtin}`, `${builtin}/page`, `${builtin}/layout`,
+      `other/${builtin}`, builtin.replace("/builtin/", "/custom/"), builtin.replace("next/", "Next/"),
+      builtin.replace("/components/", "/components/../components/"), `./${builtin}`, `/${builtin}`,
+      builtin.replaceAll("/", "\\"), "app/nested/global-error", "app/nested/global-error/page",
+    ]) assert.throws(() => stylexNextDeliveryCssOwnerNames([...base, name]), `Unexpected global-error identity: ${name}`);
+    assert.throws(() => stylexNextDeliveryCssOwnerNames([...base, builtin, builtin]), /unique/u);
   });
 
   test("derives BUILD_ID and SSG output artifacts from the declared UTF-8 values", () => {
@@ -430,7 +446,7 @@ describe("Next adapter contracts", () => {
       compilerSha256,
       cssInputs: [],
       entrypoints: [{ css: ["static/app.css"], files: ["static/app.css", "static/app.js"], javascript: ["static/app.js"], name: "app", stylexCss: [] }],
-      emptyEntryBootstraps: [],
+      delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
       frameworkAssets: [],
       javascriptChunks: ["static/app.js"],
       graphId: "client",
@@ -498,7 +514,7 @@ describe("Next adapter contracts", () => {
     };
     assert.equal(validateStylexNextGraphReceipt(withEmpty).emptyEntryBootstraps.length, 1);
     for (const value of [
-      { ...withEmpty, emptyEntryBootstraps: [] },
+      { ...withEmpty, delegatedEntryBootstraps: [], emptyEntryBootstraps: [] },
       { ...withEmpty, javascriptChunks: ["static/app.js"] },
       { ...withEmpty, target: "node-rsc" },
       { ...withEmpty, emptyEntryBootstraps: [bootstrap, bootstrap] },
@@ -599,7 +615,7 @@ describe("Next adapter contracts", () => {
     const entry = { css: [], files: [javascript.path], javascript: [javascript.path], name: "app/page", stylexCss: [] };
     const graph = {
       adapterVersion: STYLEX_NEXT_ADAPTER_VERSION, attemptId: "fixture", auxiliaryTraceAssets: [asset], compilerSha256,
-      cssInputs: [], emptyEntryBootstraps: [], entrypoints: [entry], frameworkAssets: [], graphId: "node-rsc",
+      cssInputs: [], delegatedEntryBootstraps: [], emptyEntryBootstraps: [], entrypoints: [entry], frameworkAssets: [], graphId: "node-rsc",
       javascriptChunks: [javascript.path], kind: "hraness-stylex-next-graph", mode: "discovery", modules,
       nextVersion: STYLEX_NEXT_REQUIRED_VERSION, outputDirectory: ".next", outputs: [javascript, map, initial],
       packages: [], rules: emptyRules, rulesSha256: stylexRulesSha256(emptyRules), schemaVersion: 1,
@@ -647,6 +663,68 @@ describe("Next adapter contracts", () => {
     assert.throws(() => validateStylexNextPostprocessingReceipt({ ...receipt, auxiliaryTraceSnapshots: [snapshot, snapshot] }), /unique and path sorted/u);
   });
 
+  test("admits only the literal registered Node proxy trace without exempting its source or map", () => {
+    const artifact = (path: string, source: string) => ({ bytes: Buffer.byteLength(source), path, sha256: sha256(source) });
+    const initial = artifact("server/proxy.js.nft.json", '{"version":1,"files":[]}');
+    const asset = {
+      creator: { bytes: 1, path: `node_modules/next/${STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]}`, sha256: STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[1] },
+      entrypoint: "proxy", initial, kind: "next-node-dependency-trace",
+    };
+    const javascript = artifact("server/proxy.js", "export const proxy = true;");
+    const map = artifact("server/proxy.js.map", "{}");
+    const entry = { css: [], files: [javascript.path], javascript: [javascript.path], name: "proxy", stylexCss: [] };
+    for (const source of ["proxy.ts", "src/proxy.ts"]) {
+      const modules = [{ path: source, receiptSha256: sha256(source) }];
+      const graph = {
+        adapterVersion: STYLEX_NEXT_ADAPTER_VERSION, attemptId: "fixture", auxiliaryTraceAssets: [asset], compilerSha256,
+        cssInputs: [], delegatedEntryBootstraps: [], emptyEntryBootstraps: [], entrypoints: [entry], frameworkAssets: [], graphId: "node-rsc",
+        javascriptChunks: [javascript.path], kind: "hraness-stylex-next-graph", mode: "discovery", modules,
+        nextVersion: STYLEX_NEXT_REQUIRED_VERSION, outputDirectory: ".next", outputs: [javascript, map, initial],
+        packages: [], rules: emptyRules, rulesSha256: stylexRulesSha256(emptyRules), schemaVersion: 1,
+        sourceMaps: [map], sourcesSha256: sha256(JSON.stringify(modules)), target: "node-rsc", webpackVersion: "5.99.0",
+      };
+      assert.deepEqual(validateStylexNextGraphReceipt(graph).auxiliaryTraceAssets, [asset]);
+      for (const change of [
+        { target: "client" }, { target: "edge-rsc" }, { javascriptChunks: [] },
+        { entrypoints: [] }, { entrypoints: [{ ...entry, name: "middleware" }] },
+        { entrypoints: [{ ...entry, files: [], javascript: [] }] },
+        { outputs: [javascript, initial], sourceMaps: [] },
+        { outputs: [javascript, map] }, { auxiliaryTraceAssets: [] },
+        { outputs: [javascript, map, initial, artifact("server/orphan.js.nft.json", '{"version":1,"files":[]}')] },
+        { entrypoints: [{ ...entry, files: [javascript.path, initial.path] }] },
+        { auxiliaryTraceAssets: [{ ...asset, initial: { ...initial, sha256: sha256("changed") } }] },
+        { sourcesSha256: sha256("changed") },
+      ]) assert.throws(() => validateStylexNextGraphReceipt({ ...graph, ...change }));
+      const auxiliaryMap = artifact(`${initial.path}.map`, "{}");
+      assert.throws(() => validateStylexNextGraphReceipt({ ...graph, outputs: [...graph.outputs, auxiliaryMap], sourceMaps: [map, auxiliaryMap] }), /cannot waive a source map/u);
+    }
+    for (const entrypoint of ["middleware", "instrumentation", "runtime/main", "src/proxy", "proxy/sub", "proxy.js", "Proxy", "../proxy", "/proxy"]) {
+      assert.throws(() => validateStylexNextAuxiliaryTraceAsset({
+        ...asset, entrypoint, initial: { ...initial, path: `server/${entrypoint}.js.nft.json` },
+      }));
+    }
+    const proxyRename = {
+      absent: ["server/proxy.js", "server/proxy.js.nft.json"],
+      creator: { bytes: 1, path: `node_modules/next/${STYLEX_NEXT_PROXY_RENAME_CREATOR[0]}`, sha256: STYLEX_NEXT_PROXY_RENAME_CREATOR[1] },
+      initial: javascript, output: { ...javascript, path: "server/middleware.js" }, sourceMap: map,
+    };
+    const snapshot = { asset, output: { ...initial, path: "server/middleware.js.nft.json" }, proxyRename, semantics: "observation-only" };
+    assert.deepEqual(validateStylexNextAuxiliaryTraceSnapshot(snapshot), snapshot);
+    for (const change of [
+      { proxyRename: undefined }, { output: initial },
+      ...[
+        { absent: [] }, { absent: ["server/proxy.js"] }, { absent: [...proxyRename.absent].reverse() },
+        { creator: { ...proxyRename.creator, sha256: sha256("changed") } },
+        { creator: { ...proxyRename.creator, path: "node_modules/next/dist/build/entries.js" } },
+        { initial: { ...javascript, path: "server/other.js" } },
+        { output: { ...proxyRename.output, sha256: sha256("changed") } },
+        { output: { ...proxyRename.output, path: "server/other.js" } },
+        { sourceMap: { ...map, path: "server/middleware.js.map" } }, { arbitraryRename: true },
+      ].map((change) => ({ proxyRename: { ...proxyRename, ...change } })),
+      { asset: { ...asset, entrypoint: "app/page", initial: { ...initial, path: "server/app/page.js.nft.json" } } },
+    ]) assert.throws(() => validateStylexNextAuxiliaryTraceSnapshot({ ...snapshot, ...change }));
+  });
+
   test("represents an observed-empty production target with an explicit empty graph", () => {
     const modules = [] as const;
     const receipt = validateStylexNextGraphReceipt({
@@ -656,7 +734,7 @@ describe("Next adapter contracts", () => {
       compilerSha256,
       cssInputs: [],
       entrypoints: [],
-      emptyEntryBootstraps: [],
+      delegatedEntryBootstraps: [], emptyEntryBootstraps: [],
       frameworkAssets: [],
       javascriptChunks: [],
       graphId: "edge-rsc",

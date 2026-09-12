@@ -1,16 +1,19 @@
+import { STYLEX_NEXT_REQUIRED_VERSION, stylexNextProfile, type StylexNextVersion } from "./next-profile.js";
 import assert from "node:assert/strict";
 import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
-import { isAbsolute, resolve, win32 } from "node:path";
+import { dirname, isAbsolute, resolve, win32 } from "node:path";
 
 import type { StylexArtifactV1 } from "./contracts.js";
 import { normalizeLogicalPath, sha256 } from "./compiler.js";
 import {
-  STYLEX_NEXT_AUXILIARY_TRACE_CREATOR,
   validateStylexNextAuxiliaryTraceAsset,
   validateStylexNextAuxiliaryTraceSnapshot,
+  validateStylexNextGraphReceipt,
   type StylexNextAuxiliaryTraceAssetV1,
   type StylexNextAuxiliaryTraceSnapshotV1,
+  type StylexNextGraphReceiptV1,
+  type StylexNextProxyRenameV1,
 } from "./next-contracts.js";
 
 const MAX_BYTES = 16 * 1024 * 1024;
@@ -44,13 +47,15 @@ export function validateStylexNextAuxiliaryTraceSource(value: string | Uint8Arra
   assert.equal(source, JSON.stringify(parsed), "Next auxiliary trace JSON differs from the native compact format");
 }
 
-async function readOrdinary(root: string, logical: string, role: "installed-creator" | "generated-output"): Promise<Readonly<{ artifact: StylexArtifactV1; bytes: Buffer }>> {
+async function readOrdinary(root: string, logical: string, role: "installed-creator" | "generated-output", nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION): Promise<Readonly<{ artifact: StylexArtifactV1; bytes: Buffer }>> {
   assert.ok(isAbsolute(root) && resolve(root) === root, "Next auxiliary trace root must be an absolute normalized path");
   assert.equal(await realpath(root), root, "Next auxiliary trace root traverses a symlink");
   assert.ok((await lstat(root)).isDirectory(), "Next auxiliary trace root must be a directory");
   const path = normalizeLogicalPath(logical, "Next auxiliary trace artifact path");
+  const creator = [stylexNextProfile(nextVersion).auxiliaryTraceCreator, stylexNextProfile(nextVersion).proxyRenameCreator]
+    .find(([logical]) => path === `node_modules/next/${logical}`);
   if (role === "installed-creator") {
-    assert.equal(path, `node_modules/next/${STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[0]}`, "Next auxiliary trace installed creator path differs from its pinned owner");
+    assert.ok(creator !== undefined, "Next auxiliary trace installed creator path differs from its pinned owner");
   }
   const absolute = resolve(root, ...path.split("/"));
   assert.equal(await realpath(absolute), absolute, "Next auxiliary trace artifact traverses a symlink");
@@ -85,7 +90,7 @@ async function readOrdinary(root: string, logical: string, role: "installed-crea
     const bytes = buffer.subarray(0, length);
     const artifact = { bytes: length, path, sha256: sha256(bytes) };
     if (role === "installed-creator") {
-      assert.equal(artifact.sha256, STYLEX_NEXT_AUXILIARY_TRACE_CREATOR[1], "Next auxiliary trace creator differs from its pinned source bytes");
+      assert.equal(artifact.sha256, creator![1], "Next auxiliary trace creator differs from its pinned source bytes");
     }
     return { artifact, bytes };
   } finally {
@@ -93,10 +98,46 @@ async function readOrdinary(root: string, logical: string, role: "installed-crea
   }
 }
 
-async function readCreator(root: string): Promise<StylexArtifactV1> {
-  const [path] = STYLEX_NEXT_AUXILIARY_TRACE_CREATOR;
-  const creator = await readOrdinary(root, `node_modules/next/${path}`, "installed-creator");
+async function readCreator(root: string, nextVersion: StylexNextVersion): Promise<StylexArtifactV1> {
+  const [path] = stylexNextProfile(nextVersion).auxiliaryTraceCreator;
+  const creator = await readOrdinary(root, `node_modules/next/${path}`, "installed-creator", nextVersion);
   return creator.artifact;
+}
+
+async function absentProxyPaths(outputRoot: string): Promise<void> {
+  for (const path of ["server/proxy.js", "server/proxy.js.nft.json"]) {
+    const absolute = resolve(outputRoot, path);
+    assert.equal(await realpath(dirname(absolute)), dirname(absolute), "Next proxy old path parent traverses a symlink");
+    try { await lstat(absolute); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    assert.fail(`Next proxy original path must be absent after its native rename: ${path}`);
+  }
+}
+
+async function proveProxyRename(root: string, outputRoot: string, asset: StylexNextAuxiliaryTraceAssetV1, value: StylexNextGraphReceiptV1 | undefined, nextVersion: StylexNextVersion): Promise<StylexNextProxyRenameV1> {
+  assert.ok(value !== undefined, "Next proxy rename requires its immutable graph proof");
+  const graph = validateStylexNextGraphReceipt(value);
+  assert.equal(graph.nextVersion, nextVersion, "Next proxy graph differs from selected profile");
+  assert.equal(graph.target, "node-rsc", "Next proxy rename requires the Node graph");
+  assert.deepEqual(graph.auxiliaryTraceAssets.find(({ entrypoint }) => entrypoint === "proxy"), asset, "Next proxy rename trace differs from its graph");
+  for (const path of ["server/middleware.js", "server/middleware.js.nft.json"]) {
+    assert.ok(!graph.outputs.some((output) => output.path === path), "Next proxy native rename destination has a compiled owner");
+  }
+  const initial = graph.outputs.find(({ path }) => path === "server/proxy.js");
+  const sourceMap = graph.sourceMaps.find(({ path }) => path === "server/proxy.js.map");
+  assert.ok(initial !== undefined && sourceMap !== undefined, "Next proxy rename must retain its compiled JavaScript and map");
+  const creatorPath = `node_modules/next/${stylexNextProfile(nextVersion).proxyRenameCreator[0]}`;
+  const creator = (await readOrdinary(root, creatorPath, "installed-creator", nextVersion)).artifact;
+  await absentProxyPaths(outputRoot);
+  const output = (await readOrdinary(outputRoot, "server/middleware.js", "generated-output")).artifact;
+  assert.deepEqual(output, { ...initial, path: "server/middleware.js" }, "Next proxy native rename changed JavaScript bytes");
+  assert.deepEqual((await readOrdinary(outputRoot, sourceMap.path, "generated-output")).artifact, sourceMap, "Next proxy native rename changed its original map");
+  assert.deepEqual((await readOrdinary(root, creatorPath, "installed-creator", nextVersion)).artifact, creator, "Next proxy native rename creator changed");
+  await absentProxyPaths(outputRoot);
+  return { absent: ["server/proxy.js", "server/proxy.js.nft.json"], creator, initial, output, sourceMap };
 }
 
 /** Bind the initial native asset. Graph validation separately proves entry linkage. */
@@ -105,13 +146,14 @@ export async function captureStylexNextAuxiliaryTraceAsset(
   entrypoint: string,
   initialArtifact: StylexArtifactV1,
   source: string | Uint8Array,
+  nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION,
 ): Promise<StylexNextAuxiliaryTraceAssetV1> {
   const bytes = sourceBytes(source);
   validateStylexNextAuxiliaryTraceSource(bytes);
   const initial = { bytes: bytes.byteLength, path: `server/${entrypoint}.js.nft.json`, sha256: sha256(bytes) };
   assert.deepEqual(initialArtifact, initial, "Next auxiliary trace initial artifact differs from its source bytes or entrypoint");
-  const creator = await readCreator(rootDirectory);
-  return validateStylexNextAuxiliaryTraceAsset({ creator, entrypoint, initial, kind: "next-node-dependency-trace" });
+  const creator = await readCreator(rootDirectory, nextVersion);
+  return validateStylexNextAuxiliaryTraceAsset({ creator, entrypoint, initial, kind: "next-node-dependency-trace" }, nextVersion);
 }
 
 /**
@@ -123,11 +165,15 @@ export async function observeStylexNextAuxiliaryTraceSnapshot(
   rootDirectory: string,
   outputRoot: string,
   value: StylexNextAuxiliaryTraceAssetV1,
+  proxyGraph?: StylexNextGraphReceiptV1,
+  nextVersion: StylexNextVersion = STYLEX_NEXT_REQUIRED_VERSION,
 ): Promise<StylexNextAuxiliaryTraceSnapshotV1> {
-  const asset = validateStylexNextAuxiliaryTraceAsset(value);
-  assert.deepEqual(await readCreator(rootDirectory), asset.creator, "Next auxiliary trace captured creator changed");
-  const output = await readOrdinary(outputRoot, asset.initial.path, "generated-output");
+  const asset = validateStylexNextAuxiliaryTraceAsset(value, nextVersion);
+  assert.deepEqual(await readCreator(rootDirectory, nextVersion), asset.creator, "Next auxiliary trace captured creator changed");
+  const proxyRename = asset.entrypoint === "proxy" ? await proveProxyRename(rootDirectory, outputRoot, asset, proxyGraph, nextVersion) : undefined;
+  const output = await readOrdinary(outputRoot, proxyRename === undefined ? asset.initial.path : "server/middleware.js.nft.json", "generated-output");
   validateStylexNextAuxiliaryTraceSource(output.bytes);
-  assert.deepEqual(await readCreator(rootDirectory), asset.creator, "Next auxiliary trace creator changed during observation");
-  return validateStylexNextAuxiliaryTraceSnapshot({ asset, output: output.artifact, semantics: "observation-only" });
+  assert.deepEqual(await readCreator(rootDirectory, nextVersion), asset.creator, "Next auxiliary trace creator changed during observation");
+  if (proxyRename !== undefined) assert.deepEqual(await proveProxyRename(rootDirectory, outputRoot, asset, proxyGraph, nextVersion), proxyRename, "Next proxy rename changed during observation");
+  return validateStylexNextAuxiliaryTraceSnapshot({ asset, output: output.artifact, ...(proxyRename === undefined ? {} : { proxyRename }), semantics: "observation-only" }, nextVersion);
 }
