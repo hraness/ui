@@ -3,14 +3,14 @@
 module.exports = function hranessStylexNextDevLoader(source, inputSourceMap) {
   const done = this.async();
   this.cacheable(false);
-  const preparation = this[Symbol.for("@hraness/ui/stylex-next-dev/compilation-v1")];
-  if (!preparation) {
+  const context = this[Symbol.for("@hraness/ui/stylex-next-dev/compilation-v1")];
+  if (!context || typeof context.loadNextDevModule !== "function") {
     done(new Error("StyleX Next development loader requires its compilation plugin"));
     return;
   }
-  import("./next-dev-session.js").then(({ assertNextDevRuntime, loadNextDevModule }) => {
+  import("./next-dev-session.js").then(({ assertNextDevRuntime }) => {
     assertNextDevRuntime();
-    return loadNextDevModule(preparation, this.resourcePath, source, inputSourceMap);
+    return context.loadNextDevModule(this.resourcePath, source, inputSourceMap);
   }).then(({ code, map }) => done(null, code, map), (error) => done(error));
 };
 

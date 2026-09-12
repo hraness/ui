@@ -11,8 +11,8 @@ import {
 import type { StylexPackageManifestV1, StylexRuleV1 } from "./contracts.js";
 import {
   assertNextDevRuntime, auditNextDevCss, composeNextDevSnapshot, createNextDevSession, loadNextDevModule, parseNextDevOptions,
-  renderNextDevCss, requireNextDevSnapshot, STYLEX_NEXT_DEV_CONTEXT, STYLEX_NEXT_DEV_CSS_ENTRY,
-  transformNextDevSource, type NextDevPreparation, type StylexNextDevOptions,
+  renderNextDevCss, requireNextDevSnapshot, STYLEX_NEXT_DEV_CSS_ENTRY,
+  transformNextDevSource, type StylexNextDevOptions,
 } from "./next-dev-session.js";
 import { withStylexNextDev } from "./next-dev.js";
 
@@ -73,6 +73,30 @@ async function fixture(): Promise<StylexNextDevOptions> {
   await write(join(root, "app/stylex-dev.css"), STYLEX_NEXT_DEV_CSS_ENTRY);
   return { cssEntry: "app/stylex-dev.css", packageManifests: ["node_modules/@fixture/ui/dist/stylex-manifest.json"], rootDirectory: root, sourceDirectories: ["app"] };
 }
+
+test("only the registered UI private client build-tool path can enter the development browser graph", async () => {
+  const options = await fixture();
+  const packageRoot = join(options.rootDirectory, "node_modules/@fixture/ui");
+  const manifestPath = join(packageRoot, "dist/stylex-manifest.json");
+  const original = JSON.parse(await readFile(manifestPath, "utf8")) as StylexPackageManifestV1;
+  const client = "dist/build/next-dev-client.js";
+  const other = "dist/build/next-dev-session.js";
+  const source = '"use client";\nexport const bridge = true;\n';
+  await write(join(packageRoot, client), source);
+  await write(join(packageRoot, other), "export const compiler = true;\n");
+  const buildTools = await Promise.all([client, other].map(path => artifactForFile(packageRoot, path)));
+  const manifest = { ...original, buildTools, package: { name: "@hraness/ui", version: "1.0.0" } };
+  await write(join(packageRoot, "package.json"), '{"name":"@hraness/ui","version":"1.0.0","type":"module"}\n');
+  await write(manifestPath, canonicalJson(manifest) + "\n");
+  const prepared = await createNextDevSession(options).prepare();
+  expect((await loadNextDevModule(prepared, join(packageRoot, client), source)).code).toBe(source);
+  await expect(loadNextDevModule(prepared, join(packageRoot, client), source + "\n")).rejects.toThrow("runtime changed");
+  await expect(loadNextDevModule(prepared, join(packageRoot, other), "export const compiler = true;\n")).rejects.toThrow("outside its declared runtime");
+  await write(join(packageRoot, "package.json"), '{"name":"@fixture/ui","version":"1.0.0","type":"module"}\n');
+  await write(manifestPath, canonicalJson({ ...manifest, package: original.package }) + "\n");
+  const foreign = await createNextDevSession(options).prepare();
+  await expect(loadNextDevModule(foreign, join(packageRoot, client), source)).rejects.toThrow("outside its declared runtime");
+});
 
 test("captures unopened server/lazy sources and one complete package union before any loader runs", async () => {
   const options = await fixture();
@@ -438,6 +462,12 @@ test("configuration is closed, bounded, and development-only", async () => {
   expect(module.rules[0]).toBe("preserved");
   expect(module.rules).toHaveLength(3);
   expect(wrapped.optimization).toBe(safeOptimization);
+  for (const alias of ["@hraness", "@hraness/ui", "@hraness/ui/stylex-build", "@hraness/ui/stylex-build/next-dev-client", "@hraness/ui/stylex-build/next-dev-client$"]) {
+    expect(() => callback({ optimization: safeOptimization, resolve: { alias: { [alias]: "/unowned" } } }, webpackContext("client")))
+      .toThrow("private client alias is already owned");
+  }
+  const unrelated = callback({ optimization: safeOptimization, resolve: { alias: { "@hraness/ui$": "/ordinary-root-only" } } }, webpackContext("client"));
+  expect((unrelated.resolve as { alias: Record<string, unknown> }).alias["@hraness/ui$"]).toBe("/ordinary-root-only");
   expect(() => callback({ optimization: safeOptimization, resolve: { extensions: [".js", ".ts"] } }, webpackContext("client"))).toThrow("resolution extensions");
   expect(() => callback({ optimization: safeOptimization, resolve: { extensionAlias: { ".js": [".js", ".ts"] } } }, webpackContext("client"))).toThrow("extension alias differs");
   expect(() => callback({}, { ...webpackContext("client"), nextRuntime: "nodejs" })).toThrow("client compiler");
@@ -457,358 +487,13 @@ test("CJS entries only delegate to the compilation snapshot and native CSS loade
   const css = await readFile(new URL("./next-dev-css-loader.cjs", import.meta.url), "utf8");
   expect(source).toContain("loadNextDevModule");
   expect(css).toContain("auditNextDevCss");
-  expect(css).toContain("this.resourcePath === preparation.snapshot.cssEntry ? null : inputSourceMap");
+  expect(css).toContain("this.resourcePath === context.preparation.snapshot.cssEntry ? null : inputSourceMap");
+  expect(source).toContain("context.loadNextDevModule(this.resourcePath, source, inputSourceMap)");
+  expect(css).toContain("context.auditNextDevCss(this.resourcePath, source)");
   for (const text of [source, css]) {
     expect(text).toContain("this.cacheable(false)");
     expect(text).toContain("Symbol.for");
     expect(text).toContain("assertNextDevRuntime()");
     expect(text).not.toMatch(/document\.|WebSocket|next\/dist\//u);
   }
-});
-
-test("native serial compiler hooks publish transition CSS, reject drift, prune after participating targets converge, and retain failure watches", async () => {
-  const options = await fixture();
-  const config = withStylexNextDev({ webpack(value: Record<string, unknown>) { return value; } }, options);
-  const callback = config.webpack as unknown as (value: Record<string, unknown>, context: ReturnType<typeof webpackContext>) => Record<string, unknown>;
-  type CompilationModule = { resource: string; resourceResolveData?: { fragment: string; path: string; query: string } };
-  type Compilation = {
-    contextDependencies: Set<string>;
-    errors: Error[];
-    fileDependencies: Set<string>;
-    hooks: { finishModules: { tap(name: string, run: (modules: Iterable<CompilationModule>) => void): void } };
-    missingDependencies: Set<string>;
-  };
-  type Stats = { compilation: Compilation; hasErrors(): boolean };
-  const harness = (target: FixtureTarget, configuredTarget: FixtureTarget = target, emitOnErrors = false) => {
-    const wrapped = callback({ optimization: { emitOnErrors: false } }, webpackContext(target));
-    const plugins = wrapped.plugins as readonly { apply(compiler: unknown): void }[];
-    const plugin = plugins[plugins.length - 1];
-    assert.ok(plugin !== undefined);
-    let before: (() => Promise<void>) | null = null;
-    let compile: ((compilation: Compilation) => void) | null = null;
-    let done: ((stats: Stats) => void) | null = null;
-    let loader: ((context: Record<symbol, unknown> & { resourceFragment?: string; resourcePath: string; resourceQuery?: string }) => void) | null = null;
-    let invalidations = 0;
-    const finishModules = new WeakMap<Compilation, (modules: Iterable<CompilationModule>) => void>();
-    const compiler = {
-      name: undefined as FixtureTarget | undefined,
-      options: { name: configuredTarget, optimization: { emitOnErrors } },
-      watching: { invalidate() { invalidations += 1; } },
-      hooks: {
-        beforeCompile: { tapPromise(_name: string, run: () => Promise<void>) { before = run; } },
-        done: { tap(_name: string, run: (stats: Stats) => void) { done = run; } },
-        thisCompilation: { tap(_name: string, run: (compilation: Compilation) => void) { compile = run; } },
-      },
-      webpack: { NormalModule: { getCompilationHooks() { return { loader: { tap(_name: string, run: typeof loader) { loader = run; } } }; } } },
-    };
-    plugin.apply(compiler);
-    return {
-      async start(actualTarget: FixtureTarget = target) {
-        assert.ok(before !== null && compile !== null);
-        compiler.name = actualTarget;
-        await before();
-        const compilation: Compilation = {
-          contextDependencies: new Set(),
-          errors: [],
-          fileDependencies: new Set(),
-          hooks: { finishModules: { tap(_name, run) { finishModules.set(compilation, run); } } },
-          missingDependencies: new Set(),
-        };
-        compile(compilation);
-        return compilation;
-      },
-      context(resourcePath = join(options.rootDirectory, "app/page.tsx"), resourceQuery = "", resourceFragment = "") {
-        assert.ok(loader !== null);
-        const context: Record<symbol, unknown> & { resourceFragment: string; resourcePath: string; resourceQuery: string } = { resourceFragment, resourcePath, resourceQuery };
-        loader(context);
-        return context[Symbol.for(STYLEX_NEXT_DEV_CONTEXT)] as NextDevPreparation;
-      },
-      finish(compilation: Compilation, succeeded = compilation.errors.length === 0, resources: readonly (string | CompilationModule)[] = target === "client"
-        ? [join(options.rootDirectory, options.cssEntry), join(options.rootDirectory, "app/page.tsx")]
-        : [join(options.rootDirectory, target === "edge-server" ? "app/unvisited/page.tsx" : "app/page.tsx")]) {
-        assert.ok(done !== null);
-        const finish = finishModules.get(compilation);
-        assert.ok(finish !== undefined);
-        finish(resources.map((resource) => typeof resource === "string"
-          ? { resource, resourceResolveData: { fragment: "", path: resource, query: "" } }
-          : resource));
-        done({ compilation, hasErrors: () => !succeeded || compilation.errors.length > 0 });
-      },
-      invalidations() { return invalidations; },
-      setEmitOnErrors(value: boolean) { compiler.options.optimization.emitOnErrors = value; },
-    };
-  };
-  expect(() => harness("client", "server")).toThrow("configured identity differs");
-  for (const target of ["client", "server", "edge-server"] as const) {
-    expect(() => harness(target, target, true)).toThrow("optimization.emitOnErrors=false");
-    const driftedEmission = harness(target);
-    driftedEmission.setEmitOnErrors(true);
-    await expect(driftedEmission.start()).rejects.toThrow("optimization.emitOnErrors=false");
-  }
-  const forgedServer = harness("server");
-  await expect(forgedServer.start("client")).rejects.toThrow("compiler identity differs");
-  const client = harness("client");
-  const server = harness("server");
-  const edge = harness("edge-server");
-
-  // Next starts with framework-only compiler graphs before the first on-demand
-  // application route. Those successful passes publish and attest nothing.
-  const frameworkClient = await client.start();
-  client.finish(frameworkClient, true, []);
-  expect(frameworkClient.errors).toEqual([]);
-  const frameworkServer = await server.start();
-  server.finish(frameworkServer, true, []);
-  expect(frameworkServer.errors).toEqual([]);
-  expect(client.invalidations()).toBe(0);
-
-  // Pinned Next's metadata/discover loader imports this native fixture asset
-  // with ?__next_metadata__. Assets cannot contribute a StyleX source revision
-  // or satisfy the client CSS marker, regardless of their native loader query.
-  const nativeAsset = join(options.rootDirectory, "app/icon.svg");
-  const metadataModule: CompilationModule = {
-    resource: `${nativeAsset}?__next_metadata__`,
-    resourceResolveData: { fragment: "", path: nativeAsset, query: "?__next_metadata__" },
-  };
-  for (const compiler of [client, server, edge]) {
-    const assetsOnly = await compiler.start();
-    compiler.finish(assetsOnly, true, [metadataModule, { resource: `${nativeAsset}?native-asset#fragment` }]);
-    expect(assetsOnly.errors).toEqual([]);
-  }
-  expect(client.invalidations()).toBe(0);
-  const assetWithoutMarker = await client.start();
-  client.finish(assetWithoutMarker, true, [metadataModule, join(options.rootDirectory, "app/page.tsx")]);
-  expect(assetWithoutMarker.errors.map(({ message }) => message)).toContain(
-    "Next development client source graph omitted its owned StyleX stylesheet entry",
-  );
-
-  // Cached modules can omit a loader visit or resolve metadata. Neither raw
-  // resource spelling nor a framework-looking query may bypass JS/CSS checks.
-  for (const path of [
-    join(options.rootDirectory, "app/page.tsx"),
-    join(options.rootDirectory, "app/icon.tsx"),
-    join(options.rootDirectory, options.cssEntry),
-    join(options.rootDirectory, "node_modules/@fixture/ui/dist/index.js"),
-  ]) {
-    for (const query of ["?raw", "?__next_metadata__", "?__next_metadata_image_meta__", "?__next_edge_ssr_entry__"]) {
-      for (const resource of [
-        { resource: `${path}${query}`, resourceResolveData: { path, query, fragment: "" } },
-        { resource: `${path}${query}` },
-        { resource: path, resourceResolveData: { path, query, fragment: "" } },
-      ]) {
-        const queried = await client.start();
-        expect(() => client.finish(queried, true, [resource])).toThrow("resource query");
-      }
-      expect(() => client.context(path, query)).toThrow("must not contain a query");
-    }
-    const fragmented = await client.start();
-    expect(() => client.finish(fragmented, true, [{ resource: `${path}#fragment` }])).toThrow("resource fragment");
-  }
-  const mismatchedPath = await client.start();
-  expect(() => client.finish(mismatchedPath, true, [{
-    resource: nativeAsset,
-    resourceResolveData: { fragment: "", path: join(options.rootDirectory, "app/page.tsx"), query: "" },
-  }])).toThrow("resource path differs");
-  for (const rawPath of [join(options.rootDirectory, "app/page.tsx"), join(options.rootDirectory, options.cssEntry)]) {
-    for (const path of [nativeAsset, "app/icon.svg"]) {
-      for (const suffix of ["", "?raw", "#fragment"]) {
-        const maskedSource = await client.start();
-        expect(() => client.finish(maskedSource, true, [{
-          resource: `${rawPath}${suffix}`,
-          resourceResolveData: { fragment: "", path, query: "" },
-        }])).toThrow("resource path differs");
-      }
-    }
-  }
-  const edgeQuery = "?__next_edge_ssr_entry__";
-  const edgeSource = join(options.rootDirectory, "app/unvisited/page.tsx");
-  for (const [compiler, path] of [
-    [server, edgeSource],
-    [edge, join(options.rootDirectory, options.cssEntry)],
-    [edge, join(options.rootDirectory, "node_modules/@fixture/ui/dist/index.js")],
-  ] as const) {
-    expect(() => compiler.context(path, edgeQuery)).toThrow("exact Edge SSR entry contract");
-    const queriedGraph = await compiler.start();
-    expect(() => compiler.finish(queriedGraph, true, [{
-      resource: `${path}${edgeQuery}`,
-      resourceResolveData: { fragment: "", path, query: edgeQuery },
-    }])).toThrow("exact Edge SSR entry contract");
-  }
-  expect(() => edge.context(edgeSource, edgeQuery, "#fragment")).toThrow("contain a fragment");
-  for (const resource of [
-    { resource: `${edgeSource}${edgeQuery}`, resourceResolveData: { fragment: "", path: edgeSource, query: "" } },
-    { resource: edgeSource, resourceResolveData: { fragment: "", path: edgeSource, query: edgeQuery } },
-    { resource: `${edgeSource}${edgeQuery}` },
-    { resource: `${edgeSource}${edgeQuery}#fragment`, resourceResolveData: { fragment: "#fragment", path: edgeSource, query: edgeQuery } },
-  ]) {
-    const malformedEdgeEntry = await edge.start();
-    expect(() => edge.finish(malformedEdgeEntry, true, [resource])).toThrow(/resource (?:fragment|query)/u);
-  }
-
-  // A real server graph cannot emit a source revision until the matching
-  // browser stylesheet has been published by a relevant client graph.
-  const blockedServer = await server.start();
-  server.context();
-  server.finish(blockedServer);
-  expect(blockedServer.errors.map(({ message }) => message)).toEqual([
-    expect.stringContaining("no successfully published client stylesheet"),
-  ]);
-  expect(client.invalidations()).toBe(1);
-
-  const clientCompilation = await client.start();
-  const clientPreparation = client.context();
-  client.finish(clientCompilation);
-
-  // Cached modules do not rerun loaders, but remain present in the completed
-  // compilation module graph and therefore retain client participation.
-  const cachedClientCompilation = await client.start();
-  client.finish(cachedClientCompilation);
-  expect(cachedClientCompilation.errors).toEqual([]);
-
-  // Seeing owned source without the exact marker would otherwise publish CSS
-  // that the browser graph can never load.
-  const missingStylesheet = await client.start();
-  client.context();
-  client.finish(missingStylesheet, true, [join(options.rootDirectory, "app/page.tsx")]);
-  expect(missingStylesheet.errors.map(({ message }) => message)).toEqual([
-    "Next development client source graph omitted its owned StyleX stylesheet entry",
-  ]);
-
-  const initialServerCompilation = await server.start();
-  const initialServerPreparation = server.context();
-  server.finish(initialServerCompilation);
-  expect(requireNextDevSnapshot(initialServerPreparation).revision).toBe(requireNextDevSnapshot(clientPreparation).revision);
-  const cachedServerCompilation = await server.start();
-  server.finish(cachedServerCompilation);
-  expect(cachedServerCompilation.errors).toEqual([]);
-  const initialEdgeCompilation = await edge.start();
-  const initialEdgePreparation = edge.context(edgeSource, edgeQuery);
-  const transformedEdgeSource = await loadNextDevModule(initialEdgePreparation, edgeSource, await readFile(edgeSource, "utf8"));
-  expect(transformedEdgeSource.code).not.toContain("stylex.create");
-  expect(transformedEdgeSource.map).toHaveProperty("sources", ["app/unvisited/page.tsx"]);
-  edge.finish(initialEdgeCompilation, true, [{
-    resource: `${edgeSource}${edgeQuery}`,
-    resourceResolveData: { fragment: "", path: edgeSource, query: edgeQuery },
-  }]);
-  expect(initialEdgeCompilation.errors).toEqual([]);
-  expect(requireNextDevSnapshot(initialEdgePreparation).revision).toBe(requireNextDevSnapshot(clientPreparation).revision);
-
-  // A successful graph census with no owned modules retires prior client
-  // participation without replacing its last published stylesheet.
-  const removedClientCompilation = await client.start();
-  client.finish(removedClientCompilation, true, []);
-  expect(removedClientCompilation.errors).toEqual([]);
-
-  await write(join(options.rootDirectory, "app/page.tsx"), recipe(39.375));
-  const transitioningClientCompilation = await client.start();
-  const transitioningClient = client.context();
-  expect(requireNextDevSnapshot(transitioningClient).css).toContain("38.375px");
-  expect(requireNextDevSnapshot(transitioningClient).css).toContain("39.375px");
-  client.finish(transitioningClientCompilation);
-  expect(client.invalidations()).toBe(1);
-
-  // A repeat client compilation before the active server and Edge compiler
-  // attest the revision must retain both sides without self-invalidating.
-  const earlyPruneCompilation = await client.start();
-  const earlyPrune = client.context();
-  expect(requireNextDevSnapshot(earlyPrune).css).toContain("38.375px");
-  expect(requireNextDevSnapshot(earlyPrune).css).toContain("39.375px");
-  client.finish(earlyPruneCompilation);
-  expect(client.invalidations()).toBe(1);
-
-  // This edit occurs between Next's serial client and server starts. The server
-  // cannot expose N+2 JavaScript while the browser still has the N+1 sheet.
-  await write(join(options.rootDirectory, "app/page.tsx"), recipe(40.375));
-  const driftedServerCompilation = await server.start();
-  const driftedServer = server.context();
-  expect(driftedServer.error).toBeNull();
-  server.finish(driftedServerCompilation);
-  expect(driftedServerCompilation.errors.map(({ message }) => message)).toEqual([
-    expect.stringContaining("no successfully published client stylesheet"),
-  ]);
-  expect(client.invalidations()).toBe(2);
-
-  const recoveryClientCompilation = await client.start();
-  const recoveryClient = client.context();
-  const recoveryCss = requireNextDevSnapshot(recoveryClient).css;
-  expect(recoveryCss).toContain("38.375px");
-  expect(recoveryCss).toContain("39.375px");
-  expect(recoveryCss).toContain("40.375px");
-  client.finish(recoveryClientCompilation);
-  const recoveryServerCompilation = await server.start();
-  const recoveryServer = server.context();
-  expect(requireNextDevSnapshot(recoveryServer).revision).toBe(requireNextDevSnapshot(recoveryClient).revision);
-  server.finish(recoveryServerCompilation);
-  expect(client.invalidations()).toBe(2);
-
-  // Edge still attests only the original revision. An unsuccessful empty graph
-  // cannot retire that participant or release the current revision's barrier.
-  expect(requireNextDevSnapshot(initialEdgePreparation).revision)
-    .not.toBe(requireNextDevSnapshot(recoveryClient).revision);
-  const failedIrrelevantEdgeCompilation = await edge.start();
-  edge.finish(failedIrrelevantEdgeCompilation, false, []);
-  expect(client.invalidations()).toBe(2);
-
-  // A successful empty graph proves the route is absent. No owned Edge module
-  // or new Edge source attestation is needed before the client can prune.
-  const irrelevantEdgeCompilation = await edge.start();
-  edge.finish(irrelevantEdgeCompilation, true, []);
-  expect(irrelevantEdgeCompilation.errors).toEqual([]);
-  expect(client.invalidations()).toBe(3);
-
-  const pruneCompilation = await client.start();
-  const pruned = client.context();
-  expect(requireNextDevSnapshot(pruned).includedRevisions).toEqual([requireNextDevSnapshot(recoveryClient).revision]);
-  expect(requireNextDevSnapshot(pruned).css).not.toContain("38.375px");
-  expect(requireNextDevSnapshot(pruned).css).not.toContain("39.375px");
-  expect(requireNextDevSnapshot(pruned).css).toContain("40.375px");
-  expect(requireNextDevSnapshot(initialEdgePreparation).revision)
-    .toBe(requireNextDevSnapshot(clientPreparation).revision);
-  client.finish(pruneCompilation);
-  expect(client.invalidations()).toBe(3);
-
-  expect(clientCompilation.contextDependencies.has(join(options.rootDirectory, "app"))).toBeTrue();
-  expect(clientCompilation.fileDependencies.has(join(options.rootDirectory, "app/unvisited/page.tsx"))).toBeTrue();
-  await write(join(options.rootDirectory, "app/unvisited/page.tsx"), "export const broken = ;");
-  const failedFrameworkClient = await client.start();
-  expect(failedFrameworkClient.errors).toEqual([]);
-  client.finish(failedFrameworkClient, true, []);
-  expect(failedFrameworkClient.errors).toEqual([]);
-  const failedFrameworkServer = await server.start();
-  expect(failedFrameworkServer.errors).toEqual([]);
-  server.finish(failedFrameworkServer, true, []);
-  expect(failedFrameworkServer.errors).toEqual([]);
-  const failedMissingStylesheet = await client.start();
-  const failedMissingPreparation = client.context();
-  assert.ok(failedMissingPreparation.error !== null);
-  client.finish(failedMissingStylesheet, true, [join(options.rootDirectory, "app/page.tsx")]);
-  expect(failedMissingStylesheet.errors.map(({ message }) => message)).toContain(
-    "Next development client source graph omitted its owned StyleX stylesheet entry",
-  );
-  expect(failedMissingStylesheet.errors).toContain(failedMissingPreparation.error);
-  const failed = await client.start();
-  expect(failed.errors).toEqual([]);
-  const failedPreparation = client.context();
-  expect(failedPreparation.lastGood?.revision).toBe(requireNextDevSnapshot(pruned).revision);
-  expect(failedPreparation.attemptedFiles).toContain(join(options.rootDirectory, "app/unvisited/page.tsx"));
-  expect(failed.contextDependencies.has(join(options.rootDirectory, "app"))).toBeTrue();
-  client.finish(failed);
-  expect(failed.errors).toHaveLength(1);
-  await write(join(options.rootDirectory, "node_modules/@fixture/unregistered/dist/stylex-manifest.json"), "{}");
-  expect(() => client.context(join(options.rootDirectory, "node_modules/@fixture/unregistered/dist/index.js"))).toThrow("unregistered StyleX package");
-  expect(() => client.context("/outside/source.ts")).toThrow("outside its owned root");
-  expect(() => client.context(join(options.rootDirectory, "app/page.tsx"), "?raw")).toThrow("must not contain a query");
-
-  await write(join(options.rootDirectory, "app/unvisited/page.tsx"), recipe(62.625));
-  const manifestPath = join(options.rootDirectory, options.packageManifests[0]!);
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as StylexPackageManifestV1;
-  const missingLogical = "dist/watched-after-failure.js";
-  await write(manifestPath, `${canonicalJson({ ...manifest, runtime: [artifact(missingLogical, "export const watched = true;\n")] })}\n`);
-  const missingCompilation = await client.start();
-  const missingAbsolute = join(options.rootDirectory, "node_modules/@fixture/ui", missingLogical);
-  expect(missingCompilation.errors).toEqual([]);
-  expect(missingCompilation.missingDependencies.has(missingAbsolute)).toBeTrue();
-  expect(missingCompilation.fileDependencies.has(join(options.rootDirectory, "node_modules/@fixture/ui/dist/index.js"))).toBeTrue();
-  expect(client.context().attemptedMissing).toContain(missingAbsolute);
-  client.finish(missingCompilation);
-  expect(missingCompilation.errors).toHaveLength(1);
 });

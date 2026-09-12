@@ -3,17 +3,18 @@
 module.exports = function hranessStylexNextDevCssLoader(source, inputSourceMap) {
   const done = this.async();
   this.cacheable(false);
-  const preparation = this[Symbol.for("@hraness/ui/stylex-next-dev/compilation-v1")];
-  if (!preparation) {
+  const context = this[Symbol.for("@hraness/ui/stylex-next-dev/compilation-v1")];
+  if (!context || typeof context.auditNextDevCss !== "function") {
     done(new Error("StyleX Next development stylesheet requires its compilation plugin"));
     return;
   }
-  import("./next-dev-session.js").then(({ assertNextDevRuntime, auditNextDevCss }) => {
+  import("./next-dev-session.js").then(({ assertNextDevRuntime }) => {
     assertNextDevRuntime();
-    return auditNextDevCss(preparation, this.resourcePath, source);
+    return context.auditNextDevCss(this.resourcePath, source);
   }).then((css) => {
-    // The marker is replaced, so an incoming marker map cannot describe its union.
-    const map = this.resourcePath === preparation.snapshot.cssEntry ? null : inputSourceMap;
+    // The marker becomes a non-presentational sentinel. Its old map cannot
+    // describe that replacement, and no ordinary CSS union races native links.
+    const map = this.resourcePath === context.preparation.snapshot.cssEntry ? null : inputSourceMap;
     done(null, css, map);
   }, (error) => done(error));
 };

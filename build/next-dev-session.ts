@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { constants } from "node:fs";
 import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
+import { NEXT_DEV_PRIVATE_CLIENT } from "./next-dev-artifacts.js";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { parseAsync } from "@babel/core";
 
@@ -66,7 +67,7 @@ export type NextDevSnapshot = Readonly<{
   foundations: readonly string[];
   includedRevisions: readonly string[];
   manifests: readonly StylexPackageManifestV1[];
-  packageInputs: readonly Readonly<{ logicalPath: string; role: "runtime" | "stylesheet"; sha256: string }>[];
+  packageInputs: readonly Readonly<{ logicalPath: string; role: "runtime" | "stylesheet" | "private-client"; sha256: string }>[];
   replacedRuleKeys: readonly string[];
   revision: string;
   rootDirectory: string;
@@ -388,7 +389,7 @@ export function createNextDevSession(input: StylexNextDevOptions): Readonly<{
       assert.equal(await readFile(cssEntry, "utf8"), STYLEX_NEXT_DEV_CSS_ENTRY, "Next development CSS entry must contain only its exact marker");
       const manifests: StylexPackageManifestV1[] = [];
       const foundations: string[] = [];
-      const packageInputs: { logicalPath: string; role: "runtime" | "stylesheet"; sha256: string }[] = [];
+      const packageInputs: { logicalPath: string; role: "runtime" | "stylesheet" | "private-client"; sha256: string }[] = [];
       const stylesheets: NextDevCapturedCssInput[] = [];
       for (const path of options.packageManifests) {
         await recordAttempt(attempted, options.rootDirectory, resolve(options.rootDirectory, path), "Next development package manifest");
@@ -405,6 +406,13 @@ export function createNextDevSession(input: StylexNextDevOptions): Readonly<{
         assert.ok(!manifests.some((entry) => entry.package.name === manifest.package.name), "Next development package identities must be unique");
         manifests.push(manifest);
         for (const artifact of manifest.runtime) packageInputs.push({ logicalPath: nextDevLogicalPath(options.rootDirectory, resolve(packageRoot, artifact.path)), role: "runtime", sha256: artifact.sha256 });
+        // One exact private React bridge, bound by the registered UI manifest.
+        // This does not admit other build tools or create a public export.
+        if (manifest.package.name === "@hraness/ui") {
+          const client = manifest.buildTools.find((artifact) => artifact.path === NEXT_DEV_PRIVATE_CLIENT);
+          if (client !== undefined) packageInputs.push({ logicalPath: nextDevLogicalPath(options.rootDirectory, resolve(packageRoot, client.path)),
+            role: "private-client", sha256: client.sha256 });
+        }
         for (const artifact of manifest.stylesheets) {
           const logicalPath = nextDevLogicalPath(options.rootDirectory, resolve(packageRoot, artifact.path));
           const source = await readSource(options.rootDirectory, logicalPath);
@@ -612,7 +620,7 @@ export async function loadNextDevModule(preparation: NextDevPreparation, resourc
   const logical = nextDevLogicalPath(snapshot.rootDirectory, resourcePath);
   if (!logical.startsWith("node_modules/")) return transformNextDevSource(preparation, resourcePath, source, inputSourceMap);
   await ordinary(snapshot.rootDirectory, logical);
-  const declared = snapshot.packageInputs.find((input) => input.role === "runtime" && input.logicalPath === logical);
+  const declared = snapshot.packageInputs.find((input) => (input.role === "runtime" || input.role === "private-client") && input.logicalPath === logical);
   assert.ok(declared !== undefined, `Next development package module is outside its declared runtime: ${logical}`);
   assert.equal(sha256(source), declared.sha256, `Next development package runtime changed: ${logical}`);
   return { code: typeof source === "string" ? source : Buffer.from(source).toString("utf8"), map: inputSourceMap ?? null };
