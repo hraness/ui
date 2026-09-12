@@ -40,6 +40,7 @@ import {
   type StylexPackageManifestV1,
 } from "../build/contracts.js";
 import { markReactClientPackage } from "./mark-react-client-package.js";
+import { buildNextDevPrivateBrowserArtifacts, NEXT_DEV_PRIVATE_OUTPUTS, validateNextDevPrivateBrowserSource } from "./next-dev-private-build.js";
 
 const COMPILER_STYLESHEET_PATHS = [
   "src/compiler-foundation.css",
@@ -188,6 +189,7 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
     await writeFile(resolve(stage, output), await readFile(resolve(sourceRoot, loader)), { flag: "wx", mode: 0o644 });
     outputPaths.push(output);
   }
+  outputPaths.push(...await buildNextDevPrivateBrowserArtifacts(repository, stage));
   const paths = (await filesBelow(outdir)).map((path) => `build/${path}`);
   assert.deepEqual(
     paths,
@@ -267,7 +269,7 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
     }],
     ["build/vite.js", { exports: ["stylexVite"], functions: ["stylexVite"] }],
   ] as const);
-  assert.deepEqual(paths, [...expectedBuildTools.keys()].sort(), "Build-tool build must emit exactly its public entrypoints");
+  assert.deepEqual(paths, [...expectedBuildTools.keys(), ...NEXT_DEV_PRIVATE_OUTPUTS].sort(), "Build-tool build must emit exactly its public and private entries");
   for (const [entrypoint, contract] of expectedBuildTools) {
     if (entrypoint.endsWith(".cjs")) {
       assert.equal(
@@ -290,6 +292,10 @@ async function buildTools(repository: string, stage: string): Promise<readonly s
   }
   assert.ok(paths.every((path) => /\.(?:c|m)?js$/u.test(path)), "Build-tool build emitted an unexpected non-JavaScript artifact");
   for (const path of paths) {
+    if (NEXT_DEV_PRIVATE_OUTPUTS.some((entry) => entry === path)) {
+      validateNextDevPrivateBrowserSource(path, await readFile(resolve(stage, path), "utf8"));
+      continue;
+    }
     assert.ok(
       !(await readFile(resolve(stage, ...path.split("/")), "utf8")).startsWith('"use client";'),
       `Build-tool artifact was client-marked: ${path}`,

@@ -1,6 +1,6 @@
 "use client";
 
-/** Private, not packaged: React commit custody for the separate development profile. */
+/** Private package artifact, without a public export: separate development commit custody. */
 import {
   Suspense,
   createElement,
