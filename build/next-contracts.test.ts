@@ -36,6 +36,7 @@ import {
   validateStylexNextAuxiliaryTraceAsset,
   validateStylexNextAuxiliaryTraceSnapshot,
 } from "./next-contracts.js";
+import { STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY } from "./next-profile.js";
 
 const emptyRules = [] as const;
 const emptyEntryGraph = {
@@ -111,6 +112,20 @@ describe("Next adapter contracts", () => {
       ["main-app", "app/(.)modal/layout", "app/(.)modal/page"],
       ["main-app", "app/(one)/layout", "app/(two)/page"],
     ]) assert.throws(() => stylexNextDeliveryCssOwnerNames(entries));
+  });
+
+  test("admits only the exact built-in global-error as a non-owner without changing physical owners", () => {
+    const builtin = STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY;
+    const base = ["main-app", "app/_global-error/page", "app/layout", "app/page"];
+    assert.deepEqual(stylexNextDeliveryCssOwnerNames([...base, builtin]), ["app/layout"]);
+    assert.deepEqual(stylexNextDeliveryCssOwnerNames([...base, builtin, "app/global-error"]), ["app/global-error", "app/layout"]);
+    for (const name of [
+      `app/${builtin}`, `node_modules/${builtin}`, `${builtin}/page`, `${builtin}/layout`,
+      `other/${builtin}`, builtin.replace("/builtin/", "/custom/"), builtin.replace("next/", "Next/"),
+      builtin.replace("/components/", "/components/../components/"), `./${builtin}`, `/${builtin}`,
+      builtin.replaceAll("/", "\\"), "app/nested/global-error", "app/nested/global-error/page",
+    ]) assert.throws(() => stylexNextDeliveryCssOwnerNames([...base, name]), `Unexpected global-error identity: ${name}`);
+    assert.throws(() => stylexNextDeliveryCssOwnerNames([...base, builtin, builtin]), /unique/u);
   });
 
   test("derives BUILD_ID and SSG output artifacts from the declared UTF-8 values", () => {

@@ -1,4 +1,4 @@
-import { stylexNextProfile, stylexNextVersion, type StylexNextVersion } from "./next-profile.js";
+import { STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY, stylexNextProfile, stylexNextVersion, type StylexNextVersion } from "./next-profile.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { link, lstat, mkdir, open, readFile, readdir, realpath, unlink, writeFile } from "node:fs/promises";
@@ -572,6 +572,7 @@ export async function writeStylexNextGraphReceipt(options: WriteStylexNextGraphR
     webpackVersion: options.webpackVersion,
   });
   const verifyCssInputs = async (): Promise<void> => {
+    await verifyBuiltinGlobalErrorInputs(rootDirectory, receipt);
     if (receipt.emptyEntryBootstraps.length > 0) {
       const inputs = await readStylexNextEmptyEntryInputs(rootDirectory, loaded.plan.nextVersion);
       for (const bootstrap of receipt.emptyEntryBootstraps) assert.deepEqual(inputs, bootstrap.inputs, "Next empty entry creator changed before graph receipt commit");
@@ -643,6 +644,23 @@ export async function readStylexNextEmptyEntryInputs(root: string, nextVersion: 
     assert.equal(input.sha256, hash, "Next empty entry creator differs from pinned original bytes");
     return input;
   }));
+}
+
+export async function readStylexNextBuiltinGlobalErrorInputs(root: string, nextVersion: StylexNextVersion): Promise<readonly StylexArtifactV1[]> {
+  const metadata = plainObject(JSON.parse(await readFile(await resolveRootRelativeInput(root, "node_modules/next/package.json"), "utf8")) as unknown, "Next built-in global-error package metadata");
+  assert.equal(metadata.name, "next");
+  assert.equal(metadata.version, nextVersion, "Next built-in global-error package version changed");
+  return await Promise.all(stylexNextProfile(nextVersion).builtinGlobalErrorInputs.map(async ([path, hash]) => {
+    const input = await artifactForFile(root, `node_modules/next/${path}`);
+    assert.equal(input.sha256, hash, "Next built-in global-error input differs from its selected profile's pinned original bytes");
+    return input;
+  }));
+}
+
+async function verifyBuiltinGlobalErrorInputs(root: string, receipt: StylexNextGraphReceiptV1): Promise<void> {
+  if (receipt.target === "client" && receipt.entrypoints.some(({ name }) => name === STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY)) {
+    await readStylexNextBuiltinGlobalErrorInputs(root, receipt.nextVersion);
+  }
 }
 
 export async function proveStylexNextEmptyEntryBootstrap(
@@ -778,6 +796,7 @@ async function verifySettledGraphOutputs(
   const auxiliaryTraceSnapshots: StylexNextAuxiliaryTraceSnapshotV1[] = [];
   for (const { receipt } of graphs) {
     assert.equal(receipt.outputDirectory, outputDirectory, `Next ${mode} ${receipt.target} output directory differs from the attempt`);
+    await verifyBuiltinGlobalErrorInputs(root, receipt);
     for (const asset of receipt.auxiliaryTraceAssets) {
       assert.ok(!auxiliaryTraceSnapshots.some((snapshot) => snapshot.asset.initial.path === asset.initial.path), "Next auxiliary trace has competing graph owners");
       if (asset.entrypoint === "proxy") {
