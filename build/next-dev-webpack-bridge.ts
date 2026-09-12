@@ -199,8 +199,9 @@ function installRuntime(webpack: RuntimeRequire, initial: NextDevWebpackCatalogu
     if (value.session !== session || JSON.stringify(value.consumers) !== sources) throw new Error("document session or consumer census changed");
   }
   try { owner = createOwner(initial); } catch { fail("bootstrap-owner-failed"); }
-  const startupReady = Promise.resolve(owner?.startupReady).then(() => {
+  const startupReady = Promise.resolve(owner?.startupReady).then((): Promise<never> | undefined => {
     if (owner === undefined || phase !== "open") return fail("bootstrap-owner-unavailable");
+    return undefined;
   }, () => fail("startup-stylesheet-failed"));
   // Observe early hydration failure even when the first HMR check is later.
   void Promise.resolve(owner?.hydrationReady).catch(() => { fail("hydration-failed"); });

@@ -141,11 +141,11 @@ export function installNextDevNativeCompilation(options: Readonly<{
     requirements.add(webpack.RuntimeGlobals.hmrDownloadManifest);
     compilation.addRuntimeModule(chunk, new class extends webpack.RuntimeModule {
       constructor() { super(`${NAME}/bootstrap`, webpack.RuntimeModule.STAGE_BASIC); }
-      generate(): string { return bootstrap; }
+      override generate(): string { return bootstrap; }
     }());
     compilation.addRuntimeModule(chunk, new class extends webpack.RuntimeModule {
       constructor() { super(`${NAME}/manifest-gate`, webpack.RuntimeModule.STAGE_TRIGGER); }
-      generate(): string { return renderNextDevWebpackManifestGate(); }
+      override generate(): string { return renderNextDevWebpackManifestGate(); }
     }());
   });
   // Tapable's public stage ordering puts the complete AssignLibraryPlugin

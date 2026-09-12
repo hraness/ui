@@ -328,7 +328,7 @@ test("historical responses after native pruning request one public refresh and c
   expect(refreshes).toBe(1);
   expect(owner.inspect()).toEqual(before);
   expect(document.links).toHaveLength(1);
-  bridge!.restartRequired();
+  bridge!.restartRequired("test-explicit-restart");
   expect(response.getSnapshot().phase).toBe("restart-required");
   expect(response.getSnapshot().pending).toBe(0);
   expect(owner.getSnapshot().active?.sequence).toBe(3);
