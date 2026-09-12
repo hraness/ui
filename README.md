@@ -309,6 +309,32 @@ Development and HMR are a separate, unreceipted boundary. This production adapte
 
 Unlayered product CSS retains its existing override authority, except for the shared visually-hidden accessibility recipe. Its offscreen reset uses layered important declarations so conflicting unlayered important rules cannot accidentally expose accessible-only copy. Change the component visibility prop instead of overriding this helper.
 
+### Next.js development adapter (unreleased draft)
+
+[PR 59](https://github.com/hraness/ui/pull/59) retains an incomplete development adapter. UI v0.5.14 is the joined release baseline, not a publication of this draft. Its last native run failed 50 JavaScript/CSS frame comparisons; the React consumer bridge and native delivery integration remain unfinished. The retained release manifest and older development artifacts require regeneration and complete validation together before publication.
+
+The proposed separate `@hraness/ui/stylex-build/next-dev` entry targets a finite Next 16.2.12, webpack 5 and Node 24 development profile. It must not change the production adapter or issue production completion receipts. The following configuration illustrates the draft boundary, not a supported export in the immutable release. Select it only for `phase-development-server`; keep the production configuration on `withStylexNext` and `runStylexNextBuild`.
+
+```js
+import { withStylexNextDev } from "@hraness/ui/stylex-build/next-dev";
+
+// Inside the development phase of next.config.mjs:
+return withStylexNextDev(config, {
+  rootDirectory,
+  sourceDirectories: ["app"],
+  cssEntry: "app/stylex-dev.css",
+  packageManifests: ["node_modules/@hraness/ui/dist/stylex-manifest.json"],
+});
+```
+
+Import that CSS entry from the root layout. Its entire contents must be the following marker followed by one newline; the adapter supplies the compiled package/caller rule union through Next's ordinary CSS loader.
+
+```css
+/* @hraness/ui StyleX Next development stylesheet */
+```
+
+The intended command is `next dev --webpack`. Acceptance requires ordinary recipe changes to preserve frame-level JavaScript/CSS coherence and client state across client, Node and optional Edge compilers, plus failed-edit recovery and retirement of unused rules. Compiler convergence alone does not prove that native CSS loaded or that a live consumer committed its replacement. Stable `defineVars` and `createTheme` changes require an explicit server restart. Turbopack, Rspack, arbitrary framework versions and changing the package contract during a session are unsupported. The unaccepted packed matrix uses finite HTTP responses and real WebSocket HMR with one live browser document at a time; simultaneous-client behavior and streamed React Server Component arrival timing need separate proof. Production, standalone packaging and deployment retain their separate gates.
+
 ## Composition patterns
 
 Quiet personal and project sites can share the same centered page and footer

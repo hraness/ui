@@ -11,6 +11,8 @@
 - `next-ssg.ts` derives the native SSG manifest settlement; `next-auxiliary.ts` records observation-only Next dependency-trace snapshots without following their file lists.
 - `next-typescript.ts` owns phase-local TypeScript input projections, exact native type provenance, and physical-project-root environment-file preservation.
 - `next-process.ts` owns POSIX child-group cancellation and positive collection before shared-file restoration or lease release.
+- `next-dev.ts`, `next-dev-session.ts`, and `next-dev-*.cjs` own the separate opt-in development snapshot, compiler convergence, and native CSS-loader boundary.
+- `next-output-settlement.ts` settles private source maps in a caller-owned isolated regular-file stage; it does not change production graph receipt authority.
 - `index.ts` is the explicit build-tool export surface; no build module is reachable from the UI runtime entry.
 - `*.test.ts` exercises manifests, graph completeness, mixed-output rejection, permutation invariance, lifecycle failures, and transactional publication.
 
@@ -23,7 +25,9 @@
 - Bind generation plans and completion records to schema 2 and `unionPolicySha256`. Keep package manifests and graph receipts on schema 1; require a fresh generation instead of resuming a plan created under another union policy.
 - Reserve the entire final union namespace against package foundations and graph CSS, including decoded nested layers and named import layers. Every foundation stylesheet must precede the finalized recipe stylesheet.
 - Keep graph outputs and receipts inside a new generation-scoped staging directory. Publish only after every expected graph, template, artifact hash, and stylesheet boundary is complete and verified.
-- Reject watch, serve, HMR, stale or late receipts, incomplete graphs, conflicting rules, output collisions, and any compiler-adopting graph that contains standalone package recipe CSS.
+- Production adapters and generation finalization reject watch, serve, HMR, stale or late receipts, incomplete graphs, conflicting rules, output collisions, and any compiler-adopting graph that contains standalone package recipe CSS.
+- Keep `stylex-build/next-dev` an explicit separate opt-in for Next 16.2.12 under Webpack 5 and genuine Node 24. Inventory bounded source directories before each compilation, serialize all registered package and application rules with the current union policy, and preserve native CSS delivery. Development snapshots never produce production graph receipts. Ordinary atomic recipe changes retain old rules until the observed client, Node, and Edge compilers converge; a successful observed-empty target can retire participation. Stable `defineVars` and `createTheme` rule replacements require a process restart. Keep Turbopack, Rspack, production use, arbitrary Next versions, and unbounded source inventories closed.
+- Prove development updates with frame-level JavaScript/CSS coherence, preserved client state, stale-rule removal, compile-failure recovery, and explicit stable-rule restart controls. Collect the owned browser, processes, streams, and listeners before recording terminal success or removing disposable fixtures.
 - Keep absolute paths, timestamps, process identifiers, and temporary names out of canonical record bytes.
 - Keep Vite maps disabled by default. The external-map profile owns its output options, requires in-root publication, preserves native mapping data and exact embedded file bytes, and pairs every map with its generated chunk. Rebase only source paths to the final generation layout before native hashing; copied maps, CSS maps, external or unobserved sources and late output drift remain errors.
 - Keep compiler dependencies outside `src/index.ts` and every production UI runtime output. Build-tool entry points are explicit opt-in imports.

@@ -11,6 +11,9 @@ import {
   serializeStylexPackageRules,
   sha256,
 } from "../build/compiler.js";
+import { readNextDevPrivateArtifacts } from "../build/next-dev-artifacts.js";
+import { NEXT_DEV_PRIVATE_OUTPUTS, validateNextDevPrivateBrowserSource } from "./next-dev-private-build.js";
+import { checkNextDevPrivatePackage } from "./check-next-dev-private-package.js";
 
 type PackageJson = Readonly<{
   exports?: Readonly<Record<string, unknown>>;
@@ -109,6 +112,8 @@ const exportedBuildTools = [
   importTarget(exportsRecord["./stylex-build"], "stylex-build export"),
   importTarget(exportsRecord["./stylex-build/bun"], "stylex-build/bun export"),
   importTarget(exportsRecord["./stylex-build/next"], "stylex-build/next export"),
+  importTarget(exportsRecord["./stylex-build/next-dev"], "stylex-build/next-dev export"),
+  importTarget(exportsRecord["./stylex-build/next-output"], "stylex-build/next-output export"),
   importTarget(exportsRecord["./stylex-build/vite"], "stylex-build/vite export"),
 ].sort();
 
@@ -158,8 +163,18 @@ for (const path of runtime) {
 }
 for (const path of buildTools) {
   const source = await readFile(resolve(dist, ...path.split("/")), "utf8");
+  if (NEXT_DEV_PRIVATE_OUTPUTS.some((entry) => entry === path)) {
+    validateNextDevPrivateBrowserSource(path, source);
+    continue;
+  }
   assert.ok(!source.startsWith('"use client";\n'), `Build tool was client-marked: ${path}`);
 }
+for (const path of NEXT_DEV_PRIVATE_OUTPUTS) assert.ok(buildTools.includes(path), `Private browser artifact missing: ${path}`);
+for (const path of ["./stylex-build/next-dev-client", "./stylex-build/next-dev-bootstrap"]) {
+  assert.equal(exportsRecord[path], undefined, "Private browser artifacts must not become public entrypoints");
+}
+await readNextDevPrivateArtifacts(pathToFileURL(resolve(dist, "build/next-dev.js")).href);
+console.log(`Constructed packaged development receipt: ${JSON.stringify(await checkNextDevPrivatePackage(repository))}`);
 
 const [foundation, compilerReset, publicReset] = await Promise.all([
   readFile(resolve(repository, "src/compiler-foundation.css"), "utf8"),
@@ -184,4 +199,4 @@ assert.doesNotMatch(
   /components\.hraness-ui\.priority\d+/u,
   "Compiler foundation must not hide a fixed StyleX priority declaration",
 );
-console.log(`Verified ${String(runtime.length)} marked runtime files, ${String(buildTools.length)} unmarked build-tool files, ${String(manifest.rules.length)} canonical StyleX rules, one bound standalone stylesheet, and ${String(manifest.stylesheets.length)} exact compiler-adopter stylesheets`);
+console.log(`Verified ${String(runtime.length)} marked runtime files, ${String(buildTools.length)} exact build-tool files including two private browser artifacts, ${String(manifest.rules.length)} canonical StyleX rules, one bound standalone stylesheet, and ${String(manifest.stylesheets.length)} exact compiler-adopter stylesheets`);

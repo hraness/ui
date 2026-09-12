@@ -7179,6 +7179,14 @@ async function verifyConsumer(
     types: "./build/next.ts",
     import: "./dist/build/next.js",
   });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/next-dev"], {
+    types: "./build/next-dev.ts",
+    import: "./dist/build/next-dev.js",
+  });
+  assert.deepEqual(installedManifest.exports?.["./stylex-build/next-output"], {
+    types: "./build/next-output-settlement.ts",
+    import: "./dist/build/next-output-settlement.js",
+  });
   assert.deepEqual(installedManifest.exports?.["./stylex-build/vite"], {
     types: "./build/vite.ts",
     import: "./dist/build/vite.js",
@@ -7192,6 +7200,8 @@ async function verifyConsumer(
     undefined,
     "compiler-reset.css must remain package-internal",
   );
+  assert.equal(installedManifest.exports?.["./stylex-build/next-dev-client"], undefined, "React bridge must remain private");
+  assert.equal(installedManifest.exports?.["./stylex-build/next-dev-bootstrap"], undefined, "Browser bootstrap must remain private");
   for (const path of [
     "build/bun.ts",
     "build/compiler.ts",
@@ -7202,9 +7212,30 @@ async function verifyConsumer(
     "build/next-contracts.ts",
     "build/next-delegated.ts",
     "build/next-delegated-capture.ts",
+    "build/next-dev-adapter.ts",
+    "build/next-dev-artifacts.ts",
+    "build/next-dev-assets.ts",
+    "build/next-dev-bootstrap.ts",
+    "build/next-dev-browser-owner.ts",
+    "build/next-dev-client.tsx",
+    "build/next-dev-compilation.ts",
+    "build/next-dev-consumers.ts",
+    "build/next-dev-css-loader.cjs",
+    "build/next-dev-document.ts",
+    "build/next-dev-loader.cjs",
+    "build/next-dev-markers.ts",
+    "build/next-dev-native-css.ts",
+    "build/next-dev-native-plugin.ts",
+    "build/next-dev-producer.ts",
+    "build/next-dev-profile.ts",
+    "build/next-dev-responses.ts",
+    "build/next-dev-session.ts",
+    "build/next-dev-webpack-bridge.ts",
+    "build/next-dev.ts",
     "build/next-generation.ts",
     "build/next-loader.cjs",
     "build/next-loader.ts",
+    "build/next-output-settlement.ts",
     "build/next-output.ts",
     "build/next-plugin.ts",
     "build/next-process.ts",
@@ -7217,6 +7248,13 @@ async function verifyConsumer(
     "build/vite-source-maps.ts",
     "dist/build/bun.js",
     "dist/build/index.js",
+    "dist/build/next-dev-bootstrap.cjs",
+    "dist/build/next-dev-client.js",
+    "dist/build/next-dev-css-loader.cjs",
+    "dist/build/next-dev-loader.cjs",
+    "dist/build/next-dev-session.js",
+    "dist/build/next-dev.js",
+    "dist/build/next-output-settlement.js",
     "dist/build/next-loader.cjs",
     "dist/build/next-loader.js",
     "dist/build/next.js",
