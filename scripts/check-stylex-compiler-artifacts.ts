@@ -13,6 +13,7 @@ import {
 } from "../build/compiler.js";
 import { readNextDevPrivateArtifacts } from "../build/next-dev-artifacts.js";
 import { NEXT_DEV_PRIVATE_OUTPUTS, validateNextDevPrivateBrowserSource } from "./next-dev-private-build.js";
+import { checkNextDevPrivatePackage } from "./check-next-dev-private-package.js";
 
 type PackageJson = Readonly<{
   exports?: Readonly<Record<string, unknown>>;
@@ -173,6 +174,7 @@ for (const path of ["./stylex-build/next-dev-client", "./stylex-build/next-dev-b
   assert.equal(exportsRecord[path], undefined, "Private browser artifacts must not become public entrypoints");
 }
 await readNextDevPrivateArtifacts(pathToFileURL(resolve(dist, "build/next-dev.js")).href);
+console.log(`Constructed packaged development receipt: ${JSON.stringify(await checkNextDevPrivatePackage(repository))}`);
 
 const [foundation, compilerReset, publicReset] = await Promise.all([
   readFile(resolve(repository, "src/compiler-foundation.css"), "utf8"),

@@ -52,6 +52,7 @@
     "scripts/next-dev-inputs.test.ts",
     "scripts/next-dev-network.test.ts",
     "scripts/next-dev-private-build.test.ts",
+    "scripts/next-dev-private-package.test.ts",
     "scripts/next-dev-restart.test.ts",
     "scripts/vite8-adopter-smoke.ts",
     "scripts/vite8-adopter-custody.test.ts",
