@@ -5,7 +5,7 @@ import { parseAsync, traverse, types as t, type NodePath } from "@babel/core";
 import { sha256 } from "./compiler.js";
 import { createNextDevConsumerLedger, type NextDevConsumerSource } from "./next-dev-consumers.js";
 import { NEXT_DEV_CLIENT_IMPORT } from "./next-dev-markers.js";
-import type { NextDevSource } from "./next-dev-session.js";
+import { STYLEX_NEXT_DEV_EXTENSIONS, type NextDevSource } from "./next-dev-session.js";
 
 type Module = Readonly<{ ast: t.File; consumer: NextDevConsumerSource | undefined; path: string }>;
 const SOURCE = /^app\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_.-]+\.(?:ts|tsx|js|jsx|mjs|mts|cjs|cts)$/u;
@@ -49,7 +49,7 @@ export async function validateNextDevNativeProfile(sources: readonly NextDevSour
     const stems = extension === ".js" ? [base.slice(0, -3) + ".ts", base.slice(0, -3) + ".tsx", base, base.slice(0, -3) + ".jsx"]
       : extension === ".mjs" ? [base.slice(0, -4) + ".mts", base]
         : extension === ".cjs" ? [base.slice(0, -4) + ".cts", base]
-          : extension !== "" ? [base] : [".js", ".mjs", ".tsx", ".ts", ".jsx"].map((extension) => base + extension);
+          : /^\.(?:ts|tsx|jsx|mts|cts)$/u.test(extension) ? [base] : STYLEX_NEXT_DEV_EXTENSIONS.map((extension) => base + extension);
     const found = stems.find((path) => modules.has(path));
     assert.ok(found !== undefined, "Next development profile relative import has no exact captured source");
     return modules.get(found)!;

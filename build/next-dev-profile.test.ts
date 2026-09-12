@@ -37,6 +37,20 @@ function sources(values = authored): readonly NextDevSource[] {
 }
 const change = (path: string, before: string, after: string) => ({ ...authored, [path]: authored[path]!.replace(before, after) });
 
+test("ordinary .stylex module stems follow the captured Webpack extension order and exact source aliases", async () => {
+  for (const specifier of ["./shared.stylex", "./shared.stylex.ts", "./shared.stylex.js"]) {
+    const page = authored["app/page.tsx"]!.replace('import Client from "./client";',
+      `import * as stylex from "@stylexjs/stylex"; import { styles } from "${specifier}"; import Client from "./client";`)
+      .replace('as="main" revision={revision()}', 'as="main" revision={revision()} {...stylex.props(styles.root)}');
+    await validateNextDevNativeProfile(sources({ ...authored, "app/page.tsx": page }), consumers);
+    expect(true).toBeTrue();
+    await expect(validateNextDevNativeProfile(sources({ ...authored, "app/page.tsx": page.replace(specifier, `${specifier}?raw`) }), consumers))
+      .rejects.toThrow("ordinary relative source paths");
+  }
+  const missing = authored["app/page.tsx"]!.replace('"./client"', '"./missing.stylex"');
+  await expect(validateNextDevNativeProfile(sources({ ...authored, "app/page.tsx": missing }), consumers)).rejects.toThrow("exact captured source");
+});
+
 test("the finite page/client/lazy/Edge graph and style-free root preserve data-only source creation and reexports", async () => {
   await validateNextDevNativeProfile(sources(), consumers);
   await validateNextDevNativeProfile(sources({ ...authored, "app/recovery.stylex.ts": 'export { recovery } from "./created-later";',
