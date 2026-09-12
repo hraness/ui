@@ -36,6 +36,8 @@
   },
   "include": [
     "build/**/*.ts",
+    "build/next-dev-client.tsx",
+    "build/next-dev-client.browser-fixture.tsx",
     "src/**/*.ts",
     "src/**/*.tsx",
     "scripts/build-package.ts",
