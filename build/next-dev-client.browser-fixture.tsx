@@ -132,10 +132,11 @@ globalThis.runNextDevClientScenario = async (scenario) => {
       f.install();
       await f.flush(() => { root = hydrateRoot(container, tree(1, 1)); });
       f.check(button() === original, "hydration must retain the exact server-rendered button");
-      f.check(f.events.indexOf("request") < f.events.indexOf("commit:app/page.tsx:1"), "child native commit requires a registered response");
-      f.check(f.events.indexOf("commit:app/page.tsx:1") < f.events.indexOf("document:subscribe"), "real child effects must precede parent document setup");
-      f.check(f.events.filter((event) => event === "root:park").length >= 2, "Strict effects must replay real cleanup/setup");
-      f.check(f.subscribers() === 1 && f.mounts.size === 2 && f.phase() === "ready", "Strict replay must keep one document and both live roots");
+      const requestIndex = f.events.indexOf("request");
+      const commitIndex = f.events.indexOf("commit:app/page.tsx:1");
+      f.check(requestIndex >= 0 && commitIndex > requestIndex, "child native commit requires a registered response");
+      f.check(f.subscribers() === 1 && f.mounts.size === 2 && f.phase() === "ready", "selective hydration must join one document and both live roots");
+      f.check([...f.mounts.values()].every((mount) => !mount.parked && mount.descriptor.sequence === 1), "every server root must complete its actual ready native commit");
     } else {
       f.install(); root = createRoot(container);
       if (scenario === "abandoned") {
@@ -152,6 +153,14 @@ globalThis.runNextDevClientScenario = async (scenario) => {
       } else {
         if (scenario === "stale-siblings") f.statuses.set(2, "ready");
         await f.flush(() => { root!.render(scenario === "stale-siblings" ? tree(2, 2) : tree(1)); });
+        const initialSequence = scenario === "stale-siblings" ? 2 : 1;
+        const initialRoots = scenario === "stale-siblings" ? 2 : 1;
+        const commitIndex = f.events.indexOf(`commit:app/page.tsx:${String(initialSequence)}`);
+        f.check(commitIndex >= 0 && commitIndex < f.events.indexOf("document:subscribe"),
+          "ordinary createRoot child layout setup must precede the document effect");
+        f.check(f.events.filter((event) => event === "root:park").length >= initialRoots, "Strict createRoot effects must replay actual cleanup/setup");
+        f.check(f.subscribers() === 1 && f.mounts.size === initialRoots && [...f.mounts.values()].every((mount) => !mount.parked),
+          "Strict replay must keep one document and every connected native root resumed");
         const original = button()!;
         await f.flush(() => { original.click(); original.click(); });
         f.check(original.textContent?.endsWith(":2"), "real React state must change before the update");

@@ -67,8 +67,9 @@ export function StylexNextDevDocument({ children }: Readonly<{ children?: ReactN
   useLayoutEffect(() => {
     const current = owner();
     if (!open(current)) return;
-    // Child layout effects run first. Neither binding nor a root allocation is
-    // needed during render, and Strict replay releases only these subscriptions.
+    // Ordinary child layout effects run first; selectively hydrated Suspense
+    // children can commit later. Neither path needs a render-time binding or
+    // root allocation. Strict replay releases only these subscriptions.
     const unsubscribe = current.documentOwner.subscribeDocument(noop);
     let unbind = noop;
     try { unbind = current.responseOwner.bindRefresh(() => router.refresh()); }
