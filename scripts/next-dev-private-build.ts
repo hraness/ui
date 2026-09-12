@@ -48,6 +48,7 @@ export async function buildNextDevPrivateBrowserArtifacts(repository: string, st
     const entrypoint = resolve(repository, "build", client ? "next-dev-client.tsx" : "next-dev-bootstrap.ts");
     if (client) assert.ok((await readFile(entrypoint, "utf8")).startsWith('"use client";'), "Private React source lost its client boundary");
     const result = await Bun.build({ entrypoints: [entrypoint], env: "disable", format: client ? "esm" : "cjs",
+      define: { "process.env.NODE_ENV": JSON.stringify("production") },
       // This is a precompiled artifact, not the application's Fast Refresh
       // transform. Do not let ambient NODE_ENV select JSX debug paths/bytes.
       jsx: { runtime: "automatic", importSource: "react", development: false },

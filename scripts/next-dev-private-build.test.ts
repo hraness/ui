@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { buildNextDevPrivateBrowserArtifacts, NEXT_DEV_PRIVATE_OUTPUTS, validateNextDevPrivateBrowserSource } from "./next-dev-private-build.js";
 
 test("the real minified private browser artifacts keep exact exports and browser-only dependencies", async () => {
@@ -25,3 +28,27 @@ test("the real minified private browser artifacts keep exact exports and browser
     await expect(buildNextDevPrivateBrowserArtifacts(dirname(import.meta.dir), stage)).rejects.toThrow("EEXIST");
   } finally { await rm(stage, { recursive: true, force: true }); }
 });
+
+test("private JSX bytes remain closed in the real Bun CLI, outside the Bun test transform", async () => {
+  const stage = await mkdtemp(join(await realpath(tmpdir()), "ui-next-dev-browser-cli-"));
+  try {
+    await mkdir(join(stage, "build"));
+    const module = pathToFileURL(join(import.meta.dir, "next-dev-private-build.ts")).href;
+    const script = `import { buildNextDevPrivateBrowserArtifacts } from ${JSON.stringify(module)};
+      process.env.NODE_ENV="production";
+      await buildNextDevPrivateBrowserArtifacts(${JSON.stringify(dirname(import.meta.dir))},${JSON.stringify(stage)});`;
+    const env: Record<string, string> = {};
+    for (const key of ["PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "TZ", "CIRCLE_NODE_TOTAL", "GOMAXPROCS", "RAYON_NUM_THREADS", "UV_THREADPOOL_SIZE"]) {
+      if (process.env[key] !== undefined) env[key] = process.env[key];
+    }
+    const child = spawnSync(process.execPath, ["--no-env-file", "--eval", script], { cwd: dirname(import.meta.dir), env,
+      encoding: "utf8", timeout: 30_000, maxBuffer: 16 * 1024, killSignal: "SIGKILL" });
+    assert.equal(child.error, undefined); assert.equal(child.signal, null); assert.equal(child.status, 0, child.stderr);
+    assert.throws(() => process.kill(child.pid, 0), (error: unknown) => typeof error === "object" && error !== null
+      && "code" in error && error.code === "ESRCH", "Private build CLI child survived collection");
+    const source = await readFile(join(stage, NEXT_DEV_PRIVATE_OUTPUTS[1]), "utf8");
+    expect(source).toContain("react/jsx-runtime");
+    expect(source).not.toContain("react/jsx-dev-runtime");
+    expect(source).not.toContain(dirname(import.meta.dir));
+  } finally { await rm(stage, { recursive: true, force: true }); }
+}, 40_000);
