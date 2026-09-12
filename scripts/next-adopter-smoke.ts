@@ -1,4 +1,4 @@
-import { stylexNextProfile, stylexNextVersion } from "../build/next-profile.ts";
+import { STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY, stylexNextProfile, stylexNextVersion } from "../build/next-profile.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -530,7 +530,7 @@ try {
   const profile = stylexNextProfile(NEXT_VERSION);
   const creators = new Map<string, string>();
   for (const [path, expected] of [...Object.values(profile.frameworkInputs), profile.auxiliaryTraceCreator,
-    profile.proxyRenameCreator, ...profile.emptyEntryInputs, ...profile.ssgInputs, ...Object.entries(profile.typeInputs)]) {
+    profile.proxyRenameCreator, ...profile.emptyEntryInputs, ...profile.builtinGlobalErrorInputs, ...profile.ssgInputs, ...Object.entries(profile.typeInputs)]) {
     assert.ok(creators.get(path) === undefined || creators.get(path) === expected, `Next ${NEXT_VERSION} has conflicting creator pins: ${path}`);
     creators.set(path, expected);
   }
@@ -540,6 +540,8 @@ try {
     assert.equal(await realpath(absolute), absolute, `Next ${NEXT_VERSION} creator traverses a symlink: ${path}`);
     assert.equal(sha256(await readFile(absolute)), expected, `Next ${NEXT_VERSION} installed creator differs: ${path}`);
   }
+  const appLoader = await readFile(resolve(consumer, "node_modules/next/dist/build/webpack/loaders/next-app-loader/index.js"), "utf8");
+  assert.equal(/const defaultGlobalErrorPath = '([^']+)';/u.exec(appLoader)?.[1], `${STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY}.js`);
   retainEvidence("inputs/next-creators.json", Buffer.from(JSON.stringify({ nextVersion: NEXT_VERSION, creators: [...creators].map(([path, sha256]) => ({ path, sha256 })) })));
   await retainOrdinaryEvidence(consumer, "package.json", "inputs/consumer-package.json");
   await retainOrdinaryEvidence(consumer, "bun.lock", "inputs/consumer-bun.lock");
@@ -555,6 +557,7 @@ try {
   await cp(resolve(repository, "fixtures/next-adopter/build.mjs"), resolve(consumer, "build.mjs"));
   await writeFile(resolve(consumer, "profile.mjs"), `export const nextVersion = ${JSON.stringify(NEXT_VERSION)};\n`, { flag: "wx" });
   await cp(resolve(repository, "fixtures/next-adopter/build-no-edge.mjs"), resolve(consumer, "build-no-edge.mjs"));
+  await cp(resolve(repository, "fixtures/next-adopter/build-default-error.mjs"), resolve(consumer, "build-default-error.mjs"));
   await mkdir(resolve(consumer, "node_modules/@fixture"), { recursive: true });
   await cp(resolve(repository, "fixtures/next-adopter/theme-package"), resolve(consumer, "node_modules/@fixture/theme"), { recursive: true });
   await writeFile(resolve(consumer, "setup-theme.mjs"), themeSetup, { flag: "wx" });
@@ -1106,13 +1109,55 @@ try {
     assert.deepEqual(graph.entrypoints, []);
     assert.equal(graph.sourcesSha256, sha256("[]"));
   }
-  for (const attempt of ["packed-next-adopter", "packed-next-adopter-no-edge"]) {
+  // Keep the physical error boundary and empty-Edge qualifications above.
+  // This third fresh build proves the framework fallback without adding an
+  // application boundary merely to satisfy the compiler's CSS owner check.
+  await rm(resolve(consumer, "app/global-error.tsx"));
+  await run([node, "./build-default-error.mjs"], consumer, environment);
+  const defaultErrorAttempt = resolve(consumer, ".stylex-next/packed-next-adopter-default-error");
+  const defaultErrorPlan = object(JSON.parse(await readFile(resolve(defaultErrorAttempt, "plan.json"), "utf8")) as unknown, "Next default-error plan");
+  assert.equal(defaultErrorPlan.nextVersion, NEXT_VERSION);
+  const defaultSources = {
+    client: FIXTURE_REQUIRED_SOURCES.client.filter((path) => path !== "app/global-error.tsx"),
+    "edge-rsc": [],
+    "node-rsc": FIXTURE_REQUIRED_SOURCES["node-rsc"].filter((path) => path !== "app/global-error.tsx"),
+  };
+  assert.deepEqual(defaultErrorPlan.requiredSources, defaultSources);
+  const defaultComplete = object(JSON.parse(await readFile(resolve(defaultErrorAttempt, "complete.json"), "utf8")) as unknown, "Next default-error complete");
+  assert.equal(defaultComplete.state, "complete");
+  assert.equal(defaultComplete.nextVersion, NEXT_VERSION);
+  for (const mode of ["discovery", "delivery"] as const) {
+    for (const identity of graphIdentities(defaultComplete[mode], `Next default-error ${mode} identities`)) {
+      const bytes = await readFile(resolve(defaultErrorAttempt, mode, identity.target, "graph.json"));
+      assert.equal(sha256(bytes), identity.receiptSha256);
+      const graph = object(JSON.parse(bytes.toString("utf8")) as unknown, `Next default-error ${mode} graph`);
+      assert.equal(graph.nextVersion, NEXT_VERSION);
+      assert.equal(graph.target, identity.target);
+      assert.ok(Array.isArray(graph.modules));
+      assert.deepEqual(graph.modules.map((item) => object(item, "Next default-error module").path), defaultSources[identity.target]);
+      assert.ok(Array.isArray(graph.entrypoints));
+      const entries = graph.entrypoints.map((item) => object(item, "Next default-error entrypoint"));
+      if (identity.target === "edge-rsc") assert.deepEqual(entries, []);
+      if (identity.target !== "client") continue;
+      const builtin = entries.filter(({ name }) => name === STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY);
+      assert.equal(builtin.length, 1, "Default boundary must compile the exact framework global-error entry");
+      assert.deepEqual(builtin[0]!.stylexCss, [], "The built-in fallback cannot own the application StyleX stylesheet");
+      assert.ok(!entries.some(({ name }) => name === "app/global-error"));
+      const owners = entries.filter((entry) => orderedLogicalPaths(entry.stylexCss, "Next default-error StyleX CSS").length > 0);
+      assert.deepEqual(owners.map(({ name }) => name), mode === "delivery" ? ["app/layout"] : []);
+      await assertDelegatedEntries(consumer, graph);
+    }
+  }
+  for (const [path, expected] of profile.builtinGlobalErrorInputs) {
+    assert.equal(sha256(await readFile(resolve(consumer, "node_modules/next", path))), expected, "Default-error inputs changed after native qualification");
+  }
+  for (const attempt of ["packed-next-adopter", "packed-next-adopter-no-edge", "packed-next-adopter-default-error"]) {
     for (const file of ["plan.json", "complete.json", ...["discovery", "delivery"].flatMap((mode) => [`${mode}/postprocessing.json`, ...NEXT_TARGETS.map((target) => `${mode}/${target}/graph.json`)])]) {
       await retainOrdinaryEvidence(consumer, `.stylex-next/${attempt}/${file}`, `${attempt}/receipts/${file}`);
     }
   }
   successful = true;
-  console.log(`Packed Next ${NEXT_VERSION} client, Node RSC, edge RSC, registered Node proxy trace and request headers, exact target/output source-map receipts, two independently observed delegated entries with mapped owner joins and working scroll/resize/icon hydration, explicit no-edge graph, dynamic /index route, lazy, exercised global-error, package union, font-URL asset linkage, CSP, and hydration proof passed`);
+  console.log(`Packed Next ${NEXT_VERSION} client, Node RSC, edge RSC, registered Node proxy trace and request headers, exact target/output source-map receipts, two independently observed delegated entries with mapped owner joins and working scroll/resize/icon hydration, explicit no-edge graph, dynamic /index route, lazy, exercised physical global-error and source-qualified built-in non-owner, package union, font-URL asset linkage, CSP, and hydration proof passed`);
 } finally {
   if (successful) {
     await rm(work, { force: true, recursive: true });

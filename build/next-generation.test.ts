@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -42,6 +42,7 @@ import {
   prepareStylexNextAttempt,
   readStylexNextAttemptPlan,
   readStylexNextGraphReceipt,
+  readStylexNextBuiltinGlobalErrorInputs,
   releaseStylexNextOutputLease,
   stylexNextOutputLeasePath,
   writeStylexNextGraphReceipt,
@@ -51,6 +52,7 @@ import {
   verifySettledStylexNextEmptyEntryBootstrap,
 } from "./next-generation.js";
 import { transformStylexNextModule } from "./next-loader.js";
+import { STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY, stylexNextProfile } from "./next-profile.js";
 
 const roots: string[] = [];
 
@@ -164,6 +166,99 @@ async function materializeSsg(root: string, outputDirectory: string) {
 }
 
 describe("StyleX Next generation", () => {
+  test("rejects missing, altered, aliased or opposite-profile built-in global-error inputs", async () => {
+    const context = await createFixture();
+    const profile = stylexNextProfile("16.2.12");
+    const metadata = join(context.root, "node_modules/next/package.json");
+    await mkdir(dirname(metadata), { recursive: true });
+    await writeFile(metadata, '{"name":"next","version":"16.2.12"}');
+    await assert.rejects(readStylexNextBuiltinGlobalErrorInputs(context.root, "16.2.12"), /ENOENT/u);
+    for (const [path] of profile.builtinGlobalErrorInputs) {
+      const destination = join(context.root, "node_modules/next", path);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, await readFile(new URL(`../node_modules/next/${path}`, import.meta.url)));
+    }
+    const accepted = await readStylexNextBuiltinGlobalErrorInputs(context.root, "16.2.12");
+    assert.deepEqual(accepted.map(({ path, sha256 }) => [path, sha256]), profile.builtinGlobalErrorInputs.map(([path, hash]) => [`node_modules/next/${path}`, hash]));
+    for (const input of accepted) {
+      const path = join(context.root, input.path), original = await readFile(path);
+      await writeFile(path, Buffer.concat([original, Buffer.from("\n")]));
+      await assert.rejects(readStylexNextBuiltinGlobalErrorInputs(context.root, "16.2.12"), /pinned original bytes/u);
+      await writeFile(path, original);
+    }
+    for (const value of [{ name: "not-next", version: "16.2.12" }, { name: "next", version: "16.3.3" }]) {
+      await writeFile(metadata, JSON.stringify(value));
+      await assert.rejects(readStylexNextBuiltinGlobalErrorInputs(context.root, "16.2.12"));
+    }
+    await assert.rejects(readStylexNextBuiltinGlobalErrorInputs(context.root, "16.3.3"), /pinned original bytes/u);
+    await writeFile(metadata, '{"name":"next","version":"16.2.12"}');
+    const component = join(context.root, `node_modules/${STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY}.js`);
+    await rename(component, `${component}.retained`);
+    await symlink(`${component}.retained`, component);
+    await assert.rejects(readStylexNextBuiltinGlobalErrorInputs(context.root, "16.2.12"), /symlink/u);
+  });
+
+  test("rechecks the built-in inputs before graph publication, discovery settlement and complete-record commit", async () => {
+    const context = await createFixture();
+    const attempt = await prepareStylexNextAttempt({ attemptId: "builtin", packageManifests: [context.manifestPath],
+      requiredSources: { client: ["src/app.tsx"], "edge-rsc": [], "node-rsc": ["src/app.tsx"] }, rootDirectory: context.root });
+    const inputPaths = stylexNextProfile("16.2.12").builtinGlobalErrorInputs.map(([path]) => path);
+    const restoreInputs = async () => {
+      for (const path of inputPaths) {
+        const destination = join(context.root, "node_modules/next", path);
+        await mkdir(dirname(destination), { recursive: true });
+        await writeFile(destination, await readFile(new URL(`../node_modules/next/${path}`, import.meta.url)));
+      }
+    };
+    let finalCss: StylexArtifactV1 | undefined;
+    for (const mode of ["discovery", "delivery"] as const) {
+      const directory = mode === "discovery" ? ".stylex-next/builtin/next-discovery" : ".next";
+      for (const target of STYLEX_NEXT_TARGETS) {
+        const empty = target === "edge-rsc", client = target === "client", delivered = client && mode === "delivery";
+        if (!empty) {
+          await materializeOutputs(context.root, directory, target, delivered);
+          await transformStylexNextModule({ options: { attemptDirectory: attempt.directory, mode, planSha256: attempt.planSha256, rootDirectory: context.root, target },
+            resourcePath: context.sourcePath, source: context.source });
+        }
+        const ssg = client ? [await materializeSsg(context.root, directory)] : [];
+        const entries = empty ? [] : [{ css: delivered ? ["static/stylex.css"] : [],
+          files: delivered ? ["static/client.js", "static/stylex.css"] : [`static/${target}.js`], javascript: [`static/${target}.js`],
+          name: client ? "app/layout" : target, stylexCss: delivered ? ["static/stylex.css"] : [] },
+          ...(client ? [{ css: [], files: ["static/client.js"], javascript: ["static/client.js"], name: STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY, stylexCss: [] }] : [])];
+        const options = { attempt, cssInputs: client ? [context.foundation, context.siteCss, ...(finalCss === undefined ? [] : [finalCss])].sort((a, b) => compareStylexNextStrings(a.path, b.path)) : [],
+          entrypoints: entries, delegatedEntryBootstraps: [], emptyEntryBootstraps: [], frameworkAssets: ssg, auxiliaryTraceAssets: [],
+          javascriptChunks: empty ? [] : [`static/${target}.js`], mode, outputDirectory: directory,
+          outputs: empty ? [] : [...output(target), ...ssg.map(({ output }) => output), ...(delivered ? [{ bytes: 1, path: "static/stylex.css", sha256: sha256("c") }] : [])].sort((a, b) => compareStylexNextStrings(a.path, b.path)),
+          rootDirectory: context.root, sourceMaps: empty ? [] : sourceMaps(target), target, webpackVersion: "5.99.0" };
+        if (client && mode === "discovery") {
+          await assert.rejects(writeStylexNextGraphReceipt(options), /ENOENT/u);
+          await assert.rejects(readFile(join(attempt.directory, mode, target, "graph.json")), /ENOENT/u);
+          await restoreInputs();
+        }
+        await writeStylexNextGraphReceipt(options);
+      }
+      await writeFile(join(context.root, directory, "static/build/_ssgManifest.js"), serializeStylexNextSsgRoutes([]));
+      if (mode === "discovery") {
+        for (const path of inputPaths) {
+          await writeFile(join(context.root, "node_modules/next", path), "changed after graph publication");
+          await assert.rejects(finalizeStylexNextDiscovery(attempt, context.root), /pinned original bytes/u);
+          await assert.rejects(readFile(join(attempt.directory, "generated/stylex.css")), /ENOENT/u);
+          await restoreInputs();
+        }
+        await finalizeStylexNextDiscovery(attempt, context.root);
+        finalCss = await artifactForFile(context.root, ".stylex-next/builtin/generated/stylex.css");
+      }
+    }
+    for (const path of inputPaths) {
+      await assert.rejects(completeStylexNextBuild(attempt, context.root, async () => {
+        await writeFile(join(context.root, "node_modules/next", path), "changed during complete-record commit");
+      }), /pinned original bytes/u);
+      await assert.rejects(readFile(join(attempt.directory, "complete.json")), /ENOENT/u);
+      await restoreInputs();
+    }
+    assert.equal((await completeStylexNextBuild(attempt, context.root)).state, "complete");
+  }, 30_000);
+
   test("rejects an explicit null profile rather than writing a default-version attempt", async () => {
     const context = await createFixture();
     await assert.rejects(prepareStylexNextAttempt({

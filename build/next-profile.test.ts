@@ -5,7 +5,7 @@ import { describe, test } from "bun:test";
 import { canonicalJson, compilerSha256, sha256, stylexUnionPolicySha256 } from "./compiler.js";
 import { STYLEX_NEXT_ADAPTER_VERSION, defaultStylexNextGraphMap, validateStylexNextAuxiliaryTraceAsset, validateStylexNextAuxiliaryTraceSnapshot, validateStylexNextEmptyEntryBootstrap, validateStylexNextPostprocessingReceipt } from "./next-contracts.js";
 import { validateStylexNextAttemptPlan } from "./next-generation.js";
-import { STYLEX_NEXT_REQUIRED_VERSION, STYLEX_NEXT_PRODUCTION_VERSIONS, stylexNextProfile, stylexNextVersion } from "./next-profile.js";
+import { STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY, STYLEX_NEXT_REQUIRED_VERSION, STYLEX_NEXT_PRODUCTION_VERSIONS, stylexNextProfile, stylexNextVersion } from "./next-profile.js";
 import { stylexNextTypeEnvironment, validateStylexNextNativeTypeObservation } from "./next-typescript.js";
 
 describe("exact Next production profiles", () => {
@@ -38,12 +38,27 @@ describe("exact Next production profiles", () => {
     assert.equal(old.typeInputs["dist/server/lib/router-utils/root-params-type-utils.js"], undefined);
     assert.equal(next.typeInputs["dist/server/lib/router-utils/root-params-type-utils.js"], "d08e53213b27e02f5b7825c863f90c27d6885f096b6234781068c0cf0678e0a2");
     for (const profile of [old, next]) {
-      for (const value of [profile, profile.frameworkInputs, profile.auxiliaryTraceCreator, profile.proxyRenameCreator, profile.emptyEntryInputs, ...profile.emptyEntryInputs, profile.ssgInputs, ...profile.ssgInputs, profile.typeInputs, profile.nativeTypeNames]) assert.ok(Object.isFrozen(value));
-      for (const inputs of [profile.emptyEntryInputs, profile.ssgInputs]) {
+      for (const value of [profile, profile.frameworkInputs, profile.auxiliaryTraceCreator, profile.proxyRenameCreator, profile.emptyEntryInputs, ...profile.emptyEntryInputs, profile.builtinGlobalErrorInputs, ...profile.builtinGlobalErrorInputs, profile.ssgInputs, ...profile.ssgInputs, profile.typeInputs, profile.nativeTypeNames]) assert.ok(Object.isFrozen(value));
+      for (const inputs of [profile.emptyEntryInputs, profile.builtinGlobalErrorInputs, profile.ssgInputs]) {
         assert.deepEqual(inputs.map(([path]) => path), [...new Set(inputs.map(([path]) => path))].sort());
         for (const [path, hash] of inputs) { assert.match(path, /^dist\//u); assert.match(hash, /^[a-f0-9]{64}$/u); }
       }
     }
+  });
+
+  test("binds the default global-error identity to the installed pinned loader and component", async () => {
+    const profile = stylexNextProfile(STYLEX_NEXT_REQUIRED_VERSION);
+    for (const [path, hash] of profile.builtinGlobalErrorInputs) {
+      assert.equal(sha256(await readFile(new URL(`../node_modules/next/${path}`, import.meta.url))), hash);
+    }
+    const loader = await readFile(new URL("../node_modules/next/dist/build/webpack/loaders/next-app-loader/index.js", import.meta.url), "utf8");
+    const defaultPath = /const defaultGlobalErrorPath = '([^']+)';/u.exec(loader)?.[1];
+    assert.equal(defaultPath, `${STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY}.js`);
+    assert.equal(defaultPath?.replace(/\.[^.\\/]+$/u, ""), STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY);
+    assert.ok(loader.includes("filePaths.set(GLOBAL_ERROR_FILE_TYPE, globalError)"));
+    const next = stylexNextProfile("16.3.3");
+    assert.notDeepEqual(profile.builtinGlobalErrorInputs[0], next.builtinGlobalErrorInputs[0]);
+    assert.deepEqual(profile.builtinGlobalErrorInputs.slice(1), next.builtinGlobalErrorInputs.slice(1));
   });
 
   test("keeps trace and proxy rename creators version-bound without admitting new server entries", () => {

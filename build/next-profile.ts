@@ -75,12 +75,19 @@ const TYPE_INPUTS_1633 = {
 } as const;
 
 type Creator = readonly [path: string, sha256: string];
+export const STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY = "next/dist/client/components/builtin/global-error" as const;
+const builtinGlobalErrorInputs = (loaderHash: string): readonly Creator[] => Object.freeze([
+  Object.freeze(["dist/build/webpack/loaders/next-app-loader/index.js", loaderHash] as const),
+  Object.freeze(STYLEX_NEXT_FRAMEWORK_INPUTS["server-reference-manifest"]),
+  Object.freeze(["dist/client/components/builtin/global-error.js", "773bfaf8baf4d1a40a58e887d1be8c071bd821063a643c91f34d8d2bf73150bf"] as const),
+]);
 type Profile = Readonly<{
   version: StylexNextVersion;
   frameworkInputs: typeof STYLEX_NEXT_FRAMEWORK_INPUTS;
   auxiliaryTraceCreator: Creator;
   proxyRenameCreator: Creator;
   emptyEntryInputs: readonly Creator[];
+  builtinGlobalErrorInputs: readonly Creator[];
   ssgInputs: readonly Creator[];
   typeInputs: Readonly<Record<string, string>>;
   nativeTypeNames: readonly string[];
@@ -94,6 +101,7 @@ const profiles: Readonly<Record<StylexNextVersion, Profile>> = Object.freeze({
     auxiliaryTraceCreator: STYLEX_NEXT_AUXILIARY_TRACE_CREATOR,
     proxyRenameCreator: STYLEX_NEXT_PROXY_RENAME_CREATOR,
     emptyEntryInputs: STYLEX_NEXT_EMPTY_ENTRY_INPUTS, ssgInputs: STYLEX_NEXT_SSG_INPUTS,
+    builtinGlobalErrorInputs: builtinGlobalErrorInputs("4a539177b3c57dd972bbe82c520d65f529a9c42856c61d2226f1e0cc75c0859c"),
     typeInputs: Object.freeze(TYPE_INPUTS_16212),
     nativeTypeNames: Object.freeze(["cache-life.d.ts", "link.d.ts", "routes.d.ts", "validator.ts"]),
     requiredNativeTypeNames: Object.freeze(["routes.d.ts", "validator.ts"]), rootParams: false,
@@ -108,6 +116,7 @@ const profiles: Readonly<Record<StylexNextVersion, Profile>> = Object.freeze({
       "06f4f8021a332ce2dcb384c349bac7d89e770856bb381b1a1350c3c864fcfbb2",
     ] as const),
     proxyRenameCreator: Object.freeze(["dist/build/index.js", TYPE_INPUTS_1633["dist/build/index.js"]] as const),
+    builtinGlobalErrorInputs: builtinGlobalErrorInputs("b04a8fa83526dda4e4b906f68cf5b1f5890692d452f47cfb4f492cfbaba0396b"),
     emptyEntryInputs: Object.freeze(STYLEX_NEXT_EMPTY_ENTRY_INPUTS.map(([path, hash]): Creator => Object.freeze([
       path, path === "dist/compiled/webpack/bundle5.js" ? "1a8627c55931e3486fc71af9cf2d7de1f0ccf34d6011607fe05ed5404f3b77b9" : hash,
     ]))),

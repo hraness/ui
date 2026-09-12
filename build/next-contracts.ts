@@ -19,7 +19,7 @@ import {
   validateStylexSourceMapPath,
 } from "./compiler.js";
 
-import { STYLEX_NEXT_REQUIRED_VERSION, STYLEX_NEXT_FRAMEWORK_INPUTS, stylexNextProfile, stylexNextVersion, type StylexNextVersion } from "./next-profile.js";
+import { STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY, STYLEX_NEXT_REQUIRED_VERSION, STYLEX_NEXT_FRAMEWORK_INPUTS, stylexNextProfile, stylexNextVersion, type StylexNextVersion } from "./next-profile.js";
 import { validateStylexNextDelegatedEntryBootstrap, type StylexNextDelegatedEntryBootstrapV1 } from "./next-delegated.js";
 export { STYLEX_NEXT_REQUIRED_VERSION, STYLEX_NEXT_FRAMEWORK_INPUTS, STYLEX_NEXT_AUXILIARY_TRACE_CREATOR, STYLEX_NEXT_PROXY_RENAME_CREATOR, STYLEX_NEXT_EMPTY_ENTRY_INPUTS, STYLEX_NEXT_SSG_INPUTS } from "./next-profile.js";
 
@@ -67,9 +67,11 @@ export function stylexNextDeliveryCssOwnerNames(value: readonly string[]): reado
   );
   const globalErrors = names.filter((name) => name.split("/").includes("global-error"));
   assert.ok(
-    globalErrors.every((name) => name === "app/global-error"),
+    globalErrors.every((name) => name === "app/global-error" || name === STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY),
     "StyleX Next delivery supports only the physical root app/global-error convention",
   );
+  // The exact framework fallback is not a physical application CSS owner.
+  // Graph publication and settlement verify its selected-profile creator bytes.
   const layouts = names.filter((name) => name === "app/layout" || (name.startsWith("app/") && name.endsWith("/layout")));
   assert.ok(layouts.length > 0, "StyleX Next delivery requires at least one physical App Router root layout entry");
   const roots = layouts.filter((layout) => {
