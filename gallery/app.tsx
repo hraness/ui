@@ -809,6 +809,46 @@ function ToastGallery() {
   </section>;
 }
 
+function PendingActionsGallery() {
+  const [pending, setPending] = useState({ primary: false, secondary: false, icon: false });
+  const [presses, setPresses] = useState<Record<string, number>>({});
+  const recordPress = (key: string, kind: "primary" | "secondary" | "icon") => {
+    setPresses((current) => ({ ...current, [key]: (current[key] ?? 0) + 1 }));
+    setPending((current) => ({ ...current, [kind]: true }));
+  };
+  return <section aria-labelledby="gallery-pending-actions-heading" data-gallery-section="pending-actions">
+    <h2 id="gallery-pending-actions-heading">Pending action paint and behavior</h2>
+    <Button data-gallery-pending-reset="true" onPress={() => {
+      setPending({ primary: false, secondary: false, icon: false });
+      setPresses({});
+    }}>Reset pending actions</Button>
+    {(["primary", "secondary", "icon"] as const).flatMap((kind) =>
+      (["dynamic", "disabled", "disabled-pending"] as const).map((mode) => {
+        const key = `${kind}-${mode}`;
+        const isPending = mode === "disabled-pending" || (mode === "dynamic" && pending[kind]);
+        const isDisabled = mode !== "dynamic";
+        const onPress = () => recordPress(key, kind);
+        return <div data-gallery-pending-fixture={key} key={key}>
+          {kind !== "icon" ? <Button
+            data-gallery-pending-action={key}
+            isDisabled={isDisabled}
+            isPending={isPending}
+            onPress={onPress}
+            variant={kind}
+          >{isPending ? "Saving changes" : "Save changes"}</Button> : <IconButton
+            aria-label={`Refresh ${mode}`}
+            data-gallery-pending-action={key}
+            isDisabled={isDisabled}
+            isPending={isPending}
+            onPress={onPress}
+          ><Icon icon={Search01Icon} /></IconButton>}
+          <output data-gallery-pending-count={key}>{presses[key] ?? 0}</output>
+        </div>;
+      }),
+    )}
+  </section>;
+}
+
 export function PrimitiveGallery() {
   const [hiddenPressCount, setHiddenPressCount] = useState(0);
   const [cardPressCount, setCardPressCount] = useState(0);
@@ -2473,6 +2513,7 @@ export function PrimitiveGallery() {
         <DialogGallery />
         <PopoverTooltipGallery />
         <ToastGallery />
+        <PendingActionsGallery />
       </QuietSitePage>
       <QuietSiteFooter
         className="gallery-quiet-site-footer"

@@ -24,6 +24,7 @@ import {
 
 import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import { placeQuietSiteFooterPriorityBeforeLegacy } from "./gallery-layer-counterfactual.ts";
+import { verifyPendingActions } from "./gallery-pending-actions.ts";
 
 const BUN_VERSION = "1.3.14";
 const CARD_DESCRIPTION_BRIDGE_PATTERN =
@@ -14441,6 +14442,7 @@ try {
           await waitForHydration(page, failures, requestedPaths, layout.id);
 
           const light = await browserEvidence(page);
+          await verifyPendingActions(page, `${layout.id} light`);
           const lightContent = await contentFamilyEvidence(page);
           verifyContentFamilyEvidence(lightContent, layout.id);
           const lightDataTable = await dataTableEvidence(page);
@@ -14820,6 +14822,7 @@ try {
           await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
+          await verifyPendingActions(page, `${layout.id} dark`);
           const darkContent = await contentFamilyEvidence(page);
           verifyContentFamilyEvidence(darkContent, `${layout.id} dark`);
           const darkDataTable = await dataTableEvidence(page);
@@ -15101,6 +15104,7 @@ try {
         await waitForHydration(page, failures, requestedPaths, "forced colors");
         const forced = await forcedColorsEvidence(page);
         invariant(forced.forcedColorsActive, "forced colors: browser emulation is inactive");
+        await verifyPendingActions(page, "forced colors");
         invariant(forced.cardForcedColorAdjust === "auto", `forced colors: card adjustment is ${forced.cardForcedColorAdjust}`);
         invariant(forced.cardBorderColor === forced.canvasText, `forced colors: card border is ${forced.cardBorderColor}, expected ${forced.canvasText}`);
         invariant(forced.buttonBackground === forced.buttonFace, `forced colors: action background is ${forced.buttonBackground}, expected ${forced.buttonFace}`);

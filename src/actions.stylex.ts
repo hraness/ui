@@ -414,6 +414,10 @@ export const actionStyles = stylex.create({
       },
     },
   },
+  pending: {
+    cursor: "progress",
+    opacity: 1,
+  },
   pressed: {
     transform: "translateY(1px)",
   },
