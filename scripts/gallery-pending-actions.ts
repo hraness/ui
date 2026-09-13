@@ -175,7 +175,9 @@ export async function verifyPendingActions(page: Page, environment: string): Pro
         }
       }
       const observed = await pendingEvidence(control);
-      assert.equal(observed.ariaBusy, "true", `${environment}: ${key} aria-busy`);
+      // React Aria 1.19 filters aria-busy from its native button; the package
+      // wrapper owns the busy state while React Aria owns pending interaction.
+      assert.equal(observed.ariaBusy, null, `${environment}: ${key} native aria-busy ownership`);
       assert.equal(observed.rootBusy, "true");
       assert.equal(observed.ariaDisabled, "true");
       assert.equal(observed.rootPending, "true");
