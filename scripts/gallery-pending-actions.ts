@@ -118,6 +118,18 @@ export async function verifyPendingActions(page: Page, environment: string): Pro
       outline[3] *= Number(style.opacity);
       const forcedColors = matchMedia("(forced-colors: active)").matches;
       const shadow = /^(.*) 0px 0px 0px 4px$/u.exec(style.boxShadow);
+      let highlight: string | null = null;
+      if (forcedColors) {
+        const probe = document.createElement("span");
+        probe.style.color = "Highlight";
+        probe.style.position = "absolute";
+        document.body.append(probe);
+        try {
+          highlight = getComputedStyle(probe).color;
+        } finally {
+          probe.remove();
+        }
+      }
       return {
         ariaBusy: element.getAttribute("aria-busy"),
         ariaDisabled: element.getAttribute("aria-disabled"),
@@ -133,6 +145,9 @@ export async function verifyPendingActions(page: Page, environment: string): Pro
         outlineWidth: Number.parseFloat(style.outlineWidth),
         outlineOffset: Number.parseFloat(style.outlineOffset),
         outlineAlpha: outline[3],
+        outlineColor: style.outlineColor,
+        highlight,
+        forcedColorAdjust: style.forcedColorAdjust,
         shadow: style.boxShadow,
         // The four-pixel spread stops at the opaque outline's outside edge.
         // Forced colors may suppress shadows entirely at the browser level.
@@ -186,8 +201,14 @@ export async function verifyPendingActions(page: Page, environment: string): Pro
       assert.equal(observed.opacity, 1, `${environment}: ${key} pending opacity`);
       assert.equal(observed.cursor, "progress", `${environment}: ${key} pending cursor`);
       assert(observed.focused && observed.focusVisible, `${environment}: ${key} lost visible/retained focus`);
+      // Native Highlight may be translucent. With forced-color shadows absent,
+      // its observed alpha is composited over the same measured exterior paint.
+      const outlinePaintOwned = observed.forcedColors
+        ? observed.outlineColor === observed.highlight && observed.forcedColorAdjust === "auto"
+          && observed.outlineAlpha > 0 && observed.outlineAlpha <= 1 && observed.shadow === "none"
+        : observed.outlineAlpha === 1 && observed.shadowWithinOutline;
       assert(observed.outlineStyle === "solid" && observed.outlineWidth === 2 && observed.outlineOffset === 2
-        && observed.outlineAlpha === 1 && observed.shadowWithinOutline && observed.outlineContrast >= 3,
+        && outlinePaintOwned && observed.outlineContrast >= 3,
         `${environment}: ${key} focus outline is not visible: ${JSON.stringify(observed)}`);
       assert.equal(observed.spinnerHidden, "true");
       assert(observed.spinnerWidth > 0 && observed.spinnerBorder > 0, `${environment}: ${key} spinner has no paint`);
