@@ -243,3 +243,38 @@ test("action StyleX source owns every migrated visual recipe and legacy CSS owns
   expect(motion).toContain("export const spinKeyframes = stylex.keyframes({");
   expect(motion).toContain("default: spinKeyframes");
 });
+
+
+test("pending actions retain readable paint while unavailable actions remain muted", () => {
+  const pendingClasses = classes(`<button class="${stylex.props(actionStyles.pending).className ?? ""}">`);
+  const disabledClasses = classes(`<button class="${stylex.props(actionStyles.disabled).className ?? ""}">`);
+  expect(pendingClasses.length).toBeGreaterThan(0);
+  expect(disabledClasses.length).toBeGreaterThan(0);
+  for (const isDisabled of [false, true]) {
+    for (const [element, slot] of [
+      [<Button isDisabled={isDisabled} isPending>Saving changes</Button>, "button-control"],
+      [<IconButton aria-label="Refreshing" isDisabled={isDisabled} isPending>R</IconButton>, "icon-button-control"],
+    ] as const) {
+      const html = renderToStaticMarkup(element);
+      const control = openingTag(html, slot);
+      const applied = classes(control);
+      expect(control).toContain('aria-disabled="true"');
+      expect(control).toContain('data-pending="true"');
+      expect(control).not.toContain('disabled=""');
+      expect(html).toContain('aria-busy="true"');
+      expect(html).toContain("hraness-action__spinner");
+      for (const token of pendingClasses) expect(applied).toContain(token);
+      for (const token of disabledClasses) expect(applied).not.toContain(token);
+    }
+  }
+  for (const [element, slot] of [
+    [<Button isDisabled>Unavailable</Button>, "button-control"],
+    [<IconButton aria-label="Unavailable" isDisabled>R</IconButton>, "icon-button-control"],
+  ] as const) {
+    const control = openingTag(renderToStaticMarkup(element), slot);
+    const applied = classes(control);
+    expect(control).toContain('disabled=""');
+    for (const token of disabledClasses) expect(applied).toContain(token);
+    for (const token of pendingClasses) expect(applied).not.toContain(token);
+  }
+});

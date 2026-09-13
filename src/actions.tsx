@@ -191,7 +191,7 @@ function actionControlPresentation(
         : actionHoverStyles[variant]),
     state.isPressed && actionStyles.pressed,
     state.isFocusVisible && actionStyles.focusVisible,
-    (state.isDisabled || state.isPending) && actionStyles.disabled,
+    state.isPending ? actionStyles.pending : state.isDisabled && actionStyles.disabled,
     state.isSelected && actionStyles.selected,
     !hasControlPresentation
       && state.isSelected

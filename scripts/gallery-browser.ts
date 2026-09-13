@@ -24,6 +24,7 @@ import {
 
 import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import { placeQuietSiteFooterPriorityBeforeLegacy } from "./gallery-layer-counterfactual.ts";
+import { verifyPendingActions } from "./gallery-pending-actions.ts";
 
 const BUN_VERSION = "1.3.14";
 const CARD_DESCRIPTION_BRIDGE_PATTERN =
@@ -15257,6 +15258,53 @@ try {
         );
       } finally {
         await forcedContext.close();
+      }
+
+      // Pending transitions schedule live announcements. Keep those DOM and
+      // focus lifetimes separate from the existing gallery traversal checks.
+      const pendingCases: readonly {
+        readonly context: BrowserContextOptions;
+        readonly id: string;
+        readonly theme: "light" | "dark";
+      }[] = [
+        ...layouts.flatMap((layout) => (["light", "dark"] as const).map((theme) => ({
+          context: layout.context,
+          id: `${layout.id} ${theme}`,
+          theme,
+        }))),
+        {
+          context: {
+            colorScheme: "light",
+            forcedColors: "active",
+            reducedMotion: "reduce",
+            viewport: { height: 720, width: 900 },
+          },
+          id: "forced colors",
+          theme: "light",
+        },
+      ];
+      for (const pendingCase of pendingCases) {
+        const context = await browser.newContext(pendingCase.context);
+        try {
+          const page = await context.newPage();
+          const failures = attachDiagnostics(page);
+          await page.goto(origin, { waitUntil: "networkidle" });
+          await waitForHydration(page, failures, requestedPaths, pendingCase.id);
+          if (pendingCase.theme === "dark") {
+            await page.getByRole("button", { name: "Use dark theme" }).click();
+          }
+          await page.locator(`html[data-theme="${pendingCase.theme}"]`).waitFor();
+          const initial = await browserEvidence(page);
+          assert.deepEqual(initial.stylesheetHrefs, [compilerFoundationHref, stylesheetHref]);
+          assert.equal(initial.stylexRuntimeStyleCount, 0);
+          assert.equal(initial.recoverableErrors.length, 0);
+          await verifyPendingActions(page, pendingCase.id);
+          assert.equal(await page.evaluate(() =>
+            window.__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__?.length ?? 0), 0);
+          invariant(failures.length === 0, `${pendingCase.id}: ${failures.join("; ")}`);
+        } finally {
+          await context.close();
+        }
       }
 
       assert.equal(browser.contexts().length, 0, "all primitive gallery contexts must close");
