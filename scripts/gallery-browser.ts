@@ -14442,7 +14442,6 @@ try {
           await waitForHydration(page, failures, requestedPaths, layout.id);
 
           const light = await browserEvidence(page);
-          await verifyPendingActions(page, `${layout.id} light`);
           const lightContent = await contentFamilyEvidence(page);
           verifyContentFamilyEvidence(lightContent, layout.id);
           const lightDataTable = await dataTableEvidence(page);
@@ -14822,7 +14821,6 @@ try {
           await verifySegmentedControlInteraction(page, layout.id);
           await settleCardFamilyTransitions(page);
           const dark = await browserEvidence(page);
-          await verifyPendingActions(page, `${layout.id} dark`);
           const darkContent = await contentFamilyEvidence(page);
           verifyContentFamilyEvidence(darkContent, `${layout.id} dark`);
           const darkDataTable = await dataTableEvidence(page);
@@ -15104,7 +15102,6 @@ try {
         await waitForHydration(page, failures, requestedPaths, "forced colors");
         const forced = await forcedColorsEvidence(page);
         invariant(forced.forcedColorsActive, "forced colors: browser emulation is inactive");
-        await verifyPendingActions(page, "forced colors");
         invariant(forced.cardForcedColorAdjust === "auto", `forced colors: card adjustment is ${forced.cardForcedColorAdjust}`);
         invariant(forced.cardBorderColor === forced.canvasText, `forced colors: card border is ${forced.cardBorderColor}, expected ${forced.canvasText}`);
         invariant(forced.buttonBackground === forced.buttonFace, `forced colors: action background is ${forced.buttonBackground}, expected ${forced.buttonFace}`);
@@ -15261,6 +15258,53 @@ try {
         );
       } finally {
         await forcedContext.close();
+      }
+
+      // Pending transitions schedule live announcements. Keep those DOM and
+      // focus lifetimes separate from the existing gallery traversal checks.
+      const pendingCases: readonly {
+        readonly context: BrowserContextOptions;
+        readonly id: string;
+        readonly theme: "light" | "dark";
+      }[] = [
+        ...layouts.flatMap((layout) => (["light", "dark"] as const).map((theme) => ({
+          context: layout.context,
+          id: `${layout.id} ${theme}`,
+          theme,
+        }))),
+        {
+          context: {
+            colorScheme: "light",
+            forcedColors: "active",
+            reducedMotion: "reduce",
+            viewport: { height: 720, width: 900 },
+          },
+          id: "forced colors",
+          theme: "light",
+        },
+      ];
+      for (const pendingCase of pendingCases) {
+        const context = await browser.newContext(pendingCase.context);
+        try {
+          const page = await context.newPage();
+          const failures = attachDiagnostics(page);
+          await page.goto(origin, { waitUntil: "networkidle" });
+          await waitForHydration(page, failures, requestedPaths, pendingCase.id);
+          if (pendingCase.theme === "dark") {
+            await page.getByRole("button", { name: "Use dark theme" }).click();
+          }
+          await page.locator(`html[data-theme="${pendingCase.theme}"]`).waitFor();
+          const initial = await browserEvidence(page);
+          assert.deepEqual(initial.stylesheetHrefs, [compilerFoundationHref, stylesheetHref]);
+          assert.equal(initial.stylexRuntimeStyleCount, 0);
+          assert.equal(initial.recoverableErrors.length, 0);
+          await verifyPendingActions(page, pendingCase.id);
+          assert.equal(await page.evaluate(() =>
+            window.__HRANESS_UI_GALLERY_RECOVERABLE_ERRORS__?.length ?? 0), 0);
+          invariant(failures.length === 0, `${pendingCase.id}: ${failures.join("; ")}`);
+        } finally {
+          await context.close();
+        }
       }
 
       assert.equal(browser.contexts().length, 0, "all primitive gallery contexts must close");
