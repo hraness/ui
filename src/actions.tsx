@@ -850,7 +850,9 @@ export type LinkButtonProps = Omit<AriaLinkProps, "className" | "href"> &
     xstyle?: StyleXStyles;
   }>;
 
-/** A semantic destination with action-control presentation. */
+/** A semantic destination with action-control presentation. Reserved for
+ * destinations that warrant control weight; never a substitute for a button
+ * on an action. */
 export function LinkButton({
   children,
   className,

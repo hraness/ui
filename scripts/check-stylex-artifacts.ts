@@ -8516,7 +8516,7 @@ assert.throws(
       replaceExactlyOnceInBoundedSource(
         actionsSource,
         "export function Link({",
-        "/** A semantic destination with action-control presentation. */",
+        "export function LinkButton({",
         /mergeStylexInlineStyles\(presentation\.style,\s*callerStyle\)/u,
         () => "mergeStylexInlineStyles(callerStyle, presentation.style)",
         "Link native inline-style precedence",
