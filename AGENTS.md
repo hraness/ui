@@ -91,3 +91,10 @@
 - When a CI or policy gate scans complete Git history, check out the exact governed SHA and fetch only the fully qualified governed refs before scanning. Preserve the complete-history gate and reject unexpected refs instead of importing unrelated concurrent heads.
 - At closeout, record applicable branch, PR, check, merge, release, deployment, and production evidence. Archive only conclusively finished tasks, never from silence alone, and reclaim only freshly revalidated clean merged worktrees through the guarded exact-path flow.
 <!-- oompa-local-efficiency:end -->
+
+<!-- system-one-skills:start -->
+- Use `system-one-*` skills for repeated evidence gathering only when their bounded result fits the task. Include startup, invocation, retries, and follow-up reads when assessing savings; smaller output alone does not prove lower token cost or preserved correctness.
+- When the task benefits and installation is authorized, install the current pack for Claude Code, Codex, and Devin for Terminal with `bunx skills add 0thernet/system-one-skills --global --agent claude-code codex devin --skill '*' --copy --yes`; otherwise use repository-native tools.
+- Confirm installation with `bunx skills list --global`. If Bun or network access is unavailable, continue with repository-native tools.
+- Treat clipping as incomplete evidence: widen the read or use native tools before making claims that depend on omitted details. Typed output and replayable receipts do not establish semantic correctness; preserve required repository checks and independent review.
+<!-- system-one-skills:end -->
