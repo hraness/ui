@@ -1,6 +1,6 @@
 {
   "name": "@hraness/ui",
-  "version": "0.5.15",
+  "version": "0.5.16",
   "description": "Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.",
   "license": "MIT",
   "type": "module",
@@ -180,7 +180,7 @@
     "prepack": "bun run check"
   },
   "dependencies": {
-    "@hugeicons/core-free-icons": "^4.2.2",
+    "@hugeicons/core-free-icons": "4.2.3",
     "@hugeicons/react": "^1.1.9",
     "@stylexjs/stylex": "0.19.0",
     "clsx": "^2.1.1",
