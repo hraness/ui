@@ -5,7 +5,7 @@
     "": {
       "name": "@hraness/ui",
       "dependencies": {
-        "@hugeicons/core-free-icons": "^4.2.2",
+        "@hugeicons/core-free-icons": "4.2.3",
         "@hugeicons/react": "^1.1.9",
         "@stylexjs/stylex": "0.19.0",
         "clsx": "^2.1.1",

@@ -7056,7 +7056,7 @@ async function verifyConsumer(
     process.execPath,
     "add",
     archive,
-    "@hugeicons/core-free-icons@^4.2.2",
+    "@hugeicons/core-free-icons@4.2.3",
     "@stylexjs/stylex@0.19.0",
     `@types/react@${release.reactTypes}`,
     `@types/react-dom@${release.reactDomTypes}`,
