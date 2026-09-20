@@ -156,6 +156,8 @@
     "LICENSE"
   ],
   "scripts": {
+    "kb:search": "bunx --bun --package https://github.com/hraness/wordcell/releases/download/v0.22.0/hraness-wordcell-0.22.0.tgz wordcell search --root kb --mode exact --rerank typesafe --rerank-limit 25",
+    "kb:search:local": "bunx --bun --package https://github.com/hraness/wordcell/releases/download/v0.22.0/hraness-wordcell-0.22.0.tgz wordcell search --root kb --mode exact",
     "build": "bun run ./scripts/build-package.ts",
     "check:committed-dist": "bun run ./scripts/check-committed-dist.ts",
     "check:portfolio-inventory": "bun ./scripts/check-portfolio-inventory.ts",
