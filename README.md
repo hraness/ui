@@ -2,7 +2,7 @@
 
 Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.
 
-`@hraness/ui` gives Hraness web products one shared interaction and theme layer. The package owns accessible primitives, finite semantic variants, public styling hooks, and framework-neutral composition seams. Each product keeps control of its content, state, data, layout, and visual identity.
+`@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives, each with a small fixed set of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
 
 ## First render
 
@@ -64,9 +64,9 @@ That render uses one semantic card tree and one React Aria button. `CopyButton` 
 
 React 18 or 19 and React DOM 18 or 19 are peer dependencies.
 
-## Proof in the package
+## What ships in the package
 
-| Contract | Checked package fact | Public authority |
+| Area | What ships | Defined in |
 | --- | --- | --- |
 | Runtime and types | ESM consumers load `dist/index.js`; TypeScript reads `src/index.ts` | `package.json` exports |
 | Style delivery | Six public CSS entry points cover precompiled and compiler-adopter paths | `package.json` exports |
@@ -78,21 +78,21 @@ The package also exports portable spacing, typography, target-size, motion, elev
 
 ## Composable interface map
 
-| Reader task | Public interfaces | Composition boundary |
+| Reader task | Public interfaces | Package and caller responsibilities |
 | --- | --- | --- |
 | Trigger an action or navigate | `Button`, `CopyButton`, `IconButton`, `Link`, `LinkButton`, `IconLink`, `ToggleButton` | React Aria owns input semantics; the caller owns the action and destination |
 | Collect and validate input | `Form`, fields, checkbox and radio groups, switches, native and React Aria selects, file fields | The caller owns values, validation policy, and submission |
 | Select from a collection | Tabs, disclosures, accordions, toggle groups, segmented controls, list boxes, menus | The primitive owns keyboard behavior; the caller owns the items and state |
 | Show status or data | Tags, badges, status dots, alerts, spinners, skeletons, progress, meters, sliders, knobs, avatars, tables | The primitive renders state; the caller supplies the state and meaning |
-| Structure a surface | Cards, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, viewport frames, wrapping rows, quiet-site landmarks | The package supplies bounded structure; the product owns page layout and content |
+| Structure a surface | Cards, page intros, empty states, settings cards, toolbars, breadcrumbs, pagination, viewport frames, wrapping rows, quiet-site landmarks | The package supplies basic structure; the product owns page layout and content |
 | Connect application seams | `RouterProvider`, `ToastProvider`, `AskAiAboutThis`, icons | The package stays framework-neutral and does not own application data |
-| Apply presentation | Tokens, reset, bounded legacy CSS, compiled StyleX CSS, typed `xstyle` | Product tokens, caller recipes, and native styles remain explicit override layers |
+| Apply presentation | Tokens, reset, legacy CSS in its own cascade layer, compiled StyleX CSS, typed `xstyle` | Product tokens, caller recipes, and native styles remain explicit override layers |
 
 ## Style delivery
 
 `@hraness/ui` publishes one UI JavaScript entry point and six public CSS entry points:
 
-- `@hraness/ui/styles.css` provides the complete theme, reset, bounded legacy recipes, and compiled StyleX recipes.
+- `@hraness/ui/styles.css` provides the complete theme, reset, legacy recipes in their own cascade layer, and compiled StyleX recipes.
 - `@hraness/ui/tokens.css` provides standards-only light and dark tokens.
 - `@hraness/ui/reset.css` provides the standards-only baseline and layer order.
 - `@hraness/ui/components.css` provides the remaining legacy component recipes.
@@ -447,15 +447,15 @@ import { RouterProvider } from "@hraness/ui";
 </RouterProvider>
 ```
 
-## Compatibility and authority boundaries
+## What the package handles and what your app handles
 
-| Boundary | Package authority | Consumer authority |
+| Area | The package handles | Your app handles |
 | --- | --- | --- |
 | Interaction | Native elements and React Aria behavior for names, focus, keyboard, pointer, disabled, pending, selected, and invalid states | Business rules, values, validation policy, and side effects |
 | Presentation | Portable tokens, finite component recipes, semantic classes, and `data-slot` values | Product token overrides, page layout, local composition, and intentional caller styles |
 | Routing | A framework-neutral bridge for navigation and intent prefetching | Router choice, route ownership, loading, and error behavior |
 | Data | None | Application state, persistence, providers, and access policy |
-| Composition | Small primitives and bounded structural surfaces | Product content and higher-level patterns, optionally through `@hraness/design-kit` |
+| Composition | Small primitives and basic layout surfaces | Product content and higher-level patterns, optionally through `@hraness/design-kit` |
 
 `@hraness/ui` is ESM-only and supports React 18 or 19 with the matching React DOM range. It has no dependency on a framework, `@hraness/design-kit`, or a product repository. Consumers upgrade on their own validation schedule.
 
@@ -830,7 +830,7 @@ The package exports `cn` for conditional consumer class composition while preser
 
 ## Evidence
 
-These claims were reviewed on September 2, 2026 against the package manifest, public barrel, token stylesheet, component tests, and checked build scripts.
+These claims were last checked on September 2, 2026, against the package manifest, public exports, token stylesheet, component tests, and build scripts. The commands in the table recheck them.
 
 | Claim | Source of truth | Executable evidence |
 | --- | --- | --- |
@@ -841,7 +841,7 @@ These claims were reviewed on September 2, 2026 against the package manifest, pu
 | Packed consumer behavior | Packed Bun, Vite, and browser fixtures | `bun run test:package`, `bun run test:vite-adopter`, `bun run test:vite78-adopter`, `bun run test:vite-custody`, `bun run test:packed-bun-browser` |
 | Pointer, keyboard, writing-mode, and browser cascade behavior | Real gallery scenarios | `bun run test:browser` |
 
-`bun run check` runs the complete required sequence. A passing Markdown contract proves that this README matches checked repository facts; it does not replace package, browser, or consumer validation.
+`bun run check` runs every required check in order. The README test checks this page's version, counts, exports, and commands against the repository; it does not replace the package, browser, and consumer tests.
 
 ## Frequently asked questions
 
