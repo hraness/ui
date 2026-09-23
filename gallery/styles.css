@@ -225,6 +225,11 @@
   min-width: 0;
 }
 
+[data-gallery-data-table-empty-copy="true"] {
+  /* Measure the line box rather than font-dependent inline glyph bounds. */
+  display: inline-block;
+}
+
 [data-gallery-list-box-grid="true"] {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));

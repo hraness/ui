@@ -6,7 +6,7 @@ import * as stylex from "@stylexjs/stylex";
 export const quietSiteStyles = stylex.create({
   footer: {
     alignItems: "center",
-    borderTopColor: "var(--ui-border)",
+    borderTopColor: "var(--ui-divider)",
     borderTopStyle: "solid",
     borderTopWidth: "1px",
     boxSizing: "border-box",
