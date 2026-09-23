@@ -2,7 +2,7 @@
 
 Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.
 
-`@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives, each with a small fixed set of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
+`@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives with small fixed sets of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
 
 ## First render
 
@@ -830,7 +830,7 @@ The package exports `cn` for conditional consumer class composition while preser
 
 ## Evidence
 
-These claims were last checked on September 2, 2026, against the package manifest, public exports, token stylesheet, component tests, and build scripts. The commands in the table recheck them.
+These claims come from the package manifest, public exports, token stylesheet, component tests, and build scripts. The commands in the table recheck them.
 
 | Claim | Source of truth | Executable evidence |
 | --- | --- | --- |
