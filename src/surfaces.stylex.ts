@@ -1,5 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 
+const forcedColors = "@media(forced-colors: active)";
+
 export const structuralSurfaceStyles = stylex.create({
   viewportFrame: {
     // The package build collapses firstThatWorks to one declaration. Nested
@@ -31,10 +33,14 @@ export const themedSurfaceStyles = stylex.create({
   },
   base: {
     backgroundColor: "var(--ui-card)",
-    borderColor: "var(--ui-border)",
+    borderColor: {
+      default: "var(--ui-surface-edge)",
+      [forcedColors]: "CanvasText",
+    },
     borderRadius: "var(--radius-lg)",
     borderStyle: "solid",
     borderWidth: "1px",
+    boxShadow: "var(--elevation-low)",
     color: "var(--ui-card-foreground)",
     "min-inline-size": 0,
     paddingBlock: "var(--space-6)",

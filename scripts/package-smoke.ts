@@ -846,7 +846,7 @@ const PACKAGE_DATA_TABLE_DECLARATIONS: Readonly<
   ],
   cell: [
     {
-      declaration: /border-block-end-color:\s*var\(--ui-border\);/u,
+      declaration: /border-block-end-color:\s*var\(--ui-divider\);/u,
       description: "logical cell divider color",
     },
     {
@@ -933,8 +933,10 @@ const PACKAGE_DATA_TABLE_DECLARATIONS: Readonly<
     { declaration: /width:\s*100%;/u, description: "table width" },
   ],
   wrapper: [
+    { declaration: /background-color:\s*var\(--ui-card\);/u, description: "wrapper surface" },
+    { declaration: /box-shadow:\s*var\(--elevation-low\);/u, description: "wrapper elevation" },
     {
-      declaration: /border-color:\s*var\(--ui-border\);/u,
+      declaration: /border-color:\s*var\(--ui-surface-edge\);/u,
       description: "wrapper border color",
     },
     {
@@ -1121,7 +1123,7 @@ const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
     /padding-bottom:\s*var\(--space-2\);/u, /padding-top:\s*var\(--space-2\);/u,
     /padding-left:\s*var\(--space-3\);/u, /padding-right:\s*var\(--space-3\);/u,
     /border-block-start-width:\s*1px;/u, /border-block-start-style:\s*solid;/u,
-    /border-block-start-color:\s*var\(--ui-border\);/u,
+    /border-block-start-color:\s*var\(--ui-divider\);/u,
     /color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-caption\);/u,
   ],
   header: [
@@ -1159,7 +1161,7 @@ const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
     /border-width:\s*1px;/u, /border-style:\s*solid;/u,
     /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
     /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
-    /border-color:\s*var\(--ui-border\);/u, /border-radius:\s*var\(--radius-lg\);/u,
+    /border-color:\s*var\(--ui-surface-edge\);/u, /border-radius:\s*var\(--radius-lg\);/u,
     /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
     ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-popover\);/u,
     /color:\s*var\(--ui-popover-foreground\);/u, /box-shadow:\s*var\(--elevation-overlay\);/u,
@@ -1294,7 +1296,7 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /padding-left:\s*var\(--space-6\);/u,
     /border-block-start-width:\s*1px;/u,
     /border-block-start-style:\s*solid;/u,
-    /border-block-start-color:\s*var\(--ui-border\);/u,
+    /border-block-start-color:\s*var\(--ui-surface-edge\);/u,
     /background-attachment:\s*scroll;/u,
     /background-clip:\s*border-box;/u,
     /background-color:\s*var\(--ui-muted\);/u,
@@ -1371,7 +1373,7 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /overflow-y:\s*hidden;/u,
     /border-width:\s*1px;/u,
     /border-style:\s*solid;/u,
-    /border-color:\s*var\(--ui-border\);/u,
+    /border-color:\s*var\(--ui-surface-edge\);/u,
     /border-image-outset:\s*0;/u,
     /border-image-repeat:\s*stretch;/u,
     /border-image-slice:\s*100%;/u,
@@ -1402,11 +1404,12 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /color:\s*var\(--ui-card-foreground\);/u,
     /font-size:\s*var\(--text-heading\);/u,
     /font-weight:\s*var\(--font-weight-bold\);/u,
-    /line-height:\s*1\.2;/u
+    /line-height:\s*var\(--leading-heading\);/u
   ],
 };
 const DIALOG_CONDITIONAL_DECLARATIONS: Partial<Record<DialogStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
   close: [{ condition: "@media(pointer:coarse)", declaration: /min-height:\s*var\(--interactive-target-min\);/u }],
+  footer: [{ condition: "@media(forced-colors:active)", declaration: /border-block-start-color:\s*canvastext;/u }],
   root: [
     { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
     { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
@@ -1508,7 +1511,7 @@ const TOAST_DECLARATIONS: Readonly<Record<ToastStyleKey, readonly RegExp[]>> = {
     /grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/u, /gap:\s*var\(--space-3\);/u,
     /padding-top:\s*var\(--space-4\);/u, /padding-right:\s*var\(--space-4\);/u,
     /padding-bottom:\s*var\(--space-4\);/u, /padding-left:\s*var\(--space-4\);/u,
-    /border-width:\s*1px;/u, /border-style:\s*solid;/u, /border-color:\s*var\(--ui-border\);/u,
+    /border-width:\s*1px;/u, /border-style:\s*solid;/u, /border-color:\s*var\(--ui-surface-edge\);/u,
     /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
     /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
     /border-radius:\s*var\(--radius-lg\);/u,
@@ -2982,7 +2985,7 @@ function requirePackageContentStyles(javaScript: string, css: string): void {
   for (const [key, declaration, description] of [
     ["actions", /display:\s*flex/u, "shared content actions layout"],
     ["actions", /flex-wrap:\s*wrap/u, "shared content actions wrapping"],
-    ["emptyStateRoot", /border-style:\s*dashed/u, "EmptyState boundary"],
+    ["emptyStateRoot", /border-style:\s*solid/u, "EmptyState boundary"],
     ["emptyStateRoot", /min-height:\s*12rem/u, "EmptyState minimum height"],
     ["emptyStateDescription", /max-width:\s*36rem/u, "EmptyState description measure"],
     ["pageIntroRoot", /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/u, "PageIntro wide grid"],
@@ -4005,7 +4008,7 @@ assert.match(stylexCss, /min-height:\s*1\.5rem/u);
 assert.match(stylexCss, /width:\s*\.625rem/u);
 assert.match(stylexCss, /width:\s*fit-content/u);
 assert.match(stylexCss, /background-color:\s*var\(--ui-accent\)/u);
-assert.match(stylexCss, /border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 35%,var\(--ui-border\)\)/u);
+assert.match(stylexCss, /border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 24%,var\(--ui-surface-edge\)\)/u);
 assert.match(stylexCss, /box-shadow:\s*var\(--elevation-low\)/u);
 assert.match(stylexCss, /color:\s*var\(--hraness-card-description\)/u);
 assert.doesNotMatch(stylexCss, /--hraness-card-description\s*:/u);

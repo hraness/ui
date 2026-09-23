@@ -471,10 +471,16 @@ Override semantic roles after the imports to reskin the whole system without dep
 :root {
   --ui-primary: oklch(0.52 0.16 250);
   --ui-ring: oklch(0.62 0.14 250);
-  --ui-font-heading: "Your Heading Face", ui-monospace, monospace;
+  --ui-font-heading: "Your Heading Face", ui-sans-serif, sans-serif;
   --ui-radius: 1rem;
 }
 ```
+
+Cards, settings panels, toolbars, and overlays share a soft surface treatment. `--ui-surface-edge` supplies a quiet contour; `--elevation-low`, `--elevation-raised`, and `--elevation-overlay` pair a light upper edge with graduated shadows. Fields and grouped controls use `--elevation-inset`. These roles derive from the active palette at every `[data-theme]` or `[data-palette]` boundary, including nested light and dark surfaces. Use those roles in product compositions instead of inventing new shadow recipes. Structural layout primitives remain flat and do not acquire padding or elevation.
+
+`--ui-divider` separates dense information without giving every row a heavy outline. Input, focus, selection, and validation colors remain independent of decorative surface edges. Higher-contrast preferences restore stronger surface contours, and forced colors replace depth with system-colored boundaries.
+
+The default heading face follows the sans-serif family; code retains the monospace family. Customize `--leading-body`, `--leading-label`, `--leading-heading`, `--leading-display`, `--tracking-heading`, and `--tracking-display` alongside the font families for each product's typography. Display headings use balanced wrapping and a little extra line height for accents and multiline titles. Keep readable body text and visible control boundaries when varying these roles.
 
 Every primitive accepts `className`. Actions expose separate wrapper and semantic-control classes plus typed StyleX seams. `Button` and `LinkButton` also expose the closed `partXstyles.label` part for product-owned label layout:
 

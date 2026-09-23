@@ -13,7 +13,7 @@ export const contentStyles = stylex.create({
   },
   emptyStateDescription: {
     color: "var(--ui-muted-foreground)",
-    lineHeight: 1.6,
+    lineHeight: "var(--leading-body)",
     maxWidth: "36rem",
   },
   emptyStateIcon: {
@@ -25,14 +25,19 @@ export const contentStyles = stylex.create({
   },
   emptyStateRoot: {
     alignItems: "center",
-    borderColor: "var(--ui-border)",
+    borderColor: {
+      default: "var(--ui-surface-edge)",
+      [forcedColors]: "CanvasText",
+    },
     borderImageOutset: 0,
     borderImageRepeat: "stretch",
     borderImageSlice: "100%",
     borderImageSource: "none",
     borderImageWidth: 1,
     borderRadius: "var(--radius-lg)",
-    borderStyle: "dashed",
+    backgroundColor: "var(--ui-muted)",
+    boxShadow: "var(--elevation-inset)",
+    borderStyle: "solid",
     borderWidth: "1px",
     color: "var(--ui-muted-foreground)",
     display: "grid",
@@ -47,7 +52,7 @@ export const contentStyles = stylex.create({
     color: "var(--ui-foreground)",
     fontSize: "var(--text-heading)",
     fontWeight: "var(--font-weight-bold)",
-    lineHeight: 1.2,
+    lineHeight: "var(--leading-heading)",
   },
   inlineAlertBody: {
     minWidth: 0,
@@ -157,7 +162,7 @@ export const contentStyles = stylex.create({
   pageIntroDescription: {
     color: "var(--ui-muted-foreground)",
     fontSize: "var(--text-body)",
-    lineHeight: 1.6,
+    lineHeight: "var(--leading-body)",
     textWrap: "pretty",
   },
   pageIntroEyebrow: {
@@ -184,8 +189,8 @@ export const contentStyles = stylex.create({
     color: "var(--ui-foreground)",
     fontSize: "clamp(var(--text-title), 5vw, var(--text-display))",
     fontWeight: "var(--font-weight-bold)",
-    letterSpacing: "-0.04em",
-    lineHeight: 1,
+    letterSpacing: "var(--tracking-display)",
+    lineHeight: "var(--leading-display)",
     textWrap: "balance",
   },
   settingsCardBody: {
@@ -196,12 +201,16 @@ export const contentStyles = stylex.create({
   settingsCardDescription: {
     color: "var(--ui-muted-foreground)",
     fontSize: "var(--text-label)",
-    lineHeight: 1.5,
+    lineHeight: "var(--leading-label)",
     marginBlockStart: "var(--space-2)",
   },
   settingsCardHeader: {
     alignItems: "start",
-    borderBlockEndColor: "var(--ui-border)",
+    backgroundColor: "color-mix(in oklch, var(--ui-muted) 45%, var(--ui-card))",
+    borderBlockEndColor: {
+      default: "var(--ui-surface-edge)",
+      [forcedColors]: "CanvasText",
+    },
     borderBlockEndStyle: "solid",
     borderBlockEndWidth: "1px",
     display: "flex",
@@ -216,6 +225,7 @@ export const contentStyles = stylex.create({
     borderRadius: "var(--radius-sharp)",
   },
   settingsCardRoot: {
+    boxShadow: "var(--elevation-low)",
     backgroundAttachment: "scroll",
     backgroundClip: "border-box",
     backgroundColor: "var(--ui-card)",
@@ -224,7 +234,10 @@ export const contentStyles = stylex.create({
     backgroundPosition: "0% 0%",
     backgroundRepeat: "repeat",
     backgroundSize: "auto auto",
-    borderColor: "var(--ui-border)",
+    borderColor: {
+      default: "var(--ui-surface-edge)",
+      [forcedColors]: "CanvasText",
+    },
     borderImageOutset: 0,
     borderImageRepeat: "stretch",
     borderImageSlice: "100%",
@@ -239,6 +252,6 @@ export const contentStyles = stylex.create({
   settingsCardTitle: {
     fontSize: "var(--text-heading)",
     fontWeight: "var(--font-weight-bold)",
-    lineHeight: 1.2,
+    lineHeight: "var(--leading-heading)",
   },
 });

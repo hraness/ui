@@ -1978,7 +1978,7 @@ function requireThemedSurfaceContract(
     [/background-color:\s*var\(--ui-foreground\);/u, "the inverse surface background"],
     [/background-color:\s*var\(--ui-popover\);/u, "the popover surface background"],
     [/background-color:\s*var\(--ui-secondary\);/u, "the secondary surface background"],
-    [/border-color:\s*var\(--ui-border\);/u, "the surface border color"],
+    [/border-color:\s*var\(--ui-surface-edge\);/u, "the surface border color"],
     [/border-color:\s*var\(--ui-foreground\);/u, "the inverse surface border color"],
     [/border-radius:\s*var\(--radius-lg\);/u, "the rounded surface shape"],
     [/border-radius:\s*var\(--radius-sharp\);/u, "the rectangular surface shape"],
@@ -2173,9 +2173,9 @@ function requireCardFamilyContract(
     [/background-color:\s*var\(--ui-card\);/u, "the default Card background"],
     [/background-color:\s*var\(--ui-foreground\);/u, "the inverse Card background"],
     [/border-color:\s*canvastext;/u, "the forced-colors Card border"],
-    [/border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 28%,var\(--ui-border\)\);/u, "the accent Card border"],
-    [/border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 35%,var\(--ui-border\)\);/u, "the PressableCard hover border"],
-    [/border-color:\s*var\(--ui-border\);/u, "the default Card border"],
+    [/border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 14%,var\(--ui-surface-edge\)\);/u, "the accent Card border"],
+    [/border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 24%,var\(--ui-surface-edge\)\);/u, "the PressableCard hover border"],
+    [/border-color:\s*var\(--ui-surface-edge\);/u, "the default Card border"],
     [/border-color:\s*var\(--ui-foreground\);/u, "the inverse Card border"],
     [/border-radius:\s*var\(--radius-lg\);/u, "the rounded Card shape"],
     [/border-radius:\s*var\(--radius-sharp\);/u, "the rectangular Card shape"],
@@ -2200,8 +2200,8 @@ function requireCardFamilyContract(
     [/gap:\s*var\(--space-2\);/u, "the CardHeader and CardFooter gap"],
     [/gap:\s*var\(--space-4\);/u, "the PressableCard gap"],
     [/gap:\s*var\(--space-6\);/u, "the Card root gap"],
-    [/line-height:\s*1\.2;/u, "the CardTitle line height"],
-    [/line-height:\s*1\.5;/u, "the CardDescription line height"],
+    [/line-height:\s*var\(--leading-heading\);/u, "the CardTitle line height"],
+    [/line-height:\s*var\(--leading-label\);/u, "the CardDescription line height"],
     [/min-width:\s*0;/u, "the physical PressableCard shrink boundary"],
     [/outline-color:\s*var\(--ui-ring\);/u, "the PressableCard focus ring color"],
     [/outline-offset:\s*3px;/u, "the PressableCard focus ring offset"],
@@ -2221,7 +2221,7 @@ function requireCardFamilyContract(
     requireMatch(compiledCss, pattern, description);
   }
   const nativePseudoFallbacks = [
-    [/:hover\s*\{\s*border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 35%,var\(--ui-border\)\);/u, "the native PressableCard hover fallback"],
+    [/:hover\s*\{\s*border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 24%,var\(--ui-surface-edge\)\);/u, "the native PressableCard hover fallback"],
     [/:active\s*\{\s*transform:\s*translateY\(1px\);/u, "the native PressableCard active fallback"],
     [/:focus-visible(?:\s*,[^{}]+)?\s*\{\s*outline-color:\s*var\(--ui-ring\);/u, "the native PressableCard focus-visible fallback"],
   ] as const;
@@ -2323,7 +2323,7 @@ function requireToolbarContract(
   const rootDeclarations = [
     [/align-items:\s*center;/u, "the horizontal Toolbar alignment"],
     [/background-color:\s*var\(--ui-card\);/u, "the Toolbar background"],
-    [/border-color:\s*var\(--ui-border\);/u, "the Toolbar border color"],
+    [/border-color:\s*var\(--ui-surface-edge\);/u, "the Toolbar border color"],
     [/border-radius:\s*var\(--radius-lg\);/u, "the Toolbar radius"],
     [/border-style:\s*solid;/u, "the Toolbar border style"],
     [/border-width:\s*1px;/u, "the Toolbar border width"],
@@ -2566,7 +2566,7 @@ function requireContentFamilyContract(
     ["actions", /display:\s*flex;/u, "shared content actions layout"],
     ["actions", /flex-wrap:\s*wrap;/u, "shared content actions wrapping"],
     ["actions", /min-width:\s*0;/u, "shared content actions shrink boundary"],
-    ["emptyStateRoot", /border-style:\s*dashed;/u, "EmptyState dashed boundary"],
+    ["emptyStateRoot", /border-style:\s*solid;/u, "EmptyState soft boundary"],
     ["emptyStateRoot", /min-height:\s*12rem;/u, "EmptyState minimum height"],
     ["emptyStateRoot", /padding-block:\s*var\(--space-8\);/u, "EmptyState block padding"],
     ["emptyStateRoot", /padding-inline:\s*var\(--space-8\);/u, "EmptyState inline padding"],
@@ -2668,7 +2668,7 @@ const DATA_TABLE_DECLARATIONS: Readonly<
   ],
   cell: [
     {
-      declaration: /border-block-end-color:\s*var\(--ui-border\);/u,
+      declaration: /border-block-end-color:\s*var\(--ui-divider\);/u,
       description: "logical cell divider color",
     },
     {
@@ -2755,8 +2755,10 @@ const DATA_TABLE_DECLARATIONS: Readonly<
     { declaration: /width:\s*100%;/u, description: "table width" },
   ],
   wrapper: [
+    { declaration: /background-color:\s*var\(--ui-card\);/u, description: "wrapper surface" },
+    { declaration: /box-shadow:\s*var\(--elevation-low\);/u, description: "wrapper elevation" },
     {
-      declaration: /border-color:\s*var\(--ui-border\);/u,
+      declaration: /border-color:\s*var\(--ui-surface-edge\);/u,
       description: "wrapper border color",
     },
     {
@@ -3058,7 +3060,7 @@ const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
     /padding-bottom:\s*var\(--space-2\);/u, /padding-top:\s*var\(--space-2\);/u,
     /padding-left:\s*var\(--space-3\);/u, /padding-right:\s*var\(--space-3\);/u,
     /border-block-start-width:\s*1px;/u, /border-block-start-style:\s*solid;/u,
-    /border-block-start-color:\s*var\(--ui-border\);/u,
+    /border-block-start-color:\s*var\(--ui-divider\);/u,
     /color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-caption\);/u,
   ],
   header: [
@@ -3096,7 +3098,7 @@ const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
     /border-width:\s*1px;/u, /border-style:\s*solid;/u,
     /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
     /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
-    /border-color:\s*var\(--ui-border\);/u, /border-radius:\s*var\(--radius-lg\);/u,
+    /border-color:\s*var\(--ui-surface-edge\);/u, /border-radius:\s*var\(--radius-lg\);/u,
     /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
     ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-popover\);/u,
     /color:\s*var\(--ui-popover-foreground\);/u, /box-shadow:\s*var\(--elevation-overlay\);/u,
@@ -3231,7 +3233,7 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /padding-left:\s*var\(--space-6\);/u,
     /border-block-start-width:\s*1px;/u,
     /border-block-start-style:\s*solid;/u,
-    /border-block-start-color:\s*var\(--ui-border\);/u,
+    /border-block-start-color:\s*var\(--ui-surface-edge\);/u,
     /background-attachment:\s*scroll;/u,
     /background-clip:\s*border-box;/u,
     /background-color:\s*var\(--ui-muted\);/u,
@@ -3308,7 +3310,7 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /overflow-y:\s*hidden;/u,
     /border-width:\s*1px;/u,
     /border-style:\s*solid;/u,
-    /border-color:\s*var\(--ui-border\);/u,
+    /border-color:\s*var\(--ui-surface-edge\);/u,
     /border-image-outset:\s*0;/u,
     /border-image-repeat:\s*stretch;/u,
     /border-image-slice:\s*100%;/u,
@@ -3339,11 +3341,12 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /color:\s*var\(--ui-card-foreground\);/u,
     /font-size:\s*var\(--text-heading\);/u,
     /font-weight:\s*var\(--font-weight-bold\);/u,
-    /line-height:\s*1\.2;/u
+    /line-height:\s*var\(--leading-heading\);/u
   ],
 };
 const DIALOG_CONDITIONAL_DECLARATIONS: Partial<Record<DialogStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
   close: [{ condition: "@media(pointer:coarse)", declaration: /min-height:\s*var\(--interactive-target-min\);/u }],
+  footer: [{ condition: "@media(forced-colors:active)", declaration: /border-block-start-color:\s*canvastext;/u }],
   root: [
     { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
     { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
@@ -3451,7 +3454,7 @@ const TOAST_DECLARATIONS: Readonly<Record<ToastStyleKey, readonly RegExp[]>> = {
     /grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/u, /gap:\s*var\(--space-3\);/u,
     /padding-top:\s*var\(--space-4\);/u, /padding-right:\s*var\(--space-4\);/u,
     /padding-bottom:\s*var\(--space-4\);/u, /padding-left:\s*var\(--space-4\);/u,
-    /border-width:\s*1px;/u, /border-style:\s*solid;/u, /border-color:\s*var\(--ui-border\);/u,
+    /border-width:\s*1px;/u, /border-style:\s*solid;/u, /border-color:\s*var\(--ui-surface-edge\);/u,
     /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
     /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
     /border-radius:\s*var\(--radius-lg\);/u,
@@ -6805,7 +6808,7 @@ requireMatch(
 );
 const quietSiteDeclarations = [
   [/align-items:\s*center;/u, "quiet-site footer alignment"],
-  [/border-top-color:\s*var\(--ui-border\);/u, "quiet-site footer border color"],
+  [/border-top-color:\s*var\(--ui-divider\);/u, "quiet-site footer border color"],
   [/border-top-style:\s*solid;/u, "quiet-site footer border style"],
   [/border-top-width:\s*1px;/u, "quiet-site footer border width"],
   [/box-sizing:\s*border-box;/u, "quiet-site border-box sizing"],
@@ -8255,7 +8258,7 @@ const nativePressableCardHoverRule = cssRules(
   "dist/stylex.css",
 ).find((rule) =>
   /:hover(?![A-Za-z0-9_-])/u.test(rule.header)
-  && /border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 35%,var\(--ui-border\)\);/u.test(
+  && /border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 24%,var\(--ui-surface-edge\)\);/u.test(
     rule.body,
   )
 );

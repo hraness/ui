@@ -1,5 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 
+const forcedColors = "@media(forced-colors: active)";
+
 export const dataTableStyles = stylex.create({
   alignCenter: {
     textAlign: "center",
@@ -17,7 +19,10 @@ export const dataTableStyles = stylex.create({
     textAlign: "start",
   },
   cell: {
-    "border-block-end-color": "var(--ui-border)",
+    "border-block-end-color": {
+      default: "var(--ui-divider)",
+      [forcedColors]: "CanvasText",
+    },
     "border-block-end-style": "solid",
     "border-block-end-width": "1px",
     paddingBlock: "var(--space-3)",
@@ -48,7 +53,12 @@ export const dataTableStyles = stylex.create({
     width: "100%",
   },
   wrapper: {
-    borderColor: "var(--ui-border)",
+    backgroundColor: "var(--ui-card)",
+    borderColor: {
+      default: "var(--ui-surface-edge)",
+      [forcedColors]: "CanvasText",
+    },
+    boxShadow: "var(--elevation-low)",
     borderImageOutset: 0,
     borderImageRepeat: "stretch",
     borderImageSlice: "100%",

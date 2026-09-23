@@ -10,6 +10,7 @@ const largeHeight = `max(var(--hraness-field-height, var(--control-height-primar
 
 export const fieldStyles = stylex.create({
   control: {
+    boxShadow: "var(--elevation-inset)",
     alignItems: "center",
     backgroundColor: "var(--hraness-field-surface, var(--ui-background))",
     backgroundImage: "none",
@@ -163,6 +164,7 @@ export const fieldStyles = stylex.create({
     paddingInlineEnd: "2.5rem",
   },
   numberControl: {
+    boxShadow: "var(--elevation-inset)",
     backgroundColor: "var(--hraness-field-surface, var(--ui-background))",
     backgroundImage: "none",
     borderColor: {
@@ -286,6 +288,7 @@ export const fieldStyles = stylex.create({
     width: "0.5rem",
   },
   radioIndicator: {
+    boxShadow: "var(--elevation-inset)",
     alignItems: "center",
     backgroundColor: {
       default: "var(--hraness-field-surface, var(--ui-background))",
@@ -478,6 +481,7 @@ export const fieldStyles = stylex.create({
     },
   },
   switchTrack: {
+    boxShadow: "var(--elevation-inset)",
     alignItems: "center",
     backgroundColor: {
       default: "var(--hraness-field-surface, var(--ui-background))",

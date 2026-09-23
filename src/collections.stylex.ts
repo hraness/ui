@@ -6,7 +6,7 @@ const syntheticCoarseMinimum = "var(--hraness-collection-coarse-min, 0px)";
 
 export const collectionStyles = stylex.create({
   accordionRoot: {
-    "border-block-end-color": "var(--ui-border)",
+    "border-block-end-color": "var(--ui-divider)",
     "border-block-end-style": "solid",
     "border-block-end-width": "1px",
   },
@@ -39,7 +39,7 @@ export const collectionStyles = stylex.create({
     paddingBlockEnd: 0,
   },
   disclosureRoot: {
-    "border-block-end-color": "var(--ui-border)",
+    "border-block-end-color": "var(--ui-divider)",
     "border-block-end-style": "solid",
     "border-block-end-width": "1px",
   },
@@ -95,9 +95,10 @@ export const collectionStyles = stylex.create({
     },
   },
   segmentedControlRoot: {
+    boxShadow: "var(--elevation-inset)",
     backgroundColor: "var(--ui-muted)",
     borderColor: {
-      default: "var(--ui-border)",
+      default: "var(--ui-surface-edge)",
       [forcedColors]: "CanvasText",
     },
     borderRadius: "var(--radius-lg)",
@@ -288,6 +289,7 @@ export const collectionStyles = stylex.create({
     justifyItems: "center",
   },
   tabList: {
+    boxShadow: "var(--elevation-inset)",
     backgroundColor: {
       default: "var(--ui-muted)",
       [forcedColors]: "Canvas",
@@ -351,12 +353,13 @@ export const collectionStyles = stylex.create({
     minWidth: 0,
   },
   toggleGroupRoot: {
+    boxShadow: "var(--elevation-inset)",
     backgroundColor: {
       default: "var(--ui-muted)",
       [forcedColors]: "Canvas",
     },
     borderColor: {
-      default: "var(--ui-border)",
+      default: "var(--ui-surface-edge)",
       [forcedColors]: "CanvasText",
     },
     borderRadius: "var(--radius-lg)",
