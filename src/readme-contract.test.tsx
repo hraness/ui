@@ -32,9 +32,9 @@ const manifest = JSON.parse(
 test("leads readers from a first render through proof, boundaries, and action", () => {
   const headings = [
     "## First render",
-    "## Proof in the package",
+    "## What ships in the package",
     "## Composable interface map",
-    "## Compatibility and authority boundaries",
+    "## What the package handles and what your app handles",
     "## Evidence",
     "## Frequently asked questions",
     "## Next action",
