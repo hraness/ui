@@ -88,7 +88,7 @@ export const actionStyles = stylex.create({
   },
   focusVisible: {
     boxShadow:
-      "0 0 0 4px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+      "0 0 0 4px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
     outlineColor: "var(--ui-ring)",
     outlineOffset: "2px",
     outlineStyle: "solid",
@@ -314,7 +314,7 @@ export const actionStyles = stylex.create({
     },
     ":focus-visible": {
       boxShadow:
-        "0 0 0 4px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+        "0 0 0 4px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
       outlineColor: "var(--ui-ring)",
       outlineOffset: "2px",
       outlineStyle: "solid",
@@ -374,7 +374,7 @@ export const actionStyles = stylex.create({
   nativeInlineInteractionFallbacks: {
     ":focus-visible": {
       boxShadow:
-        "0 0 0 4px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+        "0 0 0 4px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
       outlineColor: "var(--ui-ring)",
       outlineOffset: "2px",
       outlineStyle: "solid",
@@ -469,18 +469,18 @@ export const actionStyles = stylex.create({
     animationIterationCount: "infinite",
     animationTimingFunction: "linear",
     borderBlockEndColor:
-      "color-mix(in oklch, currentColor 25%, transparent)",
+      "color-mix(in srgb, currentColor 25%, transparent)",
     borderBlockEndStyle: "solid",
     borderBlockEndWidth: "0.125em",
     borderBlockStartColor: "currentColor",
     borderBlockStartStyle: "solid",
     borderBlockStartWidth: "0.125em",
     borderInlineEndColor:
-      "color-mix(in oklch, currentColor 25%, transparent)",
+      "color-mix(in srgb, currentColor 25%, transparent)",
     borderInlineEndStyle: "solid",
     borderInlineEndWidth: "0.125em",
     borderInlineStartColor:
-      "color-mix(in oklch, currentColor 25%, transparent)",
+      "color-mix(in srgb, currentColor 25%, transparent)",
     borderInlineStartStyle: "solid",
     borderInlineStartWidth: "0.125em",
     borderRadius: "var(--radius-round)",

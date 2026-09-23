@@ -172,7 +172,7 @@ export const selectFieldStyles = stylex.create({
       [forcedColors]: "CanvasText",
     },
     boxShadow:
-      "0 0 0 3px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+      "0 0 0 3px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
     outlineColor: "var(--ui-ring)",
     outlineOffset: "2px",
     outlineStyle: "solid",
@@ -216,7 +216,7 @@ export const selectFieldStyles = stylex.create({
         [forcedColors]: "CanvasText",
       },
       boxShadow:
-        "0 0 0 3px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+        "0 0 0 3px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
       outlineColor: "var(--ui-ring)",
       outlineOffset: "2px",
       outlineStyle: "solid",

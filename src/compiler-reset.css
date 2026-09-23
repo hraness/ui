@@ -84,7 +84,7 @@ a {
 }
 
 ::selection {
-  background: color-mix(in oklch, var(--ui-primary) 28%, transparent);
+  background: color-mix(in srgb, var(--ui-primary) 28%, transparent);
   color: var(--ui-foreground);
 }
 

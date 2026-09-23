@@ -54,7 +54,7 @@ export const fieldStyles = stylex.create({
       },
       boxShadow: {
         default:
-          "0 0 0 3px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+          "0 0 0 3px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
         [forcedColors]: "none",
       },
       outlineColor: {
