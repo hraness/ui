@@ -11463,8 +11463,20 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
 
     const diagnostics = JSON.stringify({
       empty: {
+        cellTop: emptyBox.top,
+        colSpan: emptyCell.colSpan,
+        color: emptyStyle.color,
+        copyCenter: (emptyCopyBox.left + emptyCopyBox.right) / 2,
+        copyDisplay: getComputedStyle(emptyCopy).display,
+        copyHeight: emptyCopyBox.height,
+        copyTop: emptyCopyBox.top,
+        expectedCenter: emptyContentCenter,
+        expectedTop: emptyBox.top + number(emptyStyle.paddingTop),
         height: emptyBox.height,
+        lineHeight: emptyStyle.lineHeight,
+        paddingTop: emptyStyle.paddingTop,
         textAlign: emptyStyle.textAlign,
+        topDelta: emptyCopyBox.top - emptyBox.top - number(emptyStyle.paddingTop),
         verticalAlign: emptyStyle.verticalAlign,
       },
       fixtures: fixtures.map(({ name, table, wrapper }) => ({
@@ -11517,6 +11529,17 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
 }
 
 function verifyDataTableEvidence(evidence: DataTableEvidence, id: string): void {
+  const contracts = {
+    alignment: evidence.alignmentContracts,
+    boundary: evidence.boundaryContracts,
+    classes: evidence.classContracts,
+    empty: evidence.emptyContracts,
+    layers: evidence.layerSentinels,
+    overflow: evidence.overflowContracts,
+    presentation: evidence.presentationContracts,
+    tree: evidence.treeContracts,
+    vertical: evidence.verticalContracts,
+  };
   invariant(
     evidence.alignmentContracts
     && evidence.boundaryContracts
@@ -11527,7 +11550,7 @@ function verifyDataTableEvidence(evidence: DataTableEvidence, id: string): void 
     && evidence.presentationContracts
     && evidence.treeContracts
     && evidence.verticalContracts,
-    `${id}: DataTable parity failed: ${evidence.diagnostics}`,
+    `${id}: DataTable parity failed: ${JSON.stringify(contracts)}; ${evidence.diagnostics}`,
   );
 }
 
