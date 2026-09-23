@@ -1,5 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 
+const forcedColors = "@media(forced-colors: active)";
+
 export const toolbarStyles = stylex.create({
   nativeFocusFallback: {
     ":focus-visible": {
@@ -12,10 +14,14 @@ export const toolbarStyles = stylex.create({
   root: {
     alignItems: "center",
     backgroundColor: "var(--ui-card)",
-    borderColor: "var(--ui-border)",
+    borderColor: {
+      default: "var(--ui-surface-edge)",
+      [forcedColors]: "CanvasText",
+    },
     borderRadius: "var(--radius-lg)",
     borderStyle: "solid",
     borderWidth: "1px",
+    boxShadow: "var(--elevation-low)",
     display: "flex",
     flexWrap: "wrap",
     gap: "var(--space-1)",

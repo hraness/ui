@@ -43,7 +43,7 @@ export const toastStyles = stylex.create({
     borderWidth: "1px",
     borderStyle: "solid",
     borderColor: {
-      default: "var(--ui-border)",
+      default: "var(--ui-surface-edge)",
       [forcedColors]: "CanvasText",
     },
     borderImageOutset: 0,

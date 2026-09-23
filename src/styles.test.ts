@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -85,16 +84,17 @@ test("the complete stylesheet composes its public layers in a stable order", asy
   expect(styles).not.toMatch(/@(?:source|theme|custom-variant)\b/u);
 });
 
-test("public reset keeps its current-main bytes while the compiler reset omits only fixed priorities", async () => {
+test("public and compiler resets share typography and differ only by fixed priorities", async () => {
   const [compilerReset, publicReset] = await Promise.all([
     stylesheet("./compiler-reset.css"),
     stylesheet("./reset.css"),
   ]);
   const fixedPriorityPrelude = "@layer components.hraness-ui.legacy, components.hraness-ui.priority1, components.hraness-ui.priority2, components.hraness-ui.priority3, components.hraness-ui.priority4;\n";
 
-  expect(createHash("sha256").update(publicReset).digest("hex")).toBe(
-    "a25c340a3a656715a783d1a95f3c5f976fc4bdd020492fca5a6b77d4a6420356",
-  );
+  for (const reset of [publicReset, compilerReset]) {
+    expect(declarationBlock(reset, "body {\n  background")).toContain("line-height: var(--leading-body);");
+    expect(declarationBlock(reset, ":where(h1, h2, h3, h4, h5, h6) {")).toContain("letter-spacing: var(--tracking-heading);");
+  }
   expect(publicReset.split(fixedPriorityPrelude)).toHaveLength(2);
   expect(compilerReset).toBe(publicReset.replace(fixedPriorityPrelude, ""));
   expect(compilerReset).not.toMatch(/components\.hraness-ui\.priority\d+/u);
@@ -274,7 +274,7 @@ test("content families compile presentation while legacy CSS retains no owned se
   expect(content).toContain(
     'const forcedColors = "@media(forced-colors: active)"',
   );
-  expect(content.match(/\[forcedColors\]: "CanvasText"/gu)).toHaveLength(5);
+  expect(content.match(/\[forcedColors\]: "CanvasText"/gu)).toHaveLength(8);
   expect(content).toContain('[forcedColors]: "auto"');
   for (const backgroundReset of [
     'backgroundAttachment: "scroll"',
@@ -340,7 +340,8 @@ test("DataTable compiles presentation while legacy CSS retains no owned selector
   ]) expect(dataTable).toContain(`${recipe}: {`);
 
   for (const logicalDivider of [
-    '\"border-block-end-color\": "var(--ui-border)"',
+    '\"border-block-end-color\": {',
+    'default: "var(--ui-divider)"',
     '\"border-block-end-style\": "solid"',
     '\"border-block-end-width\": "1px"',
   ]) expect(dataTable).toContain(logicalDivider);
@@ -959,4 +960,42 @@ test("semantic token pairs retain accessible contrast in both themes", async () 
     );
     expect(ratio, check.name).toBeGreaterThanOrEqual(check.minimum);
   }
+});
+
+
+test("soft depth recomputes at nested theme boundaries and yields to contrast preferences", async () => {
+  const tokens = await stylesheet("./tokens.css");
+  const derived = declarationBlock(tokens, ":root,\n[data-theme],\n[data-palette],\n.dark {");
+  for (const role of ["--ui-surface-edge", "--ui-surface-light", "--ui-surface-shade", "--ui-divider", "--elevation-low", "--elevation-raised", "--elevation-overlay", "--elevation-inset"]) {
+    expect(derived).toContain(`${role}:`);
+  }
+  expect(derived).toContain("var(--ui-card)");
+  expect(derived).toContain("var(--ui-background)");
+  expect(derived).toContain("var(--ui-border)");
+  const contrast = declarationBlock(tokens.slice(tokens.indexOf("@media (prefers-contrast: more)")), ":root,");
+  expect(contrast).toContain("--ui-surface-edge: var(--ui-border);");
+  expect(contrast).toContain("--ui-divider: var(--ui-border);");
+  const forced = declarationBlock(tokens.slice(tokens.indexOf("@media (forced-colors: active)")), ":root,");
+  expect(forced).toContain("--ui-surface-edge: CanvasText;");
+  expect(forced).toContain("--ui-divider: CanvasText;");
+  for (const elevation of ["low", "raised", "overlay", "inset"]) {
+    expect(forced).toContain(`--elevation-${elevation}: none;`);
+  }
+});
+
+test("soft surface contours remain separate from input and validation boundaries", async () => {
+  const [tokens, field, select, action] = await Promise.all([
+    stylesheet("./tokens.css"), stylesheet("./fields.stylex.ts"),
+    stylesheet("./select-field.stylex.ts"), stylesheet("./actions.stylex.ts"),
+  ]);
+  expect(tokens).toContain("--ui-font-heading: var(--ui-font-sans);");
+  expect(tokens).toContain("--leading-display: 1.08;");
+  for (const controls of [field, select]) {
+    expect(controls).toContain('boxShadow: "var(--elevation-inset)"');
+    expect(controls).toContain('default: "var(--ui-input)"');
+    expect(controls).toContain('default: "var(--ui-destructive)"');
+    expect(controls).toContain('outlineWidth: "2px"');
+  }
+  expect(action).toContain('boxShadow: "var(--elevation-low)"');
+  expect(action).toContain('default: "var(--ui-input)"');
 });

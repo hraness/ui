@@ -75,6 +75,7 @@ export const actionStyles = stylex.create({
     display: "inline-grid",
   },
   danger: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: "var(--ui-destructive)",
     color: "var(--ui-destructive-foreground)",
   },
@@ -223,6 +224,7 @@ export const actionStyles = stylex.create({
     width: "1.5rem",
   },
   labeledDanger: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: {
       default: "var(--ui-destructive)",
       [forcedColors]: "ButtonFace",
@@ -233,6 +235,7 @@ export const actionStyles = stylex.create({
     },
   },
   labeledPrimary: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: {
       default: "var(--ui-primary)",
       [forcedColors]: "ButtonFace",
@@ -243,6 +246,7 @@ export const actionStyles = stylex.create({
     },
   },
   labeledQuiet: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: {
       default: "var(--ui-background)",
       [forcedColors]: "ButtonFace",
@@ -257,6 +261,7 @@ export const actionStyles = stylex.create({
     },
   },
   labeledSecondary: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: {
       default: "var(--ui-secondary)",
       [forcedColors]: "ButtonFace",
@@ -422,10 +427,12 @@ export const actionStyles = stylex.create({
     transform: "translateY(1px)",
   },
   primary: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: "var(--ui-primary)",
     color: "var(--ui-primary-foreground)",
   },
   quiet: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: "var(--ui-background)",
     borderColor: {
       default: "var(--ui-input)",
@@ -439,6 +446,7 @@ export const actionStyles = stylex.create({
     verticalAlign: "middle",
   },
   secondary: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: "var(--ui-secondary)",
     color: "var(--ui-secondary-foreground)",
   },

@@ -75,8 +75,8 @@ test("keeps installation and compatibility claims pinned to the package manifest
 test("pins the token proof to the checked public stylesheet", () => {
   const themeRoles = new Set(tokens.match(/--ui-[a-z0-9-]+/gu) ?? []);
 
-  expect(themeRoles.size).toBe(37);
-  expect(readme).toContain("37 namespaced theme roles");
+  expect(themeRoles.size).toBe(41);
+  expect(readme).toContain("41 namespaced theme roles");
   expect(readme).toContain("`--ui-background`");
   expect(readme).toContain("`--ui-primary`");
   expect(readme).toContain("`--ui-ring`");

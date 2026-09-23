@@ -15,7 +15,7 @@ export const overlayStyles = stylex.create({
   },
   surface: {
     zIndex: "var(--z-tooltip)", maxWidth: "min(24rem, calc(100vw - 2rem))",
-    borderWidth: "1px", borderStyle: "solid", borderColor: { default: "var(--ui-border)", [forcedColors]: "CanvasText" },
+    borderWidth: "1px", borderStyle: "solid", borderColor: { default: "var(--ui-surface-edge)", [forcedColors]: "CanvasText" },
     borderImageOutset: 0, borderImageRepeat: "stretch", borderImageSlice: "100%", borderImageSource: "none", borderImageWidth: 1,
     borderRadius: "var(--radius-lg)", outlineColor: "currentColor", outlineStyle: "none", outlineWidth: "medium",
     backgroundAttachment: "scroll", backgroundClip: "border-box", backgroundColor: "var(--ui-popover)",

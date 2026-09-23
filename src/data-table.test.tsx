@@ -368,7 +368,7 @@ test("DataTable owns the exact StyleX recipe without becoming a client boundary"
     "wrapper",
   ]);
   for (const declaration of [
-    'borderColor: "var(--ui-border)"',
+    'default: "var(--ui-surface-edge)"',
     "borderImageOutset: 0",
     'borderImageRepeat: "stretch"',
     'borderImageSlice: "100%"',
@@ -376,7 +376,8 @@ test("DataTable owns the exact StyleX recipe without becoming a client boundary"
     "borderImageWidth: 1",
     'borderStyle: "solid"',
     'borderWidth: "1px"',
-    '\"border-block-end-color\": "var(--ui-border)"',
+    '\"border-block-end-color\": {',
+    'default: "var(--ui-divider)"',
     '\"border-block-end-style\": "solid"',
     '\"border-block-end-width\": "1px"',
     'backgroundAttachment: "scroll"',

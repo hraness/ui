@@ -39,6 +39,7 @@ export const checkboxFieldStyles = stylex.create({
     outlineWidth: "2px",
   },
   indicator: {
+    boxShadow: "var(--elevation-inset)",
     alignItems: "center",
     backgroundColor: "var(--hraness-field-surface, var(--ui-background))",
     borderColor: {
