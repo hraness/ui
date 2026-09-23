@@ -2792,6 +2792,11 @@ const DATA_TABLE_DECLARATIONS: Readonly<
   ],
 };
 
+const DATA_TABLE_CONDITIONAL_DECLARATIONS: Partial<Record<DataTableStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  cell: [{ condition: "@media(forced-colors:active)", declaration: /border-block-end-color:\s*canvastext;/u }],
+  wrapper: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
+};
+
 function dataTableCompiledStyleMap(
   compiledJavaScript: string,
 ): NamedCompiledStyleMap {
@@ -2991,6 +2996,15 @@ function requireDataTableContract(
         [{ declaration }],
         `DataTable ${description}`,
       );
+    }
+    const conditional = DATA_TABLE_CONDITIONAL_DECLARATIONS[key] ?? [];
+    for (const { condition, declaration } of conditional) requireCompiledConditionalDeclaration(rules, condition, declaration, `DataTable ${key} forced-colors boundary`);
+    for (const rule of rules) {
+      const conditions = rule.ancestors.map((ancestor) => normalizedHeader(ancestor.header)).filter((header) => /^@(?:container|media|supports)/u.test(header));
+      assert.ok(conditions.length === 0
+        ? expectedDeclarations.some(({ declaration }) => dialogDeclarationMatches(rule.body, declaration))
+        : conditions.length === 1 && conditional.some(({ condition, declaration }) => condition === conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
+      `DataTable ${key} exact declaration and media-condition inventory`);
     }
     requireMatch(
       compiledJavaScript,
@@ -7063,6 +7077,12 @@ requireIndicatorAndKnobContract(
 );
 
 const dataTableGuardMap = dataTableCompiledStyleMap(compiledJavaScript);
+for (const key of DATA_TABLE_STYLE_KEYS) for (const { condition, declaration } of DATA_TABLE_CONDITIONAL_DECLARATIONS[key] ?? []) {
+  for (const mutation of ["remove", "relocate"] as const) assert.throws(
+    () => requireDataTableContract(legacyComponents, mutateCompiledRule(compiledCss, dataTableGuardMap, key, declaration, mutation, condition), compiledJavaScript, dataDisplaySource, dataTableStyleSource),
+    /DataTable|dataTableStyles/u, `DataTable ${key} rejects ${mutation} of forced-colors paint`,
+  );
+}
 const reversedDataTableWrapperRecipe = replaceExactlyOnce(
   dataDisplaySource,
   /stylex\.props\(\s*dataTableStyles\.wrapper,\s*wrapperXstyle,?\s*\)/u,

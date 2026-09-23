@@ -970,6 +970,11 @@ const PACKAGE_DATA_TABLE_DECLARATIONS: Readonly<
   ],
 };
 
+const PACKAGE_DATA_TABLE_CONDITIONAL_DECLARATIONS: Partial<Record<PackageDataTableStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  cell: [{ condition: "@media(forced-colors:active)", declaration: /border-block-end-color:\s*canvastext;/u }],
+  wrapper: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
+};
+
 function packageDataTableStyleMap(javaScript: string): PackageNamedStyleMap {
   return packageNamedStyleMap(
     javaScript,
@@ -1062,13 +1067,20 @@ function requirePackageDataTableStyles(
     const classNames = packageEntryClassNames(map, key);
     const rules = packageStyleRules(css, classNames);
     familyRules.push(...rules);
-    assert.ok(
-      rules.every((rule) => rule.conditions.length === 0),
-      `packed dataTableStyles.${key} declarations must remain unconditional`,
+    const conditional = PACKAGE_DATA_TABLE_CONDITIONAL_DECLARATIONS[key] ?? [];
+    for (const rule of rules) assert.ok(
+      rule.conditions.length === 0
+        ? expectedDeclarations.some(({ declaration }) => dialogDeclarationMatches(rule.body, declaration))
+        : rule.conditions.length === 1 && conditional.some(({ condition, declaration }) => normalizedPackageCondition(condition) === rule.conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
+      `packed dataTableStyles.${key} must retain its exact declaration and media-condition inventory`,
+    );
+    for (const { condition, declaration } of conditional) requirePackageExactBaseDeclaration(
+      packageExactConditionalCss(css, condition), classNames, declaration,
+      `packed DataTable ${key} forced-colors boundary`,
     );
     assert.equal(
       new Set(rules.map((rule) => normalizedAtomicDeclaration(rule.body))).size,
-      expectedDeclarations.length,
+      expectedDeclarations.length + conditional.length,
       `packed dataTableStyles.${key} must retain only its exact declaration set`,
     );
     for (const className of classNames) {
@@ -1099,6 +1111,20 @@ function requirePackageDataTableStyles(
     /\.hraness-data-table(?:__[A-Za-z0-9_-]+)?(?![A-Za-z0-9_-])/u,
     "packed StyleX CSS must contain no DataTable semantic selectors",
   );
+}
+
+function verifyPackageDataTableConditionalControls(javaScript: string, css: string): void {
+  const map = packageDataTableStyleMap(javaScript);
+  for (const key of PACKAGE_DATA_TABLE_STYLE_KEYS) for (const { condition, declaration } of PACKAGE_DATA_TABLE_CONDITIONAL_DECLARATIONS[key] ?? []) {
+    const rules = packageStyleRules(css, packageEntryClassNames(map, key)).filter((rule) => rule.conditions.length === 1 && rule.conditions[0] === normalizedPackageCondition(condition) && dialogDeclarationMatches(rule.body, declaration));
+    assert.equal(rules.length, 1, `packed DataTable ${key} forced-colors negative control owns one rule`);
+    const rule = rules[0]!;
+    const removed = replacePackageStyleRule(css, rule, null, `packed DataTable ${key} forced-colors negative control`);
+    for (const altered of [removed, `${removed}\n${rule.source}`]) assert.throws(
+      () => requirePackageDataTableStyles(javaScript, altered), /DataTable|dataTableStyles/u,
+      `packed DataTable ${key} rejects missing and unconditionally relocated forced-colors paint`,
+    );
+  }
 }
 
 const MENU_STYLE_KEYS = [
@@ -7287,6 +7313,7 @@ async function verifyConsumer(
   );
   requirePackageContentStyles(installedJavaScript, installedStylexCss);
   requirePackageDataTableStyles(installedJavaScript, installedStylexCss);
+  verifyPackageDataTableConditionalControls(installedJavaScript, installedStylexCss);
   requireNoMigratedGallerySentinels(
     installedJavaScript,
     installedStylexCss,
