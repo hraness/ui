@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.16"
+    "@hraness/ui": "github:hraness/ui#v0.5.17"
   }
 }
 ```
@@ -70,7 +70,7 @@ React 18 or 19 and React DOM 18 or 19 are peer dependencies.
 | --- | --- | --- |
 | Runtime and types | ESM consumers load `dist/index.js`; TypeScript reads `src/index.ts` | `package.json` exports |
 | Style delivery | Six public CSS entry points cover precompiled and compiler-adopter paths | `package.json` exports |
-| Theme surface | 37 namespaced theme roles cover surfaces, text, actions, status, charts, typography, and radius | `src/tokens.css` |
+| Theme surface | 41 namespaced theme roles cover surfaces, text, actions, status, charts, typography, and radius | `src/tokens.css` |
 | Interaction states | Components expose semantic `data-slot` hooks and React Aria state attributes | Source types and server-rendered tests |
 | Compatibility | React and React DOM 18 through 19; StyleX 0.19 for caller-authored `xstyle` | Peer and package dependencies |
 
