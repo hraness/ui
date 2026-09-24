@@ -2,7 +2,7 @@
 
 Issues and focused pull requests are welcome in the hraness/ui repository.
 
-Open an issue before starting a broad API, dependency, theme-token, or compatibility change. Maintainers review pull requests for accessible semantics, small component APIs, statically analyzable StyleX recipes, type safety, and focused tests. The public package remains free of a first-party Tailwind bridge and dependency.
+Explain a broad API, dependency, theme-token, or compatibility change in the pull request description. Open the pull request and enable auto-merge; the `Required` CI check is the reviewer and merges the change when it passes. Pull requests are held to accessible semantics, small component APIs, statically analyzable StyleX recipes, type safety, and focused tests. The public package remains free of a first-party Tailwind bridge and dependency.
 
 Use Bun 1.3.14 and run the complete local gate before opening a pull request:
 
