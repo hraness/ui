@@ -3288,7 +3288,7 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /overflow-y:\s*auto;/u,
     /background-attachment:\s*scroll;/u,
     /background-clip:\s*border-box;/u,
-    /background-color:\s*(?:color-mix\(in srgb,\s*(?:black|#000) 55%,\s*(?:transparent|#0000)\)|oklab\(0 0 0\s*\/\s*0?\.55\)|rgba?\(0[ ,]+0[ ,]+0(?:\s*\/\s*|,\s*)0?\.55\)|#0000008c;\s*background-color:\s*lab\(0% 0 0\s*\/\s*0?\.55\));/u,
+    /background-color:\s*(?:color-mix\(in srgb,\s*(?:black|#000) 55%,\s*(?:transparent|#0000)\)|oklab\(0 0 0\s*\/\s*0?\.55\)|rgba?\(0[ ,]+0[ ,]+0(?:\s*\/\s*|,\s*)0?\.55\)|#0000008c|#0000008c;\s*background-color:\s*lab\(0% 0 0\s*\/\s*0?\.55\));/u,
     /background-image:\s*none;/u,
     /background-origin:\s*padding-box;/u,
     /background-position:\s*0%?\s+0%?;/u,
