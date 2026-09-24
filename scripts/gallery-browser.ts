@@ -3550,7 +3550,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
           style.borderColor,
           resolveStyle(
             "border-color",
-            `color-mix(in oklch, ${style.color} 35%, transparent)`,
+            `color-mix(in srgb, ${style.color} 35%, transparent)`,
           ),
         ),
         borderRadius: Number.parseFloat(style.borderRadius),
