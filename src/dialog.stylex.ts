@@ -65,7 +65,7 @@ export const dialogStyles = stylex.create({
     position: "fixed", zIndex: "var(--z-modal)", top: 0, right: 0, bottom: 0, left: 0,
     display: "grid", paddingTop: "var(--space-4)", paddingBottom: "var(--space-4)", paddingLeft: "var(--space-4)", paddingRight: "var(--space-4)",
     alignItems: "center", justifyItems: "center", overflowY: "auto",
-    backgroundAttachment: "scroll", backgroundClip: "border-box", backgroundColor: "color-mix(in oklch, black 55%, transparent)",
+    backgroundAttachment: "scroll", backgroundClip: "border-box", backgroundColor: "color-mix(in srgb, black 55%, transparent)",
     backgroundImage: "none", backgroundOrigin: "padding-box", backgroundPosition: "0% 0%", backgroundRepeat: "repeat", backgroundSize: "auto auto",
     overscrollBehaviorX: "contain", overscrollBehaviorY: "contain",
   },

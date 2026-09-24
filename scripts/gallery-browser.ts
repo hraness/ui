@@ -25,6 +25,7 @@ import {
 import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import { placeQuietSiteFooterPriorityBeforeLegacy } from "./gallery-layer-counterfactual.ts";
 import { verifyPendingActions } from "./gallery-pending-actions.ts";
+import { verifyPortableOpacity } from "./opacity-proof.ts";
 
 const BUN_VERSION = "1.3.14";
 const CARD_DESCRIPTION_BRIDGE_PATTERN =
@@ -3549,7 +3550,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
           style.borderColor,
           resolveStyle(
             "border-color",
-            `color-mix(in oklch, ${style.color} 35%, transparent)`,
+            `color-mix(in srgb, ${style.color} 35%, transparent)`,
           ),
         ),
         borderRadius: Number.parseFloat(style.borderRadius),
@@ -14508,6 +14509,7 @@ try {
       headless: true,
     });
     try {
+      await verifyPortableOpacity(browser, await readFile(resolve(import.meta.dir, "../src/tokens.css"), "utf8"));
       const origin = `http://${server.hostname}:${String(server.port)}`;
       let productionFooterPaddingTop: number | undefined;
       for (const layout of layouts) {

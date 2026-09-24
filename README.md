@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.17"
+    "@hraness/ui": "github:hraness/ui#v0.5.18"
   }
 }
 ```
@@ -477,6 +477,8 @@ Override semantic roles after the imports to reskin the whole system without dep
 ```
 
 Cards, settings panels, toolbars, and overlays share a soft surface treatment. `--ui-surface-edge` supplies a quiet contour; `--elevation-low`, `--elevation-raised`, and `--elevation-overlay` pair a light upper edge with graduated shadows. Fields and grouped controls use `--elevation-inset`. These roles derive from the active palette at every `[data-theme]` or `[data-palette]` boundary, including nested light and dark surfaces. Use those roles in product compositions instead of inventing new shadow recipes. Structural layout primitives remain flat and do not acquire padding or elevation.
+
+Opacity-only color mixes use sRGB to preserve the palette's hue in translucent edges and shadows. Blends between two colored paints retain OKLCH interpolation.
 
 `--ui-divider` separates dense information without giving every row a heavy outline. Input, focus, selection, and validation colors remain independent of decorative surface edges. Higher-contrast preferences restore stronger surface contours, and forced colors replace depth with system-colored boundaries.
 

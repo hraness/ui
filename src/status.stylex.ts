@@ -57,7 +57,7 @@ export const statusStyles = stylex.create({
     backgroundColor: "var(--ui-muted-foreground)",
   },
   dotRoot: {
-    borderColor: "color-mix(in oklch, currentColor 35%, transparent)",
+    borderColor: "color-mix(in srgb, currentColor 35%, transparent)",
     borderRadius: "var(--radius-round)",
     borderStyle: "solid",
     borderWidth: "1px",

@@ -182,20 +182,21 @@
   --ui-chart-5: oklch(0.58 0.14 315);
 }
 
-/* Recompute derived roles at every theme boundary. Custom-property references
+/* Opacity-only mixes use sRGB so low-chroma roles retain their source hue.
+ * Recompute derived roles at every theme boundary. Custom-property references
  * otherwise resolve on the ancestor and retain its palette in a nested theme. */
 :root,
 [data-theme],
 [data-palette],
 .dark {
-  --ui-surface-edge: color-mix(in oklch, var(--ui-border) 28%, transparent);
+  --ui-surface-edge: color-mix(in srgb, var(--ui-border) 28%, transparent);
   --ui-surface-light: color-mix(in oklch, var(--ui-card) 94%, white);
   --ui-surface-shade: color-mix(in oklch, var(--ui-background) 55%, black);
-  --ui-divider: color-mix(in oklch, var(--ui-border) 55%, transparent);
-  --elevation-low: inset 0 1px 0 color-mix(in oklch, var(--ui-surface-light) 72%, transparent), 0 1px 2px -1px color-mix(in oklch, var(--ui-surface-shade) 20%, transparent), 0 4px 10px -6px color-mix(in oklch, var(--ui-surface-shade) 22%, transparent);
-  --elevation-raised: inset 0 1px 0 color-mix(in oklch, var(--ui-surface-light) 72%, transparent), 0 2px 4px -2px color-mix(in oklch, var(--ui-surface-shade) 18%, transparent), 0 14px 28px -16px color-mix(in oklch, var(--ui-surface-shade) 30%, transparent);
-  --elevation-overlay: inset 0 1px 0 color-mix(in oklch, var(--ui-surface-light) 80%, transparent), 0 4px 12px -4px color-mix(in oklch, var(--ui-surface-shade) 24%, transparent), 0 24px 64px -20px color-mix(in oklch, var(--ui-surface-shade) 38%, transparent);
-  --elevation-inset: inset 0 2px 4px -2px color-mix(in oklch, var(--ui-surface-shade) 24%, transparent), inset 0 -1px 0 color-mix(in oklch, var(--ui-surface-light) 44%, transparent);
+  --ui-divider: color-mix(in srgb, var(--ui-border) 55%, transparent);
+  --elevation-low: inset 0 1px 0 color-mix(in srgb, var(--ui-surface-light) 72%, transparent), 0 1px 2px -1px color-mix(in srgb, var(--ui-surface-shade) 20%, transparent), 0 4px 10px -6px color-mix(in srgb, var(--ui-surface-shade) 22%, transparent);
+  --elevation-raised: inset 0 1px 0 color-mix(in srgb, var(--ui-surface-light) 72%, transparent), 0 2px 4px -2px color-mix(in srgb, var(--ui-surface-shade) 18%, transparent), 0 14px 28px -16px color-mix(in srgb, var(--ui-surface-shade) 30%, transparent);
+  --elevation-overlay: inset 0 1px 0 color-mix(in srgb, var(--ui-surface-light) 80%, transparent), 0 4px 12px -4px color-mix(in srgb, var(--ui-surface-shade) 24%, transparent), 0 24px 64px -20px color-mix(in srgb, var(--ui-surface-shade) 38%, transparent);
+  --elevation-inset: inset 0 2px 4px -2px color-mix(in srgb, var(--ui-surface-shade) 24%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--ui-surface-light) 44%, transparent);
 }
 
 @media (pointer: coarse) {
