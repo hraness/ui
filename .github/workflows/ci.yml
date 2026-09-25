@@ -17,6 +17,10 @@ jobs:
     name: Changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # paths-filter lists pull request files through the API, which needs pull-requests: read.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
@@ -26,6 +30,9 @@ jobs:
       - id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
+          # Every pattern must hold, so the negations exclude docs-only changes; with the
+          # default "some", '**' alone matched every file and code was always true.
+          predicate-quantifier: every
           # Everything is code except files no check reads. README.md and
           # LICENSE stay code: the readme contract test and `bun pm pack` read them.
           filters: |
