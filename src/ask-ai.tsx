@@ -1,14 +1,11 @@
-import {
-  ChatGptIcon,
-  ClaudeIcon,
-  GrokIcon,
-  PerplexityAiIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
-import { forwardRef, type HTMLAttributes } from "react";
+import { forwardRef, type CSSProperties, type HTMLAttributes } from "react";
 
+import {
+  askAiProviderMarks,
+  type AskAiProviderMark,
+} from "./ask-ai-marks.generated.js";
 import { askAiStyles } from "./ask-ai.stylex.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
@@ -30,38 +27,46 @@ export type AskAiProviderLink = Readonly<{
 
 type ProviderDefinition = Readonly<{
   baseUrl: string;
-  icon: IconSvgElement;
   label: AskAiProviderLink["label"];
+  mark: AskAiProviderMark;
   parameter: "q" | "text";
   provider: AskAiProvider;
 }>;
 
+function requiredMark(provider: AskAiProvider): AskAiProviderMark {
+  const mark: AskAiProviderMark | undefined = askAiProviderMarks[provider];
+  if (mark === undefined) {
+    throw new Error(`The shared provider-mark registry must cover ${provider}.`);
+  }
+  return mark;
+}
+
 const providerDefinitions = [
   {
     baseUrl: "https://chatgpt.com/",
-    icon: ChatGptIcon,
     label: "ChatGPT",
+    mark: requiredMark("chatgpt"),
     parameter: "q",
     provider: "chatgpt",
   },
   {
     baseUrl: "https://claude.ai/new",
-    icon: ClaudeIcon,
     label: "Claude",
+    mark: requiredMark("claude"),
     parameter: "q",
     provider: "claude",
   },
   {
     baseUrl: "https://perplexity.ai/",
-    icon: PerplexityAiIcon,
     label: "Perplexity",
+    mark: requiredMark("perplexity"),
     parameter: "q",
     provider: "perplexity",
   },
   {
     baseUrl: "https://x.com/i/grok",
-    icon: GrokIcon,
     label: "Grok",
+    mark: requiredMark("grok"),
     parameter: "text",
     provider: "grok",
   },
@@ -141,6 +146,8 @@ export const AskAiAboutThis = forwardRef<HTMLElement, AskAiAboutThisProps>(
     const linksPresentation = stylex.props(askAiStyles.links);
     const linkPresentation = stylex.props(askAiStyles.link);
     const iconPresentation = stylex.props(askAiStyles.icon);
+    const iconGlyphPresentation = stylex.props(askAiStyles.iconGlyph);
+    const iconArtPresentation = stylex.props(askAiStyles.iconArt);
 
     return (
       <nav
@@ -197,19 +204,46 @@ export const AskAiAboutThis = forwardRef<HTMLElement, AskAiAboutThisProps>(
                 rel="noopener noreferrer nofollow"
                 target="_blank"
               >
-                <HugeiconsIcon
+                <span
                   {...iconPresentation}
                   aria-hidden="true"
                   className={cn(
                     "hraness-ask-ai-about-this__icon",
                     iconPresentation.className,
                   )}
-                  color="currentColor"
                   data-slot="ask-ai-about-this-icon"
-                  icon={definition.icon}
-                  size={15}
-                  strokeWidth={1.5}
-                />
+                  style={
+                    { "--_ask-ai-accent": definition.mark.accent } as CSSProperties
+                  }
+                >
+                  <svg
+                    {...iconGlyphPresentation}
+                    aria-hidden="true"
+                    className={cn(
+                      "hraness-ask-ai-about-this__icon-glyph",
+                      iconGlyphPresentation.className,
+                    )}
+                    dangerouslySetInnerHTML={{
+                      __html: definition.mark.glyph.body,
+                    }}
+                    fill="currentColor"
+                    viewBox={definition.mark.glyph.viewBox}
+                  />
+                  {definition.mark.art === null ? null : (
+                    <svg
+                      {...iconArtPresentation}
+                      aria-hidden="true"
+                      className={cn(
+                        "hraness-ask-ai-about-this__icon-art",
+                        iconArtPresentation.className,
+                      )}
+                      dangerouslySetInnerHTML={{
+                        __html: definition.mark.art.body,
+                      }}
+                      viewBox={definition.mark.art.viewBox}
+                    />
+                  )}
+                </span>
                 <span data-slot="ask-ai-about-this-provider-label">
                   {link.label}
                 </span>
