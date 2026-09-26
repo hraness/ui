@@ -1,0 +1,216 @@
+# Reusable check fan-out. `bun run check` is a serial chain of sixteen scripts;
+# this workflow runs the same commands, unchanged, as parallel jobs so wall time
+# is bounded by the slowest script (a single Next adopter smoke) instead of the
+# sum. CI (pull_request, push) and Release (tag) both call it.
+name: Checks
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: "1.3.14"
+
+jobs:
+  static:
+    name: Static
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run check:portfolio-inventory
+      - run: bun run check:ask-ai-marks
+      - run: bun run typecheck
+      - run: bun run build
+      - run: bun run check:committed-dist
+      - run: bun run check:stylex-artifacts
+      - run: bun run check:stylex-compiler-artifacts
+      - run: bun run check:stylex-determinism
+      - run: bun run check:stylex-consumer-layers
+      - name: Generated files are committed
+        run: |
+          generated_status="$(git status --porcelain --untracked-files=all -- dist bun.lock)"
+          if [[ -n "$generated_status" ]]; then
+            printf '%s\n' "$generated_status"
+            exit 1
+          fi
+      - run: bun pm pack --dry-run --ignore-scripts
+      - run: node --input-type=module -e 'await Promise.all(["./dist/index.js"].map((path) => import(path)))'
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run build
+      - run: bun run test:package
+      - run: bun run test:vite-custody
+      - run: bun run test:packed-bun-browser
+      - name: Generated files are committed
+        run: |
+          generated_status="$(git status --porcelain --untracked-files=all -- dist bun.lock)"
+          if [[ -n "$generated_status" ]]; then
+            printf '%s\n' "$generated_status"
+            exit 1
+          fi
+
+  vite:
+    name: Vite adopters
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run build
+      - run: bun run test:vite-adopter
+      - run: bun run test:vite78-adopter
+      - name: Generated files are committed
+        run: |
+          generated_status="$(git status --porcelain --untracked-files=all -- dist bun.lock)"
+          if [[ -n "$generated_status" ]]; then
+            printf '%s\n' "$generated_status"
+            exit 1
+          fi
+
+  next:
+    name: Next adopter (${{ matrix.next }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The two exact profile rows of `test:next-adopter`, one job each.
+          - next: "16.2.12"
+            command: bun run ./scripts/next-adopter-smoke.ts
+          - next: "16.3.3"
+            command: bun run ./scripts/next-adopter-smoke.ts --next-version=16.3.3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run build
+      - run: ${{ matrix.command }}
+      - name: Generated files are committed
+        run: |
+          generated_status="$(git status --porcelain --untracked-files=all -- dist bun.lock)"
+          if [[ -n "$generated_status" ]]; then
+            printf '%s\n' "$generated_status"
+            exit 1
+          fi
+
+  unit:
+    name: Unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run build
+      - run: bun run test
+      - name: Generated files are committed
+        run: |
+          generated_status="$(git status --porcelain --untracked-files=all -- dist bun.lock)"
+          if [[ -n "$generated_status" ]]; then
+            printf '%s\n' "$generated_status"
+            exit 1
+          fi
+
+  browser:
+    name: Browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run build
+      - run: bun run test:browser
+      - name: Generated files are committed
+        run: |
+          generated_status="$(git status --porcelain --untracked-files=all -- dist bun.lock)"
+          if [[ -n "$generated_status" ]]; then
+            printf '%s\n' "$generated_status"
+            exit 1
+          fi

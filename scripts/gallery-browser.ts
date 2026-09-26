@@ -25,6 +25,7 @@ import {
 import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import { placeQuietSiteFooterPriorityBeforeLegacy } from "./gallery-layer-counterfactual.ts";
 import { verifyPendingActions } from "./gallery-pending-actions.ts";
+import { verifyPortableOpacity } from "./opacity-proof.ts";
 
 const BUN_VERSION = "1.3.14";
 const CARD_DESCRIPTION_BRIDGE_PATTERN =
@@ -1526,7 +1527,8 @@ function requirePackedDataTableStyles(javaScript: string, css: string): void {
       "text-align:start;",
     ],
     cell: [
-      "border-block-end-color:var(--ui-border);",
+      "border-block-end-color:canvastext;",
+      "border-block-end-color:var(--ui-divider);",
       "border-block-end-style:solid;",
       "border-block-end-width:1px;",
       "padding-block:var(--space-3);",
@@ -1557,7 +1559,10 @@ function requirePackedDataTableStyles(javaScript: string, css: string): void {
       "width:100%;",
     ],
     wrapper: [
-      "border-color:var(--ui-border);",
+      "background-color:var(--ui-card);",
+      "box-shadow:var(--elevation-low);",
+      "border-color:canvastext;",
+      "border-color:var(--ui-surface-edge);",
       "border-image-outset:0;",
       "border-image-repeat:stretch;",
       "border-image-slice:100%;",
@@ -1819,7 +1824,7 @@ function requireCompiledGalleryStylesheet(css: string, javaScript: string): void
   );
   assert.match(
     css,
-    /border-color:\s*color-mix\(in oklch,var\(--ui-primary\)\s*35%,var\(--ui-border\)\)/u,
+    /border-color:\s*color-mix\(in oklch,var\(--ui-primary\)\s*24%,var\(--ui-surface-edge\)\)/u,
     "the packed default stylesheet must include the PressableCard hover border",
   );
   assert.match(
@@ -2744,6 +2749,47 @@ async function waitForHydration(
   }
 }
 
+async function verifySoftSurfaceThemeIsolation(page: Page, id: string): Promise<void> {
+  const evidence = await page.evaluate(() => {
+    const dark = document.createElement("div");
+    const light = document.createElement("div");
+    const system = document.createElement("div");
+    dark.dataset.theme = "dark";
+    light.dataset.theme = "light";
+    for (const surface of [dark, light]) {
+      surface.style.backgroundColor = "var(--ui-surface-edge)";
+      surface.style.boxShadow = "var(--elevation-raised)";
+    }
+    system.style.backgroundColor = "CanvasText";
+    dark.append(light, system);
+    document.body.append(dark);
+    try {
+      const darkStyle = getComputedStyle(dark);
+      const lightStyle = getComputedStyle(light);
+      const systemStyle = getComputedStyle(system);
+      return {
+        darkEdge: darkStyle.backgroundColor,
+        darkShadow: darkStyle.boxShadow,
+        lightEdge: lightStyle.backgroundColor,
+        lightShadow: lightStyle.boxShadow,
+        forced: matchMedia("(forced-colors: active)").matches,
+        canvasText: systemStyle.backgroundColor,
+      };
+    } finally {
+      dark.remove();
+    }
+  });
+  invariant(
+    evidence.forced
+      ? evidence.darkShadow === "none" && evidence.lightShadow === "none"
+      : evidence.darkEdge !== evidence.lightEdge
+        && evidence.darkShadow !== evidence.lightShadow
+        && evidence.darkShadow.includes("inset")
+        && evidence.lightShadow.includes("inset"),
+    `${id}: derived soft surfaces must follow each nested theme and remove decorative depth in forced colors: ${JSON.stringify(evidence)}`,
+  );
+}
+
 async function browserEvidence(page: Page): Promise<BrowserEvidence> {
   return page.evaluate(() => {
     const icon = document.querySelector('[data-gallery-icon-canary="true"] [data-slot="icon"]');
@@ -2968,9 +3014,11 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       accentForeground: resolveStyle("color", "var(--ui-accent-foreground)"),
       accentCardBorder: resolveStyle(
         "border-color",
-        "color-mix(in oklch, var(--ui-primary) 28%, var(--ui-border))",
+        "color-mix(in oklch, var(--ui-primary) 14%, var(--ui-surface-edge))",
       ),
       border: resolveStyle("border-color", "var(--ui-border)"),
+      surfaceEdge: resolveStyle("border-color", "var(--ui-surface-edge)"),
+      divider: resolveStyle("border-color", "var(--ui-divider)"),
       cardBackground: resolveStyle("background-color", "var(--ui-card)"),
       cardForeground: resolveStyle("color", "var(--ui-card-foreground)"),
       cardDescription: resolveStyle("color", "var(--ui-muted-foreground)"),
@@ -3502,7 +3550,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
           style.borderColor,
           resolveStyle(
             "border-color",
-            `color-mix(in oklch, ${style.color} 35%, transparent)`,
+            `color-mix(in srgb, ${style.color} 35%, transparent)`,
           ),
         ),
         borderRadius: Number.parseFloat(style.borderRadius),
@@ -3568,7 +3616,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       card: [
         resolvedTokens.cardBackground,
         resolvedTokens.cardForeground,
-        resolvedTokens.border,
+        resolvedTokens.surfaceEdge,
         resolvedTokens.cardDescription,
       ],
       inverse: [
@@ -3580,7 +3628,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
       neutral: [
         resolvedTokens.neutralBackground,
         resolvedTokens.neutralForeground,
-        resolvedTokens.border,
+        resolvedTokens.surfaceEdge,
         resolvedTokens.cardDescription,
       ],
     } as const;
@@ -4945,7 +4993,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
           && surface.borderColor === (
             surface.tone === "inverse"
               ? resolvedTokens.inverseBackground
-              : resolvedTokens.border
+              : resolvedTokens.surfaceEdge
           ),
       ),
       toolbarBoundaryContracts: toolbarEvidence.every(
@@ -4988,7 +5036,7 @@ async function browserEvidence(page: Page): Promise<BrowserEvidence> {
             && toolbar.width < 19 * 16
           : toolbar.alignItems === "center"
             && toolbar.backgroundColor === resolvedTokens.cardBackground
-            && toolbar.borderColor === resolvedTokens.border
+            && toolbar.borderColor === resolvedTokens.surfaceEdge
             && toolbar.borderRadius === resolvedTokens.largeRadius
             && toolbar.flexDirection === "row"
             && toolbar.flexWrap === "wrap"
@@ -11183,7 +11231,11 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
     const tokens = {
       bodyFont: getComputedStyle(section).fontFamily,
       bodySize: number(resolveStyle("font-size", "var(--text-body)")),
+      card: resolveStyle("background-color", "var(--ui-card)"),
+      lowElevation: resolveStyle("box-shadow", "var(--elevation-low)"),
       border: resolveStyle("border-color", "var(--ui-border)"),
+      surfaceEdge: resolveStyle("border-color", "var(--ui-surface-edge)"),
+      divider: resolveStyle("border-color", "var(--ui-divider)"),
       foreground: resolveStyle("color", "var(--ui-foreground)"),
       labelSize: number(resolveStyle("font-size", "var(--text-label)")),
       largeRadius: number(resolveStyle("border-radius", "var(--radius-lg)")),
@@ -11220,13 +11272,14 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
     const boundaryContracts = fixtures.every(({ name, wrapper }) =>
       completeBorder(
         wrapper,
-        name === "overflow" ? tokens.primary : tokens.border,
+        name === "overflow" ? tokens.primary : tokens.surfaceEdge,
         name === "overflow" ? tokens.smallRadius : tokens.largeRadius,
       )
     )
       && fixtures.filter(({ name }) => name !== "overflow").every(({ wrapper }) => {
         const style = getComputedStyle(wrapper);
-        return style.maxWidth === "100%" && style.overflowX === "auto";
+        return style.maxWidth === "100%" && style.overflowX === "auto"
+          && style.backgroundColor === tokens.card && style.boxShadow === tokens.lowElevation;
       });
 
     const horizontalRecords = fixtures.filter(({ name }) => name !== "vertical");
@@ -11243,7 +11296,7 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
         && nearly(number(style.paddingLeft), tokens.space4, 0.01)
         && style.borderBottomStyle === "solid"
         && nearly(number(style.borderBottomWidth), 1, 0.01)
-        && style.borderBottomColor === tokens.border
+        && style.borderBottomColor === tokens.divider
         && style.verticalAlign === "top";
     });
     const captionContract = horizontalRecords.every(({ caption }) => {
@@ -11399,7 +11452,7 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
           && nearly(number(style.paddingBottom), 16, 0.01)
           && style.borderLeftStyle === "solid"
           && nearly(number(style.borderLeftWidth), 1, 0.01)
-          && style.borderLeftColor === tokens.border
+          && style.borderLeftColor === tokens.divider
           && nearly(number(style.borderBottomWidth), 0, 0.01)
           && style.verticalAlign === "top";
       });
@@ -11411,8 +11464,20 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
 
     const diagnostics = JSON.stringify({
       empty: {
+        cellTop: emptyBox.top,
+        colSpan: emptyCell.colSpan,
+        color: emptyStyle.color,
+        copyCenter: (emptyCopyBox.left + emptyCopyBox.right) / 2,
+        copyDisplay: getComputedStyle(emptyCopy).display,
+        copyHeight: emptyCopyBox.height,
+        copyTop: emptyCopyBox.top,
+        expectedCenter: emptyContentCenter,
+        expectedTop: emptyBox.top + number(emptyStyle.paddingTop),
         height: emptyBox.height,
+        lineHeight: emptyStyle.lineHeight,
+        paddingTop: emptyStyle.paddingTop,
         textAlign: emptyStyle.textAlign,
+        topDelta: emptyCopyBox.top - emptyBox.top - number(emptyStyle.paddingTop),
         verticalAlign: emptyStyle.verticalAlign,
       },
       fixtures: fixtures.map(({ name, table, wrapper }) => ({
@@ -11465,6 +11530,17 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
 }
 
 function verifyDataTableEvidence(evidence: DataTableEvidence, id: string): void {
+  const contracts = {
+    alignment: evidence.alignmentContracts,
+    boundary: evidence.boundaryContracts,
+    classes: evidence.classContracts,
+    empty: evidence.emptyContracts,
+    layers: evidence.layerSentinels,
+    overflow: evidence.overflowContracts,
+    presentation: evidence.presentationContracts,
+    tree: evidence.treeContracts,
+    vertical: evidence.verticalContracts,
+  };
   invariant(
     evidence.alignmentContracts
     && evidence.boundaryContracts
@@ -11475,7 +11551,7 @@ function verifyDataTableEvidence(evidence: DataTableEvidence, id: string): void 
     && evidence.presentationContracts
     && evidence.treeContracts
     && evidence.verticalContracts,
-    `${id}: DataTable parity failed: ${evidence.diagnostics}`,
+    `${id}: DataTable parity failed: ${JSON.stringify(contracts)}; ${evidence.diagnostics}`,
   );
 }
 
@@ -11587,6 +11663,8 @@ async function contentFamilyEvidence(page: Page): Promise<ContentFamilyEvidence>
       ),
       boldWeight: resolveStyle("font-weight", "var(--font-weight-bold)"),
       border: resolveStyle("border-color", "var(--ui-border)"),
+      surfaceEdge: resolveStyle("border-color", "var(--ui-surface-edge)"),
+      divider: resolveStyle("border-color", "var(--ui-divider)"),
       card: resolveStyle("background-color", "var(--ui-card)"),
       cardForeground: resolveStyle("color", "var(--ui-card-foreground)"),
       captionSize: Number.parseFloat(
@@ -11723,9 +11801,9 @@ async function contentFamilyEvidence(page: Page): Promise<ContentFamilyEvidence>
           && nearly(Number.parseFloat(style.paddingLeft), fixture === "override"
             ? tokens.space2
             : tokens.space8)
-          && style.borderStyle === (fixture === "override" ? "solid" : "dashed")
+          && style.borderStyle === "solid"
           && nearly(Number.parseFloat(style.borderLeftWidth), fixture === "override" ? 4 : 1)
-          && equivalentColor(style.borderColor, tokens.border),
+          && equivalentColor(style.borderColor, tokens.surfaceEdge),
         sentinel: style.getPropertyValue("--gallery-content-layer-conflict").trim(),
         titleContract:
           title.tagName === (fixture === "default" ? "H3" : "H4")
@@ -11884,7 +11962,7 @@ async function contentFamilyEvidence(page: Page): Promise<ContentFamilyEvidence>
           && nearly(Number.parseFloat(headerStyle.paddingLeft), tokens.space6)
           && headerStyle.borderBottomStyle === "solid"
           && nearly(Number.parseFloat(headerStyle.borderBottomWidth), 1)
-          && equivalentColor(headerStyle.borderBottomColor, tokens.border)
+          && equivalentColor(headerStyle.borderBottomColor, tokens.surfaceEdge)
           && actionsStyle.display === "flex"
           && actionsStyle.flexWrap === "wrap"
           && actionsStyle.alignItems === "center"
@@ -11913,7 +11991,7 @@ async function contentFamilyEvidence(page: Page): Promise<ContentFamilyEvidence>
           && style.overflow === "hidden"
           && style.backgroundImage === "none"
           && equivalentColor(style.backgroundColor, tokens.card)
-          && equivalentColor(style.borderColor, tokens.border)
+          && equivalentColor(style.borderColor, tokens.surfaceEdge)
           && equivalentColor(
             style.color,
             override ? tokens.primary : tokens.cardForeground,
@@ -11997,7 +12075,7 @@ async function contentFamilyEvidence(page: Page): Promise<ContentFamilyEvidence>
       && introTitleStyle.getPropertyValue("text-wrap").trim() === "balance"
       && Math.abs(
         Number.parseFloat(introTitleStyle.lineHeight)
-          / Number.parseFloat(introTitleStyle.fontSize) - 1,
+          / Number.parseFloat(introTitleStyle.fontSize) - 1.08,
       ) <= 0.01
       && equivalentColor(introDescriptionStyle.color, tokens.mutedForeground)
       && nearly(Number.parseFloat(introDescriptionStyle.fontSize), tokens.bodySize)
@@ -14437,6 +14515,7 @@ try {
       headless: true,
     });
     try {
+      await verifyPortableOpacity(browser, await readFile(resolve(import.meta.dir, "../src/tokens.css"), "utf8"));
       const origin = `http://${server.hostname}:${String(server.port)}`;
       let productionFooterPaddingTop: number | undefined;
       for (const layout of layouts) {
@@ -14447,6 +14526,7 @@ try {
           await page.goto(origin, { waitUntil: "networkidle" });
           await waitForHydration(page, failures, requestedPaths, layout.id);
 
+          await verifySoftSurfaceThemeIsolation(page, layout.id);
           const light = await browserEvidence(page);
           const lightContent = await contentFamilyEvidence(page);
           verifyContentFamilyEvidence(lightContent, layout.id);
@@ -15106,6 +15186,7 @@ try {
           waitUntil: "networkidle",
         });
         await waitForHydration(page, failures, requestedPaths, "forced colors");
+        await verifySoftSurfaceThemeIsolation(page, "forced colors");
         const forced = await forcedColorsEvidence(page);
         invariant(forced.forcedColorsActive, "forced colors: browser emulation is inactive");
         invariant(forced.cardForcedColorAdjust === "auto", `forced colors: card adjustment is ${forced.cardForcedColorAdjust}`);

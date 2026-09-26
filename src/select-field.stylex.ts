@@ -94,7 +94,10 @@ export const selectFieldStyles = stylex.create({
   popover: {
     backgroundColor: "var(--ui-popover)",
     backgroundImage: "none",
-    borderColor: "var(--ui-border)",
+    borderColor: {
+      default: "var(--ui-surface-edge)",
+      [forcedColors]: "CanvasText",
+    },
     borderRadius: "var(--radius-lg)",
     borderStyle: "solid",
     borderWidth: "1px",
@@ -122,6 +125,7 @@ export const selectFieldStyles = stylex.create({
     animationTimingFunction: "var(--motion-easing-standard)",
   },
   trigger: {
+    boxShadow: "var(--elevation-inset)",
     alignItems: "center",
     backgroundColor: "var(--hraness-field-surface, var(--ui-background))",
     backgroundImage: "none",
@@ -168,7 +172,7 @@ export const selectFieldStyles = stylex.create({
       [forcedColors]: "CanvasText",
     },
     boxShadow:
-      "0 0 0 3px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+      "0 0 0 3px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
     outlineColor: "var(--ui-ring)",
     outlineOffset: "2px",
     outlineStyle: "solid",
@@ -212,7 +216,7 @@ export const selectFieldStyles = stylex.create({
         [forcedColors]: "CanvasText",
       },
       boxShadow:
-        "0 0 0 3px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+        "0 0 0 3px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
       outlineColor: "var(--ui-ring)",
       outlineOffset: "2px",
       outlineStyle: "solid",

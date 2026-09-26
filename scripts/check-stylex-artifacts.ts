@@ -1978,7 +1978,7 @@ function requireThemedSurfaceContract(
     [/background-color:\s*var\(--ui-foreground\);/u, "the inverse surface background"],
     [/background-color:\s*var\(--ui-popover\);/u, "the popover surface background"],
     [/background-color:\s*var\(--ui-secondary\);/u, "the secondary surface background"],
-    [/border-color:\s*var\(--ui-border\);/u, "the surface border color"],
+    [/border-color:\s*var\(--ui-surface-edge\);/u, "the surface border color"],
     [/border-color:\s*var\(--ui-foreground\);/u, "the inverse surface border color"],
     [/border-radius:\s*var\(--radius-lg\);/u, "the rounded surface shape"],
     [/border-radius:\s*var\(--radius-sharp\);/u, "the rectangular surface shape"],
@@ -2081,7 +2081,7 @@ function requireStatusFamilyContract(
     [/background-color:\s*var\(--ui-warning\);/u, "the warning StatusDot background"],
     [/border-color:\s*#0000;/u, "the transparent default Tag border"],
     [/border-color:\s*canvastext;/u, "the forced-colors status-pill border"],
-    [/border-color:\s*color-mix\(in oklch,currentColor 35%,transparent\);/u, "the StatusDot border"],
+    [/border-color:\s*color-mix\(in srgb,currentColor 35%,transparent\);/u, "the StatusDot border"],
     [/border-color:\s*color-mix\(in oklch,var\(--ui-destructive\) 45%,var\(--ui-border\)\);/u, "the danger Badge border"],
     [/border-color:\s*color-mix\(in oklch,var\(--ui-info\) 45%,var\(--ui-border\)\);/u, "the info Badge border"],
     [/border-color:\s*color-mix\(in oklch,var\(--ui-success\) 45%,var\(--ui-border\)\);/u, "the success Badge border"],
@@ -2173,9 +2173,9 @@ function requireCardFamilyContract(
     [/background-color:\s*var\(--ui-card\);/u, "the default Card background"],
     [/background-color:\s*var\(--ui-foreground\);/u, "the inverse Card background"],
     [/border-color:\s*canvastext;/u, "the forced-colors Card border"],
-    [/border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 28%,var\(--ui-border\)\);/u, "the accent Card border"],
-    [/border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 35%,var\(--ui-border\)\);/u, "the PressableCard hover border"],
-    [/border-color:\s*var\(--ui-border\);/u, "the default Card border"],
+    [/border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 14%,var\(--ui-surface-edge\)\);/u, "the accent Card border"],
+    [/border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 24%,var\(--ui-surface-edge\)\);/u, "the PressableCard hover border"],
+    [/border-color:\s*var\(--ui-surface-edge\);/u, "the default Card border"],
     [/border-color:\s*var\(--ui-foreground\);/u, "the inverse Card border"],
     [/border-radius:\s*var\(--radius-lg\);/u, "the rounded Card shape"],
     [/border-radius:\s*var\(--radius-sharp\);/u, "the rectangular Card shape"],
@@ -2200,8 +2200,8 @@ function requireCardFamilyContract(
     [/gap:\s*var\(--space-2\);/u, "the CardHeader and CardFooter gap"],
     [/gap:\s*var\(--space-4\);/u, "the PressableCard gap"],
     [/gap:\s*var\(--space-6\);/u, "the Card root gap"],
-    [/line-height:\s*1\.2;/u, "the CardTitle line height"],
-    [/line-height:\s*1\.5;/u, "the CardDescription line height"],
+    [/line-height:\s*var\(--leading-heading\);/u, "the CardTitle line height"],
+    [/line-height:\s*var\(--leading-label\);/u, "the CardDescription line height"],
     [/min-width:\s*0;/u, "the physical PressableCard shrink boundary"],
     [/outline-color:\s*var\(--ui-ring\);/u, "the PressableCard focus ring color"],
     [/outline-offset:\s*3px;/u, "the PressableCard focus ring offset"],
@@ -2221,7 +2221,7 @@ function requireCardFamilyContract(
     requireMatch(compiledCss, pattern, description);
   }
   const nativePseudoFallbacks = [
-    [/:hover\s*\{\s*border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 35%,var\(--ui-border\)\);/u, "the native PressableCard hover fallback"],
+    [/:hover\s*\{\s*border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 24%,var\(--ui-surface-edge\)\);/u, "the native PressableCard hover fallback"],
     [/:active\s*\{\s*transform:\s*translateY\(1px\);/u, "the native PressableCard active fallback"],
     [/:focus-visible(?:\s*,[^{}]+)?\s*\{\s*outline-color:\s*var\(--ui-ring\);/u, "the native PressableCard focus-visible fallback"],
   ] as const;
@@ -2323,7 +2323,7 @@ function requireToolbarContract(
   const rootDeclarations = [
     [/align-items:\s*center;/u, "the horizontal Toolbar alignment"],
     [/background-color:\s*var\(--ui-card\);/u, "the Toolbar background"],
-    [/border-color:\s*var\(--ui-border\);/u, "the Toolbar border color"],
+    [/border-color:\s*var\(--ui-surface-edge\);/u, "the Toolbar border color"],
     [/border-radius:\s*var\(--radius-lg\);/u, "the Toolbar radius"],
     [/border-style:\s*solid;/u, "the Toolbar border style"],
     [/border-width:\s*1px;/u, "the Toolbar border width"],
@@ -2566,7 +2566,7 @@ function requireContentFamilyContract(
     ["actions", /display:\s*flex;/u, "shared content actions layout"],
     ["actions", /flex-wrap:\s*wrap;/u, "shared content actions wrapping"],
     ["actions", /min-width:\s*0;/u, "shared content actions shrink boundary"],
-    ["emptyStateRoot", /border-style:\s*dashed;/u, "EmptyState dashed boundary"],
+    ["emptyStateRoot", /border-style:\s*solid;/u, "EmptyState soft boundary"],
     ["emptyStateRoot", /min-height:\s*12rem;/u, "EmptyState minimum height"],
     ["emptyStateRoot", /padding-block:\s*var\(--space-8\);/u, "EmptyState block padding"],
     ["emptyStateRoot", /padding-inline:\s*var\(--space-8\);/u, "EmptyState inline padding"],
@@ -2668,7 +2668,7 @@ const DATA_TABLE_DECLARATIONS: Readonly<
   ],
   cell: [
     {
-      declaration: /border-block-end-color:\s*var\(--ui-border\);/u,
+      declaration: /border-block-end-color:\s*var\(--ui-divider\);/u,
       description: "logical cell divider color",
     },
     {
@@ -2755,8 +2755,10 @@ const DATA_TABLE_DECLARATIONS: Readonly<
     { declaration: /width:\s*100%;/u, description: "table width" },
   ],
   wrapper: [
+    { declaration: /background-color:\s*var\(--ui-card\);/u, description: "wrapper surface" },
+    { declaration: /box-shadow:\s*var\(--elevation-low\);/u, description: "wrapper elevation" },
     {
-      declaration: /border-color:\s*var\(--ui-border\);/u,
+      declaration: /border-color:\s*var\(--ui-surface-edge\);/u,
       description: "wrapper border color",
     },
     {
@@ -2788,6 +2790,11 @@ const DATA_TABLE_DECLARATIONS: Readonly<
     { declaration: /max-width:\s*100%;/u, description: "wrapper maximum width" },
     { declaration: /overflow-x:\s*auto;/u, description: "wrapper overflow" },
   ],
+};
+
+const DATA_TABLE_CONDITIONAL_DECLARATIONS: Partial<Record<DataTableStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
+  cell: [{ condition: "@media(forced-colors:active)", declaration: /border-block-end-color:\s*canvastext;/u }],
+  wrapper: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
 };
 
 function dataTableCompiledStyleMap(
@@ -2990,6 +2997,15 @@ function requireDataTableContract(
         `DataTable ${description}`,
       );
     }
+    const conditional = DATA_TABLE_CONDITIONAL_DECLARATIONS[key] ?? [];
+    for (const { condition, declaration } of conditional) requireCompiledConditionalDeclaration(rules, condition, declaration, `DataTable ${key} forced-colors boundary`);
+    for (const rule of rules) {
+      const conditions = rule.ancestors.map((ancestor) => normalizedHeader(ancestor.header)).filter((header) => /^@(?:container|media|supports)/u.test(header));
+      assert.ok(conditions.length === 0
+        ? expectedDeclarations.some(({ declaration }) => dialogDeclarationMatches(rule.body, declaration))
+        : conditions.length === 1 && conditional.some(({ condition, declaration }) => condition === conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
+      `DataTable ${key} exact declaration and media-condition inventory`);
+    }
     requireMatch(
       compiledJavaScript,
       new RegExp(`${map.identifier}\\.${key}(?![A-Za-z0-9_$])`, "u"),
@@ -3058,7 +3074,7 @@ const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
     /padding-bottom:\s*var\(--space-2\);/u, /padding-top:\s*var\(--space-2\);/u,
     /padding-left:\s*var\(--space-3\);/u, /padding-right:\s*var\(--space-3\);/u,
     /border-block-start-width:\s*1px;/u, /border-block-start-style:\s*solid;/u,
-    /border-block-start-color:\s*var\(--ui-border\);/u,
+    /border-block-start-color:\s*var\(--ui-divider\);/u,
     /color:\s*var\(--ui-muted-foreground\);/u, /font-size:\s*var\(--text-caption\);/u,
   ],
   header: [
@@ -3096,7 +3112,7 @@ const MENU_DECLARATIONS: Readonly<Record<MenuStyleKey, readonly RegExp[]>> = {
     /border-width:\s*1px;/u, /border-style:\s*solid;/u,
     /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
     /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
-    /border-color:\s*var\(--ui-border\);/u, /border-radius:\s*var\(--radius-lg\);/u,
+    /border-color:\s*var\(--ui-surface-edge\);/u, /border-radius:\s*var\(--radius-lg\);/u,
     /outline-color:\s*current[Cc]olor;/u, /outline-style:\s*none;/u, /outline-width:\s*medium;/u,
     ...MENU_BACKGROUND_RESET, /background-color:\s*var\(--ui-popover\);/u,
     /color:\s*var\(--ui-popover-foreground\);/u, /box-shadow:\s*var\(--elevation-overlay\);/u,
@@ -3231,7 +3247,7 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /padding-left:\s*var\(--space-6\);/u,
     /border-block-start-width:\s*1px;/u,
     /border-block-start-style:\s*solid;/u,
-    /border-block-start-color:\s*var\(--ui-border\);/u,
+    /border-block-start-color:\s*var\(--ui-surface-edge\);/u,
     /background-attachment:\s*scroll;/u,
     /background-clip:\s*border-box;/u,
     /background-color:\s*var\(--ui-muted\);/u,
@@ -3272,7 +3288,7 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /overflow-y:\s*auto;/u,
     /background-attachment:\s*scroll;/u,
     /background-clip:\s*border-box;/u,
-    /background-color:\s*(?:color-mix\(in oklch,\s*(?:black|#000) 55%,\s*(?:transparent|#0000)\)|oklab\(0 0 0\s*\/\s*0?\.55\)|rgba?\(0[ ,]+0[ ,]+0(?:\s*\/\s*|,\s*)0?\.55\)|#0000008c;\s*background-color:\s*lab\(0% 0 0\s*\/\s*0?\.55\));/u,
+    /background-color:\s*(?:color-mix\(in srgb,\s*(?:black|#000) 55%,\s*(?:transparent|#0000)\)|oklab\(0 0 0\s*\/\s*0?\.55\)|rgba?\(0[ ,]+0[ ,]+0(?:\s*\/\s*|,\s*)0?\.55\)|#0000008c|#0000008c;\s*background-color:\s*lab\(0% 0 0\s*\/\s*0?\.55\));/u,
     /background-image:\s*none;/u,
     /background-origin:\s*padding-box;/u,
     /background-position:\s*0%?\s+0%?;/u,
@@ -3308,7 +3324,7 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /overflow-y:\s*hidden;/u,
     /border-width:\s*1px;/u,
     /border-style:\s*solid;/u,
-    /border-color:\s*var\(--ui-border\);/u,
+    /border-color:\s*var\(--ui-surface-edge\);/u,
     /border-image-outset:\s*0;/u,
     /border-image-repeat:\s*stretch;/u,
     /border-image-slice:\s*100%;/u,
@@ -3339,11 +3355,12 @@ const DIALOG_DECLARATIONS: Readonly<Record<DialogStyleKey, readonly RegExp[]>> =
     /color:\s*var\(--ui-card-foreground\);/u,
     /font-size:\s*var\(--text-heading\);/u,
     /font-weight:\s*var\(--font-weight-bold\);/u,
-    /line-height:\s*1\.2;/u
+    /line-height:\s*var\(--leading-heading\);/u
   ],
 };
 const DIALOG_CONDITIONAL_DECLARATIONS: Partial<Record<DialogStyleKey, readonly Readonly<{ condition: string; declaration: RegExp }>[]>> = {
   close: [{ condition: "@media(pointer:coarse)", declaration: /min-height:\s*var\(--interactive-target-min\);/u }],
+  footer: [{ condition: "@media(forced-colors:active)", declaration: /border-block-start-color:\s*canvastext;/u }],
   root: [
     { condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u },
     { condition: "@media(forced-colors:active)", declaration: /forced-color-adjust:\s*auto;/u },
@@ -3451,7 +3468,7 @@ const TOAST_DECLARATIONS: Readonly<Record<ToastStyleKey, readonly RegExp[]>> = {
     /grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/u, /gap:\s*var\(--space-3\);/u,
     /padding-top:\s*var\(--space-4\);/u, /padding-right:\s*var\(--space-4\);/u,
     /padding-bottom:\s*var\(--space-4\);/u, /padding-left:\s*var\(--space-4\);/u,
-    /border-width:\s*1px;/u, /border-style:\s*solid;/u, /border-color:\s*var\(--ui-border\);/u,
+    /border-width:\s*1px;/u, /border-style:\s*solid;/u, /border-color:\s*var\(--ui-surface-edge\);/u,
     /border-image-outset:\s*0;/u, /border-image-repeat:\s*stretch;/u,
     /border-image-slice:\s*100%;/u, /border-image-source:\s*none;/u, /border-image-width:\s*1;/u,
     /border-radius:\s*var\(--radius-lg\);/u,
@@ -5300,7 +5317,7 @@ function requireFieldAndSelectContract(
     [
       /border-color:\s*var\(--ui-ring\);/u,
       /border-color:\s*canvastext;/u,
-      /box-shadow:\s*0 0 0 3px color-mix\(in oklch,\s*var\(--ui-ring\) 24%,\s*transparent\);/u,
+      /box-shadow:\s*0 0 0 3px color-mix\(in srgb,\s*var\(--ui-ring\) 24%,\s*transparent\);/u,
       /box-shadow:\s*none;/u,
       /outline-color:\s*var\(--ui-ring\);/u,
       /outline-color:\s*highlight;/u,
@@ -5370,7 +5387,7 @@ function requireFieldAndSelectContract(
     [
       /border-color:\s*canvastext;/u,
       /border-color:\s*var\(--ui-ring\);/u,
-      /box-shadow:\s*0 0 0 3px color-mix\(in oklch,\s*var\(--ui-ring\) 24%,\s*transparent\);/u,
+      /box-shadow:\s*0 0 0 3px color-mix\(in srgb,\s*var\(--ui-ring\) 24%,\s*transparent\);/u,
       /outline-color:\s*var\(--ui-ring\);/u,
       /outline-offset:\s*2px;/u,
       /outline-style:\s*solid;/u,
@@ -6805,7 +6822,7 @@ requireMatch(
 );
 const quietSiteDeclarations = [
   [/align-items:\s*center;/u, "quiet-site footer alignment"],
-  [/border-top-color:\s*var\(--ui-border\);/u, "quiet-site footer border color"],
+  [/border-top-color:\s*var\(--ui-divider\);/u, "quiet-site footer border color"],
   [/border-top-style:\s*solid;/u, "quiet-site footer border style"],
   [/border-top-width:\s*1px;/u, "quiet-site footer border width"],
   [/box-sizing:\s*border-box;/u, "quiet-site border-box sizing"],
@@ -7060,6 +7077,12 @@ requireIndicatorAndKnobContract(
 );
 
 const dataTableGuardMap = dataTableCompiledStyleMap(compiledJavaScript);
+for (const key of DATA_TABLE_STYLE_KEYS) for (const { condition, declaration } of DATA_TABLE_CONDITIONAL_DECLARATIONS[key] ?? []) {
+  for (const mutation of ["remove", "relocate"] as const) assert.throws(
+    () => requireDataTableContract(legacyComponents, mutateCompiledRule(compiledCss, dataTableGuardMap, key, declaration, mutation, condition), compiledJavaScript, dataDisplaySource, dataTableStyleSource),
+    /DataTable|dataTableStyles/u, `DataTable ${key} rejects ${mutation} of forced-colors paint`,
+  );
+}
 const reversedDataTableWrapperRecipe = replaceExactlyOnce(
   dataDisplaySource,
   /stylex\.props\(\s*dataTableStyles\.wrapper,\s*wrapperXstyle,?\s*\)/u,
@@ -8255,7 +8278,7 @@ const nativePressableCardHoverRule = cssRules(
   "dist/stylex.css",
 ).find((rule) =>
   /:hover(?![A-Za-z0-9_-])/u.test(rule.header)
-  && /border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 35%,var\(--ui-border\)\);/u.test(
+  && /border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 24%,var\(--ui-surface-edge\)\);/u.test(
     rule.body,
   )
 );

@@ -19,9 +19,20 @@ repository_scopes:
 
 Hraness UI publishes portable accessible primitives, finite semantic variants, tokens, reset rules, and framework-neutral router integration. Native semantics and React Aria behavior are the interaction contract. Products own their layout, content, application state, data access, and local visual specification.
 
-The design seam is directional. `@hraness/ui` is the primitive layer. Consumers may add an immutable `@hraness/design-kit` release for stable presentation compositions, then keep final product composition in the product. Never create a dependency from UI back to design-kit or to a product.
+The design seam is directional. `@hraness/ui` is the primitive layer. Consumers may add an immutable `@hraness/design-kit` release for stable presentation compositions, then keep final product composition in the product. Never create a runtime dependency from UI back to design-kit or to a product; design-kit itself peer-declares UI. Shared authored data still flows one way through a development-time design-kit pin that feeds generators vendoring committed modules into UI. `AskAiAboutThis` carries its provider marks this way, and the freshness check fails if the vendored copy drifts from the pinned registry.
 
 Consumers pin reviewed immutable releases or full commits and validate upgrades on their own schedule. Do not use sibling paths, Git submodules, or coordinated `main` workflows. Add a shared primitive only after two concrete consumers need the same stable interface. Keep Direct workbenches development-only. Freeze public interfaces before parallel work and give inventories, manifests, locks, generated artifacts, and release convergence surfaces one owner.
+
+Runtime dependency ranges also affect fresh consumers: the repository lockfile
+does not constrain another project's dependency resolution. UI pins
+`@hugeicons/core-free-icons` to `4.2.3`, whose published archive resolves its ESM
+imports with exact filename casing. The `4.3.4` archive has six grid-icon import
+paths whose filenames use an uppercase `X`, such as `Grid2X2CheckIcon.js` instead
+of the imported `Grid2x2CheckIcon.js`, so Node cannot import it on a case-sensitive
+filesystem. The earlier `^4.2.2` range admitted that broken release even while
+UI's own lockfile retained `4.2.3`. Any future icon upgrade must qualify the
+published archive and fresh packed-package Node import on Linux before widening
+or replacing this pin.
 
 Compiler compatibility is also an explicit package contract. The Next adapter
 qualifies exactly 16.2.12 and 16.3.3, with 16.2.12 retained as the default.

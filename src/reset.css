@@ -29,7 +29,8 @@ body {
   background: var(--ui-background);
   color: var(--ui-foreground);
   font-family: var(--ui-font-sans);
-  font-size: 16px;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   font-synthesis: none;
   font-variant-ligatures: common-ligatures contextual;
   -webkit-font-smoothing: antialiased;
@@ -45,6 +46,9 @@ samp {
 
 :where(h1, h2, h3, h4, h5, h6) {
   font-family: var(--ui-font-heading);
+  line-height: var(--leading-heading);
+  letter-spacing: var(--tracking-heading);
+  text-wrap: balance;
 }
 
 button,
@@ -81,7 +85,7 @@ a {
 }
 
 ::selection {
-  background: color-mix(in oklch, var(--ui-primary) 28%, transparent);
+  background: color-mix(in srgb, var(--ui-primary) 28%, transparent);
   color: var(--ui-foreground);
 }
 

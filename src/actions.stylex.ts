@@ -75,6 +75,7 @@ export const actionStyles = stylex.create({
     display: "inline-grid",
   },
   danger: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: "var(--ui-destructive)",
     color: "var(--ui-destructive-foreground)",
   },
@@ -87,7 +88,7 @@ export const actionStyles = stylex.create({
   },
   focusVisible: {
     boxShadow:
-      "0 0 0 4px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+      "0 0 0 4px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
     outlineColor: "var(--ui-ring)",
     outlineOffset: "2px",
     outlineStyle: "solid",
@@ -223,6 +224,7 @@ export const actionStyles = stylex.create({
     width: "1.5rem",
   },
   labeledDanger: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: {
       default: "var(--ui-destructive)",
       [forcedColors]: "ButtonFace",
@@ -233,6 +235,7 @@ export const actionStyles = stylex.create({
     },
   },
   labeledPrimary: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: {
       default: "var(--ui-primary)",
       [forcedColors]: "ButtonFace",
@@ -243,6 +246,7 @@ export const actionStyles = stylex.create({
     },
   },
   labeledQuiet: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: {
       default: "var(--ui-background)",
       [forcedColors]: "ButtonFace",
@@ -257,6 +261,7 @@ export const actionStyles = stylex.create({
     },
   },
   labeledSecondary: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: {
       default: "var(--ui-secondary)",
       [forcedColors]: "ButtonFace",
@@ -309,7 +314,7 @@ export const actionStyles = stylex.create({
     },
     ":focus-visible": {
       boxShadow:
-        "0 0 0 4px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+        "0 0 0 4px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
       outlineColor: "var(--ui-ring)",
       outlineOffset: "2px",
       outlineStyle: "solid",
@@ -369,7 +374,7 @@ export const actionStyles = stylex.create({
   nativeInlineInteractionFallbacks: {
     ":focus-visible": {
       boxShadow:
-        "0 0 0 4px color-mix(in oklch, var(--ui-ring) 24%, transparent)",
+        "0 0 0 4px color-mix(in srgb, var(--ui-ring) 24%, transparent)",
       outlineColor: "var(--ui-ring)",
       outlineOffset: "2px",
       outlineStyle: "solid",
@@ -422,10 +427,12 @@ export const actionStyles = stylex.create({
     transform: "translateY(1px)",
   },
   primary: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: "var(--ui-primary)",
     color: "var(--ui-primary-foreground)",
   },
   quiet: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: "var(--ui-background)",
     borderColor: {
       default: "var(--ui-input)",
@@ -439,6 +446,7 @@ export const actionStyles = stylex.create({
     verticalAlign: "middle",
   },
   secondary: {
+    boxShadow: "var(--elevation-low)",
     backgroundColor: "var(--ui-secondary)",
     color: "var(--ui-secondary-foreground)",
   },
@@ -461,18 +469,18 @@ export const actionStyles = stylex.create({
     animationIterationCount: "infinite",
     animationTimingFunction: "linear",
     borderBlockEndColor:
-      "color-mix(in oklch, currentColor 25%, transparent)",
+      "color-mix(in srgb, currentColor 25%, transparent)",
     borderBlockEndStyle: "solid",
     borderBlockEndWidth: "0.125em",
     borderBlockStartColor: "currentColor",
     borderBlockStartStyle: "solid",
     borderBlockStartWidth: "0.125em",
     borderInlineEndColor:
-      "color-mix(in oklch, currentColor 25%, transparent)",
+      "color-mix(in srgb, currentColor 25%, transparent)",
     borderInlineEndStyle: "solid",
     borderInlineEndWidth: "0.125em",
     borderInlineStartColor:
-      "color-mix(in oklch, currentColor 25%, transparent)",
+      "color-mix(in srgb, currentColor 25%, transparent)",
     borderInlineStartStyle: "solid",
     borderInlineStartWidth: "0.125em",
     borderRadius: "var(--radius-round)",

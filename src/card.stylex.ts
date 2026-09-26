@@ -3,14 +3,14 @@ import * as stylex from "@stylexjs/stylex";
 const forcedColors = "@media(forced-colors: active)";
 
 const hoveredBorder =
-  "color-mix(in oklch, var(--ui-primary) 35%, var(--ui-border))";
+  "color-mix(in oklch, var(--ui-primary) 24%, var(--ui-surface-edge))";
 
 export const cardStyles = stylex.create({
   accent: {
     backgroundColor: "var(--ui-accent)",
     borderColor: {
       default:
-        "color-mix(in oklch, var(--ui-primary) 28%, var(--ui-border))",
+        "color-mix(in oklch, var(--ui-primary) 14%, var(--ui-surface-edge))",
       [forcedColors]: "CanvasText",
     },
     color: "var(--ui-accent-foreground)",
@@ -21,7 +21,7 @@ export const cardStyles = stylex.create({
   cardDescription: {
     color: "var(--hraness-card-description)",
     fontSize: "var(--text-label)",
-    lineHeight: 1.5,
+    lineHeight: "var(--leading-label)",
   },
   cardFooter: {
     alignItems: "center",
@@ -45,7 +45,7 @@ export const cardStyles = stylex.create({
     color: "inherit",
     fontSize: "var(--text-heading)",
     fontWeight: "var(--font-weight-bold)",
-    lineHeight: 1.2,
+    lineHeight: "var(--leading-heading)",
   },
   focusVisible: {
     outlineColor: "var(--ui-ring)",
@@ -115,7 +115,7 @@ export const cardStyles = stylex.create({
   surface: {
     backgroundColor: "var(--ui-card)",
     borderColor: {
-      default: "var(--ui-border)",
+      default: "var(--ui-surface-edge)",
       [forcedColors]: "CanvasText",
     },
     borderRadius: "var(--radius-lg)",

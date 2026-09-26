@@ -13,7 +13,7 @@ export const menuStyles = stylex.create({
     paddingBottom: "var(--space-2)", paddingTop: "var(--space-2)",
     paddingLeft: "var(--space-3)", paddingRight: "var(--space-3)",
     "border-block-start-width": "1px", "border-block-start-style": "solid",
-    "border-block-start-color": "var(--ui-border)",
+    "border-block-start-color": "var(--ui-divider)",
     color: "var(--ui-muted-foreground)", fontSize: "var(--text-caption)",
   },
   header: {
@@ -54,7 +54,7 @@ export const menuStyles = stylex.create({
     zIndex: "var(--z-tooltip)", maxWidth: "min(24rem, calc(100vw - 2rem))",
     borderWidth: "1px", borderStyle: "solid",
     borderImageOutset: 0, borderImageRepeat: "stretch", borderImageSlice: "100%", borderImageSource: "none", borderImageWidth: 1,
-    borderColor: { default: "var(--ui-border)", [forcedColors]: "CanvasText" },
+    borderColor: { default: "var(--ui-surface-edge)", [forcedColors]: "CanvasText" },
     borderRadius: "var(--radius-lg)", outlineColor: "currentColor", outlineStyle: "none", outlineWidth: "medium",
     backgroundAttachment: "scroll", backgroundClip: "border-box", backgroundColor: "var(--ui-popover)",
     backgroundImage: "none", backgroundOrigin: "padding-box", backgroundPosition: "0% 0%",

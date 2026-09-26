@@ -1,6 +1,6 @@
 {
   "name": "@hraness/ui",
-  "version": "0.5.15",
+  "version": "0.5.19",
   "description": "Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.",
   "license": "MIT",
   "type": "module",
@@ -86,6 +86,7 @@
     "build/vite.ts",
     "build/vite-source-maps.ts",
     "dist",
+    "src/ask-ai-marks.generated.ts",
     "src/ask-ai.stylex.ts",
     "src/ask-ai.tsx",
     "src/actions.stylex.ts",
@@ -157,6 +158,8 @@
   ],
   "scripts": {
     "build": "bun run ./scripts/build-package.ts",
+    "check:ask-ai-marks": "bun run ./scripts/sync-ask-ai-marks.ts",
+    "generate:ask-ai-marks": "bun run ./scripts/sync-ask-ai-marks.ts --write",
     "check:committed-dist": "bun run ./scripts/check-committed-dist.ts",
     "check:portfolio-inventory": "bun ./scripts/check-portfolio-inventory.ts",
     "check:stylex-artifacts": "bun run ./scripts/check-stylex-artifacts.ts",
@@ -176,11 +179,11 @@
     "kb:check:lane": "bunx --bun github:hraness/kb#v0.15.1 check --root kb --no-catalog",
     "kb:check": "bunx --bun github:hraness/kb#v0.15.1 check --root kb && bunx --bun github:hraness/kb#v0.15.1 agents check --root kb --repo .",
     "kb:catalog": "bunx --bun github:hraness/kb#v0.15.1 catalog --root kb",
-    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:vite-custody && bun run test:vite78-adopter && bun run test:next-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser",
+    "check": "bun run check:portfolio-inventory && bun run check:ask-ai-marks && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:vite-custody && bun run test:vite78-adopter && bun run test:next-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser",
     "prepack": "bun run check"
   },
   "dependencies": {
-    "@hugeicons/core-free-icons": "^4.2.2",
+    "@hugeicons/core-free-icons": "4.2.3",
     "@hugeicons/react": "^1.1.9",
     "@stylexjs/stylex": "0.19.0",
     "clsx": "^2.1.1",
@@ -232,6 +235,7 @@
   },
   "devDependencies": {
     "@babel/core": "7.29.7",
+    "@hraness/design-kit": "github:hraness/design-kit#v0.18.1",
     "@stylexjs/babel-plugin": "0.19.0",
     "@stylexjs/unplugin": "0.19.0",
     "@types/babel__core": "7.20.5",

@@ -52,7 +52,7 @@ export const dialogStyles = stylex.create({
   footer: {
     display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "var(--space-2)",
     paddingTop: "var(--space-4)", paddingBottom: "var(--space-4)", paddingLeft: "var(--space-6)", paddingRight: "var(--space-6)",
-    "border-block-start-width": "1px", "border-block-start-style": "solid", "border-block-start-color": "var(--ui-border)",
+    "border-block-start-width": "1px", "border-block-start-style": "solid", "border-block-start-color": { default: "var(--ui-surface-edge)", [forcedColors]: "CanvasText" },
     backgroundAttachment: "scroll", backgroundClip: "border-box", backgroundColor: "var(--ui-muted)",
     backgroundImage: "none", backgroundOrigin: "padding-box", backgroundPosition: "0% 0%", backgroundRepeat: "repeat", backgroundSize: "auto auto",
   },
@@ -65,7 +65,7 @@ export const dialogStyles = stylex.create({
     position: "fixed", zIndex: "var(--z-modal)", top: 0, right: 0, bottom: 0, left: 0,
     display: "grid", paddingTop: "var(--space-4)", paddingBottom: "var(--space-4)", paddingLeft: "var(--space-4)", paddingRight: "var(--space-4)",
     alignItems: "center", justifyItems: "center", overflowY: "auto",
-    backgroundAttachment: "scroll", backgroundClip: "border-box", backgroundColor: "color-mix(in oklch, black 55%, transparent)",
+    backgroundAttachment: "scroll", backgroundClip: "border-box", backgroundColor: "color-mix(in srgb, black 55%, transparent)",
     backgroundImage: "none", backgroundOrigin: "padding-box", backgroundPosition: "0% 0%", backgroundRepeat: "repeat", backgroundSize: "auto auto",
     overscrollBehaviorX: "contain", overscrollBehaviorY: "contain",
   },
@@ -80,7 +80,7 @@ export const dialogStyles = stylex.create({
   root: {
     position: "relative", display: "grid", width: "min(32rem, 100%)", maxHeight: "min(42rem, calc(100dvh - 2rem))",
     overflowX: "hidden", overflowY: "hidden", borderWidth: "1px", borderStyle: "solid",
-    borderColor: { default: "var(--ui-border)", [forcedColors]: "CanvasText" },
+    borderColor: { default: "var(--ui-surface-edge)", [forcedColors]: "CanvasText" },
     borderImageOutset: 0, borderImageRepeat: "stretch", borderImageSlice: "100%", borderImageSource: "none", borderImageWidth: 1,
     borderRadius: "var(--radius-lg)", outlineColor: "currentColor", outlineStyle: "none", outlineWidth: "medium",
     backgroundAttachment: "scroll", backgroundClip: "border-box", backgroundColor: "var(--ui-card)",
@@ -89,5 +89,5 @@ export const dialogStyles = stylex.create({
   },
   rootLarge: { width: "min(48rem, 100%)" },
   rootSmall: { width: "min(24rem, 100%)" },
-  title: { color: "var(--ui-card-foreground)", fontSize: "var(--text-heading)", fontWeight: "var(--font-weight-bold)", lineHeight: 1.2 },
+  title: { color: "var(--ui-card-foreground)", fontSize: "var(--text-heading)", fontWeight: "var(--font-weight-bold)", lineHeight: "var(--leading-heading)" },
 });
