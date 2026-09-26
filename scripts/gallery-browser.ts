@@ -12326,6 +12326,9 @@ async function indicatorKnobEvidence(page: Page) {
       foreground: resolveStyle("stroke", "var(--ui-foreground)"),
       muted: resolveStyle("background-color", "var(--ui-muted)"),
       primary: resolveStyle("background-color", "var(--ui-primary)"),
+      roundRadius: Number.parseFloat(
+        resolveStyle("border-radius", "var(--radius-round)"),
+      ),
       secondary: resolveStyle("background-color", "var(--ui-secondary)"),
       warning: resolveStyle("border-color", "var(--ui-warning)"),
     };
@@ -12562,6 +12565,7 @@ async function indicatorKnobEvidence(page: Page) {
           && hasGeneratedClass(fill),
         thumbHeight: thumbBox.height,
         thumbBackgroundImage: thumbStyle.backgroundImage,
+        thumbBorderRadius: Number.parseFloat(thumbStyle.borderRadius),
         thumbIndicatorBackground: thumbIndicatorStyle.backgroundColor,
         thumbIndicatorBackgroundImage: thumbIndicatorStyle.backgroundImage,
         thumbIndicatorBorderColor: thumbIndicatorStyle.borderColor,
@@ -12856,6 +12860,7 @@ function verifyIndicatorKnobEvidence(
       && slider.fillSentinel === "legacy"
       && slider.thumbSentinel === "legacy"
       && slider.thumbBackgroundImage === "none"
+      && nearlyEqual(slider.thumbBorderRadius, evidence.tokens.roundRadius)
       && slider.thumbIndicatorSentinel === "legacy"
       && slider.thumbIndicatorBackground === evidence.tokens.background
       && slider.thumbIndicatorBackgroundImage === "none"
@@ -12920,6 +12925,7 @@ function verifyIndicatorKnobEvidence(
       && knob.rootSentinel === "legacy"
       && knob.controlPosition === "relative"
       && knob.controlSentinel === "legacy"
+      && knob.controlBorderRadius > 0
       && nearlyEqual(knob.controlHeight, 48)
       && nearlyEqual(knob.controlWidth, 48)
       && knob.dialSentinel === "legacy"

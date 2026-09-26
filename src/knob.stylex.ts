@@ -23,6 +23,7 @@ export const knobStyles = stylex.create({
     },
   },
   control: {
+    borderRadius: "var(--radius-round)",
     cursor: "grab",
     height: {
       default: "3rem",
