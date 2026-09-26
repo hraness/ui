@@ -789,6 +789,9 @@ test("transport actions and slider thumbs use their compiled shared geometry", a
   expect(indicators).toContain('sliderThumbHorizontal: {\n    top: "50%"');
   expect(indicators).toContain('sliderThumbVertical: {\n    left: "50%"');
   expect(indicators).toContain(
+    'borderColor: "currentColor",\n    borderRadius: "var(--radius-round)",',
+  );
+  expect(indicators).toContain(
     'default: "max(1.25rem, var(--hraness-slider-coarse-min, 0px))"',
   );
   expect(indicators).toContain(
@@ -820,7 +823,9 @@ test("knob densities keep a 48px gesture target and distinct dial sizes", async 
   ]);
 
   expect(components).not.toMatch(/\.hraness-knob(?![A-Za-z0-9_-])/u);
-  expect(knob).toContain('control: {\n    cursor: "grab"');
+  expect(knob).toContain(
+    'control: {\n    borderRadius: "var(--radius-round)",\n    cursor: "grab"',
+  );
   expect(knob).toContain('default: "3rem"');
   expect(knob).toContain(
     '[coarsePointer]: "max(3rem, var(--interactive-target-min))"',

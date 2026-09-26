@@ -108,6 +108,7 @@ export const indicatorStyles = stylex.create({
     backgroundRepeat: "repeat",
     backgroundSize: "auto auto",
     borderColor: "currentColor",
+    borderRadius: "var(--radius-round)",
     borderImageOutset: 0,
     borderImageRepeat: "stretch",
     borderImageSlice: "100%",
