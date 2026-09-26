@@ -11,7 +11,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.18"
+    "@hraness/ui": "github:hraness/ui#v0.5.19"
   }
 }
 ```
@@ -375,9 +375,12 @@ import { AskAiAboutThis } from "@hraness/ui";
 ```
 
 `AskAiAboutThis` renders the visible label “Ask AI about this” followed by real
-outbound links to ChatGPT, Claude, Perplexity, and Grok. Each provider receives
-the minimal prompt `Tell me about https://hraness.com/stripe`, including the
-literal full URL. The component has no client state or framework dependency,
+outbound links to ChatGPT, Claude, Perplexity, and Grok. Each link carries the
+provider's accent-tinted mark, vendored from the shared `@hraness/design-kit`
+provider-mark registry at build time with a committed freshness check; the
+package itself still installs nothing from that repository. Each provider
+receives the minimal prompt `Tell me about https://hraness.com/stripe`, including
+the literal full URL. The component has no client state or framework dependency,
 works in server-rendered layouts, wraps on narrow surfaces, and rejects
 relative, non-HTTPS, credentialed, or malformed subject URLs.
 

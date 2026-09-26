@@ -5,6 +5,14 @@
     font: inherit;
   }
 
+  .x10a8y8t {
+    inset: 0;
+  }
+
+  .x1bpp3o7 {
+    margin: auto;
+  }
+
   .x1732f5w {
     padding: 0 !important;
   }
@@ -109,6 +117,10 @@
 
   .xzfhy1j {
     border-color: var(--ui-surface-edge);
+  }
+
+  .x13qx2rk {
+    border-radius: 26%;
   }
 
   .x1pjcqnp {
@@ -233,6 +245,10 @@
 
   .xvueqy4 {
     margin-inline: auto;
+  }
+
+  .xut973x {
+    outline: 1px solid color-mix(in srgb,var(--_ask-ai-accent) 28%,transparent);
   }
 
   .xysyzu8 {
@@ -394,6 +410,10 @@
 
     .x3i8w7j.x3i8w7j {
       border-width: 1px;
+    }
+
+    .x13z5bmq.x13z5bmq {
+      outline: 1px solid buttonborder;
     }
 
     .x36b5vz.x36b5vz:focus-visible, .xz97hxr.xz97hxr:focus-within, .xk5x9zm.xk5x9zm:hover {
@@ -559,6 +579,10 @@
     appearance: none;
   }
 
+  .x1plog1 {
+    aspect-ratio: 1;
+  }
+
   .x1fdtg7e {
     background-attachment: scroll;
   }
@@ -593,6 +617,10 @@
 
   .xxxkwf1 {
     background-color: #0000008c;
+  }
+
+  .xw105g5 {
+    background-color: color-mix(in srgb,var(--_ask-ai-accent) 14%,var(--ui-background));
   }
 
   .xjbqb8w {
@@ -681,6 +709,10 @@
 
   .x107vin7 {
     background-color: var(--ui-warning);
+  }
+
+  .xt1chv0 {
+    background-image: linear-gradient(180deg,#ffffff3d,transparent 48%),linear-gradient(160deg,color-mix(in srgb,var(--_ask-ai-accent) 26%,transparent),color-mix(in srgb,var(--_ask-ai-accent) 6%,transparent) 74%);
   }
 
   .xj3ykqi {
@@ -857,6 +889,10 @@
 
   .x1heor9g {
     color: inherit;
+  }
+
+  .xufo5hn {
+    color: var(--lightningcss-light, color-mix(in srgb,var(--_ask-ai-accent) 78%,black)) var(--lightningcss-dark, color-mix(in srgb,var(--_ask-ai-accent) 55%,white));
   }
 
   .x1gz3zd9 {
@@ -1277,6 +1313,10 @@
 
   .xk8u384 {
     outline-color: var(--ui-ring);
+  }
+
+  .x1g40iwv {
+    outline-offset: -1px;
   }
 
   .x2ssjo2 {
@@ -1945,6 +1985,10 @@
       color: highlight;
     }
 
+    .x15ldeyv.x15ldeyv {
+      display: none;
+    }
+
     .x1wdx1ck.x1wdx1ck {
       fill: canvas;
     }
@@ -2138,6 +2182,14 @@
 
   .x1pizb70 {
     height: 3rem;
+  }
+
+  .x1f6yev3 {
+    height: 64%;
+  }
+
+  .x1n6l62j {
+    height: 68%;
   }
 
   .x17frcva {
@@ -2572,6 +2624,10 @@
     width: .625rem;
   }
 
+  .xsk17dz {
+    width: 1.125rem;
+  }
+
   .xwqq7k2 {
     width: 1.25rem;
   }
@@ -2618,6 +2674,14 @@
 
   .xw63694 {
     width: 40% !important;
+  }
+
+  .x1endk3i {
+    width: 64%;
+  }
+
+  .x19app5s {
+    width: 68%;
   }
 
   .x14atkfc {

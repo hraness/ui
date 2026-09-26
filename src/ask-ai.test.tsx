@@ -109,7 +109,14 @@ test("AskAiAboutThis renders deterministic accessible server markup and real anc
   }
 
   expect(html.match(/data-slot="ask-ai-about-this-icon"/gu)).toHaveLength(4);
-  expect(html.match(/aria-hidden="true"/gu)).toHaveLength(4);
+  // Each link carries a decorative tile plus its glyph, and color artwork
+  // when the registry publishes it (OpenAI and xAI ship glyph-only).
+  expect(html.match(/aria-hidden="true"/gu)).toHaveLength(10);
+  for (const accent of ["#0f1014", "#d97757", "#22b8cd", "#1a1a1a"]) {
+    expect(html).toContain(`--_ask-ai-accent:${accent}`);
+  }
+  expect(html.match(/__icon-glyph/gu)).toHaveLength(4);
+  expect(html.match(/__icon-art/gu)).toHaveLength(2);
   for (const label of ["ChatGPT", "Claude", "Perplexity", "Grok"]) {
     expect(html).toContain(label);
   }

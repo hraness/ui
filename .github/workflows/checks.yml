@@ -35,6 +35,7 @@ jobs:
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run check:portfolio-inventory
+      - run: bun run check:ask-ai-marks
       - run: bun run typecheck
       - run: bun run build
       - run: bun run check:committed-dist

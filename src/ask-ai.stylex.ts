@@ -4,9 +4,53 @@ const coarsePointer = "@media(pointer: coarse)";
 const forcedColors = "@media(forced-colors: active)";
 
 export const askAiStyles = stylex.create({
+  // A soft accent-tinted tile carrying the provider mark. The color art
+  // overlays the currentColor glyph, so forced-colors mode hides the art and
+  // keeps a system-colored glyph. `--_ask-ai-accent` is set per provider.
   icon: {
-    display: "block",
+    alignItems: "center",
+    aspectRatio: "1",
+    backgroundColor: {
+      default:
+        "color-mix(in srgb, var(--_ask-ai-accent) 14%, var(--ui-background))",
+      [forcedColors]: "Canvas",
+    },
+    backgroundImage: {
+      default:
+        "linear-gradient(180deg, color-mix(in srgb, white 24%, transparent), transparent 48%), linear-gradient(160deg, color-mix(in srgb, var(--_ask-ai-accent) 26%, transparent), color-mix(in srgb, var(--_ask-ai-accent) 6%, transparent) 74%)",
+      [forcedColors]: "none",
+    },
+    borderRadius: "26%",
+    boxSizing: "border-box",
+    color:
+      "light-dark(color-mix(in srgb, var(--_ask-ai-accent) 78%, black), color-mix(in srgb, var(--_ask-ai-accent) 55%, white))",
+    display: "inline-flex",
     flex: "0 0 auto",
+    inlineSize: "1.125rem",
+    justifyContent: "center",
+    outline: {
+      default:
+        "1px solid color-mix(in srgb, var(--_ask-ai-accent) 28%, transparent)",
+      [forcedColors]: "1px solid ButtonBorder",
+    },
+    outlineOffset: "-1px",
+    position: "relative",
+  },
+  iconGlyph: {
+    blockSize: "64%",
+    display: "inline-flex",
+    inlineSize: "64%",
+  },
+  iconArt: {
+    blockSize: "68%",
+    display: {
+      default: "inline-flex",
+      [forcedColors]: "none",
+    },
+    inlineSize: "68%",
+    inset: "0",
+    margin: "auto",
+    position: "absolute",
   },
   label: {
     color: "var(--ui-muted-foreground)",
