@@ -1,6 +1,6 @@
 # @hraness/ui
 
-Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.
+Accessible React components built on React Aria, with compiled StyleX styles and CSS theme tokens.
 
 `@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives with small fixed sets of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
 
