@@ -1,7 +1,7 @@
 {
   "name": "@hraness/ui",
   "version": "0.5.20",
-  "description": "Accessible product-neutral React Aria primitives with compiled StyleX recipes and portable CSS tokens.",
+  "description": "Accessible React components built on React Aria, with compiled StyleX styles and CSS theme tokens.",
   "license": "MIT",
   "type": "module",
   "sideEffects": [
