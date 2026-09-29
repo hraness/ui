@@ -87,6 +87,36 @@ test("a standalone Disclosure and a whole Accordion leave outer edges to their c
   expect(new Set(disclosureClasses).size).toBe(1);
 });
 
+test("a Disclosure trigger reads as a control without depending on a separator", () => {
+  const trigger = compiledRules(stylex.props(collectionStyles.disclosureTrigger).className)
+    .filter(({ condition }) => condition === "")
+    .map(({ declarations }) => declarations)
+    .join(" ");
+  const indicator = compiledRules(stylex.props(collectionStyles.disclosureIndicator).className)
+    .filter(({ condition }) => condition === "")
+    .map(({ declarations }) => declarations)
+    .join(" ");
+  const hovered = compiledRules(stylex.props(collectionStyles.disclosureTitleHovered).className)
+    .map(({ declarations }) => declarations)
+    .join(" ");
+
+  // The indicator follows the title instead of sitting at the far inline edge,
+  // where a muted or small title would lose its only link to the control.
+  expect(trigger).toMatch(/justify-content:\s*flex-start;/u);
+  expect(trigger).not.toMatch(/space-between/u);
+  expect(trigger).toMatch(/cursor:\s*pointer;/u);
+  // It never shrinks below body size, even inside caption-sized triggers.
+  expect(indicator).toMatch(/font-size:\s*max\(1em,\s*var\(--text-body\)\);/u);
+  expect(indicator).toMatch(/color:\s*var\(--ui-primary\);/u);
+  expect(hovered).toMatch(/text-decoration-line:\s*underline;/u);
+
+  const html = renderToStaticMarkup(<Disclosure title="More ways to narrow">Body</Disclosure>);
+  // The indicator stays adjacent to the title in document order.
+  expect(html).toMatch(
+    /data-slot="disclosure-title"[^>]*>More ways to narrow<\/span><span aria-hidden="true"[^>]*data-slot="disclosure-indicator"/u,
+  );
+});
+
 type Row = Readonly<{ id: string; name: string }>;
 const columns = [
   { cell: (row) => row.name, header: "Name", id: "name" },

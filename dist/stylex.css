@@ -1071,6 +1071,10 @@
     font-size: inherit;
   }
 
+  .xi28kt9 {
+    font-size: max(1em,var(--text-body));
+  }
+
   .x1n56hm7 {
     font-size: var(--text-body);
   }
@@ -1461,6 +1465,18 @@
 
   .x1yc453h {
     text-align: start;
+  }
+
+  .x5gd9ij {
+    text-decoration-color: currentColor;
+  }
+
+  .xkrqix3 {
+    text-decoration-line: none;
+  }
+
+  .xujl8zx {
+    text-decoration-line: underline;
   }
 
   .xyi4chj {

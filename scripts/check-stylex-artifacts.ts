@@ -356,6 +356,7 @@ const COLLECTION_STYLE_KEYS = [
   "disclosurePanelHidden",
   "disclosureRoot",
   "disclosureTitle",
+  "disclosureTitleHovered",
   "disclosureTrigger",
   "disclosureTriggerCompact",
   "disclosureTriggerFocusVisible",

@@ -278,28 +278,35 @@ export function Disclosure({
               data-slot="disclosure-trigger"
               slot="trigger"
             >
-              <span
-                className={cn(
-                  "hraness-disclosure__title",
-                  stylex.props(collectionStyles.disclosureTitle).className,
-                )}
-                data-slot="disclosure-title"
-              >
-                {title}
-              </span>
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "hraness-disclosure__indicator",
-                  stylex.props(
-                    collectionStyles.disclosureIndicator,
-                    isExpanded && collectionStyles.disclosureIndicatorExpanded,
-                  ).className,
-                )}
-                data-slot="disclosure-indicator"
-              >
-                {indicator}
-              </span>
+              {({ isHovered }) => (
+                <>
+                  <span
+                    className={cn(
+                      "hraness-disclosure__title",
+                      stylex.props(
+                        collectionStyles.disclosureTitle,
+                        isHovered && collectionStyles.disclosureTitleHovered,
+                      ).className,
+                    )}
+                    data-slot="disclosure-title"
+                  >
+                    {title}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "hraness-disclosure__indicator",
+                      stylex.props(
+                        collectionStyles.disclosureIndicator,
+                        isExpanded && collectionStyles.disclosureIndicatorExpanded,
+                      ).className,
+                    )}
+                    data-slot="disclosure-indicator"
+                  >
+                    {indicator}
+                  </span>
+                </>
+              )}
             </AriaButton>
           </Heading>
           <AriaDisclosurePanel

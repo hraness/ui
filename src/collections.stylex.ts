@@ -7,6 +7,9 @@ const syntheticCoarseMinimum = "var(--hraness-collection-coarse-min, 0px)";
 // Disclosure sibling, never an outer edge. The surrounding container owns its
 // own edges, so a divider can never stack against a container border.
 const followedByDisclosure = ":has(+ [data-slot=disclosure])";
+// Because a lone Disclosure has no rule of its own, its trigger must read as a
+// control without one: the indicator sits right after the title at body size
+// or larger, in the interactive color, and the title underlines on hover.
 
 export const collectionStyles = stylex.create({
   disclosureHeading: {
@@ -21,7 +24,10 @@ export const collectionStyles = stylex.create({
     marginInline: 0,
   },
   disclosureIndicator: {
+    color: "var(--ui-primary)",
     flex: "0 0 auto",
+    fontSize: "max(1em, var(--text-body))",
+    lineHeight: 1,
     transitionProperty: "transform",
     transitionDuration: "var(--motion-duration-standard)",
     transitionTimingFunction: "var(--motion-easing-emphasized)",
@@ -48,6 +54,13 @@ export const collectionStyles = stylex.create({
   disclosureTitle: {
     minWidth: 0,
     overflowWrap: "anywhere",
+    textDecorationColor: "currentColor",
+    textDecorationLine: "none",
+    textDecorationThickness: "1px",
+    textUnderlineOffset: "0.2em",
+  },
+  disclosureTitleHovered: {
+    textDecorationLine: "underline",
   },
   disclosureTrigger: {
     alignItems: "center",
@@ -55,10 +68,11 @@ export const collectionStyles = stylex.create({
     borderStyle: "none",
     borderWidth: 0,
     color: "var(--ui-foreground)",
+    cursor: "pointer",
     display: "flex",
     fontWeight: "var(--font-weight-medium)",
-    gap: "var(--space-4)",
-    justifyContent: "space-between",
+    gap: "var(--space-2)",
+    justifyContent: "flex-start",
     minHeight: {
       default: `max(var(--interactive-target-min), ${syntheticCoarseMinimum})`,
       [coarsePointer]: "var(--interactive-target-min)",

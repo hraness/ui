@@ -179,7 +179,7 @@ const PACKAGE_MOTION_RUNTIME_STYLE_KEYS = [
 const PACKAGE_COLLECTION_STYLE_KEYS = [
   "disclosureHeading", "disclosureIndicator",
   "disclosureIndicatorExpanded", "disclosurePanel", "disclosurePanelHidden",
-  "disclosureRoot", "disclosureTitle", "disclosureTrigger",
+  "disclosureRoot", "disclosureTitle", "disclosureTitleHovered", "disclosureTrigger",
   "disclosureTriggerCompact", "disclosureTriggerFocusVisible",
   "disclosureTriggerLarge", "disclosureTriggerNativeFocusFallback",
   "segmentedControlRoot", "segmentedControlRootCompact", "segmentedIndicator",
