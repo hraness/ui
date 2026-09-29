@@ -1,6 +1,9 @@
 import * as stylex from "@stylexjs/stylex";
 
 const forcedColors = "@media(forced-colors: active)";
+// The bordered wrapper owns the table's outer edge, so the final body row
+// draws no divider that would stack against it.
+const finalBodyRowCell = ":is(tbody > tr:last-child > *)";
 
 export const dataTableStyles = stylex.create({
   alignCenter: {
@@ -24,7 +27,10 @@ export const dataTableStyles = stylex.create({
       [forcedColors]: "CanvasText",
     },
     "border-block-end-style": "solid",
-    "border-block-end-width": "1px",
+    "border-block-end-width": {
+      default: "1px",
+      [finalBodyRowCell]: 0,
+    },
     paddingBlock: "var(--space-3)",
     paddingInline: "var(--space-4)",
     verticalAlign: "top",

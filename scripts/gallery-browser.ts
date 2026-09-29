@@ -1530,6 +1530,7 @@ function requirePackedDataTableStyles(javaScript: string, css: string): void {
       "border-block-end-color:canvastext;",
       "border-block-end-color:var(--ui-divider);",
       "border-block-end-style:solid;",
+      "border-block-end-width:0;",
       "border-block-end-width:1px;",
       "padding-block:var(--space-3);",
       "padding-inline:var(--space-4);",
@@ -11286,6 +11287,13 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
     const horizontalCells = horizontalRecords.flatMap(({ cells, headers, name }) =>
       name === "empty" ? [...headers, emptyCell] : [...headers, ...cells]
     );
+    // Separator ownership: the bordered wrapper owns the outer edge, so the
+    // final body row hands back its block-end divider.
+    const dividerWidth = (cell: HTMLTableCellElement): number => {
+      const row = cell.parentElement;
+      const section = row?.parentElement;
+      return section?.tagName === "TBODY" && section.lastElementChild === row ? 0 : 1;
+    };
     const horizontalCellContract = horizontalCells.every((cell) => {
       const style = getComputedStyle(cell);
       return nearly(number(style.paddingTop), 12, 0.01)
@@ -11295,7 +11303,7 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
         && nearly(number(style.paddingTop), tokens.space3, 0.01)
         && nearly(number(style.paddingLeft), tokens.space4, 0.01)
         && style.borderBottomStyle === "solid"
-        && nearly(number(style.borderBottomWidth), 1, 0.01)
+        && nearly(number(style.borderBottomWidth), dividerWidth(cell), 0.01)
         && style.borderBottomColor === tokens.divider
         && style.verticalAlign === "top";
     });
@@ -11451,7 +11459,7 @@ async function dataTableEvidence(page: Page): Promise<DataTableEvidence> {
           && nearly(number(style.paddingTop), 16, 0.01)
           && nearly(number(style.paddingBottom), 16, 0.01)
           && style.borderLeftStyle === "solid"
-          && nearly(number(style.borderLeftWidth), 1, 0.01)
+          && nearly(number(style.borderLeftWidth), dividerWidth(cell), 0.01)
           && style.borderLeftColor === tokens.divider
           && nearly(number(style.borderBottomWidth), 0, 0.01)
           && style.verticalAlign === "top";

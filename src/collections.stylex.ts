@@ -3,13 +3,15 @@ import * as stylex from "@stylexjs/stylex";
 const coarsePointer = "@media(pointer: coarse)";
 const forcedColors = "@media(forced-colors: active)";
 const syntheticCoarseMinimum = "var(--hraness-collection-coarse-min, 0px)";
+// Separator ownership: a Disclosure draws a divider only toward an adjacent
+// Disclosure sibling, never an outer edge. The surrounding container owns its
+// own edges, so a divider can never stack against a container border.
+const followedByDisclosure = ":has(+ [data-slot=disclosure])";
+// Because a lone Disclosure has no rule of its own, its trigger must read as a
+// control without one: the indicator follows the title's last word at body
+// size or larger, in the interactive color, and the title underlines on hover.
 
 export const collectionStyles = stylex.create({
-  accordionRoot: {
-    "border-block-end-color": "var(--ui-divider)",
-    "border-block-end-style": "solid",
-    "border-block-end-width": "1px",
-  },
   disclosureHeading: {
     fontFamily: "inherit",
     fontSize: "inherit",
@@ -22,7 +24,11 @@ export const collectionStyles = stylex.create({
     marginInline: 0,
   },
   disclosureIndicator: {
-    flex: "0 0 auto",
+    color: "var(--ui-primary)",
+    display: "inline-block",
+    fontSize: "max(1em, var(--text-body))",
+    lineHeight: 1,
+    marginInlineStart: "var(--space-2)",
     transitionProperty: "transform",
     transitionDuration: "var(--motion-duration-standard)",
     transitionTimingFunction: "var(--motion-easing-emphasized)",
@@ -41,22 +47,33 @@ export const collectionStyles = stylex.create({
   disclosureRoot: {
     "border-block-end-color": "var(--ui-divider)",
     "border-block-end-style": "solid",
-    "border-block-end-width": "1px",
+    "border-block-end-width": {
+      default: 0,
+      [followedByDisclosure]: "1px",
+    },
   },
   disclosureTitle: {
     minWidth: 0,
     overflowWrap: "anywhere",
+    textDecorationColor: "currentColor",
+    textDecorationLine: "none",
+    textDecorationThickness: "1px",
+    textUnderlineOffset: "0.2em",
+  },
+  disclosureTitleHovered: {
+    textDecorationLine: "underline",
   },
   disclosureTrigger: {
-    alignItems: "center",
+    // Block flow keeps the indicator on the last line of a wrapped title, where
+    // a flex row would stretch the title across the full width instead.
+    alignContent: "center",
     backgroundColor: "transparent",
     borderStyle: "none",
     borderWidth: 0,
     color: "var(--ui-foreground)",
-    display: "flex",
+    cursor: "pointer",
+    display: "block",
     fontWeight: "var(--font-weight-medium)",
-    gap: "var(--space-4)",
-    justifyContent: "space-between",
     minHeight: {
       default: `max(var(--interactive-target-min), ${syntheticCoarseMinimum})`,
       [coarsePointer]: "var(--interactive-target-min)",

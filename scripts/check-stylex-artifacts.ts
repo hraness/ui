@@ -349,7 +349,6 @@ const MOTION_RUNTIME_STYLE_KEYS = [
   "toastEnter",
 ] as const;
 const COLLECTION_STYLE_KEYS = [
-  "accordionRoot",
   "disclosureHeading",
   "disclosureIndicator",
   "disclosureIndicatorExpanded",
@@ -357,6 +356,7 @@ const COLLECTION_STYLE_KEYS = [
   "disclosurePanelHidden",
   "disclosureRoot",
   "disclosureTitle",
+  "disclosureTitleHovered",
   "disclosureTrigger",
   "disclosureTriggerCompact",
   "disclosureTriggerFocusVisible",
@@ -2797,6 +2797,12 @@ const DATA_TABLE_CONDITIONAL_DECLARATIONS: Partial<Record<DataTableStyleKey, rea
   wrapper: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
 };
 
+// Separator ownership: the bordered wrapper owns the table's outer edge, so the
+// final body row hands its divider back instead of stacking a second rule.
+const DATA_TABLE_SELECTOR_DECLARATIONS: Partial<Record<DataTableStyleKey, readonly Readonly<{ selector: RegExp; declaration: RegExp }>[]>> = {
+  cell: [{ selector: /:is\(tbody\s*>\s*tr:last-child\s*>\s*\*\)$/u, declaration: /^\s*border-block-end-width:\s*0;\s*$/u }],
+};
+
 function dataTableCompiledStyleMap(
   compiledJavaScript: string,
 ): NamedCompiledStyleMap {
@@ -2999,8 +3005,20 @@ function requireDataTableContract(
     }
     const conditional = DATA_TABLE_CONDITIONAL_DECLARATIONS[key] ?? [];
     for (const { condition, declaration } of conditional) requireCompiledConditionalDeclaration(rules, condition, declaration, `DataTable ${key} forced-colors boundary`);
+    const selectorScoped = DATA_TABLE_SELECTOR_DECLARATIONS[key] ?? [];
+    for (const { selector, declaration } of selectorScoped) {
+      assert.ok(
+        rules.some((rule) =>
+          rule.ancestors.every((ancestor) => !/^@(?:container|media|supports)/u.test(normalizedHeader(ancestor.header)))
+          && selector.test(rule.header.trim())
+          && declaration.test(rule.body)
+        ),
+        `DataTable ${key} selector-scoped separator handoff ${selector.source}`,
+      );
+    }
     for (const rule of rules) {
       const conditions = rule.ancestors.map((ancestor) => normalizedHeader(ancestor.header)).filter((header) => /^@(?:container|media|supports)/u.test(header));
+      if (conditions.length === 0 && selectorScoped.some(({ selector, declaration }) => selector.test(rule.header.trim()) && declaration.test(rule.body))) continue;
       assert.ok(conditions.length === 0
         ? expectedDeclarations.some(({ declaration }) => dialogDeclarationMatches(rule.body, declaration))
         : conditions.length === 1 && conditional.some(({ condition, declaration }) => condition === conditions[0] && dialogDeclarationMatches(rule.body, declaration)),

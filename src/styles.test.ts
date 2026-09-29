@@ -343,7 +343,9 @@ test("DataTable compiles presentation while legacy CSS retains no owned selector
     '\"border-block-end-color\": {',
     'default: "var(--ui-divider)"',
     '\"border-block-end-style\": "solid"',
-    '\"border-block-end-width\": "1px"',
+    '\"border-block-end-width\": {',
+    'default: "1px"',
+    '[finalBodyRowCell]: 0',
   ]) expect(dataTable).toContain(logicalDivider);
   expect(dataTable).not.toMatch(/borderBlockEnd|borderBottom/u);
   for (const backgroundReset of [
