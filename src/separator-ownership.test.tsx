@@ -100,10 +100,13 @@ test("a Disclosure trigger reads as a control without depending on a separator",
     .map(({ declarations }) => declarations)
     .join(" ");
 
-  // The indicator follows the title instead of sitting at the far inline edge,
-  // where a muted or small title would lose its only link to the control.
-  expect(trigger).toMatch(/justify-content:\s*flex-start;/u);
-  expect(trigger).not.toMatch(/space-between/u);
+  // The indicator flows inline after the title's last word instead of sitting
+  // at the far inline edge, where a muted, small, or wrapped title would lose
+  // its only link to the control.
+  expect(trigger).toMatch(/display:\s*block;/u);
+  expect(trigger).not.toMatch(/space-between|display:\s*flex/u);
+  expect(indicator).toMatch(/display:\s*inline-block;/u);
+  expect(indicator).toMatch(/margin-inline-start:\s*var\(--space-2\);/u);
   expect(trigger).toMatch(/cursor:\s*pointer;/u);
   // It never shrinks below body size, even inside caption-sized triggers.
   expect(indicator).toMatch(/font-size:\s*max\(1em,\s*var\(--text-body\)\);/u);
@@ -111,7 +114,7 @@ test("a Disclosure trigger reads as a control without depending on a separator",
   expect(hovered).toMatch(/text-decoration-line:\s*underline;/u);
 
   const html = renderToStaticMarkup(<Disclosure title="More ways to narrow">Body</Disclosure>);
-  // The indicator stays adjacent to the title in document order.
+  // The title and indicator are adjacent inline siblings in document order.
   expect(html).toMatch(
     /data-slot="disclosure-title"[^>]*>More ways to narrow<\/span><span aria-hidden="true"[^>]*data-slot="disclosure-indicator"/u,
   );

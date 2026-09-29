@@ -1279,6 +1279,10 @@
     list-style-type: none;
   }
 
+  .xk0yrii {
+    margin-inline-start: var(--space-2);
+  }
+
   .xa8254d {
     max-inline-size: var(--hraness-quiet-site-measure, 34rem);
   }

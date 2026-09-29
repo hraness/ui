@@ -8,8 +8,8 @@ const syntheticCoarseMinimum = "var(--hraness-collection-coarse-min, 0px)";
 // own edges, so a divider can never stack against a container border.
 const followedByDisclosure = ":has(+ [data-slot=disclosure])";
 // Because a lone Disclosure has no rule of its own, its trigger must read as a
-// control without one: the indicator sits right after the title at body size
-// or larger, in the interactive color, and the title underlines on hover.
+// control without one: the indicator follows the title's last word at body
+// size or larger, in the interactive color, and the title underlines on hover.
 
 export const collectionStyles = stylex.create({
   disclosureHeading: {
@@ -25,9 +25,10 @@ export const collectionStyles = stylex.create({
   },
   disclosureIndicator: {
     color: "var(--ui-primary)",
-    flex: "0 0 auto",
+    display: "inline-block",
     fontSize: "max(1em, var(--text-body))",
     lineHeight: 1,
+    marginInlineStart: "var(--space-2)",
     transitionProperty: "transform",
     transitionDuration: "var(--motion-duration-standard)",
     transitionTimingFunction: "var(--motion-easing-emphasized)",
@@ -63,16 +64,16 @@ export const collectionStyles = stylex.create({
     textDecorationLine: "underline",
   },
   disclosureTrigger: {
-    alignItems: "center",
+    // Block flow keeps the indicator on the last line of a wrapped title, where
+    // a flex row would stretch the title across the full width instead.
+    alignContent: "center",
     backgroundColor: "transparent",
     borderStyle: "none",
     borderWidth: 0,
     color: "var(--ui-foreground)",
     cursor: "pointer",
-    display: "flex",
+    display: "block",
     fontWeight: "var(--font-weight-medium)",
-    gap: "var(--space-2)",
-    justifyContent: "flex-start",
     minHeight: {
       default: `max(var(--interactive-target-min), ${syntheticCoarseMinimum})`,
       [coarsePointer]: "var(--interactive-target-min)",
