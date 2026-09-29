@@ -485,6 +485,8 @@ Opacity-only color mixes use sRGB to preserve the palette's hue in translucent e
 
 `--ui-divider` separates dense information without giving every row a heavy outline. Input, focus, selection, and validation colors remain independent of decorative surface edges. Higher-contrast preferences restore stronger surface contours, and forced colors replace depth with system-colored boundaries.
 
+Primitives draw a divider only between peers they own and never an outer edge. Adjacent disclosures share one rule, an accordion adds none after its last item, and a data table's final row leaves the bottom edge to its bordered wrapper. The surrounding card, section, or panel owns every outer edge, so a primitive's divider never runs parallel to a container border.
+
 The default heading face follows the sans-serif family; code retains the monospace family. Customize `--leading-body`, `--leading-label`, `--leading-heading`, `--leading-display`, `--tracking-heading`, and `--tracking-display` alongside the font families for each product's typography. Display headings use balanced wrapping and a little extra line height for accents and multiline titles. Keep readable body text and visible control boundaries when varying these roles.
 
 Every primitive accepts `className`. Actions expose separate wrapper and semantic-control classes plus typed StyleX seams. `Button` and `LinkButton` also expose the closed `partXstyles.label` part for product-owned label layout:

@@ -3,13 +3,12 @@ import * as stylex from "@stylexjs/stylex";
 const coarsePointer = "@media(pointer: coarse)";
 const forcedColors = "@media(forced-colors: active)";
 const syntheticCoarseMinimum = "var(--hraness-collection-coarse-min, 0px)";
+// Separator ownership: a Disclosure draws a divider only toward an adjacent
+// Disclosure sibling, never an outer edge. The surrounding container owns its
+// own edges, so a divider can never stack against a container border.
+const followedByDisclosure = ":has(+ [data-slot=disclosure])";
 
 export const collectionStyles = stylex.create({
-  accordionRoot: {
-    "border-block-end-color": "var(--ui-divider)",
-    "border-block-end-style": "solid",
-    "border-block-end-width": "1px",
-  },
   disclosureHeading: {
     fontFamily: "inherit",
     fontSize: "inherit",
@@ -41,7 +40,10 @@ export const collectionStyles = stylex.create({
   disclosureRoot: {
     "border-block-end-color": "var(--ui-divider)",
     "border-block-end-style": "solid",
-    "border-block-end-width": "1px",
+    "border-block-end-width": {
+      default: 0,
+      [followedByDisclosure]: "1px",
+    },
   },
   disclosureTitle: {
     minWidth: 0,

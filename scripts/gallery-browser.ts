@@ -1530,6 +1530,7 @@ function requirePackedDataTableStyles(javaScript: string, css: string): void {
       "border-block-end-color:canvastext;",
       "border-block-end-color:var(--ui-divider);",
       "border-block-end-style:solid;",
+      "border-block-end-width:0;",
       "border-block-end-width:1px;",
       "padding-block:var(--space-3);",
       "padding-inline:var(--space-4);",

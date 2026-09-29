@@ -177,7 +177,7 @@ const PACKAGE_MOTION_RUNTIME_STYLE_KEYS = [
   "skeleton", "spin", "toastEnter",
 ] as const;
 const PACKAGE_COLLECTION_STYLE_KEYS = [
-  "accordionRoot", "disclosureHeading", "disclosureIndicator",
+  "disclosureHeading", "disclosureIndicator",
   "disclosureIndicatorExpanded", "disclosurePanel", "disclosurePanelHidden",
   "disclosureRoot", "disclosureTitle", "disclosureTrigger",
   "disclosureTriggerCompact", "disclosureTriggerFocusVisible",

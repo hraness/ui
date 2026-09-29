@@ -332,7 +332,6 @@ export function Accordion({ children, className, ...props }: AccordionProps) {
       {...props}
       className={cn(
         "hraness-accordion",
-        stylex.props(collectionStyles.accordionRoot).className,
         className,
       )}
       data-slot="accordion"
