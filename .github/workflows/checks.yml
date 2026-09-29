@@ -1,7 +1,9 @@
 # Reusable check fan-out. `bun run check` is a serial chain of sixteen scripts;
-# this workflow runs the same commands, unchanged, as parallel jobs so wall time
-# is bounded by the slowest script (a single Next adopter smoke) instead of the
-# sum. CI (pull_request, push) and Release (tag) both call it.
+# this workflow runs the same commands as parallel jobs so wall time is bounded
+# by the slowest slice instead of the sum. The Next smoke, the Vite toolchain
+# matrix and the unit tests are split further into matrix rows that together
+# cover exactly what the local scripts run. CI (pull_request, push) and Release
+# (tag) both call it.
 name: Checks
 
 on:
@@ -28,12 +30,20 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Pull requests and tags only restore. A main push saves a new lockfile's
+      # cache once, here, so the other jobs never race to upload the same key.
+      - id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun run check:portfolio-inventory
       - run: bun run check:ask-ai-marks
       - run: bun run typecheck
@@ -67,7 +77,8 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restore only; the Static job saves the cache from main pushes.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
@@ -86,49 +97,23 @@ jobs:
           fi
 
   vite:
-    name: Vite adopters
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24"
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile --ignore-scripts
-      - run: bun run build
-      - run: bun run test:vite-adopter
-      - run: bun run test:vite78-adopter
-      - name: Generated files are committed
-        run: |
-          generated_status="$(git status --porcelain --untracked-files=all -- dist bun.lock)"
-          if [[ -n "$generated_status" ]]; then
-            printf '%s\n' "$generated_status"
-            exit 1
-          fi
-
-  next:
-    name: Next adopter (${{ matrix.next }})
+    name: Vite adopters (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
-          # The two exact profile rows of `test:next-adopter`, one job each.
-          - next: "16.2.12"
-            command: bun run ./scripts/next-adopter-smoke.ts
-          - next: "16.3.3"
-            command: bun run ./scripts/next-adopter-smoke.ts --next-version=16.3.3
+          # `test:vite-adopter`, then each row of `test:vite78-adopter`
+          # (fixtures/vite8-adopter/toolchain.ts) as its own job.
+          - name: adopter
+            command: bun run test:vite-adopter
+          - name: vite 7.3.6 rollup 4.63.1
+            command: bun run ./scripts/vite8-adopter-smoke.ts --toolchain=0
+          - name: vite 8.2.1 rolldown 1.2.7
+            command: bun run ./scripts/vite8-adopter-smoke.ts --toolchain=1
+          - name: vite 8.2.1 rolldown 1.2.8
+            command: bun run ./scripts/vite8-adopter-smoke.ts --toolchain=2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -139,7 +124,8 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restore only; the Static job saves the cache from main pushes.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
@@ -155,10 +141,23 @@ jobs:
             exit 1
           fi
 
-  unit:
-    name: Unit
+  next:
+    name: Next adopter (${{ matrix.next }}, ${{ matrix.phase }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # The two exact profile rows of `test:next-adopter`, each split into
+        # its two phases: the full Edge build with the server and browser
+        # proof, and the no-Edge then default-error rebuilds.
+        next: ["16.2.12", "16.3.3"]
+        phase: [edge, fallbacks]
+        include:
+          - next: "16.2.12"
+            profile: ""
+          - next: "16.3.3"
+            profile: --next-version=16.3.3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -169,14 +168,62 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restore only; the Static job saves the cache from main pushes.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run build
-      - run: bun run test
+      - run: bun run ./scripts/next-adopter-smoke.ts ${{ matrix.profile }} --phase=${{ matrix.phase }}
+      - name: Generated files are committed
+        run: |
+          generated_status="$(git status --porcelain --untracked-files=all -- dist bun.lock)"
+          if [[ -n "$generated_status" ]]; then
+            printf '%s\n' "$generated_status"
+            exit 1
+          fi
+
+  unit:
+    name: Unit (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The two slowest files, which run real bundler builds, get their own
+          # job. The other shard is the unchanged `test` script with those files
+          # ignored, so a new test file always lands in it.
+          - shard: builds
+            command: >-
+              bun test --isolate --preload ./scripts/register-stylex-test-transform.ts
+              ./build/bun.test.ts ./build/next-generation.test.ts
+          - shard: rest
+            command: >-
+              bun run test
+              --path-ignore-patterns=build/bun.test.ts
+              --path-ignore-patterns=build/next-generation.test.ts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      # Restore only; the Static job saves the cache from main pushes.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run build
+      - run: ${{ matrix.command }}
       - name: Generated files are committed
         run: |
           generated_status="$(git status --porcelain --untracked-files=all -- dist bun.lock)"
@@ -199,7 +246,8 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restore only; the Static job saves the cache from main pushes.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}

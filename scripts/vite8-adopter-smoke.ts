@@ -9,6 +9,20 @@ import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import { runViteBrowserWorker } from "../fixtures/vite8-adopter/browser-control.ts";
 import { viteMatrixToolchains, type ViteMatrixToolchain } from "../fixtures/vite8-adopter/toolchain.ts";
 
+// `--toolchain=<index>` runs one row of the matrix so CI can run the rows as
+// parallel jobs; with no argument every row runs in order, as before. The
+// receipt names the rows it covered.
+function selectedToolchains(values: readonly string[]): readonly ViteMatrixToolchain[] {
+  if (values.length === 0) return viteMatrixToolchains;
+  assert.equal(values.length, 1, "Vite matrix smoke accepts at most one --toolchain argument");
+  const match = /^--toolchain=(0|[1-9][0-9]*)$/u.exec(values[0]!);
+  assert.ok(match !== null, "Vite matrix smoke accepts only --toolchain=<index>");
+  const toolchain = viteMatrixToolchains[Number(match[1])];
+  assert.ok(toolchain !== undefined, `Vite matrix toolchain index must be below ${String(viteMatrixToolchains.length)}`);
+  return [toolchain];
+}
+const TOOLCHAINS = selectedToolchains(process.argv.slice(2));
+
 const SOURCE_MAP_PROFILES = ["disabled", "external"] as const;
 type SourceMapProfile = (typeof SOURCE_MAP_PROFILES)[number];
 const PINNED = {
@@ -190,7 +204,7 @@ try {
   await run([process.execPath, "pm", "pack", "--filename", archive, "--ignore-scripts", "--quiet"], repository, environment);
   const archiveHash = createHash("sha256").update(await readFile(archive)).digest("hex");
   const results: unknown[] = [];
-  for (const toolchain of viteMatrixToolchains) {
+  for (const toolchain of TOOLCHAINS) {
     const version = toolchain.vite;
     const consumer = join(work, `vite-${version}-${toolchain.bundler}-${toolchain.version}`);
     await mkdir(consumer);
@@ -244,7 +258,7 @@ try {
   custody.check();
   const durable = await writeViteMatrixSuccessReceipt(join(fixtureRoot, "vite78-receipts"), `${basename(work)}.json`, {
     schemaVersion: 1, kind: "hraness-vite78-production-acceptance", state: "complete",
-    archiveSha256: archiveHash, inputs, runtimes, results, custody: "all-owned-resources-collected",
+    archiveSha256: archiveHash, inputs, runtimes, toolchains: TOOLCHAINS, results, custody: "all-owned-resources-collected",
   }, custody);
   successful = true;
   console.log(JSON.stringify({ successReceipt: durable }));

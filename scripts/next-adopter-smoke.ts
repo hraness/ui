@@ -26,10 +26,35 @@ import {
 
 const BUN_VERSION = "1.3.14";
 const NODE_VERSION_PREFIX = "24.";
-const arguments_ = process.argv.slice(2);
-assert.ok(arguments_.length === 0 || (arguments_.length === 1 && arguments_[0] === "--next-version=16.3.3"), "Next smoke accepts only its two exact production profile rows");
-const NEXT_VERSION = stylexNextVersion(arguments_.length === 0 ? "16.2.12" : "16.3.3");
-const PORT = 39_154;
+// Phases split the three fresh builds so CI can run them as parallel jobs.
+// `edge` is the full build plus the server and browser proof. `fallbacks`
+// removes the Edge route, then the application global-error boundary, and
+// builds twice more; its second build still runs over prior attempt state.
+// With no `--phase`, both run in order, exactly as before.
+const NEXT_PHASES = ["edge", "fallbacks"] as const;
+type NextPhase = (typeof NEXT_PHASES)[number];
+function parseArguments(values: readonly string[]): Readonly<{ nextVersion: "16.2.12" | "16.3.3"; phases: readonly NextPhase[] }> {
+  let nextVersion: "16.2.12" | "16.3.3" = "16.2.12";
+  let phases: readonly NextPhase[] = NEXT_PHASES;
+  const seen = new Set<string>();
+  for (const value of values) {
+    const [name, ...rest] = value.split("=");
+    const argument = rest.join("=");
+    assert.ok(name !== undefined && !seen.has(name), `Next smoke repeats or omits an argument: ${value}`);
+    seen.add(name);
+    if (name === "--next-version") {
+      assert.equal(argument, "16.3.3", "Next smoke accepts only its two exact production profile rows");
+      nextVersion = "16.3.3";
+    } else if (name === "--phase") {
+      assert.ok((NEXT_PHASES as readonly string[]).includes(argument), `Next smoke phase must be one of ${NEXT_PHASES.join(", ")}`);
+      phases = [argument as NextPhase];
+    } else assert.fail(`Next smoke received an unknown argument: ${value}`);
+  }
+  return { nextVersion, phases };
+}
+const ARGUMENTS = parseArguments(process.argv.slice(2));
+const NEXT_VERSION = stylexNextVersion(ARGUMENTS.nextVersion);
+const PHASES = ARGUMENTS.phases;
 const NEXT_TARGETS = ["client", "edge-rsc", "node-rsc"] as const;
 type NextTarget = (typeof NEXT_TARGETS)[number];
 const FIXTURE_REQUIRED_SOURCES: Readonly<Record<NextTarget, readonly string[]>> = {
@@ -196,7 +221,7 @@ async function retainOrdinaryEvidence(root: string, path: string, destination: s
 }
 
 async function writeRetainedEvidence(fixtureRoot: string): Promise<void> {
-  const created = await mkdtemp(join(fixtureRoot, `next-adopter-proof-${NEXT_VERSION}-`));
+  const created = await mkdtemp(join(fixtureRoot, `next-adopter-proof-${NEXT_VERSION}-${PHASES.join("-")}-`));
   const directory = await realpath(created);
   assert.equal(directory, created, "Next proof directory cannot traverse a symlink");
   const artifacts: Artifact[] = [];
@@ -210,8 +235,8 @@ async function writeRetainedEvidence(fixtureRoot: string): Promise<void> {
     await readArtifact(directory, artifact, "Next retained proof readback");
     artifacts.push(artifact);
   }
-  assert.equal(browserOutcomes.length, 8, "Next proof must retain root, two route/resize/cleanup and global-error outcomes");
-  const receipt = `${JSON.stringify({ schemaVersion: 1, nextVersion: NEXT_VERSION, state: "passed", disposableConsumerRemoved: true, artifacts, browserOutcomes }, null, 2)}\n`;
+  assert.equal(browserOutcomes.length, PHASES.includes("edge") ? 8 : 0, "Next proof must retain root, two route/resize/cleanup and global-error outcomes");
+  const receipt = `${JSON.stringify({ schemaVersion: 1, nextVersion: NEXT_VERSION, phases: PHASES, state: "passed", disposableConsumerRemoved: true, artifacts, browserOutcomes }, null, 2)}\n`;
   await writeFile(resolve(directory, "receipt.json"), receipt, { flag: "wx" });
   console.log(`Retained packed Next ${NEXT_VERSION} evidence: ${directory}/receipt.json sha256=${sha256(receipt)}`);
 }
@@ -464,6 +489,16 @@ const manifest = validateStylexPackageManifest({
 await writeFile(join(root, "dist/stylex-manifest.json"), canonicalJson(manifest) + "\n", { flag: "wx" });
 `;
 
+// Ask the kernel for an unused loopback port so concurrent smokes in other
+// worktrees cannot collide on a fixed number.
+async function freePort(): Promise<number> {
+  const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(null, { status: 204 }) });
+  const { port } = probe;
+  await probe.stop(true);
+  assert.ok(typeof port === "number" && Number.isSafeInteger(port) && port > 0, "Next smoke could not reserve a loopback port");
+  return port;
+}
+
 async function waitForServer(url: string, child: Readonly<{ exited: Promise<number> }>): Promise<void> {
   const deadline = Date.now() + 30_000;
   for (;;) {
@@ -562,602 +597,613 @@ try {
   await cp(resolve(repository, "fixtures/next-adopter/theme-package"), resolve(consumer, "node_modules/@fixture/theme"), { recursive: true });
   await writeFile(resolve(consumer, "setup-theme.mjs"), themeSetup, { flag: "wx" });
   await run([node, "./setup-theme.mjs"], consumer, environment);
-  await run([node, "./build.mjs"], consumer, environment);
+  if (PHASES.includes("edge")) {
+    await run([node, "./build.mjs"], consumer, environment);
 
-  const attemptRoot = resolve(consumer, ".stylex-next/packed-next-adopter");
-  for (const mode of ["discovery", "delivery"] as const) {
-    const phase = resolve(attemptRoot, "typescript", mode);
-    const before = object(JSON.parse(await readFile(resolve(phase, "before-webpack.json"), "utf8")) as unknown, "Next native type observation");
-    assert.equal(before.nextVersion, NEXT_VERSION);
-    assert.deepEqual(before.nativeInputs, profile.typeInputs);
-    const inventory = object(JSON.parse(await readFile(resolve(phase, "types.json"), "utf8")) as unknown, "Next native type inventory");
-    assert.equal(inventory.nextVersion, NEXT_VERSION);
-    const distDir = mode === "delivery" ? ".next" : ".stylex-next/packed-next-adopter/next-discovery";
-    assert.ok(Array.isArray(before.artifacts));
-    const names = before.artifacts.map((value) => artifact(value, "Next native type input").path);
-    for (const name of profile.requiredNativeTypeNames) assert.ok(names.includes(`${distDir}/types/${name}`));
-    const rootParams = resolve(consumer, distDir, "types/root-params.d.ts");
-    if (profile.rootParams) {
-      const bytes = await readFile(rootParams);
-      assert.equal(bytes.toString(), "// Type definitions for Next.js root params (next/root-params)\n// No root params detected.\nexport {}\n");
-      const item = before.artifacts.map((value) => artifact(value, "Next native type input")).find(({ path }) => path === `${distDir}/types/root-params.d.ts`);
-      assert.deepEqual(item, { path: `${distDir}/types/root-params.d.ts`, bytes: bytes.byteLength, sha256: sha256(bytes) });
-    } else assert.ok(!names.some((path) => path.endsWith("/root-params.d.ts")));
-  }
-  const completePath = resolve(attemptRoot, "complete.json");
-  const completeSource = await readFile(completePath);
-  const complete = object(JSON.parse(exactUtf8(completeSource, "Next complete record")) as unknown, "Next complete record");
-  assert.equal(complete.kind, "hraness-stylex-next-build");
-  assert.equal(complete.nextVersion, NEXT_VERSION);
-  assert.equal(complete.state, "complete");
-  assert.equal(complete.attemptId, "packed-next-adopter");
-  assert.equal(complete.outputDirectory, ".next");
-  const discoveryIdentities = graphIdentities(complete.discovery, "Next complete discovery");
-  const deliveryIdentities = graphIdentities(complete.delivery, "Next complete delivery");
+    const attemptRoot = resolve(consumer, ".stylex-next/packed-next-adopter");
+    for (const mode of ["discovery", "delivery"] as const) {
+      const phase = resolve(attemptRoot, "typescript", mode);
+      const before = object(JSON.parse(await readFile(resolve(phase, "before-webpack.json"), "utf8")) as unknown, "Next native type observation");
+      assert.equal(before.nextVersion, NEXT_VERSION);
+      assert.deepEqual(before.nativeInputs, profile.typeInputs);
+      const inventory = object(JSON.parse(await readFile(resolve(phase, "types.json"), "utf8")) as unknown, "Next native type inventory");
+      assert.equal(inventory.nextVersion, NEXT_VERSION);
+      const distDir = mode === "delivery" ? ".next" : ".stylex-next/packed-next-adopter/next-discovery";
+      assert.ok(Array.isArray(before.artifacts));
+      const names = before.artifacts.map((value) => artifact(value, "Next native type input").path);
+      for (const name of profile.requiredNativeTypeNames) assert.ok(names.includes(`${distDir}/types/${name}`));
+      const rootParams = resolve(consumer, distDir, "types/root-params.d.ts");
+      if (profile.rootParams) {
+        const bytes = await readFile(rootParams);
+        assert.equal(bytes.toString(), "// Type definitions for Next.js root params (next/root-params)\n// No root params detected.\nexport {}\n");
+        const item = before.artifacts.map((value) => artifact(value, "Next native type input")).find(({ path }) => path === `${distDir}/types/root-params.d.ts`);
+        assert.deepEqual(item, { path: `${distDir}/types/root-params.d.ts`, bytes: bytes.byteLength, sha256: sha256(bytes) });
+      } else assert.ok(!names.some((path) => path.endsWith("/root-params.d.ts")));
+    }
+    const completePath = resolve(attemptRoot, "complete.json");
+    const completeSource = await readFile(completePath);
+    const complete = object(JSON.parse(exactUtf8(completeSource, "Next complete record")) as unknown, "Next complete record");
+    assert.equal(complete.kind, "hraness-stylex-next-build");
+    assert.equal(complete.nextVersion, NEXT_VERSION);
+    assert.equal(complete.state, "complete");
+    assert.equal(complete.attemptId, "packed-next-adopter");
+    assert.equal(complete.outputDirectory, ".next");
+    const discoveryIdentities = graphIdentities(complete.discovery, "Next complete discovery");
+    const deliveryIdentities = graphIdentities(complete.delivery, "Next complete delivery");
 
-  const planPath = resolve(attemptRoot, "plan.json");
-  const planSource = await readFile(planPath);
-  const plan = object(JSON.parse(exactUtf8(planSource, "Next attempt plan")) as unknown, "Next attempt plan");
-  assert.equal(plan.nextVersion, NEXT_VERSION);
-  assert.equal(plan.attemptId, complete.attemptId, "Next plan and complete record name different attempts");
-  assert.equal(plan.outputDirectory, complete.outputDirectory, "Next plan and complete record name different outputs");
-  const graphMap = object(plan.graphMap, "Next attempt graph map");
-  exactKeys(graphMap, ["client", "edgeRsc", "nodeRsc"], "Next attempt graph map");
-  const expectedGraphIds: Readonly<Record<NextTarget, unknown>> = {
-    client: graphMap.client,
-    "edge-rsc": graphMap.edgeRsc,
-    "node-rsc": graphMap.nodeRsc,
-  };
-  assert.deepEqual(
-    deliveryIdentities.map(({ graphId, target }) => ({ graphId, target })),
-    NEXT_TARGETS.map((target) => ({ graphId: expectedGraphIds[target], target })),
-    "Next delivery graph identities differ from the fresh plan",
-  );
-  assert.deepEqual(
-    discoveryIdentities.map(({ graphId, target }) => ({ graphId, target })),
-    deliveryIdentities.map(({ graphId, target }) => ({ graphId, target })),
-    "Next discovery and delivery graph identities differ",
-  );
-  const requiredRecord = object(plan.requiredSources, "Next attempt required sources");
-  exactKeys(requiredRecord, NEXT_TARGETS, "Next attempt required sources");
-  const requiredSources = Object.fromEntries(NEXT_TARGETS.map((target) => [
-    target,
-    orderedLogicalPaths(requiredRecord[target], `Next attempt required sources ${target}`),
-  ])) as Readonly<Record<NextTarget, readonly string[]>>;
-  assert.deepEqual(requiredSources, FIXTURE_REQUIRED_SOURCES, "Next attempt changed the fixture's exact target source census");
-  const physicalFixtureSources = [...(await filesBelow(resolve(consumer, "app")))
-    .filter((path) => /\.tsx?$/u.test(path))
-    .map((path) => `app/${path}`), "proxy.ts"].sort();
-  assert.deepEqual(
-    [...new Set(NEXT_TARGETS.flatMap((target) => requiredSources[target]))].sort(),
-    physicalFixtureSources,
-    "Next attempt omitted or invented a fixture-authored production source",
-  );
-
-  const postprocessingRecord = object(complete.postprocessing, "Next complete postprocessing");
-  exactKeys(postprocessingRecord, ["delivery", "discovery"], "Next complete postprocessing");
-  const deliveryPostprocessingArtifact = artifact(postprocessingRecord.delivery, "Next delivery postprocessing artifact");
-  assert.equal(
-    deliveryPostprocessingArtifact.path,
-    ".stylex-next/packed-next-adopter/delivery/postprocessing.json",
-    "Next delivery postprocessing artifact belongs to a different attempt or mode",
-  );
-  const deliveryPostprocessingSource = await readArtifact(consumer, deliveryPostprocessingArtifact, "Next delivery postprocessing artifact");
-  const deliveryPostprocessing = object(
-    JSON.parse(exactUtf8(deliveryPostprocessingSource, "Next delivery postprocessing receipt")) as unknown,
-    "Next delivery postprocessing receipt",
-  );
-  assert.equal(deliveryPostprocessing.mode, "delivery");
-  assert.equal(deliveryPostprocessing.nextVersion, NEXT_VERSION);
-  assert.equal(deliveryPostprocessing.attemptId, complete.attemptId);
-  assert.equal(deliveryPostprocessing.outputDirectory, complete.outputDirectory);
-  assert.equal(deliveryPostprocessing.planSha256, sha256(planSource), "Next delivery postprocessing is not bound to the fresh plan bytes");
-  assert.deepEqual(
-    graphIdentities(deliveryPostprocessing.graphs, "Next delivery postprocessing graphs"),
-    deliveryIdentities,
-    "Next delivery postprocessing is not bound to the complete graph identities",
-  );
-  const discoveryPostprocessingArtifact = artifact(postprocessingRecord.discovery, "Next discovery postprocessing artifact");
-  assert.equal(
-    discoveryPostprocessingArtifact.path,
-    ".stylex-next/packed-next-adopter/discovery/postprocessing.json",
-    "Next discovery postprocessing artifact belongs to a different attempt or mode",
-  );
-  const discoveryPostprocessingSource = await readArtifact(consumer, discoveryPostprocessingArtifact, "Next discovery postprocessing artifact");
-  const discoveryPostprocessing = object(
-    JSON.parse(exactUtf8(discoveryPostprocessingSource, "Next discovery postprocessing receipt")) as unknown,
-    "Next discovery postprocessing receipt",
-  );
-  assert.equal(discoveryPostprocessing.mode, "discovery");
-  assert.equal(discoveryPostprocessing.nextVersion, NEXT_VERSION);
-  assert.equal(discoveryPostprocessing.attemptId, complete.attemptId);
-  const discoveryOutputDirectory = logicalPath(discoveryPostprocessing.outputDirectory, "Next discovery output directory");
-  assert.equal(discoveryPostprocessing.planSha256, sha256(planSource), "Next discovery postprocessing is not bound to the fresh plan bytes");
-  assert.deepEqual(
-    graphIdentities(discoveryPostprocessing.graphs, "Next discovery postprocessing graphs"),
-    discoveryIdentities,
-    "Next discovery postprocessing is not bound to the complete graph identities",
-  );
-  for (const identity of discoveryIdentities) {
-    const description = `Next discovery ${identity.target} graph receipt`;
-    const graphPath = resolve(attemptRoot, "discovery", identity.target, "graph.json");
-    const graphStat = await lstat(graphPath);
-    assert.ok(graphStat.isFile() && !graphStat.isSymbolicLink(), `${description} must be an ordinary file`);
-    assert.equal(await realpath(graphPath), graphPath, `${description} must not traverse a symlink`);
-    const graphSource = await readFile(graphPath);
-    assert.equal(sha256(graphSource), identity.receiptSha256, `${description} differs from complete.json`);
-    const graph = object(JSON.parse(exactUtf8(graphSource, description)) as unknown, description);
-    assert.equal(graph.nextVersion, NEXT_VERSION);
-    assert.equal(graph.attemptId, complete.attemptId);
-    assert.equal(graph.mode, "discovery");
-    assert.equal(graph.target, identity.target);
-    assert.equal(graph.graphId, identity.graphId);
-    assert.equal(graph.outputDirectory, discoveryOutputDirectory);
-    const modules = moduleIdentities(graph.modules, `Next discovery ${identity.target} modules`);
-    assert.deepEqual(modules.map(({ path }) => path), requiredSources[identity.target], `Next discovery ${identity.target} graph differs from the planned source census`);
-    assert.equal(graph.sourcesSha256, sha256(JSON.stringify(modules)), `Next discovery ${identity.target} source inventory hash is stale`);
-    const outputs = orderedArtifacts(graph.outputs, `Next discovery ${identity.target} outputs`);
-    const sourceMaps = orderedArtifacts(graph.sourceMaps, `Next discovery ${identity.target} source maps`);
+    const planPath = resolve(attemptRoot, "plan.json");
+    const planSource = await readFile(planPath);
+    const plan = object(JSON.parse(exactUtf8(planSource, "Next attempt plan")) as unknown, "Next attempt plan");
+    assert.equal(plan.nextVersion, NEXT_VERSION);
+    assert.equal(plan.attemptId, complete.attemptId, "Next plan and complete record name different attempts");
+    assert.equal(plan.outputDirectory, complete.outputDirectory, "Next plan and complete record name different outputs");
+    const graphMap = object(plan.graphMap, "Next attempt graph map");
+    exactKeys(graphMap, ["client", "edgeRsc", "nodeRsc"], "Next attempt graph map");
+    const expectedGraphIds: Readonly<Record<NextTarget, unknown>> = {
+      client: graphMap.client,
+      "edge-rsc": graphMap.edgeRsc,
+      "node-rsc": graphMap.nodeRsc,
+    };
     assert.deepEqual(
-      sourceMaps,
-      outputs.filter(({ path }) => path.endsWith(".map")),
-      `Next discovery ${identity.target} graph does not bind its complete map inventory`,
+      deliveryIdentities.map(({ graphId, target }) => ({ graphId, target })),
+      NEXT_TARGETS.map((target) => ({ graphId: expectedGraphIds[target], target })),
+      "Next delivery graph identities differ from the fresh plan",
     );
-    orderedLogicalPaths(graph.javascriptChunks, `Next discovery ${identity.target} JavaScript chunks`);
-    if (identity.target === "client") await assertDelegatedEntries(consumer, graph);
-    if (identity.target === "node-rsc") await assertNodeProxyTrace(consumer, graph, discoveryPostprocessing);
-  }
-
-  const outputFiles = await filesBelow(resolve(consumer, ".next"));
-  assert.ok(
-    outputFiles.includes("server/app/index/[manifestProof]/page_client-reference-manifest.js"),
-    "Next must retain the working dynamic /index route client-reference manifest identity",
-  );
-  assert.ok(
-    !outputFiles.includes("server/app/index/index/[manifestProof]/page_client-reference-manifest.js"),
-    "Next must not receive a copied or doubled alias for the dynamic /index route manifest",
-  );
-  const indexManifest = await readFile(
-    resolve(consumer, ".next/server/app/index/[manifestProof]/page_client-reference-manifest.js"),
-    "utf8",
-  );
-  assert.ok(
-    indexManifest.includes(JSON.stringify("/index/[manifestProof]/page")),
-    "Next dynamic /index manifest lost its exact route identity",
-  );
-  const mapFiles = outputFiles.filter((path) => path.endsWith(".map"));
-  assert.ok(mapFiles.length > 0, "Next delivery must retain output source maps");
-  const outputRoot = resolve(consumer, ".next");
-  const receiptMapArtifacts = new Map<string, Artifact>();
-  const mappedSourcesByTarget = new Map<NextTarget, NextSourceMapEntry[]>(
-    NEXT_TARGETS.map((target) => [target, []]),
-  );
-  let globalErrorStylesheet: Artifact | undefined;
-  for (const identity of deliveryIdentities) {
-    const graphPath = resolve(attemptRoot, "delivery", identity.target, "graph.json");
-    const graphStat = await lstat(graphPath);
-    assert.ok(graphStat.isFile() && !graphStat.isSymbolicLink(), `Next ${identity.target} graph receipt must be an ordinary file`);
-    assert.equal(await realpath(graphPath), graphPath, `Next ${identity.target} graph receipt must not traverse a symlink`);
-    const graphSource = await readFile(graphPath);
-    assert.equal(sha256(graphSource), identity.receiptSha256, `Next ${identity.target} graph receipt differs from complete.json`);
-    const graph = object(JSON.parse(exactUtf8(graphSource, `Next ${identity.target} graph receipt`)) as unknown, `Next ${identity.target} graph receipt`);
-    assert.equal(graph.nextVersion, NEXT_VERSION);
-    assert.equal(graph.attemptId, complete.attemptId);
-    assert.equal(graph.mode, "delivery");
-    assert.equal(graph.target, identity.target);
-    assert.equal(graph.graphId, identity.graphId);
-    assert.equal(graph.outputDirectory, complete.outputDirectory);
-    const modules = moduleIdentities(graph.modules, `Next ${identity.target} modules`);
-    assert.deepEqual(modules.map(({ path }) => path), requiredSources[identity.target], `Next ${identity.target} graph differs from the planned source census`);
-    assert.equal(graph.sourcesSha256, sha256(JSON.stringify(modules)), `Next ${identity.target} source inventory hash is stale`);
-    const outputs = orderedArtifacts(graph.outputs, `Next ${identity.target} outputs`);
-    const proxyOutput = identity.target === "node-rsc" ? await assertNodeProxyTrace(consumer, graph, deliveryPostprocessing) : undefined;
-    if (identity.target === "client") {
-      await assertDelegatedEntries(consumer, graph);
-      assert.ok(Array.isArray(graph.entrypoints) && graph.entrypoints.length > 0 && graph.entrypoints.length <= 4096, "Next client entrypoints must be a nonempty bounded array");
-      const entrypoints = graph.entrypoints.map((value, index) => object(value, `Next client entrypoint ${String(index)}`));
-      const owners = entrypoints.filter(({ name }) => name === "app/global-error");
-      assert.equal(owners.length, 1, "Next client graph must contain exactly one global-error owner");
-      const owner = owners[0]!;
-      const stylesheets = orderedLogicalPaths(owner.stylexCss, "Next global-error StyleX stylesheets");
-      assert.equal(stylesheets.length, 1, "Next global-error must own exactly one finalized StyleX stylesheet");
-      const stylesheetPath = stylesheets[0]!;
-      assert.match(stylesheetPath, /^static\/css\/[a-zA-Z0-9_-]+\.css$/u, "Next global-error stylesheet must be an ordinary static CSS asset");
-      assert.ok(orderedLogicalPaths(owner.css, "Next global-error CSS").includes(stylesheetPath), "Next global-error CSS inventory omitted its StyleX stylesheet");
-      assert.ok(orderedLogicalPaths(owner.files, "Next global-error files").includes(stylesheetPath), "Next global-error file inventory omitted its StyleX stylesheet");
-      globalErrorStylesheet = outputs.find(({ path }) => path === stylesheetPath);
-      assert.ok(globalErrorStylesheet !== undefined, "Next global-error stylesheet is not bound to the client output artifacts");
-      await readArtifact(outputRoot, globalErrorStylesheet, "Next global-error stylesheet");
-    }
-    const sourceMaps = orderedArtifacts(graph.sourceMaps, `Next ${identity.target} source maps`);
     assert.deepEqual(
-      sourceMaps,
-      outputs.filter(({ path }) => path.endsWith(".map")),
-      `Next ${identity.target} graph does not bind its complete map inventory`,
+      discoveryIdentities.map(({ graphId, target }) => ({ graphId, target })),
+      deliveryIdentities.map(({ graphId, target }) => ({ graphId, target })),
+      "Next discovery and delivery graph identities differ",
     );
-    const javascriptChunks = orderedLogicalPaths(graph.javascriptChunks, `Next ${identity.target} JavaScript chunks`);
-    for (const sourceMap of sourceMaps) {
-      const prior = receiptMapArtifacts.get(sourceMap.path);
-      if (prior === undefined) receiptMapArtifacts.set(sourceMap.path, sourceMap);
-      else assert.deepEqual(sourceMap, prior, `Next delivery graphs disagree about source map ${sourceMap.path}`);
-      const outputPath = sourceMap.path.slice(0, -".map".length);
-      const outputArtifact = outputs.find(({ path }) => path === outputPath);
-      assert.ok(outputArtifact !== undefined, `Next source map ${sourceMap.path} has no same-graph output owner`);
-      const [mapSource, outputSource] = await Promise.all([
-        readArtifact(outputRoot, sourceMap, `Next source map ${sourceMap.path}`),
-        readArtifact(outputRoot, outputPath === "server/proxy.js" ? proxyOutput! : outputArtifact, `Next mapped output ${outputPath}`),
-      ]);
-      const outputText = exactUtf8(outputSource, `Next mapped output ${outputPath}`);
-      assertNextSourceMapOutputLink(outputText, outputPath, sourceMap.path);
-      const entries = nextSourceMapEntries(
-        JSON.parse(exactUtf8(mapSource, `Next source map ${sourceMap.path}`)) as unknown,
-        `Next ${identity.target} source map ${sourceMap.path}`,
-        FIXTURE_AUTHORED_SOURCES,
-        outputPath,
-      );
-      if (javascriptChunks.includes(outputPath)) mappedSourcesByTarget.get(identity.target)!.push(...entries);
-    }
-  }
-  assert.ok(globalErrorStylesheet !== undefined, "Next delivery omitted the global-error stylesheet artifact");
-  assert.deepEqual(
-    [...receiptMapArtifacts.keys()].sort(),
-    mapFiles,
-    "Next delivery graph receipts do not own the complete physical source-map census",
-  );
-  for (const target of NEXT_TARGETS) {
-    for (const source of requiredSources[target]) {
-      assertNextAuthoredSourceEmbedding(
-        mappedSourcesByTarget.get(target)!,
-        source,
-        await readFile(resolve(consumer, source), "utf8"),
-      );
-    }
-  }
-  const fontFiles = outputFiles.filter((path) => path.endsWith(".woff2"));
-  assert.equal(fontFiles.length, 1, "Next delivery must emit exactly the registered fixture font URL asset");
-  assert.equal(
-    sha256(await readFile(resolve(consumer, ".next", fontFiles[0]!))),
-    sha256(Buffer.alloc(70_000, 17)),
-    "Next emitted font URL asset bytes differ from the registered fixture",
-  );
-  const cssFiles = outputFiles.filter((path) => path.endsWith(".css"));
-  assert.ok(cssFiles.length > 0, "Next delivery must emit CSS assets");
-  const css = (await Promise.all(cssFiles.map((path) => readFile(resolve(consumer, ".next", path), "utf8")))).join("\n");
-  for (const value of ["13px", "17px", "19px", "23px", "29px", "31px"]) assert.ok(css.includes(value), `Next CSS union omitted ${value}`);
-  assert.ok(
-    css.includes(fontFiles[0]!.split("/").at(-1)!),
-    "Next CSS does not link the exact emitted font URL asset",
-  );
+    const requiredRecord = object(plan.requiredSources, "Next attempt required sources");
+    exactKeys(requiredRecord, NEXT_TARGETS, "Next attempt required sources");
+    const requiredSources = Object.fromEntries(NEXT_TARGETS.map((target) => [
+      target,
+      orderedLogicalPaths(requiredRecord[target], `Next attempt required sources ${target}`),
+    ])) as Readonly<Record<NextTarget, readonly string[]>>;
+    assert.deepEqual(requiredSources, FIXTURE_REQUIRED_SOURCES, "Next attempt changed the fixture's exact target source census");
+    const physicalFixtureSources = [...(await filesBelow(resolve(consumer, "app")))
+      .filter((path) => /\.tsx?$/u.test(path))
+      .map((path) => `app/${path}`), "proxy.ts"].sort();
+    assert.deepEqual(
+      [...new Set(NEXT_TARGETS.flatMap((target) => requiredSources[target]))].sort(),
+      physicalFixtureSources,
+      "Next attempt omitted or invented a fixture-authored production source",
+    );
 
-  const server = Bun.spawn([node, "./node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(PORT)], {
-    cwd: consumer,
-    env: environment,
-    stdin: "ignore",
-    stderr: "pipe",
-    stdout: "pipe",
-  });
-  const stdout = new Response(server.stdout).text();
-  const stderr = new Response(server.stderr).text();
-  try {
-    const base = `http://127.0.0.1:${String(PORT)}`;
-    await waitForServer(base, server);
-    for (const path of ["/", "/edge", "/index/manifest-proof"]) {
-      const response = await fetch(`${base}${path}`);
-      assert.equal(response.status, 200);
-      assert.equal(response.headers.get("x-stylex-node-proxy"), path, "The registered Node proxy must preserve the request path");
-      const csp = response.headers.get("content-security-policy") ?? "";
-      assert.match(csp, /style-src 'self'(?:;|$)/u);
-      assert.doesNotMatch(csp, /style-src[^;]*'unsafe-inline'/u);
-      assert.doesNotMatch(await response.text(), /<style(?:\s|>)/iu, "Next response must not use inline style elements");
-    }
-    const browserExecutable = await resolveFirstBrowserExecutable(
-      [
-        ...(process.env.CHROMIUM_EXECUTABLE_PATH === undefined ? [] : [process.env.CHROMIUM_EXECUTABLE_PATH]),
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        chromium.executablePath(),
-        "/Applications/Chromium.app/Contents/MacOS/Chromium",
-        "/usr/bin/google-chrome",
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-      ],
-      "No ordinary Chromium executable found. Set CHROMIUM_EXECUTABLE_PATH to run the packed Next browser smoke.",
+    const postprocessingRecord = object(complete.postprocessing, "Next complete postprocessing");
+    exactKeys(postprocessingRecord, ["delivery", "discovery"], "Next complete postprocessing");
+    const deliveryPostprocessingArtifact = artifact(postprocessingRecord.delivery, "Next delivery postprocessing artifact");
+    assert.equal(
+      deliveryPostprocessingArtifact.path,
+      ".stylex-next/packed-next-adopter/delivery/postprocessing.json",
+      "Next delivery postprocessing artifact belongs to a different attempt or mode",
     );
-    const browser = await chromium.launch({ args: ["--no-sandbox"], executablePath: browserExecutable, headless: true });
-    try {
-      const page = await browser.newPage();
-      const hydrationDiagnostics: Readonly<{ kind: string; detail: string }>[] = [];
-      let hydrationRuntimeFailed = false;
-      const recordHydrationDiagnostic = (kind: string, detail: string): void => {
-        if (hydrationDiagnostics.length < 100) hydrationDiagnostics.push({ kind, detail: detail.slice(0, 2_000) });
-      };
-      page.on("pageerror", (error) => {
-        hydrationRuntimeFailed = true;
-        recordHydrationDiagnostic("pageerror", error.stack ?? error.message);
-      });
-      page.on("requestfailed", (request) => recordHydrationDiagnostic("requestfailed", `${request.url()}: ${request.failure()?.errorText ?? "unknown"}`));
-      page.on("console", (message) => {
-        if (message.type() === "error" || message.type() === "warning") recordHydrationDiagnostic(message.type(), message.text());
-      });
-      try {
-        const response = await page.goto(base, { waitUntil: "networkidle" });
-        assert.equal(response?.headers()["x-stylex-node-proxy"], "/", "The browser document must pass through the compiled Node proxy");
-        await page.locator('[data-next-hydrated="true"]').waitFor();
-        await page.locator('[data-next-lazy="ready"]').waitFor();
-      } catch (error) {
-        const capture = page.evaluate(() => ({
-          readyState: document.readyState,
-          sentinels: [...document.querySelectorAll("[data-next-client], [data-next-lazy], [data-next-global-error]")]
-            .slice(0, 10).map((element) => ({
-              markup: element.outerHTML.slice(0, 2_000),
-              display: getComputedStyle(element).display,
-              visibility: getComputedStyle(element).visibility,
-              rect: element.getBoundingClientRect().toJSON(),
-            })),
-          scripts: [...document.scripts].slice(0, 100).map((script) => script.src).filter(Boolean),
-        })).catch((captureError: unknown) => ({ captureError: String(captureError) }));
-        let captureTimeout: ReturnType<typeof setTimeout> | undefined;
-        let dom: unknown;
-        try {
-          dom = await Promise.race([
-            capture,
-            new Promise((resolveCapture) => {
-              captureTimeout = setTimeout(() => resolveCapture({ captureError: "DOM capture exceeded 5 seconds" }), 5_000);
-            }),
-          ]);
-        } finally {
-          if (captureTimeout !== undefined) clearTimeout(captureTimeout);
-        }
-        throw new Error(`Next hydration proof failed: ${JSON.stringify({ runtimeFailed: hydrationRuntimeFailed, diagnostics: hydrationDiagnostics, dom })}`, { cause: error });
+    const deliveryPostprocessingSource = await readArtifact(consumer, deliveryPostprocessingArtifact, "Next delivery postprocessing artifact");
+    const deliveryPostprocessing = object(
+      JSON.parse(exactUtf8(deliveryPostprocessingSource, "Next delivery postprocessing receipt")) as unknown,
+      "Next delivery postprocessing receipt",
+    );
+    assert.equal(deliveryPostprocessing.mode, "delivery");
+    assert.equal(deliveryPostprocessing.nextVersion, NEXT_VERSION);
+    assert.equal(deliveryPostprocessing.attemptId, complete.attemptId);
+    assert.equal(deliveryPostprocessing.outputDirectory, complete.outputDirectory);
+    assert.equal(deliveryPostprocessing.planSha256, sha256(planSource), "Next delivery postprocessing is not bound to the fresh plan bytes");
+    assert.deepEqual(
+      graphIdentities(deliveryPostprocessing.graphs, "Next delivery postprocessing graphs"),
+      deliveryIdentities,
+      "Next delivery postprocessing is not bound to the complete graph identities",
+    );
+    const discoveryPostprocessingArtifact = artifact(postprocessingRecord.discovery, "Next discovery postprocessing artifact");
+    assert.equal(
+      discoveryPostprocessingArtifact.path,
+      ".stylex-next/packed-next-adopter/discovery/postprocessing.json",
+      "Next discovery postprocessing artifact belongs to a different attempt or mode",
+    );
+    const discoveryPostprocessingSource = await readArtifact(consumer, discoveryPostprocessingArtifact, "Next discovery postprocessing artifact");
+    const discoveryPostprocessing = object(
+      JSON.parse(exactUtf8(discoveryPostprocessingSource, "Next discovery postprocessing receipt")) as unknown,
+      "Next discovery postprocessing receipt",
+    );
+    assert.equal(discoveryPostprocessing.mode, "discovery");
+    assert.equal(discoveryPostprocessing.nextVersion, NEXT_VERSION);
+    assert.equal(discoveryPostprocessing.attemptId, complete.attemptId);
+    const discoveryOutputDirectory = logicalPath(discoveryPostprocessing.outputDirectory, "Next discovery output directory");
+    assert.equal(discoveryPostprocessing.planSha256, sha256(planSource), "Next discovery postprocessing is not bound to the fresh plan bytes");
+    assert.deepEqual(
+      graphIdentities(discoveryPostprocessing.graphs, "Next discovery postprocessing graphs"),
+      discoveryIdentities,
+      "Next discovery postprocessing is not bound to the complete graph identities",
+    );
+    for (const identity of discoveryIdentities) {
+      const description = `Next discovery ${identity.target} graph receipt`;
+      const graphPath = resolve(attemptRoot, "discovery", identity.target, "graph.json");
+      const graphStat = await lstat(graphPath);
+      assert.ok(graphStat.isFile() && !graphStat.isSymbolicLink(), `${description} must be an ordinary file`);
+      assert.equal(await realpath(graphPath), graphPath, `${description} must not traverse a symlink`);
+      const graphSource = await readFile(graphPath);
+      assert.equal(sha256(graphSource), identity.receiptSha256, `${description} differs from complete.json`);
+      const graph = object(JSON.parse(exactUtf8(graphSource, description)) as unknown, description);
+      assert.equal(graph.nextVersion, NEXT_VERSION);
+      assert.equal(graph.attemptId, complete.attemptId);
+      assert.equal(graph.mode, "discovery");
+      assert.equal(graph.target, identity.target);
+      assert.equal(graph.graphId, identity.graphId);
+      assert.equal(graph.outputDirectory, discoveryOutputDirectory);
+      const modules = moduleIdentities(graph.modules, `Next discovery ${identity.target} modules`);
+      assert.deepEqual(modules.map(({ path }) => path), requiredSources[identity.target], `Next discovery ${identity.target} graph differs from the planned source census`);
+      assert.equal(graph.sourcesSha256, sha256(JSON.stringify(modules)), `Next discovery ${identity.target} source inventory hash is stale`);
+      const outputs = orderedArtifacts(graph.outputs, `Next discovery ${identity.target} outputs`);
+      const sourceMaps = orderedArtifacts(graph.sourceMaps, `Next discovery ${identity.target} source maps`);
+      assert.deepEqual(
+        sourceMaps,
+        outputs.filter(({ path }) => path.endsWith(".map")),
+        `Next discovery ${identity.target} graph does not bind its complete map inventory`,
+      );
+      orderedLogicalPaths(graph.javascriptChunks, `Next discovery ${identity.target} JavaScript chunks`);
+      if (identity.target === "client") await assertDelegatedEntries(consumer, graph);
+      if (identity.target === "node-rsc") await assertNodeProxyTrace(consumer, graph, discoveryPostprocessing);
+    }
+
+    const outputFiles = await filesBelow(resolve(consumer, ".next"));
+    assert.ok(
+      outputFiles.includes("server/app/index/[manifestProof]/page_client-reference-manifest.js"),
+      "Next must retain the working dynamic /index route client-reference manifest identity",
+    );
+    assert.ok(
+      !outputFiles.includes("server/app/index/index/[manifestProof]/page_client-reference-manifest.js"),
+      "Next must not receive a copied or doubled alias for the dynamic /index route manifest",
+    );
+    const indexManifest = await readFile(
+      resolve(consumer, ".next/server/app/index/[manifestProof]/page_client-reference-manifest.js"),
+      "utf8",
+    );
+    assert.ok(
+      indexManifest.includes(JSON.stringify("/index/[manifestProof]/page")),
+      "Next dynamic /index manifest lost its exact route identity",
+    );
+    const mapFiles = outputFiles.filter((path) => path.endsWith(".map"));
+    assert.ok(mapFiles.length > 0, "Next delivery must retain output source maps");
+    const outputRoot = resolve(consumer, ".next");
+    const receiptMapArtifacts = new Map<string, Artifact>();
+    const mappedSourcesByTarget = new Map<NextTarget, NextSourceMapEntry[]>(
+      NEXT_TARGETS.map((target) => [target, []]),
+    );
+    let globalErrorStylesheet: Artifact | undefined;
+    for (const identity of deliveryIdentities) {
+      const graphPath = resolve(attemptRoot, "delivery", identity.target, "graph.json");
+      const graphStat = await lstat(graphPath);
+      assert.ok(graphStat.isFile() && !graphStat.isSymbolicLink(), `Next ${identity.target} graph receipt must be an ordinary file`);
+      assert.equal(await realpath(graphPath), graphPath, `Next ${identity.target} graph receipt must not traverse a symlink`);
+      const graphSource = await readFile(graphPath);
+      assert.equal(sha256(graphSource), identity.receiptSha256, `Next ${identity.target} graph receipt differs from complete.json`);
+      const graph = object(JSON.parse(exactUtf8(graphSource, `Next ${identity.target} graph receipt`)) as unknown, `Next ${identity.target} graph receipt`);
+      assert.equal(graph.nextVersion, NEXT_VERSION);
+      assert.equal(graph.attemptId, complete.attemptId);
+      assert.equal(graph.mode, "delivery");
+      assert.equal(graph.target, identity.target);
+      assert.equal(graph.graphId, identity.graphId);
+      assert.equal(graph.outputDirectory, complete.outputDirectory);
+      const modules = moduleIdentities(graph.modules, `Next ${identity.target} modules`);
+      assert.deepEqual(modules.map(({ path }) => path), requiredSources[identity.target], `Next ${identity.target} graph differs from the planned source census`);
+      assert.equal(graph.sourcesSha256, sha256(JSON.stringify(modules)), `Next ${identity.target} source inventory hash is stale`);
+      const outputs = orderedArtifacts(graph.outputs, `Next ${identity.target} outputs`);
+      const proxyOutput = identity.target === "node-rsc" ? await assertNodeProxyTrace(consumer, graph, deliveryPostprocessing) : undefined;
+      if (identity.target === "client") {
+        await assertDelegatedEntries(consumer, graph);
+        assert.ok(Array.isArray(graph.entrypoints) && graph.entrypoints.length > 0 && graph.entrypoints.length <= 4096, "Next client entrypoints must be a nonempty bounded array");
+        const entrypoints = graph.entrypoints.map((value, index) => object(value, `Next client entrypoint ${String(index)}`));
+        const owners = entrypoints.filter(({ name }) => name === "app/global-error");
+        assert.equal(owners.length, 1, "Next client graph must contain exactly one global-error owner");
+        const owner = owners[0]!;
+        const stylesheets = orderedLogicalPaths(owner.stylexCss, "Next global-error StyleX stylesheets");
+        assert.equal(stylesheets.length, 1, "Next global-error must own exactly one finalized StyleX stylesheet");
+        const stylesheetPath = stylesheets[0]!;
+        assert.match(stylesheetPath, /^static\/css\/[a-zA-Z0-9_-]+\.css$/u, "Next global-error stylesheet must be an ordinary static CSS asset");
+        assert.ok(orderedLogicalPaths(owner.css, "Next global-error CSS").includes(stylesheetPath), "Next global-error CSS inventory omitted its StyleX stylesheet");
+        assert.ok(orderedLogicalPaths(owner.files, "Next global-error files").includes(stylesheetPath), "Next global-error file inventory omitted its StyleX stylesheet");
+        globalErrorStylesheet = outputs.find(({ path }) => path === stylesheetPath);
+        assert.ok(globalErrorStylesheet !== undefined, "Next global-error stylesheet is not bound to the client output artifacts");
+        await readArtifact(outputRoot, globalErrorStylesheet, "Next global-error stylesheet");
       }
-      assert.equal(hydrationRuntimeFailed, false, `Next hydration reported browser runtime errors: ${JSON.stringify(hydrationDiagnostics)}`);
-      const evidence = await page.evaluate(() => {
-        const node = document.querySelector<HTMLElement>("[data-next-node-rsc]");
-        const client = document.querySelector<HTMLElement>("[data-next-client]");
-        const lazy = document.querySelector<HTMLElement>('[data-next-lazy="ready"]');
-        if (node === null || client === null || lazy === null) throw new Error("Next hydration proof is incomplete");
-        return {
-          client: getComputedStyle(client).scrollMarginBottom,
-          lazy: getComputedStyle(lazy).scrollPaddingInlineStart,
-          node: getComputedStyle(node).outlineOffset,
-          theme: getComputedStyle(node).paddingBlockEnd,
+      const sourceMaps = orderedArtifacts(graph.sourceMaps, `Next ${identity.target} source maps`);
+      assert.deepEqual(
+        sourceMaps,
+        outputs.filter(({ path }) => path.endsWith(".map")),
+        `Next ${identity.target} graph does not bind its complete map inventory`,
+      );
+      const javascriptChunks = orderedLogicalPaths(graph.javascriptChunks, `Next ${identity.target} JavaScript chunks`);
+      for (const sourceMap of sourceMaps) {
+        const prior = receiptMapArtifacts.get(sourceMap.path);
+        if (prior === undefined) receiptMapArtifacts.set(sourceMap.path, sourceMap);
+        else assert.deepEqual(sourceMap, prior, `Next delivery graphs disagree about source map ${sourceMap.path}`);
+        const outputPath = sourceMap.path.slice(0, -".map".length);
+        const outputArtifact = outputs.find(({ path }) => path === outputPath);
+        assert.ok(outputArtifact !== undefined, `Next source map ${sourceMap.path} has no same-graph output owner`);
+        const [mapSource, outputSource] = await Promise.all([
+          readArtifact(outputRoot, sourceMap, `Next source map ${sourceMap.path}`),
+          readArtifact(outputRoot, outputPath === "server/proxy.js" ? proxyOutput! : outputArtifact, `Next mapped output ${outputPath}`),
+        ]);
+        const outputText = exactUtf8(outputSource, `Next mapped output ${outputPath}`);
+        assertNextSourceMapOutputLink(outputText, outputPath, sourceMap.path);
+        const entries = nextSourceMapEntries(
+          JSON.parse(exactUtf8(mapSource, `Next source map ${sourceMap.path}`)) as unknown,
+          `Next ${identity.target} source map ${sourceMap.path}`,
+          FIXTURE_AUTHORED_SOURCES,
+          outputPath,
+        );
+        if (javascriptChunks.includes(outputPath)) mappedSourcesByTarget.get(identity.target)!.push(...entries);
+      }
+    }
+    assert.ok(globalErrorStylesheet !== undefined, "Next delivery omitted the global-error stylesheet artifact");
+    assert.deepEqual(
+      [...receiptMapArtifacts.keys()].sort(),
+      mapFiles,
+      "Next delivery graph receipts do not own the complete physical source-map census",
+    );
+    for (const target of NEXT_TARGETS) {
+      for (const source of requiredSources[target]) {
+        assertNextAuthoredSourceEmbedding(
+          mappedSourcesByTarget.get(target)!,
+          source,
+          await readFile(resolve(consumer, source), "utf8"),
+        );
+      }
+    }
+    const fontFiles = outputFiles.filter((path) => path.endsWith(".woff2"));
+    assert.equal(fontFiles.length, 1, "Next delivery must emit exactly the registered fixture font URL asset");
+    assert.equal(
+      sha256(await readFile(resolve(consumer, ".next", fontFiles[0]!))),
+      sha256(Buffer.alloc(70_000, 17)),
+      "Next emitted font URL asset bytes differ from the registered fixture",
+    );
+    const cssFiles = outputFiles.filter((path) => path.endsWith(".css"));
+    assert.ok(cssFiles.length > 0, "Next delivery must emit CSS assets");
+    const css = (await Promise.all(cssFiles.map((path) => readFile(resolve(consumer, ".next", path), "utf8")))).join("\n");
+    for (const value of ["13px", "17px", "19px", "23px", "29px", "31px"]) assert.ok(css.includes(value), `Next CSS union omitted ${value}`);
+    assert.ok(
+      css.includes(fontFiles[0]!.split("/").at(-1)!),
+      "Next CSS does not link the exact emitted font URL asset",
+    );
+
+    const port = await freePort();
+    const server = Bun.spawn([node, "./node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(port)], {
+      cwd: consumer,
+      env: environment,
+      stdin: "ignore",
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    const stdout = new Response(server.stdout).text();
+    const stderr = new Response(server.stderr).text();
+    try {
+      const base = `http://127.0.0.1:${String(port)}`;
+      await waitForServer(base, server);
+      for (const path of ["/", "/edge", "/index/manifest-proof"]) {
+        const response = await fetch(`${base}${path}`);
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get("x-stylex-node-proxy"), path, "The registered Node proxy must preserve the request path");
+        const csp = response.headers.get("content-security-policy") ?? "";
+        assert.match(csp, /style-src 'self'(?:;|$)/u);
+        assert.doesNotMatch(csp, /style-src[^;]*'unsafe-inline'/u);
+        assert.doesNotMatch(await response.text(), /<style(?:\s|>)/iu, "Next response must not use inline style elements");
+      }
+      const browserExecutable = await resolveFirstBrowserExecutable(
+        [
+          ...(process.env.CHROMIUM_EXECUTABLE_PATH === undefined ? [] : [process.env.CHROMIUM_EXECUTABLE_PATH]),
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          chromium.executablePath(),
+          "/Applications/Chromium.app/Contents/MacOS/Chromium",
+          "/usr/bin/google-chrome",
+          "/usr/bin/chromium",
+          "/usr/bin/chromium-browser",
+        ],
+        "No ordinary Chromium executable found. Set CHROMIUM_EXECUTABLE_PATH to run the packed Next browser smoke.",
+      );
+      const browser = await chromium.launch({ args: ["--no-sandbox"], executablePath: browserExecutable, headless: true });
+      try {
+        const page = await browser.newPage();
+        const hydrationDiagnostics: Readonly<{ kind: string; detail: string }>[] = [];
+        let hydrationRuntimeFailed = false;
+        const recordHydrationDiagnostic = (kind: string, detail: string): void => {
+          if (hydrationDiagnostics.length < 100) hydrationDiagnostics.push({ kind, detail: detail.slice(0, 2_000) });
         };
-      });
-      assert.deepEqual(evidence, { client: "17px", lazy: "19px", node: "13px", theme: "31px" });
-      const exampleNavigation = page.getByRole("navigation", { name: "Adapter examples" });
-      const navigationHrefs = await exampleNavigation.getByRole("link").evaluateAll((links) => links.map((link) => link.getAttribute("href")));
-      assert.deepEqual(navigationHrefs, ["/delegated-one", "/delegated-two"]);
-      browserOutcomes.push({ kind: "root-hydration", ...evidence, navigationHrefs });
-      await page.emulateMedia({ reducedMotion: "reduce" });
-      await exampleNavigation.getByRole("link", { name: "Shared history one", exact: true }).click();
-      await page.waitForURL(`${base}/delegated-one`);
-      await page.locator('[data-next-delegated="one"]').waitFor();
-      for (const instance of ["one", "two"]) {
-        assert.equal(await page.locator("[data-next-delegated]").getAttribute("data-next-delegated"), instance);
-        await page.waitForFunction(() => {
-          const main = document.querySelector<HTMLElement>("[data-next-delegated]");
-          return main !== null && parseFloat(main.style.getPropertyValue("--history-header-offset")) > 0 && parseFloat(main.style.getPropertyValue("--history-filter-stack-offset")) > 0;
+        page.on("pageerror", (error) => {
+          hydrationRuntimeFailed = true;
+          recordHydrationDiagnostic("pageerror", error.stack ?? error.message);
         });
-        assert.equal(await page.locator(".history-measure-controls svg").count(), 3, "Delegated mapped icon subtree did not render");
-        const valuation = page.locator('[aria-controls="history-measure-valuation"]');
-        await valuation.click();
-        await page.waitForFunction(() => {
-          const rail = document.querySelector<HTMLElement>(".history-measure-rail");
-          const card = document.querySelector<HTMLElement>("#history-measure-valuation");
-          return rail !== null && card !== null && rail.scrollLeft > 0 && Math.abs(rail.scrollLeft - card.offsetLeft) <= 1 && document.querySelector('[aria-controls="history-measure-valuation"]')?.getAttribute("aria-pressed") === "true";
+        page.on("requestfailed", (request) => recordHydrationDiagnostic("requestfailed", `${request.url()}: ${request.failure()?.errorText ?? "unknown"}`));
+        page.on("console", (message) => {
+          if (message.type() === "error" || message.type() === "warning") recordHydrationDiagnostic(message.type(), message.text());
         });
-        assert.equal(await valuation.evaluate((element) => element.getBoundingClientRect().height >= 48), true, "Delegated shared stylesheet did not reach the real control");
-        browserOutcomes.push({ kind: "delegated-scroll", instance, ...await valuation.evaluate((element) => ({ pressed: element.getAttribute("aria-pressed"), height: element.getBoundingClientRect().height, scrollLeft: document.querySelector<HTMLElement>(".history-measure-rail")?.scrollLeft, targetOffset: document.querySelector<HTMLElement>("#history-measure-valuation")?.offsetLeft, icons: document.querySelectorAll(".history-measure-controls svg").length })) });
-        const resizeOutcomes = [];
-        for (const width of [390, 900]) {
-          await page.setViewportSize({ width, height: 780 });
+        try {
+          const response = await page.goto(base, { waitUntil: "networkidle" });
+          assert.equal(response?.headers()["x-stylex-node-proxy"], "/", "The browser document must pass through the compiled Node proxy");
+          await page.locator('[data-next-hydrated="true"]').waitFor();
+          await page.locator('[data-next-lazy="ready"]').waitFor();
+        } catch (error) {
+          const capture = page.evaluate(() => ({
+            readyState: document.readyState,
+            sentinels: [...document.querySelectorAll("[data-next-client], [data-next-lazy], [data-next-global-error]")]
+              .slice(0, 10).map((element) => ({
+                markup: element.outerHTML.slice(0, 2_000),
+                display: getComputedStyle(element).display,
+                visibility: getComputedStyle(element).visibility,
+                rect: element.getBoundingClientRect().toJSON(),
+              })),
+            scripts: [...document.scripts].slice(0, 100).map((script) => script.src).filter(Boolean),
+          })).catch((captureError: unknown) => ({ captureError: String(captureError) }));
+          let captureTimeout: ReturnType<typeof setTimeout> | undefined;
+          let dom: unknown;
+          try {
+            dom = await Promise.race([
+              capture,
+              new Promise((resolveCapture) => {
+                captureTimeout = setTimeout(() => resolveCapture({ captureError: "DOM capture exceeded 5 seconds" }), 5_000);
+              }),
+            ]);
+          } finally {
+            if (captureTimeout !== undefined) clearTimeout(captureTimeout);
+          }
+          throw new Error(`Next hydration proof failed: ${JSON.stringify({ runtimeFailed: hydrationRuntimeFailed, diagnostics: hydrationDiagnostics, dom })}`, { cause: error });
+        }
+        assert.equal(hydrationRuntimeFailed, false, `Next hydration reported browser runtime errors: ${JSON.stringify(hydrationDiagnostics)}`);
+        const evidence = await page.evaluate(() => {
+          const node = document.querySelector<HTMLElement>("[data-next-node-rsc]");
+          const client = document.querySelector<HTMLElement>("[data-next-client]");
+          const lazy = document.querySelector<HTMLElement>('[data-next-lazy="ready"]');
+          if (node === null || client === null || lazy === null) throw new Error("Next hydration proof is incomplete");
+          return {
+            client: getComputedStyle(client).scrollMarginBottom,
+            lazy: getComputedStyle(lazy).scrollPaddingInlineStart,
+            node: getComputedStyle(node).outlineOffset,
+            theme: getComputedStyle(node).paddingBlockEnd,
+          };
+        });
+        assert.deepEqual(evidence, { client: "17px", lazy: "19px", node: "13px", theme: "31px" });
+        const exampleNavigation = page.getByRole("navigation", { name: "Adapter examples" });
+        const navigationHrefs = await exampleNavigation.getByRole("link").evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+        assert.deepEqual(navigationHrefs, ["/delegated-one", "/delegated-two"]);
+        browserOutcomes.push({ kind: "root-hydration", ...evidence, navigationHrefs });
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await exampleNavigation.getByRole("link", { name: "Shared history one", exact: true }).click();
+        await page.waitForURL(`${base}/delegated-one`);
+        await page.locator('[data-next-delegated="one"]').waitFor();
+        for (const instance of ["one", "two"]) {
+          assert.equal(await page.locator("[data-next-delegated]").getAttribute("data-next-delegated"), instance);
           await page.waitForFunction(() => {
             const main = document.querySelector<HTMLElement>("[data-next-delegated]");
-            const header = main?.querySelector<HTMLElement>(".stripe-history-header");
-            const filters = main?.querySelector<HTMLElement>(".history-filters");
-            if (main === null || header == null || filters == null) return false;
-            const headerHeight = header.getBoundingClientRect().height;
-            return Math.abs(parseFloat(main.style.getPropertyValue("--history-header-offset")) - headerHeight) < 0.1 && Math.abs(parseFloat(main.style.getPropertyValue("--history-filter-stack-offset")) - headerHeight - filters.getBoundingClientRect().height) < 0.1;
+            return main !== null && parseFloat(main.style.getPropertyValue("--history-header-offset")) > 0 && parseFloat(main.style.getPropertyValue("--history-filter-stack-offset")) > 0;
           });
-          resizeOutcomes.push(await page.locator("[data-next-delegated]").evaluate((element) => ({ width: innerWidth, headerOffset: element.style.getPropertyValue("--history-header-offset"), stackOffset: element.style.getPropertyValue("--history-filter-stack-offset"), headerHeight: element.querySelector(".stripe-history-header")!.getBoundingClientRect().height, filterHeight: element.querySelector(".history-filters")!.getBoundingClientRect().height })));
+          assert.equal(await page.locator(".history-measure-controls svg").count(), 3, "Delegated mapped icon subtree did not render");
+          const valuation = page.locator('[aria-controls="history-measure-valuation"]');
+          await valuation.click();
+          await page.waitForFunction(() => {
+            const rail = document.querySelector<HTMLElement>(".history-measure-rail");
+            const card = document.querySelector<HTMLElement>("#history-measure-valuation");
+            return rail !== null && card !== null && rail.scrollLeft > 0 && Math.abs(rail.scrollLeft - card.offsetLeft) <= 1 && document.querySelector('[aria-controls="history-measure-valuation"]')?.getAttribute("aria-pressed") === "true";
+          });
+          assert.equal(await valuation.evaluate((element) => element.getBoundingClientRect().height >= 48), true, "Delegated shared stylesheet did not reach the real control");
+          browserOutcomes.push({ kind: "delegated-scroll", instance, ...await valuation.evaluate((element) => ({ pressed: element.getAttribute("aria-pressed"), height: element.getBoundingClientRect().height, scrollLeft: document.querySelector<HTMLElement>(".history-measure-rail")?.scrollLeft, targetOffset: document.querySelector<HTMLElement>("#history-measure-valuation")?.offsetLeft, icons: document.querySelectorAll(".history-measure-controls svg").length })) });
+          const resizeOutcomes = [];
+          for (const width of [390, 900]) {
+            await page.setViewportSize({ width, height: 780 });
+            await page.waitForFunction(() => {
+              const main = document.querySelector<HTMLElement>("[data-next-delegated]");
+              const header = main?.querySelector<HTMLElement>(".stripe-history-header");
+              const filters = main?.querySelector<HTMLElement>(".history-filters");
+              if (main === null || header == null || filters == null) return false;
+              const headerHeight = header.getBoundingClientRect().height;
+              return Math.abs(parseFloat(main.style.getPropertyValue("--history-header-offset")) - headerHeight) < 0.1 && Math.abs(parseFloat(main.style.getPropertyValue("--history-filter-stack-offset")) - headerHeight - filters.getBoundingClientRect().height) < 0.1;
+            });
+            resizeOutcomes.push(await page.locator("[data-next-delegated]").evaluate((element) => ({ width: innerWidth, headerOffset: element.style.getPropertyValue("--history-header-offset"), stackOffset: element.style.getPropertyValue("--history-filter-stack-offset"), headerHeight: element.querySelector(".stripe-history-header")!.getBoundingClientRect().height, filterHeight: element.querySelector(".history-filters")!.getBoundingClientRect().height })));
+          }
+          browserOutcomes.push({ kind: "delegated-resize", instance, measurements: resizeOutcomes });
+          const oldMain = await page.locator("[data-next-delegated]").elementHandle();
+          assert.ok(oldMain !== null);
+          const next = instance === "one" ? "two" : "one";
+          await page.getByRole("link", { name: "Second shared history route" }).click();
+          await page.waitForURL(`${base}/delegated-${next}`);
+          await page.locator(`[data-next-delegated="${next}"]`).waitFor();
+          const cleanup = await oldMain.evaluate((element) => ({ connected: element.isConnected, header: element.style.getPropertyValue("--history-header-offset"), stack: element.style.getPropertyValue("--history-filter-stack-offset") }));
+          assert.deepEqual(cleanup, { connected: false, header: "", stack: "" }, "Delegated route cleanup must detach the prior main and remove its observed offsets");
+          browserOutcomes.push({ kind: "delegated-route-cleanup", instance, next, ...cleanup });
+          await oldMain.dispose();
         }
-        browserOutcomes.push({ kind: "delegated-resize", instance, measurements: resizeOutcomes });
-        const oldMain = await page.locator("[data-next-delegated]").elementHandle();
-        assert.ok(oldMain !== null);
-        const next = instance === "one" ? "two" : "one";
-        await page.getByRole("link", { name: "Second shared history route" }).click();
-        await page.waitForURL(`${base}/delegated-${next}`);
-        await page.locator(`[data-next-delegated="${next}"]`).waitFor();
-        const cleanup = await oldMain.evaluate((element) => ({ connected: element.isConnected, header: element.style.getPropertyValue("--history-header-offset"), stack: element.style.getPropertyValue("--history-filter-stack-offset") }));
-        assert.deepEqual(cleanup, { connected: false, header: "", stack: "" }, "Delegated route cleanup must detach the prior main and remove its observed offsets");
-        browserOutcomes.push({ kind: "delegated-route-cleanup", instance, next, ...cleanup });
-        await oldMain.dispose();
-      }
-      assert.equal(hydrationRuntimeFailed, false, `Next delegated hydration reported runtime errors: ${JSON.stringify(hydrationDiagnostics)}`);
-      await page.goto(`${base}/edge`, { waitUntil: "networkidle" });
-      assert.equal(await page.locator("[data-next-edge-rsc]").evaluate((element) => getComputedStyle(element).marginInlineEnd), "29px");
-      await page.goto(`${base}/index/manifest-proof`, { waitUntil: "networkidle" });
-      assert.equal(
-        await page.locator('[data-next-index-manifest="true"]').evaluate((element) => getComputedStyle(element).borderBlockEndWidth),
-        "31px",
-        "Next /index route did not receive its compiled StyleX rule",
-      );
-      const globalErrorPage = await browser.newPage({
-        extraHTTPHeaders: { "x-stylex-global-error-proof": "true" },
-      });
-      try {
-        const stylesheetUrl = new URL(`/_next/${globalErrorStylesheet.path}`, base).href;
-        const [stylesheetResponse] = await Promise.all([
-          globalErrorPage.waitForResponse((response) => response.url() === stylesheetUrl),
-          globalErrorPage.goto(`${base}/global-error-proof`, { waitUntil: "networkidle" }),
-        ]);
-        assert.equal(stylesheetResponse.status(), 200, "Next global-error stylesheet request failed");
-        assert.match(stylesheetResponse.headers()["content-type"] ?? "", /^text\/css(?:;|$)/iu, "Next global-error stylesheet response is not CSS");
-        const stylesheetBytes = await stylesheetResponse.body();
-        assert.deepEqual(
-          { bytes: stylesheetBytes.byteLength, sha256: sha256(stylesheetBytes) },
-          { bytes: globalErrorStylesheet.bytes, sha256: globalErrorStylesheet.sha256 },
-          "Next global-error browser stylesheet differs from its exact graph-bound artifact",
+        assert.equal(hydrationRuntimeFailed, false, `Next delegated hydration reported runtime errors: ${JSON.stringify(hydrationDiagnostics)}`);
+        await page.goto(`${base}/edge`, { waitUntil: "networkidle" });
+        assert.equal(await page.locator("[data-next-edge-rsc]").evaluate((element) => getComputedStyle(element).marginInlineEnd), "29px");
+        await page.goto(`${base}/index/manifest-proof`, { waitUntil: "networkidle" });
+        assert.equal(
+          await page.locator('[data-next-index-manifest="true"]').evaluate((element) => getComputedStyle(element).borderBlockEndWidth),
+          "31px",
+          "Next /index route did not receive its compiled StyleX rule",
         );
-        const globalError = globalErrorPage.locator('[data-next-global-error="true"]');
-        await globalError.waitFor();
-        const globalErrorEvidence = await globalError.evaluate((element, expectedHref) => {
-          const expected = new URL(expectedHref);
-          if (expected.origin !== location.origin || expected.search !== "" || expected.hash !== "") {
-            throw new Error("Next global-error stylesheet must have one exact same-origin URL");
-          }
-          const sameResource = (href: string): boolean => {
-            const candidate = new URL(href, document.baseURI);
-            return candidate.origin === expected.origin && candidate.pathname === expected.pathname;
-          };
-          const links = [...document.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"]')]
-            .filter((link) => sameResource(link.href));
-          const sheets = [...document.styleSheets]
-            .filter((sheet) => sheet.href !== null && sameResource(sheet.href));
-          if (links.length !== 1 || sheets.length !== 1) {
-            throw new Error("Next global-error stylesheet is absent, duplicated, or aliased");
-          }
-          const link = links[0]!;
-          const sheet = sheets[0]!;
-          if (
-            link.href !== expected.href || sheet.href !== expected.href
-            || link.sheet !== sheet || sheet.ownerNode !== link || sheet.ownerRule !== null
-            || link.disabled || sheet.disabled || link.relList.contains("alternate")
-            || link.media !== "" || sheet.media.mediaText !== "" || sheet.cssRules.length === 0
-          ) {
-            throw new Error("Next global-error stylesheet is not the ordinary loaded graph-bound stylesheet");
-          }
-          if (element.hasAttribute("style")) throw new Error("Next global-error sentinel must not use inline styles");
-          const readBorder = () => {
-            const computed = getComputedStyle(element);
-            return { style: computed.borderBlockStartStyle, width: computed.borderBlockStartWidth };
-          };
-          const before = readBorder();
-          if (before.style !== "solid" || before.width !== "23px") {
-            throw new Error(`Next global-error compiled border is missing: ${JSON.stringify(before)}`);
-          }
-          let disabled: Readonly<{ style: string; width: string }> | undefined;
-          try {
-            sheet.disabled = true;
-            if (!sheet.disabled) throw new Error("Next global-error stylesheet negative control did not disable its target");
-            disabled = readBorder();
-          } finally {
-            sheet.disabled = false;
-          }
-          if (sheet.disabled) throw new Error("Next global-error stylesheet negative control did not restore its target");
-          return { before, disabled, restored: readBorder() };
-        }, stylesheetUrl);
-        assert.deepEqual(
-          globalErrorEvidence,
-          {
-            before: { style: "solid", width: "23px" },
-            disabled: { style: "none", width: "0px" },
-            restored: { style: "solid", width: "23px" },
-          },
-          "Next global-error border must depend only on its loaded graph-bound StyleX stylesheet",
-        );
-        browserOutcomes.push({ kind: "global-error-stylesheet-negative", ...globalErrorEvidence });
+        const globalErrorPage = await browser.newPage({
+          extraHTTPHeaders: { "x-stylex-global-error-proof": "true" },
+        });
+        try {
+          const stylesheetUrl = new URL(`/_next/${globalErrorStylesheet.path}`, base).href;
+          const [stylesheetResponse] = await Promise.all([
+            globalErrorPage.waitForResponse((response) => response.url() === stylesheetUrl),
+            globalErrorPage.goto(`${base}/global-error-proof`, { waitUntil: "networkidle" }),
+          ]);
+          assert.equal(stylesheetResponse.status(), 200, "Next global-error stylesheet request failed");
+          assert.match(stylesheetResponse.headers()["content-type"] ?? "", /^text\/css(?:;|$)/iu, "Next global-error stylesheet response is not CSS");
+          const stylesheetBytes = await stylesheetResponse.body();
+          assert.deepEqual(
+            { bytes: stylesheetBytes.byteLength, sha256: sha256(stylesheetBytes) },
+            { bytes: globalErrorStylesheet.bytes, sha256: globalErrorStylesheet.sha256 },
+            "Next global-error browser stylesheet differs from its exact graph-bound artifact",
+          );
+          const globalError = globalErrorPage.locator('[data-next-global-error="true"]');
+          await globalError.waitFor();
+          const globalErrorEvidence = await globalError.evaluate((element, expectedHref) => {
+            const expected = new URL(expectedHref);
+            if (expected.origin !== location.origin || expected.search !== "" || expected.hash !== "") {
+              throw new Error("Next global-error stylesheet must have one exact same-origin URL");
+            }
+            const sameResource = (href: string): boolean => {
+              const candidate = new URL(href, document.baseURI);
+              return candidate.origin === expected.origin && candidate.pathname === expected.pathname;
+            };
+            const links = [...document.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"]')]
+              .filter((link) => sameResource(link.href));
+            const sheets = [...document.styleSheets]
+              .filter((sheet) => sheet.href !== null && sameResource(sheet.href));
+            if (links.length !== 1 || sheets.length !== 1) {
+              throw new Error("Next global-error stylesheet is absent, duplicated, or aliased");
+            }
+            const link = links[0]!;
+            const sheet = sheets[0]!;
+            if (
+              link.href !== expected.href || sheet.href !== expected.href
+              || link.sheet !== sheet || sheet.ownerNode !== link || sheet.ownerRule !== null
+              || link.disabled || sheet.disabled || link.relList.contains("alternate")
+              || link.media !== "" || sheet.media.mediaText !== "" || sheet.cssRules.length === 0
+            ) {
+              throw new Error("Next global-error stylesheet is not the ordinary loaded graph-bound stylesheet");
+            }
+            if (element.hasAttribute("style")) throw new Error("Next global-error sentinel must not use inline styles");
+            const readBorder = () => {
+              const computed = getComputedStyle(element);
+              return { style: computed.borderBlockStartStyle, width: computed.borderBlockStartWidth };
+            };
+            const before = readBorder();
+            if (before.style !== "solid" || before.width !== "23px") {
+              throw new Error(`Next global-error compiled border is missing: ${JSON.stringify(before)}`);
+            }
+            let disabled: Readonly<{ style: string; width: string }> | undefined;
+            try {
+              sheet.disabled = true;
+              if (!sheet.disabled) throw new Error("Next global-error stylesheet negative control did not disable its target");
+              disabled = readBorder();
+            } finally {
+              sheet.disabled = false;
+            }
+            if (sheet.disabled) throw new Error("Next global-error stylesheet negative control did not restore its target");
+            return { before, disabled, restored: readBorder() };
+          }, stylesheetUrl);
+          assert.deepEqual(
+            globalErrorEvidence,
+            {
+              before: { style: "solid", width: "23px" },
+              disabled: { style: "none", width: "0px" },
+              restored: { style: "solid", width: "23px" },
+            },
+            "Next global-error border must depend only on its loaded graph-bound StyleX stylesheet",
+          );
+          browserOutcomes.push({ kind: "global-error-stylesheet-negative", ...globalErrorEvidence });
+        } finally {
+          await globalErrorPage.close();
+        }
       } finally {
-        await globalErrorPage.close();
+        await browser.close();
       }
     } finally {
-      await browser.close();
+      server.kill("SIGTERM");
+      await Promise.race([server.exited, new Promise((resolveWait) => setTimeout(resolveWait, 2_000))]);
+      if (server.exitCode === null) server.kill("SIGKILL");
+      await server.exited;
+      const [stdoutText, stderrText] = await Promise.all([stdout, stderr]);
+      if (stdoutText.length > 0) process.stdout.write(stdoutText);
+      if (stderrText.length > 0) process.stderr.write(stderrText);
     }
-  } finally {
-    server.kill("SIGTERM");
-    await Promise.race([server.exited, new Promise((resolveWait) => setTimeout(resolveWait, 2_000))]);
-    if (server.exitCode === null) server.kill("SIGKILL");
-    await server.exited;
-    const [stdoutText, stderrText] = await Promise.all([stdout, stderr]);
-    if (stdoutText.length > 0) process.stdout.write(stdoutText);
-    if (stderrText.length > 0) process.stderr.write(stderrText);
+    assert.match(sha256(await readFile(completePath)), /^[a-f0-9]{64}$/u);
   }
-  assert.match(sha256(await readFile(completePath)), /^[a-f0-9]{64}$/u);
 
-  await rm(resolve(consumer, "app/edge"), { recursive: true });
-  await run([node, "./build-no-edge.mjs"], consumer, environment);
-  const noEdgeAttempt = resolve(consumer, ".stylex-next/packed-next-adopter-no-edge");
-  const noEdgePlan = JSON.parse(await readFile(resolve(noEdgeAttempt, "plan.json"), "utf8")) as {
-    nextVersion?: unknown;
-    requiredSources?: Record<string, unknown>;
-  };
-  assert.equal(noEdgePlan.nextVersion, NEXT_VERSION);
-  assert.deepEqual(noEdgePlan.requiredSources?.["edge-rsc"], []);
-  const noEdgeComplete = JSON.parse(await readFile(resolve(noEdgeAttempt, "complete.json"), "utf8")) as {
-    delivery?: { target?: unknown }[];
-    discovery?: { target?: unknown }[];
-    state?: unknown;
-    nextVersion?: unknown;
-  };
-  assert.equal(noEdgeComplete.state, "complete");
-  assert.equal(noEdgeComplete.nextVersion, NEXT_VERSION);
-  assert.deepEqual(noEdgeComplete.discovery?.map(({ target }) => target), ["client", "edge-rsc", "node-rsc"]);
-  assert.deepEqual(noEdgeComplete.delivery?.map(({ target }) => target), ["client", "edge-rsc", "node-rsc"]);
-  for (const mode of ["discovery", "delivery"] as const) {
-    const clientGraph = object(JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "client/graph.json"), "utf8")) as unknown, "Next no-edge client graph");
-    await assertDelegatedEntries(consumer, clientGraph);
-    const nodeGraph = object(JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "node-rsc/graph.json"), "utf8")) as unknown, "Next no-edge Node graph");
-    const postprocessing = object(JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "postprocessing.json"), "utf8")) as unknown, "Next no-edge postprocessing");
-    await assertNodeProxyTrace(consumer, nodeGraph, postprocessing);
-    const graph = JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "edge-rsc/graph.json"), "utf8")) as {
-      entrypoints?: unknown[];
-      modules?: unknown[];
-      sourcesSha256?: unknown;
-      target?: unknown;
+  if (PHASES.includes("fallbacks")) {
+    await rm(resolve(consumer, "app/edge"), { recursive: true });
+    await run([node, "./build-no-edge.mjs"], consumer, environment);
+    const noEdgeAttempt = resolve(consumer, ".stylex-next/packed-next-adopter-no-edge");
+    const noEdgePlan = JSON.parse(await readFile(resolve(noEdgeAttempt, "plan.json"), "utf8")) as {
+      nextVersion?: unknown;
+      requiredSources?: Record<string, unknown>;
     };
-    assert.equal(graph.target, "edge-rsc");
-    assert.deepEqual(graph.modules, []);
-    assert.deepEqual(graph.entrypoints, []);
-    assert.equal(graph.sourcesSha256, sha256("[]"));
-  }
-  // Keep the physical error boundary and empty-Edge qualifications above.
-  // This third fresh build proves the framework fallback without adding an
-  // application boundary merely to satisfy the compiler's CSS owner check.
-  await rm(resolve(consumer, "app/global-error.tsx"));
-  await run([node, "./build-default-error.mjs"], consumer, environment);
-  const defaultErrorAttempt = resolve(consumer, ".stylex-next/packed-next-adopter-default-error");
-  const defaultErrorPlan = object(JSON.parse(await readFile(resolve(defaultErrorAttempt, "plan.json"), "utf8")) as unknown, "Next default-error plan");
-  assert.equal(defaultErrorPlan.nextVersion, NEXT_VERSION);
-  const defaultSources = {
-    client: FIXTURE_REQUIRED_SOURCES.client.filter((path) => path !== "app/global-error.tsx"),
-    "edge-rsc": [],
-    "node-rsc": FIXTURE_REQUIRED_SOURCES["node-rsc"].filter((path) => path !== "app/global-error.tsx"),
-  };
-  assert.deepEqual(defaultErrorPlan.requiredSources, defaultSources);
-  const defaultComplete = object(JSON.parse(await readFile(resolve(defaultErrorAttempt, "complete.json"), "utf8")) as unknown, "Next default-error complete");
-  assert.equal(defaultComplete.state, "complete");
-  assert.equal(defaultComplete.nextVersion, NEXT_VERSION);
-  for (const mode of ["discovery", "delivery"] as const) {
-    for (const identity of graphIdentities(defaultComplete[mode], `Next default-error ${mode} identities`)) {
-      const bytes = await readFile(resolve(defaultErrorAttempt, mode, identity.target, "graph.json"));
-      assert.equal(sha256(bytes), identity.receiptSha256);
-      const graph = object(JSON.parse(bytes.toString("utf8")) as unknown, `Next default-error ${mode} graph`);
-      assert.equal(graph.nextVersion, NEXT_VERSION);
-      assert.equal(graph.target, identity.target);
-      assert.ok(Array.isArray(graph.modules));
-      assert.deepEqual(graph.modules.map((item) => object(item, "Next default-error module").path), defaultSources[identity.target]);
-      assert.ok(Array.isArray(graph.entrypoints));
-      const entries = graph.entrypoints.map((item) => object(item, "Next default-error entrypoint"));
-      if (identity.target === "edge-rsc") assert.deepEqual(entries, []);
-      if (identity.target !== "client") continue;
-      const builtin = entries.filter(({ name }) => name === STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY);
-      assert.equal(builtin.length, 1, "Default boundary must compile the exact framework global-error entry");
-      assert.deepEqual(builtin[0]!.stylexCss, [], "The built-in fallback cannot own the application StyleX stylesheet");
-      assert.ok(!entries.some(({ name }) => name === "app/global-error"));
-      const owners = entries.filter((entry) => orderedLogicalPaths(entry.stylexCss, "Next default-error StyleX CSS").length > 0);
-      assert.deepEqual(owners.map(({ name }) => name), mode === "delivery" ? ["app/layout"] : []);
-      await assertDelegatedEntries(consumer, graph);
+    assert.equal(noEdgePlan.nextVersion, NEXT_VERSION);
+    assert.deepEqual(noEdgePlan.requiredSources?.["edge-rsc"], []);
+    const noEdgeComplete = JSON.parse(await readFile(resolve(noEdgeAttempt, "complete.json"), "utf8")) as {
+      delivery?: { target?: unknown }[];
+      discovery?: { target?: unknown }[];
+      state?: unknown;
+      nextVersion?: unknown;
+    };
+    assert.equal(noEdgeComplete.state, "complete");
+    assert.equal(noEdgeComplete.nextVersion, NEXT_VERSION);
+    assert.deepEqual(noEdgeComplete.discovery?.map(({ target }) => target), ["client", "edge-rsc", "node-rsc"]);
+    assert.deepEqual(noEdgeComplete.delivery?.map(({ target }) => target), ["client", "edge-rsc", "node-rsc"]);
+    for (const mode of ["discovery", "delivery"] as const) {
+      const clientGraph = object(JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "client/graph.json"), "utf8")) as unknown, "Next no-edge client graph");
+      await assertDelegatedEntries(consumer, clientGraph);
+      const nodeGraph = object(JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "node-rsc/graph.json"), "utf8")) as unknown, "Next no-edge Node graph");
+      const postprocessing = object(JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "postprocessing.json"), "utf8")) as unknown, "Next no-edge postprocessing");
+      await assertNodeProxyTrace(consumer, nodeGraph, postprocessing);
+      const graph = JSON.parse(await readFile(resolve(noEdgeAttempt, mode, "edge-rsc/graph.json"), "utf8")) as {
+        entrypoints?: unknown[];
+        modules?: unknown[];
+        sourcesSha256?: unknown;
+        target?: unknown;
+      };
+      assert.equal(graph.target, "edge-rsc");
+      assert.deepEqual(graph.modules, []);
+      assert.deepEqual(graph.entrypoints, []);
+      assert.equal(graph.sourcesSha256, sha256("[]"));
+    }
+    // Keep the physical error boundary and empty-Edge qualifications above.
+    // This third fresh build proves the framework fallback without adding an
+    // application boundary merely to satisfy the compiler's CSS owner check.
+    await rm(resolve(consumer, "app/global-error.tsx"));
+    await run([node, "./build-default-error.mjs"], consumer, environment);
+    const defaultErrorAttempt = resolve(consumer, ".stylex-next/packed-next-adopter-default-error");
+    const defaultErrorPlan = object(JSON.parse(await readFile(resolve(defaultErrorAttempt, "plan.json"), "utf8")) as unknown, "Next default-error plan");
+    assert.equal(defaultErrorPlan.nextVersion, NEXT_VERSION);
+    const defaultSources = {
+      client: FIXTURE_REQUIRED_SOURCES.client.filter((path) => path !== "app/global-error.tsx"),
+      "edge-rsc": [],
+      "node-rsc": FIXTURE_REQUIRED_SOURCES["node-rsc"].filter((path) => path !== "app/global-error.tsx"),
+    };
+    assert.deepEqual(defaultErrorPlan.requiredSources, defaultSources);
+    const defaultComplete = object(JSON.parse(await readFile(resolve(defaultErrorAttempt, "complete.json"), "utf8")) as unknown, "Next default-error complete");
+    assert.equal(defaultComplete.state, "complete");
+    assert.equal(defaultComplete.nextVersion, NEXT_VERSION);
+    for (const mode of ["discovery", "delivery"] as const) {
+      for (const identity of graphIdentities(defaultComplete[mode], `Next default-error ${mode} identities`)) {
+        const bytes = await readFile(resolve(defaultErrorAttempt, mode, identity.target, "graph.json"));
+        assert.equal(sha256(bytes), identity.receiptSha256);
+        const graph = object(JSON.parse(bytes.toString("utf8")) as unknown, `Next default-error ${mode} graph`);
+        assert.equal(graph.nextVersion, NEXT_VERSION);
+        assert.equal(graph.target, identity.target);
+        assert.ok(Array.isArray(graph.modules));
+        assert.deepEqual(graph.modules.map((item) => object(item, "Next default-error module").path), defaultSources[identity.target]);
+        assert.ok(Array.isArray(graph.entrypoints));
+        const entries = graph.entrypoints.map((item) => object(item, "Next default-error entrypoint"));
+        if (identity.target === "edge-rsc") assert.deepEqual(entries, []);
+        if (identity.target !== "client") continue;
+        const builtin = entries.filter(({ name }) => name === STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY);
+        assert.equal(builtin.length, 1, "Default boundary must compile the exact framework global-error entry");
+        assert.deepEqual(builtin[0]!.stylexCss, [], "The built-in fallback cannot own the application StyleX stylesheet");
+        assert.ok(!entries.some(({ name }) => name === "app/global-error"));
+        const owners = entries.filter((entry) => orderedLogicalPaths(entry.stylexCss, "Next default-error StyleX CSS").length > 0);
+        assert.deepEqual(owners.map(({ name }) => name), mode === "delivery" ? ["app/layout"] : []);
+        await assertDelegatedEntries(consumer, graph);
+      }
+    }
+    for (const [path, expected] of profile.builtinGlobalErrorInputs) {
+      assert.equal(sha256(await readFile(resolve(consumer, "node_modules/next", path))), expected, "Default-error inputs changed after native qualification");
     }
   }
-  for (const [path, expected] of profile.builtinGlobalErrorInputs) {
-    assert.equal(sha256(await readFile(resolve(consumer, "node_modules/next", path))), expected, "Default-error inputs changed after native qualification");
-  }
-  for (const attempt of ["packed-next-adopter", "packed-next-adopter-no-edge", "packed-next-adopter-default-error"]) {
+  const attempts = [
+    ...(PHASES.includes("edge") ? ["packed-next-adopter"] : []),
+    ...(PHASES.includes("fallbacks") ? ["packed-next-adopter-no-edge", "packed-next-adopter-default-error"] : []),
+  ];
+  for (const attempt of attempts) {
     for (const file of ["plan.json", "complete.json", ...["discovery", "delivery"].flatMap((mode) => [`${mode}/postprocessing.json`, ...NEXT_TARGETS.map((target) => `${mode}/${target}/graph.json`)])]) {
       await retainOrdinaryEvidence(consumer, `.stylex-next/${attempt}/${file}`, `${attempt}/receipts/${file}`);
     }
   }
   successful = true;
-  console.log(`Packed Next ${NEXT_VERSION} client, Node RSC, edge RSC, registered Node proxy trace and request headers, exact target/output source-map receipts, two independently observed delegated entries with mapped owner joins and working scroll/resize/icon hydration, explicit no-edge graph, dynamic /index route, lazy, exercised physical global-error and source-qualified built-in non-owner, package union, font-URL asset linkage, CSP, and hydration proof passed`);
+  if (PHASES.length === 1 && PHASES[0] === "fallbacks") console.log(`Packed Next ${NEXT_VERSION} explicit no-edge graph and source-qualified built-in global-error non-owner proof passed`);
+  else if (PHASES.length === 1) console.log(`Packed Next ${NEXT_VERSION} client, Node RSC, edge RSC, registered Node proxy, source-map, delegated-entry, package union, font-URL, CSP, physical global-error and hydration proof passed`);
+  else console.log(`Packed Next ${NEXT_VERSION} client, Node RSC, edge RSC, registered Node proxy trace and request headers, exact target/output source-map receipts, two independently observed delegated entries with mapped owner joins and working scroll/resize/icon hydration, explicit no-edge graph, dynamic /index route, lazy, exercised physical global-error and source-qualified built-in non-owner, package union, font-URL asset linkage, CSP, and hydration proof passed`);
 } finally {
   if (successful) {
     await rm(work, { force: true, recursive: true });
