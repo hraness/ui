@@ -75,7 +75,7 @@
 - Run `bun run kb:check:lane` in an independent KB lane. The integrating agent runs `bun run kb:refresh` and `bun run kb:check`.
 - Treat the repository as the complete public hraness/ui project. Files and Git prose may use only public package names, paths, commands, examples, and dependencies.
 - Keep `portfolio-inventory.json` byte-canonical and consistent with the public package identity, version, repository, and direct `@hraness/*` dependency edges.
-- Run `bun run check` before handing off a change.
+- Before handing off a change, run `bun run check:quick` plus the focused smoke for what you touched (`test:package`, `test:vite-adopter`, `test:vite78-adopter --toolchain=<index>`, `test:next-adopter`, `test:packed-bun-browser`, `test:browser`). The full `bun run check` chain (about 14 minutes, six Next builds and several Chrome launches) runs in CI as parallel jobs behind the `Required` gate; run it locally only when a change spans every adopter surface. CI runs the Next `edge` and `fallbacks` phases in separate clean consumers, so only a local `bun run test:next-adopter` (no `--phase`) covers the no-Edge rebuild over a prior Edge build's `.next` and `.stylex-next` state; run it locally when a change touches StyleX Next build caching or stale-state handling.
 
 <!-- hraness-public-copy:start -->
 - Public copy (websites, READMEs, docs, package and GitHub descriptions, CLI help, `llms.txt`, generated pages) follows `STYLE.md`, synced from hraness/.github. Text a model writes for publication also follows `GENERATION_STYLE.md`.

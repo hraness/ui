@@ -8,7 +8,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: dependabot-auto-merge-${{ github.ref }}
+  # pull_request_target runs on the base ref, so group by pull request number;
+  # otherwise one Dependabot PR's event cancels another's.
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
