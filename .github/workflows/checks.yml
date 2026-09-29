@@ -130,6 +130,21 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
+      # The toolchain rows above are listed by hand. Fail if
+      # fixtures/vite8-adopter/toolchain.ts gains, loses, or changes a row, so
+      # a new toolchain can never go untested in CI.
+      - name: Check the matrix covers every Vite toolchain
+        if: matrix.name == 'adopter'
+        env:
+          ROWS: '["vite 7.3.6 rollup 4.63.1","vite 8.2.1 rolldown 1.2.7","vite 8.2.1 rolldown 1.2.8"]'
+        run: |
+          # shellcheck disable=SC2016 # the backticks are a JavaScript template
+          bun -e 'import { viteMatrixToolchains as rows } from "./fixtures/vite8-adopter/toolchain.ts";
+          const actual = rows.map((row) => `vite ${row.vite} ${row.bundler} ${row.version}`);
+          if (JSON.stringify(actual) !== process.env.ROWS) {
+            console.error(`checks.yml Vite rows ${process.env.ROWS} do not match toolchain.ts ${JSON.stringify(actual)}; add a --toolchain=<index> row per toolchain.`);
+            process.exit(1);
+          }'
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run build
       - run: ${{ matrix.command }}

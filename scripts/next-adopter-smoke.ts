@@ -30,7 +30,9 @@ const NODE_VERSION_PREFIX = "24.";
 // `edge` is the full build plus the server and browser proof. `fallbacks`
 // removes the Edge route, then the application global-error boundary, and
 // builds twice more; its second build still runs over prior attempt state.
-// With no `--phase`, both run in order, exactly as before.
+// With no `--phase`, both run in order, exactly as before. Only that local
+// no-flag run rebuilds without Edge over a prior Edge build's `.next` and
+// `.stylex-next`; CI starts the `fallbacks` job from a clean consumer.
 const NEXT_PHASES = ["edge", "fallbacks"] as const;
 type NextPhase = (typeof NEXT_PHASES)[number];
 function parseArguments(values: readonly string[]): Readonly<{ nextVersion: "16.2.12" | "16.3.3"; phases: readonly NextPhase[] }> {
