@@ -975,6 +975,12 @@ const PACKAGE_DATA_TABLE_CONDITIONAL_DECLARATIONS: Partial<Record<PackageDataTab
   wrapper: [{ condition: "@media(forced-colors:active)", declaration: /border-color:\s*canvastext;/u }],
 };
 
+// Separator ownership: the bordered wrapper owns the table's outer edge, so the
+// final body row hands its divider back instead of stacking a second rule.
+const PACKAGE_DATA_TABLE_SELECTOR_DECLARATIONS: Partial<Record<PackageDataTableStyleKey, readonly Readonly<{ selector: RegExp; declaration: RegExp }>[]>> = {
+  cell: [{ selector: /:is\(tbody\s*>\s*tr:last-child\s*>\s*\*\)$/u, declaration: /^\s*border-block-end-width:\s*0;?\s*$/u }],
+};
+
 function packageDataTableStyleMap(javaScript: string): PackageNamedStyleMap {
   return packageNamedStyleMap(
     javaScript,
@@ -1068,10 +1074,20 @@ function requirePackageDataTableStyles(
     const rules = packageStyleRules(css, classNames);
     familyRules.push(...rules);
     const conditional = PACKAGE_DATA_TABLE_CONDITIONAL_DECLARATIONS[key] ?? [];
-    for (const rule of rules) assert.ok(
+    const selectorScoped = PACKAGE_DATA_TABLE_SELECTOR_DECLARATIONS[key] ?? [];
+    const isSelectorScoped = (rule: PackageStyleRule): boolean =>
       rule.conditions.length === 0
+      && selectorScoped.some(({ selector, declaration }) =>
+        selector.test(rule.header.trim()) && declaration.test(rule.body)
+      );
+    for (const { selector } of selectorScoped) assert.ok(
+      rules.some((rule) => isSelectorScoped(rule) && selector.test(rule.header.trim())),
+      `packed dataTableStyles.${key} must retain its selector-scoped separator handoff ${selector.source}`,
+    );
+    for (const rule of rules) assert.ok(
+      isSelectorScoped(rule) || (rule.conditions.length === 0
         ? expectedDeclarations.some(({ declaration }) => dialogDeclarationMatches(rule.body, declaration))
-        : rule.conditions.length === 1 && conditional.some(({ condition, declaration }) => normalizedPackageCondition(condition) === rule.conditions[0] && dialogDeclarationMatches(rule.body, declaration)),
+        : rule.conditions.length === 1 && conditional.some(({ condition, declaration }) => normalizedPackageCondition(condition) === rule.conditions[0] && dialogDeclarationMatches(rule.body, declaration))),
       `packed dataTableStyles.${key} must retain its exact declaration and media-condition inventory`,
     );
     for (const { condition, declaration } of conditional) requirePackageExactBaseDeclaration(
@@ -1080,7 +1096,7 @@ function requirePackageDataTableStyles(
     );
     assert.equal(
       new Set(rules.map((rule) => normalizedAtomicDeclaration(rule.body))).size,
-      expectedDeclarations.length + conditional.length,
+      expectedDeclarations.length + conditional.length + selectorScoped.length,
       `packed dataTableStyles.${key} must retain only its exact declaration set`,
     );
     for (const className of classNames) {
