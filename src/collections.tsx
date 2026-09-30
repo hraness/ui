@@ -298,12 +298,17 @@ export function Disclosure({
                       "hraness-disclosure__indicator",
                       stylex.props(
                         collectionStyles.disclosureIndicator,
+                        indicator === "›" && collectionStyles.disclosureIndicatorDefault,
                         isExpanded && collectionStyles.disclosureIndicatorExpanded,
                       ).className,
                     )}
                     data-slot="disclosure-indicator"
                   >
-                    {indicator}
+                    {indicator === "›" ? (
+                      // The neutral caret mirrors when closed. While expanded,
+                      // rotate an LTR glyph down without an intermediate flip.
+                      <span dir={isExpanded ? "ltr" : undefined}>{indicator}</span>
+                    ) : indicator}
                   </span>
                 </>
               )}

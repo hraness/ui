@@ -43,6 +43,8 @@
     "scripts/gallery-browser.ts",
     "scripts/next-adopter-smoke.ts",
     "scripts/next-config-phase.test.ts",
+    "scripts/release-artifact.ts",
+    "scripts/release-artifact.test.ts",
     "scripts/vite8-adopter-smoke.ts",
     "scripts/vite8-adopter-custody.test.ts",
     "scripts/vite8-adopter-custody.process.test.ts",

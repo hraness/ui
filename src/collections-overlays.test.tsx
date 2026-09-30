@@ -168,6 +168,30 @@ test("collapsed compact disclosures expose a hidden panel without losing its con
   expect(html).toContain("Persistent content");
 });
 
+test("Disclosure server rendering preserves the closed caret direction and custom indicator markup", () => {
+  for (const dir of ["ltr", "rtl"] as const) {
+    for (const isExpanded of [false, true]) {
+      for (const indicator of [undefined, "›"]) {
+        const html = renderToStaticMarkup(
+          <Disclosure dir={dir} indicator={indicator} isExpanded={isExpanded} title="Details">
+            Persistent content
+          </Disclosure>,
+        );
+        const glyph = isExpanded ? '<span dir="ltr">›</span>' : "<span>›</span>";
+        expect(html).toContain(`data-slot="disclosure-indicator">${glyph}</span>`);
+        expect(html).toContain(`aria-expanded="${String(isExpanded)}"`);
+      }
+      const custom = renderToStaticMarkup(
+        <Disclosure dir={dir} indicator={<svg viewBox="0 0 16 16"><path d="m6 4 4 4-4 4" /></svg>} isExpanded={isExpanded} title="Details">
+          Persistent content
+        </Disclosure>,
+      );
+      expect(custom).toContain('data-slot="disclosure-indicator"><svg viewBox="0 0 16 16">');
+      expect(custom).not.toContain('<span dir="ltr">');
+    }
+  }
+});
+
 test("toggle and segmented collections expose controlled selection semantics", () => {
   const html = renderToStaticMarkup(
     <>

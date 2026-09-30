@@ -1431,6 +1431,81 @@ export function PrimitiveGallery() {
               value={segment}
             />
           </div>
+          <div data-gallery-disclosure-directions="true">
+            <div dir="ltr">
+              <Disclosure data-gallery-disclosure-direction="ltr" size="compact" title="Left-to-right details">
+                Disclosure direction evidence.
+              </Disclosure>
+            </div>
+            <div dir="rtl">
+              <Disclosure data-gallery-disclosure-direction="rtl" title="פרטי הגילוי">
+                Disclosure direction evidence.
+              </Disclosure>
+            </div>
+            <div dir="rtl">
+              <div dir="ltr">
+                <Disclosure data-gallery-disclosure-direction="ltr-in-rtl" size="large" title="Left-to-right inside right-to-left">
+                  Nested disclosure direction evidence.
+                </Disclosure>
+              </div>
+            </div>
+            <div dir="ltr">
+              <div dir="rtl">
+                <Disclosure data-gallery-disclosure-direction="rtl-in-ltr" size="compact" title="פרטים בכיוון מימין לשמאל">
+                  Nested disclosure direction evidence.
+                </Disclosure>
+              </div>
+            </div>
+            <Disclosure data-gallery-disclosure-direction="root-rtl" dir="rtl" lang="en" title="פרטים עם כיוון מפורש">
+              Explicit root direction evidence independent of language.
+            </Disclosure>
+            <div dir="rtl">
+              <Disclosure data-gallery-disclosure-direction="auto-ltr" dir="auto" title="Automatic left-to-right details">
+                Automatic direction evidence.
+              </Disclosure>
+            </div>
+            <div dir="ltr">
+              <Disclosure data-gallery-disclosure-direction="auto-rtl" dir="auto" title="פרטים עם כיוון אוטומטי">
+                Automatic direction evidence.
+              </Disclosure>
+            </div>
+            <div dir="rtl">
+              <Disclosure data-gallery-disclosure-direction="style-ltr" style={{ direction: "ltr" }} title="Native left-to-right style override">
+                Native style direction evidence.
+              </Disclosure>
+            </div>
+            <div dir="ltr">
+              <Disclosure data-gallery-disclosure-direction="style-rtl" style={{ direction: "rtl" }} title="פרטים עם סגנון מימין לשמאל">
+                Native style direction evidence.
+              </Disclosure>
+            </div>
+            <Disclosure className="gallery-disclosure-direction-rtl" data-gallery-disclosure-direction="css-rtl" title="פרטים עם כיוון מגיליון הסגנון">
+              Stylesheet direction evidence.
+            </Disclosure>
+            <div dir="rtl">
+              <Disclosure className="gallery-disclosure-direction-ltr" data-gallery-disclosure-direction="css-ltr" title="Stylesheet left-to-right override">
+                Stylesheet direction evidence.
+              </Disclosure>
+            </div>
+            <div dir="ltr">
+              <Disclosure
+                data-gallery-disclosure-direction="ltr-custom"
+                indicator={<svg width="16" height="16" viewBox="0 0 16 16"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" strokeWidth="2" /></svg>}
+                title="Custom left-to-right indicator"
+              >
+                Custom SVG indicators retain their existing rotation.
+              </Disclosure>
+            </div>
+            <div dir="rtl">
+              <Disclosure
+                data-gallery-disclosure-direction="rtl-custom"
+                indicator={<svg width="16" height="16" viewBox="0 0 16 16"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" strokeWidth="2" /></svg>}
+                title="פרטים עם סימן מותאם"
+              >
+                Custom SVG indicators retain their existing rotation.
+              </Disclosure>
+            </div>
+          </div>
           <div
             data-gallery-collection-matrix="synthetic-coarse"
             style={{ "--hraness-collection-coarse-min": "3rem" } as CSSProperties}

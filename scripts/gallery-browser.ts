@@ -5647,6 +5647,168 @@ function verifyNativeProgressEvidence(
   );
 }
 
+async function verifyDisclosureDirections(page: Page, id: string): Promise<void> {
+  const coarsePointer = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+  const cases = [
+    ["ltr", "ltr", 1],
+    ["rtl", "rtl", 1],
+    ["ltr-in-rtl", "ltr", 1],
+    ["rtl-in-ltr", "rtl", 1],
+    ["root-rtl", "rtl", 1],
+    ["auto-ltr", "ltr", 1],
+    ["auto-rtl", "rtl", 1],
+    ["style-ltr", "ltr", 1],
+    ["style-rtl", "rtl", 1],
+    ["css-ltr", "ltr", 1],
+    ["css-rtl", "rtl", 1],
+    ["ltr-custom", "ltr", 1],
+    ["rtl-custom", "rtl", 1],
+  ] as const;
+  const evidenceDirectory = process.env.UI_DISCLOSURE_EVIDENCE_DIRECTORY;
+  const screenshot = async (name: string): Promise<void> => {
+    if (evidenceDirectory === undefined) return;
+    await mkdir(evidenceDirectory, { recursive: true });
+    const selector = "[data-gallery-disclosure-directions]";
+    const options = {
+      animations: "disabled" as const,
+      path: resolve(evidenceDirectory, `${id.replaceAll(" ", "-")}-${name}.png`),
+    };
+    if (!coarsePointer) {
+      await page.locator(selector).screenshot(options);
+      return;
+    }
+    // Chrome 154 screenshot capture clears touch emulation on the captured
+    // page. Keep native input/geometry assertions on the original page and
+    // use a static copy for caret/style images. Preserve the section's
+    // ancestor chain and styles, but remove sibling content and scripts:
+    // touch resets must not move the clip into other fixtures or overlays.
+    const snapshot = await page.evaluate((selector) => {
+      const element = document.querySelector(selector);
+      const copy = document.documentElement.cloneNode(true) as HTMLElement;
+      const section = copy.querySelector(selector);
+      const head = copy.querySelector("head");
+      const body = copy.querySelector("body");
+      if (element === null || section === null || head === null || body === null) {
+        throw new Error("Missing Disclosure screenshot section or document");
+      }
+      for (const script of copy.querySelectorAll("script")) script.remove();
+      for (const style of body.querySelectorAll('style, link[rel="stylesheet"]')) {
+        head.append(style);
+      }
+      let descendant = section;
+      while (descendant.parentElement !== null && descendant.parentElement !== copy) {
+        const parent = descendant.parentElement;
+        parent.replaceChildren(descendant);
+        descendant = parent;
+      }
+      return {
+        html: `<!doctype html>${copy.outerHTML}`,
+        height: element.getBoundingClientRect().height,
+        width: element.getBoundingClientRect().width,
+      };
+    }, selector);
+    const capturePage = await page.context().newPage();
+    try {
+      await capturePage.goto(page.url(), { waitUntil: "networkidle" });
+      await capturePage.setContent(snapshot.html, { waitUntil: "networkidle" });
+      await capturePage.evaluate(() => window.scrollTo(0, 0));
+      await capturePage.waitForFunction(({ selector, height, width }) => {
+        const section = document.querySelector(selector);
+        const bounds = section?.getBoundingClientRect();
+        return matchMedia("(pointer: coarse)").matches
+          && bounds?.height === height && bounds.width === width;
+      }, { selector, height: snapshot.height, width: snapshot.width }, { timeout: 5_000 });
+      await capturePage.screenshot({ ...options, fullPage: true });
+    } finally {
+      await capturePage.close();
+    }
+    invariant(await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
+      `${id}: evidence capture changed the live fixture's coarse pointer`);
+  };
+  const readIndicator = async (root: Locator) => root.evaluate((element) => {
+    const trigger = element.querySelector<HTMLElement>('[data-slot="disclosure-trigger"]');
+    const indicator = element.querySelector<HTMLElement>('[data-slot="disclosure-indicator"]');
+    if (trigger === null || indicator === null) throw new Error("Missing Disclosure direction fixture");
+    const style = getComputedStyle(indicator);
+    const matrix = new DOMMatrixReadOnly(style.transform);
+    return {
+      a: matrix.a, b: matrix.b, c: matrix.c, d: matrix.d,
+      ariaHidden: indicator.getAttribute("aria-hidden"),
+      borderWidth: getComputedStyle(element).borderBlockEndWidth,
+      direction: style.direction,
+      focus: document.activeElement === trigger,
+      fontSize: style.fontSize,
+      minHeight: getComputedStyle(trigger).minHeight,
+      triggerHeight: getComputedStyle(trigger).height,
+      triggerWidth: getComputedStyle(trigger).width,
+      marginInlineStart: style.marginInlineStart,
+      glyphDirection: indicator.firstElementChild?.getAttribute("dir") ?? null,
+      glyphComputedDirection: indicator.firstElementChild === null ? null : getComputedStyle(indicator.firstElementChild).direction,
+      transitionDuration: style.transitionDuration,
+      transitionProperty: style.transitionProperty,
+    };
+  });
+  await screenshot("closed");
+  for (const [fixture, direction, sign] of cases) {
+    const custom = fixture.endsWith("-custom");
+    const root = page.locator(`[data-gallery-disclosure-direction="${fixture}"]`);
+    const trigger = root.locator('[data-slot="disclosure-trigger"]');
+    const before = await readIndicator(root);
+    invariant(before.direction === direction && before.a === 1 && before.b === 0 && before.ariaHidden === "true" && before.borderWidth === "0px",
+      `${id}: ${fixture} closed Disclosure direction or edge ownership changed: ${JSON.stringify(before)}`);
+    invariant(await trigger.getAttribute("aria-expanded") === "false", `${id}: ${fixture} Disclosure must start closed`);
+    invariant(before.glyphDirection === null && before.glyphComputedDirection === direction,
+      `${id}: ${fixture} closed glyph must preserve inherited bidi direction: ${JSON.stringify(before)}`);
+    if (!custom) {
+      invariant(before.transitionProperty === "none" && seconds(before.transitionDuration).every((duration) => duration <= 0.000_01),
+        `${id}: ${fixture} default glyph must change state immediately: ${JSON.stringify(before)}`);
+    } else if (!await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+      invariant(before.transitionProperty === "transform" && seconds(before.transitionDuration).some((duration) => duration > 0.01),
+        `${id}: ${fixture} custom glyph must preserve its rotation transition: ${JSON.stringify(before)}`);
+    }
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    invariant(await trigger.getAttribute("aria-expanded") === "true", `${id}: ${fixture} keyboard disclosure did not open`);
+    try {
+      await page.waitForFunction(({ fixture, sign }) => {
+        const indicator = document.querySelector(`[data-gallery-disclosure-direction="${fixture}"] [data-slot="disclosure-indicator"]`);
+        if (indicator === null) return false;
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(indicator).transform);
+        return Math.abs(matrix.a) < 0.001 && Math.abs(matrix.b - sign) < 0.001
+          && Math.abs(matrix.c + sign) < 0.001 && Math.abs(matrix.d) < 0.001;
+      }, { fixture, sign }, { timeout: 5_000 });
+    } catch (error) {
+      await screenshot(`${fixture}-failed-open`);
+      throw new Error(`${id}: ${fixture} expanded Disclosure must point down: ${JSON.stringify(await readIndicator(root))}`, { cause: error });
+    }
+    const after = await readIndicator(root);
+    invariant(after.focus && after.fontSize === before.fontSize && after.minHeight === before.minHeight && after.triggerHeight === before.triggerHeight && after.triggerWidth === before.triggerWidth && after.marginInlineStart === before.marginInlineStart && after.borderWidth === "0px",
+      `${id}: ${fixture} Disclosure focus, density, or edge ownership changed: ${JSON.stringify(after)}`);
+    invariant(after.glyphDirection === (custom ? null : "ltr") && after.glyphComputedDirection === (custom ? direction : "ltr"),
+      `${id}: ${fixture} expanded default glyph direction or custom indicator markup changed: ${JSON.stringify(after)}`);
+    invariant(after.transitionProperty === before.transitionProperty && after.transitionDuration === before.transitionDuration,
+      `${id}: ${fixture} state change altered indicator transition ownership`);
+    if (await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+      invariant(seconds(after.transitionDuration).every((duration) => duration <= 0.000_01), `${id}: ${fixture} Disclosure ignores reduced motion`);
+    }
+  }
+  await screenshot("open");
+  for (const [fixture, direction] of cases) {
+    const root = page.locator(`[data-gallery-disclosure-direction="${fixture}"]`);
+    const trigger = root.locator('[data-slot="disclosure-trigger"]');
+    if (coarsePointer) await trigger.tap();
+    else await trigger.click();
+    invariant(await root.locator('[data-slot="disclosure-trigger"]').getAttribute("aria-expanded") === "false", `${id}: ${fixture} Disclosure did not close`);
+    const closed = await readIndicator(root);
+    invariant(closed.glyphDirection === null && closed.glyphComputedDirection === direction,
+      `${id}: ${fixture} collapsed glyph did not restore inherited direction: ${JSON.stringify(closed)}`);
+    if (!fixture.endsWith("-custom")) {
+      invariant(closed.a === 1 && closed.b === 0 && closed.transitionProperty === "none" && seconds(closed.transitionDuration).every((duration) => duration <= 0.000_01),
+        `${id}: ${fixture} collapsed default glyph must settle immediately: ${JSON.stringify(closed)}`);
+    }
+  }
+}
+
 async function collectionCoarseEvidence(page: Page) {
   return page.evaluate(() => {
     const matrix = (kind: "ordinary" | "synthetic-coarse") => {
@@ -14519,6 +14681,8 @@ try {
           await page.goto(origin, { waitUntil: "networkidle" });
           await waitForHydration(page, failures, requestedPaths, layout.id);
 
+          await verifyDisclosureDirections(page, layout.id);
+
           await verifySoftSurfaceThemeIsolation(page, layout.id);
           const light = await browserEvidence(page);
           const lightContent = await contentFamilyEvidence(page);
@@ -15100,6 +15264,7 @@ try {
           await collectionCoarseEvidence(page),
           "real coarse pointer",
         );
+        await verifyDisclosureDirections(page, "real coarse pointer");
         verifyNativeProgressEvidence(
           await nativeProgressEvidence(page),
           "real coarse pointer",
@@ -15195,6 +15360,7 @@ try {
         invariant(forced.spinnerAnimationName === "none", "forced colors: reduced-motion spinner still animates");
         verifyNavigationEvidence(await navigationEvidence(page), "forced colors");
         verifyCollectionCoarseEvidence(await collectionCoarseEvidence(page), "forced colors");
+        await verifyDisclosureDirections(page, "forced colors");
         verifyNativeProgressEvidence(await nativeProgressEvidence(page), "forced colors");
         await verifySharedMotionRoots(page, "forced colors");
         invariant(

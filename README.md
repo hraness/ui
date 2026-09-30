@@ -4,7 +4,7 @@ Accessible React components built on React Aria, with compiled StyleX styles and
 
 `@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives with small fixed sets of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
 
-Version 0.5.22 includes the LobeHub MIT notice for the provider artwork in Ask AI links. The notice and source record ship in `vendor/ask-ai-marks/`.
+Version 0.5.23 fixes the default Disclosure caret in left-to-right and right-to-left content. It includes the LobeHub MIT notice for the provider artwork in Ask AI links. The notice and source record ship in `vendor/ask-ai-marks/`.
 
 ## First render
 
@@ -13,7 +13,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.22"
+    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.23/hraness-ui-0.5.23.tgz"
   }
 }
 ```
@@ -23,6 +23,8 @@ Install it with Bun:
 ```sh
 bun install
 ```
+
+The GitHub Release archive is the canonical package. Each release includes `SHA256SUMS`, source metadata in `release.json`, and signed GitHub provenance in `provenance.jsonl`. npm is an optional mirror of the same archive bytes; use it only when the exact version is available.
 
 Import the complete package stylesheet before product rules:
 
@@ -490,6 +492,8 @@ Opacity-only color mixes use sRGB to preserve the palette's hue in translucent e
 Primitives draw a divider only between peers they own and never an outer edge. Adjacent disclosures share one rule, an accordion adds none after its last item, and a data table's final row leaves the bottom edge to its bordered wrapper. The surrounding card, section, or panel owns every outer edge, so a primitive's divider never runs parallel to a container border.
 
 A lone Disclosure therefore draws no rule, so its trigger carries its own affordance: the indicator sits right after the title at body size or larger in the interactive color, and the title underlines on hover. To render Disclosures as separate bordered cards, wrap each one in its own element so they are not adjacent peers; adjacent peers share one internal divider. A DataTable whose wrapper border is removed through `wrapperXstyle` draws no rule under its final row, because the container owns that edge.
+
+Disclosure's `›` text caret follows the inherited inline direction while closed and points down when open. It changes immediately, including for `indicator="›"`, while custom indicator content keeps its existing rotation and transition. Nested `dir` boundaries, `dir="auto"`, and native or stylesheet direction overrides preserve that behavior.
 
 The default heading face follows the sans-serif family; code retains the monospace family. Customize `--leading-body`, `--leading-label`, `--leading-heading`, `--leading-display`, `--tracking-heading`, and `--tracking-display` alongside the font families for each product's typography. Display headings use balanced wrapping and a little extra line height for accents and multiline titles. Keep readable body text and visible control boundaries when varying these roles.
 
