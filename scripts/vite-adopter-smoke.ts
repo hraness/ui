@@ -12,9 +12,8 @@ import {
 } from "node:fs/promises";
 import { basename, delimiter, dirname, join, relative, resolve, sep } from "node:path";
 
-import { chromium } from "playwright-core";
 
-import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
+import { launchOwnedChromium, resolveFirstBrowserExecutable } from "./browser-executable.ts";
 
 const BABEL_VERSION = "7.29.7";
 const BUN_VERSION = "1.3.14";
@@ -941,24 +940,10 @@ async function verifyBrowserOutput(
   const server = startOutputServer(finalDirectory, requestedPaths);
   try {
     const executablePath = await resolveFirstBrowserExecutable(
-      [
-        ...(process.env.CHROMIUM_EXECUTABLE_PATH === undefined
-          ? []
-          : [process.env.CHROMIUM_EXECUTABLE_PATH]),
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        chromium.executablePath(),
-        "/Applications/Chromium.app/Contents/MacOS/Chromium",
-        "/usr/bin/google-chrome",
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-      ],
-      "No ordinary Chromium executable found. Set CHROMIUM_EXECUTABLE_PATH to run the packed Vite browser smoke.",
+      process.env.CHROMIUM_EXECUTABLE_PATH === undefined ? [] : [process.env.CHROMIUM_EXECUTABLE_PATH],
+      "Provision the Chromium pinned to this repository's Playwright version",
     );
-    const browser = await chromium.launch({
-      args: ["--no-sandbox"],
-      executablePath,
-      headless: true,
-    });
+    const browser = await launchOwnedChromium(executablePath);
     try {
       assert.ok(browser.version().length > 0, "Chromium must report its browser identity");
       const context = await browser.newContext({
