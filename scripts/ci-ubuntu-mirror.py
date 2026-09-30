@@ -7,55 +7,105 @@ import re
 
 AZURE_URI = re.compile(r"(?<!\S)https?://azure\.archive\.ubuntu\.com/ubuntu/?(?=\s|$)")
 ARCHIVE_URI = "https://archive.ubuntu.com/ubuntu"
+RUNNER_MIRROR_URI = "mirror+file:/etc/apt/apt-mirrors.txt"
 
 
-def rewrite_source(content: str, suffix: str) -> tuple[str, int]:
+def source_uri_spans(content: str, suffix: str) -> list[tuple[int, int]]:
+    """Locate enabled URI values without treating options or comments as URIs."""
     if suffix not in {".list", ".sources"}:
         raise ValueError("Unsupported APT source format")
-    output = []
-    replacements = 0
-    uris_field = False
+    spans = []
+    stanza_spans = []
+    enabled_values = []
+    field = None
+    offset = 0
     for line in content.splitlines(keepends=True):
         if not line.strip():
-            uris_field = False
-        if line.lstrip().startswith("#"):
-            output.append(line)
-            continue
-        if suffix == ".list":
+            if " ".join(enabled_values).lower() != "no":
+                spans.extend(stanza_spans)
+            stanza_spans = []
+            enabled_values = []
+            field = None
+        elif line.lstrip().startswith("#"):
+            pass
+        elif suffix == ".list":
             entry = re.match(r"^[ \t]*deb(?:-src)?[ \t]+(?:\[[^\]\r\n]*\][ \t]+)?(\S+)", line)
-            if entry and AZURE_URI.fullmatch(entry.group(1)):
-                line = line[:entry.start(1)] + ARCHIVE_URI + line[entry.end(1):]
-                replacements += 1
+            if entry:
+                spans.append((offset + entry.start(1), offset + entry.end(1)))
         else:
             if line and not line[0].isspace():
-                header = re.match(r"(?i)^URIs:", line)
-                uris_field = header is not None
+                header = re.match(r"^([^:\s]+):", line)
+                field = header.group(1).lower() if header else None
                 value_start = header.end() if header else 0
             else:
                 value_start = 0
-            if uris_field:
-                value, count = AZURE_URI.subn(ARCHIVE_URI, line[value_start:])
-                line = line[:value_start] + value
-                replacements += count
+            if field in {"uris", "enabled"}:
+                for value in re.finditer(r"\S+", line[value_start:]):
+                    if value.group().startswith("#"):
+                        break
+                    if field == "uris":
+                        stanza_spans.append((offset + value_start + value.start(), offset + value_start + value.end()))
+                    else:
+                        enabled_values.append(value.group())
+        offset += len(line)
+    if " ".join(enabled_values).lower() != "no":
+        spans.extend(stanza_spans)
+    return spans
+
+
+def rewrite_source(content: str, suffix: str) -> tuple[str, int]:
+    spans = [(start, end) for start, end in source_uri_spans(content, suffix) if AZURE_URI.fullmatch(content[start:end])]
+    for start, end in reversed(spans):
+        content = content[:start] + ARCHIVE_URI + content[end:]
+    return content, len(spans)
+
+
+def rewrite_mirror_list(content: str) -> tuple[str, int]:
+    output = []
+    replacements = 0
+    for line in content.splitlines(keepends=True):
+        entry = re.match(r"^[ \t]*(\S+)", line)
+        if entry and AZURE_URI.fullmatch(entry.group(1)):
+            uri = ARCHIVE_URI + ("/" if entry.group(1).endswith("/") else "")
+            line = line[:entry.start(1)] + uri + line[entry.end(1):]
+            replacements += 1
         output.append(line)
     return "".join(output), replacements
 
 
+def read_apt_file(path: Path, required: bool = False) -> str | None:
+    if path.is_symlink():
+        raise ValueError(f"APT configuration must not be a symlink: {path.name}")
+    if not path.exists() and not required:
+        return None
+    if not path.is_file():
+        raise ValueError(f"APT configuration must be an ordinary file: {path.name}")
+    return path.read_bytes().decode("utf-8")
+
+
 def plan_sources(directory: Path) -> list[tuple[Path, str, int]]:
-    if not directory.is_dir():
-        raise ValueError("APT configuration directory is missing")
+    if directory.is_symlink() or not directory.is_dir():
+        raise ValueError("APT configuration must be an ordinary directory")
+    source_directory = directory / "sources.list.d"
+    if source_directory.is_symlink() or (source_directory.exists() and not source_directory.is_dir()):
+        raise ValueError("APT source directory must be an ordinary directory")
     candidates = [directory / "sources.list"]
     for suffix in ("*.list", "*.sources"):
-        candidates.extend(sorted((directory / "sources.list.d").glob(suffix)))
+        candidates.extend(sorted(source_directory.glob(suffix)))
     planned = []
+    runner_mirror_referenced = False
     for path in candidates:
-        if path.is_symlink():
-            raise ValueError(f"APT source must not be a symlink: {path.name}")
-        if not path.exists():
+        original = read_apt_file(path)
+        if original is None:
             continue
-        if not path.is_file():
-            raise ValueError(f"APT source must be an ordinary file: {path.name}")
-        content, count = rewrite_source(path.read_bytes().decode("utf-8"), path.suffix)
+        runner_mirror_referenced |= any(original[start:end] == RUNNER_MIRROR_URI for start, end in source_uri_spans(original, path.suffix))
+        content, count = rewrite_source(original, path.suffix)
+        if count:
+            planned.append((path, content, count))
+    if runner_mirror_referenced:
+        # Only this runner-owned path is supported. Never follow arbitrary file URIs.
+        path = directory / "apt-mirrors.txt"
+        content, count = rewrite_mirror_list(read_apt_file(path, required=True))
         if count:
             planned.append((path, content, count))
     return planned
@@ -67,4 +117,4 @@ if __name__ == "__main__":
     for path, content, count in planned:
         path.write_bytes(content.encode("utf-8"))
         print(f"{path.name}: switched {count} Azure mirror URI(s) to {ARCHIVE_URI}")
-    print(f"Updated {len(planned)} APT source file(s); signature verification is unchanged.")
+    print(f"Updated {len(planned)} APT source or mirror file(s); signature verification is unchanged.")
