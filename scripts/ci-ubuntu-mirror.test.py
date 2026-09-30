@@ -100,6 +100,36 @@ class UbuntuMirrorTests(unittest.TestCase):
             self.assertEqual(source.read_text(), RUNNER_SOURCE)
             self.assertEqual(mirrors.read_text().splitlines()[1:], RUNNER_MIRRORS.splitlines()[1:])
 
+    def test_all_apt_false_values_preserve_direct_and_mirror_sources(self):
+        for value in ("no", "FALSE", "without", "Off", "disable", "0", "00", "000", "0x0", "+0", "-0", "-0X00"):
+            for ending in ("", "\n\n"):
+                with self.subTest(value=value, ending=repr(ending)), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    sources = root / "sources.list.d"
+                    sources.mkdir()
+                    content = (
+                        "Types: deb\n"
+                        "URIs: http://azure.archive.ubuntu.com/ubuntu mirror+file:/etc/apt/apt-mirrors.txt\n"
+                        f"Enabled: {value}\nSuites: noble\n"
+                    ) + ending
+                    source = sources / "ubuntu.sources"
+                    source.write_text(content)
+                    self.assertEqual(mirror.rewrite_source(content, ".sources"), (content, 0))
+                    # An inactive mirror list need not exist and must never be followed.
+                    self.assertEqual(mirror.plan_sources(root), [])
+                    mirrors = root / "apt-mirrors.txt"
+                    mirrors.write_text(RUNNER_MIRRORS)
+                    self.assertEqual(mirror.plan_sources(root), [])
+                    self.assertEqual(mirrors.read_text(), RUNNER_MIRRORS)
+                    self.assertEqual(source.read_text(), content)
+
+    def test_enabled_and_unspecified_sources_remain_active(self):
+        for value in (None, "yes", "TRUE", "with", "On", "enable", "1", "01", "0x1", "-1", "default"):
+            with self.subTest(value=value):
+                field = "" if value is None else f"Enabled: {value}\n"
+                source = f"URIs: http://azure.archive.ubuntu.com/ubuntu\n{field}Suites: noble\n"
+                self.assertEqual(mirror.rewrite_source(source, ".sources"), (source.replace("http://azure.archive.ubuntu.com/ubuntu", mirror.ARCHIVE_URI), 1))
+
     def test_legacy_source_can_reference_runner_mirrors(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

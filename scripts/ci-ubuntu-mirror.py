@@ -10,6 +10,12 @@ ARCHIVE_URI = "https://archive.ubuntu.com/ubuntu"
 RUNNER_MIRROR_URI = "mirror+file:/etc/apt/apt-mirrors.txt"
 
 
+def stanza_disabled(values: list[str]) -> bool:
+    # APT uses StringToBool: these words and C base-0 numeric zeros are false.
+    value = " ".join(values).lower()
+    return value in {"no", "false", "without", "off", "disable"} or re.fullmatch(r"[+-]?(?:0+|0x0+)", value) is not None
+
+
 def source_uri_spans(content: str, suffix: str) -> list[tuple[int, int]]:
     """Locate enabled URI values without treating options or comments as URIs."""
     if suffix not in {".list", ".sources"}:
@@ -21,7 +27,7 @@ def source_uri_spans(content: str, suffix: str) -> list[tuple[int, int]]:
     offset = 0
     for line in content.splitlines(keepends=True):
         if not line.strip():
-            if " ".join(enabled_values).lower() != "no":
+            if not stanza_disabled(enabled_values):
                 spans.extend(stanza_spans)
             stanza_spans = []
             enabled_values = []
@@ -48,7 +54,7 @@ def source_uri_spans(content: str, suffix: str) -> list[tuple[int, int]]:
                     else:
                         enabled_values.append(value.group())
         offset += len(line)
-    if " ".join(enabled_values).lower() != "no":
+    if not stanza_disabled(enabled_values):
         spans.extend(stanza_spans)
     return spans
 
