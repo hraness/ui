@@ -4,7 +4,7 @@ Accessible React components built on React Aria, with compiled StyleX styles and
 
 `@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives with small fixed sets of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
 
-Latest release: v0.5.24. Use the immutable dependency pin below.
+Latest release: v0.5.25. Use the immutable dependency pin below.
 
 Ask AI provider artwork includes the LobeHub MIT notice and source record in `vendor/ask-ai-marks/`.
 
@@ -15,7 +15,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.24/hraness-ui-0.5.24.tgz"
+    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.25/hraness-ui-0.5.25.tgz"
   }
 }
 ```
@@ -389,6 +389,8 @@ receives the minimal prompt `Tell me about https://hraness.com/stripe`, includin
 the literal full URL. The component has no client state or framework dependency,
 works in server-rendered layouts, wraps on narrow surfaces, and rejects
 relative, non-HTTPS, credentialed, or malformed subject URLs.
+It renders without inline styles by default. Caller `style` and dynamic
+`xstyle` values can add inline styles to the root.
 
 Use React Aria's `onPress` event for actions. Action controls use the semantic `primary`, `secondary`, `quiet`, and `danger` variants and the `compact`, `default`, `large`, and `transport` sizes. Compact and default controls grow to a 48-by-48-pixel minimum target for coarse pointers; large and transport controls keep their larger block sizes and at least the same inline minimum. Icon-only toggles retain the compact inline size at large and transport densities. `CopyButton` writes one string to the clipboard, announces success, and temporarily swaps to its `copiedLabel`; both labels always occupy the same grid cell, so the button keeps the wider intrinsic width throughout the transition. `IconButton` and `IconLink` require an accessible name and own their hover/focus tooltip; `aria-label` supplies the default visible copy, while controls named by `aria-labelledby` must also provide `tooltip`. Set `IconLink` to `presentation="inline"` when an icon-only destination sits beside typographic content. The inline presentation keeps the link semantics, tooltip, centered 24-pixel glyph target, and focus treatment without persistent action-control chrome, and it intentionally does not accept action sizes or variants or join the coarse action-target family.
 

@@ -1,12 +1,12 @@
 import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
-import { forwardRef, type CSSProperties, type HTMLAttributes } from "react";
+import { forwardRef, type HTMLAttributes } from "react";
 
 import {
   askAiProviderMarks,
   type AskAiProviderMark,
 } from "./ask-ai-marks.generated.js";
-import { askAiStyles } from "./ask-ai.stylex.js";
+import { askAiProviderAccentStyles, askAiStyles } from "./ask-ai.stylex.js";
 import { mergeStylexInlineStyles } from "./lib/stylex.js";
 import { cn } from "./lib/utils.js";
 
@@ -145,7 +145,6 @@ export const AskAiAboutThis = forwardRef<HTMLElement, AskAiAboutThisProps>(
     const labelPresentation = stylex.props(askAiStyles.label);
     const linksPresentation = stylex.props(askAiStyles.links);
     const linkPresentation = stylex.props(askAiStyles.link);
-    const iconPresentation = stylex.props(askAiStyles.icon);
     const iconGlyphPresentation = stylex.props(askAiStyles.iconGlyph);
     const iconArtPresentation = stylex.props(askAiStyles.iconArt);
 
@@ -189,6 +188,10 @@ export const AskAiAboutThis = forwardRef<HTMLElement, AskAiAboutThisProps>(
             ) {
               throw new Error("Ask AI provider definitions are out of order.");
             }
+            const iconPresentation = stylex.props(
+              askAiStyles.icon,
+              askAiProviderAccentStyles[link.provider],
+            );
 
             return (
               <a
@@ -212,9 +215,6 @@ export const AskAiAboutThis = forwardRef<HTMLElement, AskAiAboutThisProps>(
                     iconPresentation.className,
                   )}
                   data-slot="ask-ai-about-this-icon"
-                  style={
-                    { "--_ask-ai-accent": definition.mark.accent } as CSSProperties
-                  }
                 >
                   <svg
                     {...iconGlyphPresentation}

@@ -247,8 +247,20 @@
     margin-inline: auto;
   }
 
-  .xut973x {
-    outline: 1px solid color-mix(in srgb,var(--_ask-ai-accent) 28%,transparent);
+  .xhaut0e {
+    outline: 1px solid #0f101447;
+  }
+
+  .x8sojfv {
+    outline: 1px solid #1a1a1a47;
+  }
+
+  .xef4xze {
+    outline: 1px solid #22b8cd47;
+  }
+
+  .x1495d13 {
+    outline: 1px solid #d9775747;
   }
 
   .xysyzu8 {
@@ -615,12 +627,24 @@
     background-color: color-mix(in oklch,var(--ui-secondary) 82%,var(--ui-foreground));
   }
 
-  .xxxkwf1 {
-    background-color: #0000008c;
+  .xetlspr {
+    background-color: color-mix(in srgb,#0f1014 14%,var(--ui-background));
   }
 
-  .xw105g5 {
-    background-color: color-mix(in srgb,var(--_ask-ai-accent) 14%,var(--ui-background));
+  .xyulbs {
+    background-color: color-mix(in srgb,#1a1a1a 14%,var(--ui-background));
+  }
+
+  .x1iy2qii {
+    background-color: color-mix(in srgb,#22b8cd 14%,var(--ui-background));
+  }
+
+  .x6xci4y {
+    background-color: color-mix(in srgb,#d97757 14%,var(--ui-background));
+  }
+
+  .xxxkwf1 {
+    background-color: #0000008c;
   }
 
   .xjbqb8w {
@@ -711,8 +735,20 @@
     background-color: var(--ui-warning);
   }
 
-  .xt1chv0 {
-    background-image: linear-gradient(180deg,#ffffff3d,transparent 48%),linear-gradient(160deg,color-mix(in srgb,var(--_ask-ai-accent) 26%,transparent),color-mix(in srgb,var(--_ask-ai-accent) 6%,transparent) 74%);
+  .x1cpeka8 {
+    background-image: linear-gradient(#ffffff3d, #0000 48%), linear-gradient(160deg, #0f101442, #0f10140f 74%);
+  }
+
+  .x1fwnujl {
+    background-image: linear-gradient(#ffffff3d, #0000 48%), linear-gradient(160deg, #1a1a1a42, #1a1a1a0f 74%);
+  }
+
+  .x1rkwf9h {
+    background-image: linear-gradient(#ffffff3d, #0000 48%), linear-gradient(160deg, #22b8cd42, #22b8cd0f 74%);
+  }
+
+  .xyfael3 {
+    background-image: linear-gradient(#ffffff3d, #0000 48%), linear-gradient(160deg, #d9775742, #d977570f 74%);
   }
 
   .xj3ykqi {
@@ -895,8 +931,20 @@
     color: inherit;
   }
 
-  .xufo5hn {
-    color: var(--lightningcss-light, color-mix(in srgb,var(--_ask-ai-accent) 78%,black)) var(--lightningcss-dark, color-mix(in srgb,var(--_ask-ai-accent) 55%,white));
+  .x14i4xxf {
+    color: var(--lightningcss-light, #0c0c10) var(--lightningcss-dark, #7b7c7e);
+  }
+
+  .x10xxl6s {
+    color: var(--lightningcss-light, #141414) var(--lightningcss-dark, #818181);
+  }
+
+  .x1x6ibhq {
+    color: var(--lightningcss-light, #1b90a0) var(--lightningcss-dark, #85d8e4);
+  }
+
+  .x15ges {
+    color: var(--lightningcss-light, #a95d44) var(--lightningcss-dark, #eab4a3);
   }
 
   .x1gz3zd9 {
