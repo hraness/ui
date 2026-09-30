@@ -4,6 +4,8 @@ Accessible React components built on React Aria, with compiled StyleX styles and
 
 `@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives with small fixed sets of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
 
+Version 0.5.23 fixes the default Disclosure caret in left-to-right and right-to-left content. It includes the LobeHub MIT notice for the provider artwork in Ask AI links. The notice and source record ship in `vendor/ask-ai-marks/`.
+
 ## First render
 
 Pin the current immutable release:
@@ -11,7 +13,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "github:hraness/ui#v0.5.22"
+    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.23/hraness-ui-0.5.23.tgz"
   }
 }
 ```
@@ -21,6 +23,8 @@ Install it with Bun:
 ```sh
 bun install
 ```
+
+The GitHub Release archive is the canonical package. Each release includes `SHA256SUMS`, source metadata in `release.json`, and signed GitHub provenance in `provenance.jsonl`. npm is an optional mirror of the same archive bytes; use it only when the exact version is available.
 
 Import the complete package stylesheet before product rules:
 

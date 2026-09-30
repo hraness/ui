@@ -5669,10 +5669,62 @@ async function verifyDisclosureDirections(page: Page, id: string): Promise<void>
   const screenshot = async (name: string): Promise<void> => {
     if (evidenceDirectory === undefined) return;
     await mkdir(evidenceDirectory, { recursive: true });
-    await page.locator("[data-gallery-disclosure-directions]").screenshot({
-      animations: "disabled",
+    const selector = "[data-gallery-disclosure-directions]";
+    const options = {
+      animations: "disabled" as const,
       path: resolve(evidenceDirectory, `${id.replaceAll(" ", "-")}-${name}.png`),
-    });
+    };
+    if (!coarsePointer) {
+      await page.locator(selector).screenshot(options);
+      return;
+    }
+    // Chrome 154 screenshot capture clears touch emulation on the captured
+    // page. Keep native input/geometry assertions on the original page and
+    // use a static copy for caret/style images. Preserve the section's
+    // ancestor chain and styles, but remove sibling content and scripts:
+    // touch resets must not move the clip into other fixtures or overlays.
+    const snapshot = await page.evaluate((selector) => {
+      const element = document.querySelector(selector);
+      const copy = document.documentElement.cloneNode(true) as HTMLElement;
+      const section = copy.querySelector(selector);
+      const head = copy.querySelector("head");
+      const body = copy.querySelector("body");
+      if (element === null || section === null || head === null || body === null) {
+        throw new Error("Missing Disclosure screenshot section or document");
+      }
+      for (const script of copy.querySelectorAll("script")) script.remove();
+      for (const style of body.querySelectorAll('style, link[rel="stylesheet"]')) {
+        head.append(style);
+      }
+      let descendant = section;
+      while (descendant.parentElement !== null && descendant.parentElement !== copy) {
+        const parent = descendant.parentElement;
+        parent.replaceChildren(descendant);
+        descendant = parent;
+      }
+      return {
+        html: `<!doctype html>${copy.outerHTML}`,
+        height: element.getBoundingClientRect().height,
+        width: element.getBoundingClientRect().width,
+      };
+    }, selector);
+    const capturePage = await page.context().newPage();
+    try {
+      await capturePage.goto(page.url(), { waitUntil: "networkidle" });
+      await capturePage.setContent(snapshot.html, { waitUntil: "networkidle" });
+      await capturePage.evaluate(() => window.scrollTo(0, 0));
+      await capturePage.waitForFunction(({ selector, height, width }) => {
+        const section = document.querySelector(selector);
+        const bounds = section?.getBoundingClientRect();
+        return matchMedia("(pointer: coarse)").matches
+          && bounds?.height === height && bounds.width === width;
+      }, { selector, height: snapshot.height, width: snapshot.width }, { timeout: 5_000 });
+      await capturePage.screenshot({ ...options, fullPage: true });
+    } finally {
+      await capturePage.close();
+    }
+    invariant(await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
+      `${id}: evidence capture changed the live fixture's coarse pointer`);
   };
   const readIndicator = async (root: Locator) => root.evaluate((element) => {
     const trigger = element.querySelector<HTMLElement>('[data-slot="disclosure-trigger"]');

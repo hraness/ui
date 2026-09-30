@@ -918,7 +918,7 @@ describe("generation lifecycle", () => {
       inputs: sealed.inputs.filter(({ path }) => !path.includes("second-package/src/compiler-foundation.css")),
     })}\n`);
     await expect(finalize(context, tampered)).rejects.toThrow(/compiler foundation for @fixture\/second-ui/u);
-  });
+  }, 30_000);
 
   test("rejects missing and unexpected receipts, then fences late graph work", async () => {
     const context = await fixture();

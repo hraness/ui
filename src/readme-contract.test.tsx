@@ -49,7 +49,7 @@ test("leads readers from a first render through proof, boundaries, and action", 
 });
 
 test("keeps installation and compatibility claims pinned to the package manifest", () => {
-  expect(readme).toContain(`github:hraness/ui#v${manifest.version}`);
+  expect(readme).toContain(`https://github.com/hraness/ui/releases/download/v${manifest.version}/hraness-ui-${manifest.version}.tgz`);
   expect(manifest.peerDependencies).toMatchObject({
     react: ">=18 <20",
     "react-dom": ">=18 <20",

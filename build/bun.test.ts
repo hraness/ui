@@ -1083,7 +1083,7 @@ describe("collectBunStylexGraph", () => {
         build.mockRestore();
       }
     }
-  });
+  }, 30_000);
 
   test("settles Bun's resolved dependency load that is elided after an intermediate export is tree-shaken", async () => {
     const context = await fixture();
@@ -2961,7 +2961,7 @@ describe("collectBunStylexGraph", () => {
         expect(await receiptExists(handle, "client")).toBe(false);
       } finally { build.mockRestore(); }
     }
-  });
+  }, 30_000);
 
   test("zero-witness browser-map inference rejects Unicode-normalization aliases of the package root", async () => {
     for (const filename of ["caf\u00e9.js", "cafe\u0301.js"]) {

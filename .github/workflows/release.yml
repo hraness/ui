@@ -24,7 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          ref: ${{ github.sha }}
+          fetch-depth: 1
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -35,6 +36,11 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git fetch --no-tags --unshallow origin \
+            "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH" \
+            '+refs/tags/v*:refs/tags/v*'
+          test "$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")" = "$GITHUB_SHA"
           package_version="$(bun -e 'const value = await Bun.file("package.json").json(); if (typeof value.version !== "string") process.exit(1); process.stdout.write(value.version)')"
           if [[ ! "$package_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "::error::Package version $package_version is not a stable semantic version"
@@ -57,39 +63,110 @@ jobs:
           printf 'tag=%s\n' "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
 
   checks:
-    # The same parallel check fan-out CI runs on every pull request, on the tag.
     name: Checks
     permissions:
       contents: read
     uses: ./.github/workflows/checks.yml
 
-  publish:
-    name: Publish
+  stage:
+    name: Stage package
     needs: [identity, checks]
     permissions:
-      contents: write
+      contents: read
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERIFIED_TAG: ${{ needs.identity.outputs.verified_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.3.14"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Stage the checked package once
+        run: |
+          set -euo pipefail
+          test "$VERIFIED_TAG" = "$GITHUB_REF_NAME"
+          npm install --global npm@11.19.0 --ignore-scripts --registry=https://registry.npmjs.org
+          bun ./scripts/release-artifact.ts stage "$RUNNER_TEMP/release-package" "$VERIFIED_TAG" "$GITHUB_SHA"
+      - name: Attest the canonical tarball
+        id: provenance
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: ${{ runner.temp }}/release-package/*.tgz
+          create-storage-record: false
+      - name: Verify the signed staged artifact
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "$BUNDLE_PATH" "$RUNNER_TEMP/release-package/provenance.jsonl"
+          bun ./scripts/release-artifact.ts verify "$RUNNER_TEMP/release-package" "$VERIFIED_TAG" "$GITHUB_SHA"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ needs.identity.outputs.verified_tag }}
+          path: ${{ runner.temp }}/release-package/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: Publish
+    needs: [identity, checks, stage]
+    permissions:
+      contents: write
+      attestations: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       GH_REPO: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
       VERIFIED_TAG: ${{ needs.identity.outputs.verified_tag }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.3.14"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
-      - name: Publish verified GitHub Release
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-${{ needs.identity.outputs.verified_tag }}
+          path: ${{ runner.temp }}/release-package
+      - name: Publish and read back the immutable package
         run: |
           set -euo pipefail
-          if [[ -z "$VERIFIED_TAG" || "$VERIFIED_TAG" != "$GITHUB_REF_NAME" ]]; then
-            echo "::error::Publish request does not match the verified tag"
-            exit 1
-          fi
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          test "$VERIFIED_TAG" = "$GITHUB_REF_NAME"
+          artifact="$RUNNER_TEMP/release-package"
+          bun ./scripts/release-artifact.ts verify "$artifact" "$VERIFIED_TAG" "$GITHUB_SHA"
+          filename="$(node -p 'require(process.env.RUNNER_TEMP + "/release-package/release.json").filename')"
+          state="$RUNNER_TEMP/release-state.json"
+          probe="$RUNNER_TEMP/release-probe.txt"
+          if gh release view "$VERIFIED_TAG" --json assets,isDraft,isImmutable,isPrerelease,tagName >"$state" 2>"$probe"; then
+            bun ./scripts/release-artifact.ts state "$artifact" "$VERIFIED_TAG" "$GITHUB_SHA" "$state"
+          else
+            if ! grep -qi 'release not found' "$probe"; then
+              cat "$probe"
+              exit 1
+            fi
             published_tags="$(gh api --paginate \
               "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
               --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')"
-            printf '%s\n' "$published_tags" | NEXT_TAG="$GITHUB_REF_NAME" node -e '
+            printf '%s\n' "$published_tags" | NEXT_TAG="$VERIFIED_TAG" node -e '
               const fs = require("node:fs");
               const pattern = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
               const parse = (tag) => {
@@ -98,9 +175,7 @@ jobs:
               };
               const compare = (left, right) => {
                 for (let index = 0; index < 3; index += 1) {
-                  if (left[index] !== right[index]) {
-                    return left[index] > right[index] ? 1 : -1;
-                  }
+                  if (left[index] !== right[index]) return left[index] > right[index] ? 1 : -1;
                 }
                 return 0;
               };
@@ -114,45 +189,55 @@ jobs:
                 }
               }
             '
-            gh release create "$GITHUB_REF_NAME" \
-              --verify-tag \
-              --generate-notes \
-              --latest \
-              --title "UI $GITHUB_REF_NAME"
+            bun ./scripts/release-artifact.ts verify "$artifact" "$VERIFIED_TAG" "$GITHUB_SHA"
+            gh release create "$VERIFIED_TAG" --draft --verify-tag --generate-notes \
+              --title "UI $VERIFIED_TAG" \
+              "$artifact/$filename" "$artifact/SHA256SUMS" "$artifact/release.json" "$artifact/provenance.jsonl"
           fi
-          release_state="$(gh release view "$GITHUB_REF_NAME" \
-            --json assets,isDraft,isImmutable,isPrerelease,tagName \
-            --jq '[.tagName, .isDraft, .isPrerelease, .isImmutable, (.assets | length)] | @tsv')"
-          expected_state="$GITHUB_REF_NAME"$'\tfalse\tfalse\ttrue\t0'
-          if [[ "$release_state" != "$expected_state" ]]; then
-            echo "::error::Release $GITHUB_REF_NAME is not published and immutable"
-            exit 1
+          gh release view "$VERIFIED_TAG" --json assets,isDraft,isImmutable,isPrerelease,tagName >"$state"
+          bun ./scripts/release-artifact.ts state "$artifact" "$VERIFIED_TAG" "$GITHUB_SHA" "$state"
+          downloaded="$RUNNER_TEMP/release-readback"
+          gh release download "$VERIFIED_TAG" --dir "$downloaded" \
+            --pattern "$filename" --pattern SHA256SUMS --pattern release.json --pattern provenance.jsonl
+          bun ./scripts/release-artifact.ts verify "$downloaded" "$VERIFIED_TAG" "$GITHUB_SHA"
+          cmp "$artifact/$filename" "$downloaded/$filename"
+          if [[ "$(gh release view "$VERIFIED_TAG" --json isDraft --jq .isDraft)" == true ]]; then
+            gh release view "$VERIFIED_TAG" --json assets,isDraft,isImmutable,isPrerelease,tagName >"$state"
+            bun ./scripts/release-artifact.ts state "$artifact" "$VERIFIED_TAG" "$GITHUB_SHA" "$state"
+            gh release edit "$VERIFIED_TAG" --draft=false --latest
           fi
+          gh release view "$VERIFIED_TAG" --json assets,isDraft,isImmutable,isPrerelease,tagName >"$state"
+          bun ./scripts/release-artifact.ts state "$artifact" "$VERIFIED_TAG" "$GITHUB_SHA" "$state"
+          test "$(gh release view "$VERIFIED_TAG" --json isDraft --jq .isDraft)" = false
+          published="$RUNNER_TEMP/published-readback"
+          gh release download "$VERIFIED_TAG" --dir "$published" \
+            --pattern "$filename" --pattern SHA256SUMS --pattern release.json --pattern provenance.jsonl
+          bun ./scripts/release-artifact.ts verify "$published" "$VERIFIED_TAG" "$GITHUB_SHA"
+          cmp "$artifact/$filename" "$published/$filename"
           latest_tag="$(gh api "/repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
-          if [[ "$latest_tag" != "$GITHUB_REF_NAME" ]]; then
-            echo "::error::Latest release is $latest_tag, expected $GITHUB_REF_NAME"
-            exit 1
-          fi
+          test "$latest_tag" = "$VERIFIED_TAG"
 
   npm:
-    # Publishes the tagged commit to npm through npm trusted publishing: the
-    # registry exchanges this job's GitHub OIDC token for a short-lived credential,
-    # so no npm token is stored and no one approves the release. CONTRIBUTING.md
-    # lists the one-time registry setup the job needs.
-    name: Publish to npm
+    name: Optional npm mirror
     needs: [identity, publish]
     permissions:
       contents: read
+      attestations: read
       id-token: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      EXPECTED_NAME: "@hraness/ui"
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
       VERIFIED_TAG: ${{ needs.identity.outputs.verified_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.3.14"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
@@ -163,48 +248,55 @@ jobs:
           set -euo pipefail
           npm install --global npm@11.19.0 --ignore-scripts --registry=https://registry.npmjs.org
           test "$(npm --version)" = "11.19.0"
-      - name: Publish the tagged package
+      - name: Mirror canonical bytes through trusted publishing
         run: |
           set -euo pipefail
-          if [[ -z "$VERIFIED_TAG" || "$VERIFIED_TAG" != "$GITHUB_REF_NAME" ]]; then
-            echo "::error::Publish request does not match the verified tag"
-            exit 1
-          fi
-          name="$(node -p 'require("./package.json").name')"
-          version="$(node -p 'require("./package.json").version')"
-          if [[ "$name" != "$EXPECTED_NAME" || "v$version" != "$GITHUB_REF_NAME" ]]; then
-            echo "::error::package.json names $name@$version, expected $EXPECTED_NAME at $GITHUB_REF_NAME"
-            exit 1
-          fi
+          test "$VERIFIED_TAG" = "$GITHUB_REF_NAME"
+          artifact="$RUNNER_TEMP/canonical-package"
+          gh release download "$VERIFIED_TAG" --dir "$artifact" \
+            --pattern '*.tgz' --pattern SHA256SUMS --pattern release.json --pattern provenance.jsonl
+          bun ./scripts/release-artifact.ts verify "$artifact" "$VERIFIED_TAG" "$GITHUB_SHA"
+          state="$RUNNER_TEMP/npm-release-state.json"
+          gh release view "$VERIFIED_TAG" --json assets,isDraft,isImmutable,isPrerelease,tagName >"$state"
+          bun ./scripts/release-artifact.ts state "$artifact" "$VERIFIED_TAG" "$GITHUB_SHA" "$state"
+          test "$(gh release view "$VERIFIED_TAG" --json isDraft --jq .isDraft)" = false
+          name="$(node -p 'require(process.env.RUNNER_TEMP + "/canonical-package/release.json").name')"
+          version="$(node -p 'require(process.env.RUNNER_TEMP + "/canonical-package/release.json").version')"
+          filename="$(node -p 'require(process.env.RUNNER_TEMP + "/canonical-package/release.json").filename')"
           probe="$RUNNER_TEMP/npm-view.txt"
           if ! npm view "$name" name --json --registry=https://registry.npmjs.org >/dev/null 2>"$probe"; then
             if grep -q E404 "$probe"; then
-              echo "::warning::$name is not on npm yet, so trusted publishing cannot run. CONTRIBUTING.md lists the one-time setup."
+              echo "::warning::Optional npm mirror is unavailable: $name requires its one-time maintainer bootstrap. The immutable GitHub package is published."
+              printf 'Canonical GitHub package published. Optional npm mirror unavailable: package bootstrap is incomplete.\n' >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             cat "$probe"
-            echo "::error::Could not read $name from npm"
             exit 1
           fi
-          if npm view "$name@$version" version --json --registry=https://registry.npmjs.org >/dev/null 2>"$probe"; then
-            echo "::notice::$name@$version is already on npm"
-            exit 0
-          elif ! grep -q E404 "$probe"; then
-            cat "$probe"
-            echo "::error::Could not check whether $name@$version is on npm"
-            exit 1
+          if ! npm view "$name@$version" version --json --registry=https://registry.npmjs.org >/dev/null 2>"$probe"; then
+            if ! grep -q E404 "$probe"; then
+              cat "$probe"
+              exit 1
+            fi
+            npm publish "$artifact/$filename" --access public --provenance --ignore-scripts --registry=https://registry.npmjs.org
           fi
-          pack="$RUNNER_TEMP/npm-pack"
-          mkdir "$pack"
-          npm pack --ignore-scripts --pack-destination "$pack"
-          npm publish "$pack"/*.tgz --access public --provenance --ignore-scripts --registry=https://registry.npmjs.org
-          for _ in $(seq 1 10); do
+          for attempt in $(seq 1 10); do
             predicate="$(npm view "$name@$version" dist.attestations.provenance.predicateType --prefer-online --registry=https://registry.npmjs.org 2>/dev/null || true)"
             if [[ "$predicate" == "https://slsa.dev/provenance/v1" ]]; then
-              echo "Published $name@$version with provenance"
-              exit 0
+              break
+            fi
+            if [[ "$attempt" == 10 ]]; then
+              echo "::error::npm does not report $name@$version with provenance"
+              exit 1
             fi
             sleep 15
           done
-          echo "::error::npm does not report $name@$version with a provenance attestation"
-          exit 1
+          metadata="$RUNNER_TEMP/npm-mirror.json"
+          npm view "$name@$version" --json --prefer-online --registry=https://registry.npmjs.org >"$metadata"
+          bun ./scripts/release-artifact.ts mirror "$artifact" "$VERIFIED_TAG" "$GITHUB_SHA" "$metadata"
+          mirror="$RUNNER_TEMP/npm-mirror-readback"
+          mkdir "$mirror"
+          cp "$artifact/SHA256SUMS" "$artifact/release.json" "$artifact/provenance.jsonl" "$mirror/"
+          npm pack "$name@$version" --ignore-scripts --json --pack-destination "$mirror" --registry=https://registry.npmjs.org
+          bun ./scripts/release-artifact.ts verify "$mirror" "$VERIFIED_TAG" "$GITHUB_SHA"
+          printf 'Optional npm mirror matches the canonical GitHub package bytes and reports provenance.\n' >> "$GITHUB_STEP_SUMMARY"
