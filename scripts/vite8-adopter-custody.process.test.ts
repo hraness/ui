@@ -9,7 +9,7 @@ import {
 } from "../fixtures/vite8-adopter/custody.ts";
 import { cancellationSupervisorScript } from "../fixtures/vite8-adopter/cancellation-supervisor.ts";
 import { createBoundedDiagnostics } from "../fixtures/vite8-adopter/diagnostics.ts";
-import { browserExecutableCandidates, resolveFirstBrowserExecutable } from "./browser-executable.ts";
+import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
 
 const runnerCustody = createViteMatrixCustody();
 afterAll(async () => { await runnerCustody.close(); runnerCustody.dispose(); }, 60_000);
@@ -47,7 +47,9 @@ for (const [mode, signal, expectedCode] of [["command", "SIGTERM", 143], ["brows
     const work = await mkdtemp(join(directory, "vite78-cancellation-"));
     let success = false;
     const executable = mode !== "command" ? await resolveFirstBrowserExecutable(
-      browserExecutableCandidates(), "Cancellation regression requires the matrix browser") : "";
+      process.env.CHROMIUM_EXECUTABLE_PATH === undefined ? [] : [process.env.CHROMIUM_EXECUTABLE_PATH],
+      "Cancellation regression requires the pinned provisioned matrix browser",
+    ) : "";
     const owned = ownViteMatrixCancellationOwner([
       process.execPath, join(repository, "fixtures/vite8-adopter/cancellation-owner.ts"), work, mode, executable, mode === "command" ? "" : nodeExecutable(),
     ], work, runnerCustody);

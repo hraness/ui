@@ -14,9 +14,8 @@ import {
 } from "node:fs/promises";
 import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 
-import { chromium } from "playwright-core";
 
-import { browserExecutableCandidates, browserLaunchOptions, resolveFirstBrowserExecutable, verifyBrowserLaunch } from "./browser-executable.ts";
+import { launchOwnedChromium, resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import {
   assertNextAuthoredSourceEmbedding,
   assertNextSourceMapOutputLink,
@@ -890,12 +889,11 @@ try {
         assert.doesNotMatch(await response.text(), /<style(?:\s|>)/iu, "Next response must not use inline style elements");
       }
       const browserExecutable = await resolveFirstBrowserExecutable(
-      browserExecutableCandidates(),
-        "No provisioned Chromium executable found. Install the pinned Playwright browser or set CHROMIUM_EXECUTABLE_PATH to versioned Chrome for Testing to run the packed Next browser smoke.",
+        process.env.CHROMIUM_EXECUTABLE_PATH === undefined ? [] : [process.env.CHROMIUM_EXECUTABLE_PATH],
+        "Provision the Chromium pinned to this repository's Playwright version",
       );
-      const browser = await chromium.launch({ ...browserLaunchOptions(["--no-sandbox"]), executablePath: browserExecutable, headless: true });
+      const browser = await launchOwnedChromium(browserExecutable);
       try {
-        await verifyBrowserLaunch(browser, browserExecutable);
         const page = await browser.newPage();
         const hydrationDiagnostics: Readonly<{ kind: string; detail: string }>[] = [];
         let hydrationRuntimeFailed = false;

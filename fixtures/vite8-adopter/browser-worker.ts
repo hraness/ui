@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { chromium } from "playwright-core";
-import { browserLaunchOptions, verifyBrowserLaunch } from "../../scripts/browser-executable.ts";
+import { ownedChromiumLaunchOptions, verifyOwnedChromium } from "../../scripts/browser-executable.ts";
 import {
   acquireViteMatrixResource, childClosed, collectViteMatrixGroup, createViteMatrixCustody,
   matrixDeadline, viteMatrixGroup,
@@ -33,11 +33,11 @@ async function runBrowserWorker(inputPath: string): Promise<void> {
   });
   try {
     const executableIdentity = await viteBrowserFileIdentity(request.executablePath);
+    const launchOptions = ownedChromiumLaunchOptions(request.executablePath);
     custody.check();
     const ownedServer = await acquireViteMatrixResource(custody, "matrix browser process", async () => {
       const server = await chromium.launchServer({
-        ...browserLaunchOptions(),
-        executablePath: request.executablePath, host: "127.0.0.1", headless: true, timeout: 30_000,
+        ...launchOptions, host: "127.0.0.1", timeout: 30_000,
         handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
       });
       let closed: ReturnType<typeof childClosed> | undefined;
@@ -80,7 +80,7 @@ async function runBrowserWorker(inputPath: string): Promise<void> {
         });
       try {
         const browser = ownedBrowser.value;
-        await verifyBrowserLaunch(browser, request.executablePath);
+        console.log("owned_browser", JSON.stringify(await verifyOwnedChromium(browser, launchOptions.executablePath)));
         const ownedContext = await acquireViteMatrixResource(custody, "matrix browser context",
           () => browser.newContext({ reducedMotion: "reduce", serviceWorkers: "block" }),
           (context) => matrixDeadline(context.close(), 5_000, "Matrix browser context did not close"));

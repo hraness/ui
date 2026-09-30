@@ -84,9 +84,18 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
-      - uses: ./.github/actions/provision-browser
       - run: bun run build
       - run: bun run test:package
+      - name: Read installed Playwright version
+        id: playwright-version
+        run: bun -e 'console.log("version=" + require("playwright-core/package.json").version)' >> "$GITHUB_OUTPUT"
+      - name: Restore pinned Playwright browser cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
+      - name: Provision pinned Chromium for process custody verification
+        run: bunx --no-install playwright-core install --with-deps chromium
       - run: bun run test:vite-custody
       - run: bun run test:packed-bun-browser
       - name: Generated files are committed
@@ -147,7 +156,16 @@ jobs:
             process.exit(1);
           }'
       - run: bun install --frozen-lockfile --ignore-scripts
-      - uses: ./.github/actions/provision-browser
+      - name: Read installed Playwright version
+        id: playwright-version
+        run: bun -e 'console.log("version=" + require("playwright-core/package.json").version)' >> "$GITHUB_OUTPUT"
+      - name: Restore pinned Playwright browser cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
+      - name: Provision pinned Playwright Chromium
+        run: bunx --no-install playwright-core install --with-deps chromium
       - run: bun run build
       - run: ${{ matrix.command }}
       - name: Generated files are committed
@@ -192,7 +210,19 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
-      - uses: ./.github/actions/provision-browser
+      - name: Read installed Playwright version
+        id: playwright-version
+        if: matrix.phase == 'edge'
+        run: bun -e 'console.log("version=" + require("playwright-core/package.json").version)' >> "$GITHUB_OUTPUT"
+      - name: Restore pinned Playwright browser cache
+        if: matrix.phase == 'edge'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
+      - name: Provision pinned Playwright Chromium
+        if: matrix.phase == 'edge'
+        run: bunx --no-install playwright-core install --with-deps chromium
       - run: bun run build
       - run: bun run ./scripts/next-adopter-smoke.ts ${{ matrix.profile }} --phase=${{ matrix.phase }}
       - name: Generated files are committed
@@ -271,9 +301,24 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
-      - uses: ./.github/actions/provision-browser
+      - name: Read installed Playwright version
+        id: playwright-version
+        run: bun -e 'console.log("version=" + require("playwright-core/package.json").version)' >> "$GITHUB_OUTPUT"
+      # Browser is the sole save owner; other jobs, pull requests, and tags restore.
+      - name: Restore pinned Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          save-cache: "true"
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
+      - name: Provision pinned Playwright Chromium
+        run: bunx --no-install playwright-core install --with-deps chromium
+      - name: Save pinned Playwright browser cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
       - run: bun run build
       - run: bun run test:browser
       - name: Generated files are committed
