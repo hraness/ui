@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
+import * as stylex from "@stylexjs/stylex";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import type { StylexPackageManifestV1 } from "../build/contracts.js";
+import { askAiProviderMarks } from "./ask-ai-marks.generated.js";
 import {
   AskAiAboutThis,
   askAiProviders,
@@ -9,6 +12,15 @@ import {
 
 const subjectUrl = "https://hraness.com/stripe?view=timeline#launch";
 const prompt = `Tell me about ${subjectUrl}`;
+const compiledCss = await Bun.file(
+  new URL("../dist/stylex.css", import.meta.url),
+).text();
+const compiledManifest: StylexPackageManifestV1 = await Bun.file(
+  new URL("../dist/stylex-manifest.json", import.meta.url),
+).json();
+const testStyles = stylex.create({
+  dynamicGap: (gap: string) => ({ gap }),
+});
 
 function attribute(tag: string, name: string): string | undefined {
   return tag
@@ -112,9 +124,6 @@ test("AskAiAboutThis renders deterministic accessible server markup and real anc
   // Each link carries a decorative tile plus its glyph, and color artwork
   // when the registry publishes it (OpenAI and xAI ship glyph-only).
   expect(html.match(/aria-hidden="true"/gu)).toHaveLength(10);
-  for (const accent of ["#0f1014", "#d97757", "#22b8cd", "#1a1a1a"]) {
-    expect(html).toContain(`--_ask-ai-accent:${accent}`);
-  }
   expect(html.match(/__icon-glyph/gu)).toHaveLength(4);
   expect(html.match(/__icon-art/gu)).toHaveLength(2);
   for (const label of ["ChatGPT", "Claude", "Perplexity", "Grok"]) {
@@ -122,6 +131,82 @@ test("AskAiAboutThis renders deterministic accessible server markup and real anc
   }
   expect(html).not.toContain("onClick");
   expect(html).not.toContain("javascript:");
+});
+
+test("AskAiAboutThis default server markup has no inline styling", () => {
+  const html = renderToStaticMarkup(<AskAiAboutThis url={subjectUrl} />);
+
+  expect(html.match(/\sstyle=/gu) ?? []).toEqual([]);
+  expect(html.match(/<style\b/gu) ?? []).toEqual([]);
+});
+
+test("provider icons keep their compiled accent paints and forced-color overrides", () => {
+  const html = renderToStaticMarkup(<AskAiAboutThis url={subjectUrl} />);
+  const iconTags = html.match(
+    /<span\b[^>]*data-slot="ask-ai-about-this-icon"[^>]*>/gu,
+  ) ?? [];
+  const expectedAccents = {
+    chatgpt: "#0f1014",
+    claude: "#d97757",
+    perplexity: "#22b8cd",
+    grok: "#1a1a1a",
+  } as const;
+
+  expect(iconTags).toHaveLength(askAiProviders.length);
+  for (const [index, provider] of askAiProviders.entries()) {
+    const classes = (attribute(iconTags[index] ?? "", "class") ?? "")
+      .split(/\s+/u);
+    const rules = compiledManifest.rules.filter(([name]) => classes.includes(name));
+    const accent = expectedAccents[provider];
+    const paints = {
+      "background-color": `color-mix(in srgb, ${accent} 14%, var(--ui-background))`,
+      "background-image": `linear-gradient(180deg, color-mix(in srgb, white 24%, transparent), transparent 48%), linear-gradient(160deg, color-mix(in srgb, ${accent} 26%, transparent), color-mix(in srgb, ${accent} 6%, transparent) 74%)`,
+      color: `light-dark(color-mix(in srgb, ${accent} 78%, black), color-mix(in srgb, ${accent} 55%, white))`,
+      outline: `1px solid color-mix(in srgb, ${accent} 28%, transparent)`,
+    };
+    const forcedColorPaints = {
+      "background-color": "Canvas",
+      "background-image": "none",
+      outline: "1px solid ButtonBorder",
+    };
+
+    for (const [condition, declarations] of [
+      [".", paints],
+      ["@media(forced-colors:active)", forcedColorPaints],
+    ] as const) {
+      for (const [property, value] of Object.entries(declarations)) {
+        const declaration = `${property}:${value}`.replace(/\s+/gu, "");
+        const matches = rules.filter(([, rule]) => {
+          const css = rule.ltr.replace(/\s+/gu, "");
+          return css.startsWith(condition) && css.includes(declaration);
+        });
+        expect(matches).toHaveLength(1);
+        for (const [name] of matches) {
+          const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+          expect(new RegExp(`\\.${escaped}(?![A-Za-z0-9_-])[^{}]*\\{`, "u")
+            .test(compiledCss)).toBe(true);
+        }
+      }
+    }
+    expect(askAiProviderMarks[provider].accent).toBe(accent);
+  }
+});
+
+test("caller root styles remain final after dynamic StyleX values", () => {
+  const html = renderToStaticMarkup(
+    <AskAiAboutThis
+      style={{ gap: "2rem", marginTop: "3rem" }}
+      url={subjectUrl}
+      xstyle={testStyles.dynamicGap("1rem")}
+    />,
+  );
+  const navTag = html.slice(0, html.indexOf(">") + 1);
+  const rootStyle = attribute(navTag, "style") ?? "";
+
+  expect(rootStyle).toMatch(/--[^:]+:1rem/u);
+  expect(rootStyle).toContain("gap:2rem");
+  expect(rootStyle).toContain("margin-top:3rem");
+  expect(rootStyle.indexOf("--")).toBeLessThan(rootStyle.indexOf("gap:2rem"));
 });
 
 test("the component validates before rendering any provider markup", () => {

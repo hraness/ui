@@ -3,36 +3,92 @@ import * as stylex from "@stylexjs/stylex";
 const coarsePointer = "@media(pointer: coarse)";
 const forcedColors = "@media(forced-colors: active)";
 
-export const askAiStyles = stylex.create({
-  // A soft accent-tinted tile carrying the provider mark. The color art
-  // overlays the currentColor glyph, so forced-colors mode hides the art and
-  // keeps a system-colored glyph. `--_ask-ai-accent` is set per provider.
-  icon: {
-    alignItems: "center",
-    aspectRatio: "1",
+// Direct paint recipes stay in the package's CSS layers. StyleX emits static
+// custom-property atoms outside those layers.
+export const askAiProviderAccentStyles = stylex.create({
+  chatgpt: {
     backgroundColor: {
-      default:
-        "color-mix(in srgb, var(--_ask-ai-accent) 14%, var(--ui-background))",
+      default: "color-mix(in srgb, #0f1014 14%, var(--ui-background))",
       [forcedColors]: "Canvas",
     },
     backgroundImage: {
       default:
-        "linear-gradient(180deg, color-mix(in srgb, white 24%, transparent), transparent 48%), linear-gradient(160deg, color-mix(in srgb, var(--_ask-ai-accent) 26%, transparent), color-mix(in srgb, var(--_ask-ai-accent) 6%, transparent) 74%)",
+        "linear-gradient(180deg, color-mix(in srgb, white 24%, transparent), transparent 48%), linear-gradient(160deg, color-mix(in srgb, #0f1014 26%, transparent), color-mix(in srgb, #0f1014 6%, transparent) 74%)",
       [forcedColors]: "none",
     },
+    color:
+      "light-dark(color-mix(in srgb, #0f1014 78%, black), color-mix(in srgb, #0f1014 55%, white))",
+    outline: {
+      default: "1px solid color-mix(in srgb, #0f1014 28%, transparent)",
+      [forcedColors]: "1px solid ButtonBorder",
+    },
+  },
+  claude: {
+    backgroundColor: {
+      default: "color-mix(in srgb, #d97757 14%, var(--ui-background))",
+      [forcedColors]: "Canvas",
+    },
+    backgroundImage: {
+      default:
+        "linear-gradient(180deg, color-mix(in srgb, white 24%, transparent), transparent 48%), linear-gradient(160deg, color-mix(in srgb, #d97757 26%, transparent), color-mix(in srgb, #d97757 6%, transparent) 74%)",
+      [forcedColors]: "none",
+    },
+    color:
+      "light-dark(color-mix(in srgb, #d97757 78%, black), color-mix(in srgb, #d97757 55%, white))",
+    outline: {
+      default: "1px solid color-mix(in srgb, #d97757 28%, transparent)",
+      [forcedColors]: "1px solid ButtonBorder",
+    },
+  },
+  perplexity: {
+    backgroundColor: {
+      default: "color-mix(in srgb, #22b8cd 14%, var(--ui-background))",
+      [forcedColors]: "Canvas",
+    },
+    backgroundImage: {
+      default:
+        "linear-gradient(180deg, color-mix(in srgb, white 24%, transparent), transparent 48%), linear-gradient(160deg, color-mix(in srgb, #22b8cd 26%, transparent), color-mix(in srgb, #22b8cd 6%, transparent) 74%)",
+      [forcedColors]: "none",
+    },
+    color:
+      "light-dark(color-mix(in srgb, #22b8cd 78%, black), color-mix(in srgb, #22b8cd 55%, white))",
+    outline: {
+      default: "1px solid color-mix(in srgb, #22b8cd 28%, transparent)",
+      [forcedColors]: "1px solid ButtonBorder",
+    },
+  },
+  grok: {
+    backgroundColor: {
+      default: "color-mix(in srgb, #1a1a1a 14%, var(--ui-background))",
+      [forcedColors]: "Canvas",
+    },
+    backgroundImage: {
+      default:
+        "linear-gradient(180deg, color-mix(in srgb, white 24%, transparent), transparent 48%), linear-gradient(160deg, color-mix(in srgb, #1a1a1a 26%, transparent), color-mix(in srgb, #1a1a1a 6%, transparent) 74%)",
+      [forcedColors]: "none",
+    },
+    color:
+      "light-dark(color-mix(in srgb, #1a1a1a 78%, black), color-mix(in srgb, #1a1a1a 55%, white))",
+    outline: {
+      default: "1px solid color-mix(in srgb, #1a1a1a 28%, transparent)",
+      [forcedColors]: "1px solid ButtonBorder",
+    },
+  },
+});
+
+export const askAiStyles = stylex.create({
+  // A soft accent-tinted tile carrying the provider mark. The color art
+  // overlays the currentColor glyph, so forced-colors mode hides the art and
+  // keeps a system-colored glyph. Provider recipes supply the tile colors.
+  icon: {
+    alignItems: "center",
+    aspectRatio: "1",
     borderRadius: "26%",
     boxSizing: "border-box",
-    color:
-      "light-dark(color-mix(in srgb, var(--_ask-ai-accent) 78%, black), color-mix(in srgb, var(--_ask-ai-accent) 55%, white))",
     display: "inline-flex",
     flex: "0 0 auto",
     inlineSize: "1.125rem",
     justifyContent: "center",
-    outline: {
-      default:
-        "1px solid color-mix(in srgb, var(--_ask-ai-accent) 28%, transparent)",
-      [forcedColors]: "1px solid ButtonBorder",
-    },
     outlineOffset: "-1px",
     position: "relative",
   },

@@ -4379,6 +4379,7 @@ assert.match(askAiMarkup, /aria-label="Ask AI about this"/u);
 assert.match(askAiMarkup, /class="[^"]*hraness-ask-ai-about-this[^"]*consumer-ask-ai[^"]*"/u);
 assert.equal(askAiMarkup.match(/data-slot="ask-ai-about-this-link"/gu)?.length, 4);
 assert.equal(askAiMarkup.match(/target="_blank"/gu)?.length, 4);
+assert.doesNotMatch(askAiMarkup, /\sstyle=|<style\b/u);
 
 const socialMarkup = renderToStaticMarkup(React.createElement(SocialIcon, {
   className: "consumer-social-icon",

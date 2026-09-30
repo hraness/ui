@@ -100,6 +100,32 @@ evidence for another edge. The root-to-child edge must also survive settlement.
 The [Bun adapter](../../build/bun.ts) and its
 [regression tests](../../build/bun.test.ts) own the executable proof.
 
+## AskAi static provider accents
+
+`AskAiAboutThis` uses a finite set of provider colors. Literal provider StyleX
+recipes compile the accent-dependent `backgroundColor`, `backgroundImage`,
+`color`, and `outline` expressions so the default server-rendered component
+emits no `style` attributes. These paint rules stay in the compiler's priority
+layers; StyleX 0.19 emits custom-property atoms outside those layers. Keep the
+vendored artwork, provider colors and links, and forced-color glyph behavior
+with that presentation. The caller's explicit root `style` remains a separate
+composition contract: merge it after the root's StyleX presentation.
+The [component](../../src/ask-ai.tsx),
+[recipes](../../src/ask-ai.stylex.ts), and
+[regression tests](../../src/ask-ai.test.tsx) own this boundary.
+
+[UI #85](https://github.com/hraness/ui/pull/85), commit
+[`827c07f`](https://github.com/hraness/ui/commit/827c07ffd69ed09738bdbddb530a86b428a52db0),
+introduced inline `--_ask-ai-accent` declarations in v0.5.19. After UI v0.5.24
+repaired the Bun public-server graph importer issue, Slopcamera's retained
+renderer reached its existing `Site renderer introduced inline styling` guard and rejected
+exactly four default icon declarations: `#0f1014`, `#d97757`, `#22b8cd`, and
+`#1a1a1a`. Consumer styling and the guard had not changed. This separates
+successful dependency-graph construction from the consumer's rendered-markup
+contract; both need their own evidence. Moving these finite values into
+component recipes preserves the compiler policy while allowing strict
+consumers to keep their inline-style guard.
+
 ## Related
 
 The normative rules remain in the root `AGENTS.md`. [[documentation-ownership|Documentation ownership]] explains how those rules relate to executable contracts and this pull-based context.
