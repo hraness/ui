@@ -7184,6 +7184,17 @@ async function verifyConsumer(
     "@hraness",
     "ui",
   );
+  for (const path of [
+    "LICENSE",
+    "vendor/ask-ai-marks/LICENSE",
+    "vendor/ask-ai-marks/UPSTREAM.md",
+  ]) {
+    assert.deepEqual(
+      await readFile(join(installedPackageRoot, path)),
+      await readFile(join(repository, path)),
+      `The installed package must preserve ${path} byte-for-byte.`,
+    );
+  }
   const installedManifest = JSON.parse(
     await readFile(join(installedPackageRoot, "package.json"), "utf8"),
   ) as {
