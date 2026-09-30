@@ -4,7 +4,9 @@ Accessible React components built on React Aria, with compiled StyleX styles and
 
 `@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives with small fixed sets of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
 
-Version 0.5.23 fixes the default Disclosure caret in left-to-right and right-to-left content. It includes the LobeHub MIT notice for the provider artwork in Ask AI links. The notice and source record ship in `vendor/ask-ai-marks/`.
+Latest release: v0.5.24. Use the immutable dependency pin below.
+
+Ask AI provider artwork includes the LobeHub MIT notice and source record in `vendor/ask-ai-marks/`.
 
 ## First render
 
@@ -13,7 +15,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.23/hraness-ui-0.5.23.tgz"
+    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.24/hraness-ui-0.5.24.tgz"
   }
 }
 ```
@@ -120,7 +122,7 @@ The built-in recipes are already compiled, so ordinary consumers do not need a S
 
 Compiler adopters install the package's exact build-tool peers: `@babel/core@7.29.7`, `@stylexjs/babel-plugin@0.19.0`, `lightningcss@1.33.0`, and `@types/babel__core@7.20.5`. TypeScript projects using the Bun adapter also install `@types/bun@1.3.14`; Vite adapter projects install Vite 7.3.6 or 8.2.1 and compatible Node types (`@types/node@^20.19.0 || >=22.12.0`). These peers are optional for ordinary precompiled-stylesheet consumers.
 
-The Bun 1.3.14 adapter has an exact ReactDOM 19.2.3 self-root profile for a native CommonJS `require("react-dom")` that Bun reports as a raw `import-statement`. It verifies the captured package manifest, client production source, and public `index.js` hashes, resolves the source's `require` export conditions, and requires the root to be both loaded and present in the native input graph. The public root and its `checkDCE` side effect remain intact. This profile does not admit other same-name packages, versions, altered bytes, package scopes, or arbitrary self-imports; unsupported evidence stops the graph before publication.
+The Bun 1.3.14 adapter supports four ReactDOM 19.2.3 production importers: the client, legacy browser server, Bun streaming server, and browser streaming server. When Bun reports their CommonJS `require("react-dom")` as a raw `import-statement`, the adapter verifies the captured package manifest, importing file, and public `index.js` against exact hashes. It resolves the source's `require` export conditions and requires `index.js` to be both loaded and present in the native input graph, preserving its `checkDCE` side effect. Other versions, altered bytes, package scopes, and arbitrary self-imports stop the graph before publication when the normal resolution evidence is missing.
 
 The Vite production matrix checks both pinned versions under Node 24 with TypeScript 6.0.3, with maps disabled and with the explicit `sourceMaps: "external"` profile. It covers native client, lazy, multi-entry and SSR builds, public Bundler and NodeNext declarations, package/caller rule union, hydration and browser interaction. Vite 8 uses Rolldown's public module metadata. Both `rollupOptions` and `rolldownOptions` remain subject to the same input, output and external-import restrictions. Source maps remain disabled by default; external maps require the adapter-owned profile and in-root publication. Hidden, inline, copied and late-enabled maps fail closed. This is not development, HMR, React-plugin or arbitrary Vite-version evidence. Native signal regressions verify child/browser/server collection; successful matrix receipts remain outside disposable consumer directories.
 

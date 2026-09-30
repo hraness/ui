@@ -1404,14 +1404,31 @@ function retainRawBareInputFallbackUse(
   return target;
 }
 
-// This is an observed native self-reference, not a transparent selector: the
+// These are observed native self-references, not transparent selectors: the
 // public root executes checkDCE before loading its production child. Bun reports
 // the pinned CJS require as import-statement; the source, not that metadata label,
 // selects the require export conditions. Never replace that root with the child
 // or promote a merely observed file to input.
 const reactDomSelfRootProfile = {
   manifest: "d926f158e1be15885aaeac259c39567a46f6525fbdd14c380528486c31459996",
-  importer: "3e472cce088eb5f01d931ba75ac64b27b52bd46a009e0657b56b45c97ed42044",
+  importers: [
+    {
+      path: "cjs/react-dom-client.production.js",
+      sha256: "3e472cce088eb5f01d931ba75ac64b27b52bd46a009e0657b56b45c97ed42044",
+    },
+    {
+      path: "cjs/react-dom-server-legacy.browser.production.js",
+      sha256: "2329be3c0641cb1594d4ed616740de915a31b17fcccd4ce00e6368087150529f",
+    },
+    {
+      path: "cjs/react-dom-server.bun.production.js",
+      sha256: "23c607f4db3d070369e8b14040be8e904f6e34dc64de2d5fdea477aad7a4fd89",
+    },
+    {
+      path: "cjs/react-dom-server.browser.production.js",
+      sha256: "c58b0c69cdde29cdce2783d1478b61f81e54f267fe101fd13f9394a86547281b",
+    },
+  ],
   root: "ba1a3e33489f868371561777607e3ee5091df0f7ea3f1a10f789d6b86e4c1505",
 } as const;
 
@@ -1426,7 +1443,8 @@ function capturedReactDomSelfRoot(
   buildConditions: readonly string[],
   buildTarget: "browser" | "bun",
 ): Readonly<{ target: string; scopes: readonly ResolutionFileSnapshot[]; files: readonly LoadedInputFileSnapshot[] }> | undefined {
-  if (from !== posix.join(installationRoot, "cjs/react-dom-client.production.js") || !known.has(from)) return undefined;
+  const importerProfile = reactDomSelfRootProfile.importers.find(({ path }) => from === posix.join(installationRoot, path));
+  if (importerProfile === undefined || !known.has(from)) return undefined;
   const manifestPath = posix.join(installationRoot, "package.json");
   const manifest = packageScopeSnapshots.get(manifestPath);
   if (manifest?.kind !== "file" || manifest.sha256 !== reactDomSelfRootProfile.manifest) return undefined;
@@ -1439,7 +1457,7 @@ function capturedReactDomSelfRoot(
   if (target !== posix.join(installationRoot, "index.js")) return undefined;
   const files: LoadedInputFileSnapshot[] = [];
   const scopes: ResolutionFileSnapshot[] = [];
-  for (const [path, expectedHash] of [[from, reactDomSelfRootProfile.importer], [target, reactDomSelfRootProfile.root]] as const) {
+  for (const [path, expectedHash] of [[from, importerProfile.sha256], [target, reactDomSelfRootProfile.root]] as const) {
     const file = capturedJavascriptInputFileSnapshot(path, rootDirectory, inputFileSnapshots);
     const scope = packageScopes.get(path);
     if (file?.snapshot.kind !== "file" || file.snapshot.sha256 !== expectedHash || scope?.name !== "react-dom") return undefined;
