@@ -1555,6 +1555,10 @@
     transition-delay: 0s, 0s, 0s;
   }
 
+  .x1mq3mr6 {
+    transition-duration: 0s;
+  }
+
   .x7hzv9z {
     transition-duration: var(--motion-duration-fast),var(--motion-duration-fast),var(--motion-duration-fast),var(--motion-duration-fast),var(--motion-duration-fast),var(--motion-duration-fast);
   }
@@ -1605,6 +1609,10 @@
 
   .x9vp5wv {
     transition-property: border-color, box-shadow, transform;
+  }
+
+  .x13b0p5u {
+    transition-property: none;
   }
 
   .x11xpdln {

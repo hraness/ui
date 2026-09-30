@@ -33,6 +33,10 @@ export const collectionStyles = stylex.create({
     transitionDuration: "var(--motion-duration-standard)",
     transitionTimingFunction: "var(--motion-easing-emphasized)",
   },
+  disclosureIndicatorDefault: {
+    transitionDuration: "0ms",
+    transitionProperty: "none",
+  },
   disclosureIndicatorExpanded: {
     transform: "rotate(90deg)",
   },

@@ -1,0 +1,26 @@
+name: Provision pinned browser
+description: Restore or install Chromium for the repository's pinned Playwright version
+inputs:
+  save-cache:
+    description: Save the browser cache once on main pushes
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - id: playwright
+      shell: bash
+      run: |
+        version="$(bun -e 'console.log(require("playwright-core/package.json").version)')"
+        printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+    - id: browser-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+    - shell: bash
+      run: bun ./node_modules/playwright-core/cli.js install chromium
+    - if: inputs.save-cache == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.browser-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}

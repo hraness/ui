@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { chromium } from "playwright-core";
+import { browserLaunchOptions, verifyBrowserLaunch } from "../../scripts/browser-executable.ts";
 import {
   acquireViteMatrixResource, childClosed, collectViteMatrixGroup, createViteMatrixCustody,
   matrixDeadline, viteMatrixGroup,
@@ -35,6 +36,7 @@ async function runBrowserWorker(inputPath: string): Promise<void> {
     custody.check();
     const ownedServer = await acquireViteMatrixResource(custody, "matrix browser process", async () => {
       const server = await chromium.launchServer({
+        ...browserLaunchOptions(),
         executablePath: request.executablePath, host: "127.0.0.1", headless: true, timeout: 30_000,
         handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
       });
@@ -78,6 +80,7 @@ async function runBrowserWorker(inputPath: string): Promise<void> {
         });
       try {
         const browser = ownedBrowser.value;
+        await verifyBrowserLaunch(browser, request.executablePath);
         const ownedContext = await acquireViteMatrixResource(custody, "matrix browser context",
           () => browser.newContext({ reducedMotion: "reduce", serviceWorkers: "block" }),
           (context) => matrixDeadline(context.close(), 5_000, "Matrix browser context did not close"));

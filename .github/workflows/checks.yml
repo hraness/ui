@@ -84,6 +84,7 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
+      - uses: ./.github/actions/provision-browser
       - run: bun run build
       - run: bun run test:package
       - run: bun run test:vite-custody
@@ -146,6 +147,7 @@ jobs:
             process.exit(1);
           }'
       - run: bun install --frozen-lockfile --ignore-scripts
+      - uses: ./.github/actions/provision-browser
       - run: bun run build
       - run: ${{ matrix.command }}
       - name: Generated files are committed
@@ -190,6 +192,7 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
+      - uses: ./.github/actions/provision-browser
       - run: bun run build
       - run: bun run ./scripts/next-adopter-smoke.ts ${{ matrix.profile }} --phase=${{ matrix.phase }}
       - name: Generated files are committed
@@ -268,6 +271,9 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
+      - uses: ./.github/actions/provision-browser
+        with:
+          save-cache: "true"
       - run: bun run build
       - run: bun run test:browser
       - name: Generated files are committed

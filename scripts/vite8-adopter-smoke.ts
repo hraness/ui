@@ -5,7 +5,7 @@ import { basename, delimiter, dirname, join, relative, sep } from "node:path";
 import {
   createViteMatrixCustody, matrixDeadline, runViteMatrixCommand, writeViteMatrixSuccessReceipt,
 } from "../fixtures/vite8-adopter/custody.ts";
-import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
+import { browserExecutableCandidates, resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import { runViteBrowserWorker } from "../fixtures/vite8-adopter/browser-control.ts";
 import { viteMatrixToolchains, type ViteMatrixToolchain } from "../fixtures/vite8-adopter/toolchain.ts";
 
@@ -156,12 +156,8 @@ async function verifyBrowser(directory: string, receipt: MatrixReceipt, node: st
     assert.equal(server.pendingRequests, 0, "Matrix HTTP server retained requests after stopping");
   });
   try {
-    const executablePath = await resolveFirstBrowserExecutable([
-      ...(process.env.CHROMIUM_EXECUTABLE_PATH ? [process.env.CHROMIUM_EXECUTABLE_PATH] : []),
-      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
-      "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser",
-    ], "The Vite compatibility matrix requires an installed Chrome or Chromium executable");
+    const executablePath = await resolveFirstBrowserExecutable(
+      browserExecutableCandidates(), "The Vite compatibility matrix requires pinned Playwright Chromium or versioned Chrome for Testing");
     const result = await runViteBrowserWorker(node, {
       schemaVersion: 1, mode: "acceptance", executablePath,
       origin: `http://127.0.0.1:${String(server.port)}`, foundationHref: receipt.foundationHref,

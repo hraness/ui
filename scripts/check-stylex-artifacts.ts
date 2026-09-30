@@ -351,6 +351,7 @@ const MOTION_RUNTIME_STYLE_KEYS = [
 const COLLECTION_STYLE_KEYS = [
   "disclosureHeading",
   "disclosureIndicator",
+  "disclosureIndicatorDefault",
   "disclosureIndicatorExpanded",
   "disclosurePanel",
   "disclosurePanelHidden",

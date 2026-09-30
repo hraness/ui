@@ -4,6 +4,14 @@
   min-block-size: 100svh;
 }
 
+.gallery-disclosure-direction-ltr {
+  direction: ltr;
+}
+
+.gallery-disclosure-direction-rtl {
+  direction: rtl;
+}
+
 @layer components.hraness-ui.legacy {
   [data-slot="toast-region"][aria-label$=" notifications"] {
     --gallery-toast-collision: active;
