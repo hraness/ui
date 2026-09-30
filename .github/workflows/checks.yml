@@ -47,6 +47,7 @@ jobs:
       - run: bun run check:portfolio-inventory
       - run: bun run check:ask-ai-marks
       - run: bun run typecheck
+      - run: python3 scripts/ci-ubuntu-mirror.test.py
       - run: bun run build
       - run: bun run check:committed-dist
       - run: bun run check:stylex-artifacts
@@ -99,6 +100,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo python3 scripts/ci-ubuntu-mirror.py
           sudo tee /etc/apt/apt.conf.d/99hraness-browser-acquisition >/dev/null <<'APT'
           Acquire::http::Timeout "20";
           Acquire::https::Timeout "20";
@@ -179,6 +181,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo python3 scripts/ci-ubuntu-mirror.py
           sudo tee /etc/apt/apt.conf.d/99hraness-browser-acquisition >/dev/null <<'APT'
           Acquire::http::Timeout "20";
           Acquire::https::Timeout "20";
@@ -246,6 +249,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo python3 scripts/ci-ubuntu-mirror.py
           sudo tee /etc/apt/apt.conf.d/99hraness-browser-acquisition >/dev/null <<'APT'
           Acquire::http::Timeout "20";
           Acquire::https::Timeout "20";
@@ -346,6 +350,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo python3 scripts/ci-ubuntu-mirror.py
           sudo tee /etc/apt/apt.conf.d/99hraness-browser-acquisition >/dev/null <<'APT'
           Acquire::http::Timeout "20";
           Acquire::https::Timeout "20";
