@@ -14,9 +14,8 @@ import {
 } from "node:fs/promises";
 import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 
-import { chromium } from "playwright-core";
 
-import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
+import { launchOwnedChromium, resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import {
   assertNextAuthoredSourceEmbedding,
   assertNextSourceMapOutputLink,
@@ -890,18 +889,10 @@ try {
         assert.doesNotMatch(await response.text(), /<style(?:\s|>)/iu, "Next response must not use inline style elements");
       }
       const browserExecutable = await resolveFirstBrowserExecutable(
-        [
-          ...(process.env.CHROMIUM_EXECUTABLE_PATH === undefined ? [] : [process.env.CHROMIUM_EXECUTABLE_PATH]),
-          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-          chromium.executablePath(),
-          "/Applications/Chromium.app/Contents/MacOS/Chromium",
-          "/usr/bin/google-chrome",
-          "/usr/bin/chromium",
-          "/usr/bin/chromium-browser",
-        ],
-        "No ordinary Chromium executable found. Set CHROMIUM_EXECUTABLE_PATH to run the packed Next browser smoke.",
+        process.env.CHROMIUM_EXECUTABLE_PATH === undefined ? [] : [process.env.CHROMIUM_EXECUTABLE_PATH],
+        "Provision the Chromium pinned to this repository's Playwright version",
       );
-      const browser = await chromium.launch({ args: ["--no-sandbox"], executablePath: browserExecutable, headless: true });
+      const browser = await launchOwnedChromium(browserExecutable);
       try {
         const page = await browser.newPage();
         const hydrationDiagnostics: Readonly<{ kind: string; detail: string }>[] = [];

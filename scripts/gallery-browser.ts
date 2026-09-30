@@ -16,13 +16,12 @@ import { basename, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
-  chromium,
   type BrowserContextOptions,
   type Locator,
   type Page,
 } from "playwright-core";
 
-import { resolveFirstBrowserExecutable } from "./browser-executable.ts";
+import { launchOwnedChromium, resolveFirstBrowserExecutable } from "./browser-executable.ts";
 import { placeQuietSiteFooterPriorityBeforeLegacy } from "./gallery-layer-counterfactual.ts";
 import { verifyPendingActions } from "./gallery-pending-actions.ts";
 import { verifyPortableOpacity } from "./opacity-proof.ts";
@@ -14504,24 +14503,10 @@ try {
   let browserClosed = false;
   try {
     const executablePath = await resolveFirstBrowserExecutable(
-      [
-        ...(process.env.CHROMIUM_EXECUTABLE_PATH === undefined
-          ? []
-          : [process.env.CHROMIUM_EXECUTABLE_PATH]),
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        chromium.executablePath(),
-        "/Applications/Chromium.app/Contents/MacOS/Chromium",
-        "/usr/bin/google-chrome",
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-      ],
-      "No ordinary Chromium executable found. Set CHROMIUM_EXECUTABLE_PATH to run the primitive gallery browser test.",
+      process.env.CHROMIUM_EXECUTABLE_PATH === undefined ? [] : [process.env.CHROMIUM_EXECUTABLE_PATH],
+      "Provision the Chromium pinned to this repository's Playwright version",
     );
-    const browser = await chromium.launch({
-      args: ["--no-sandbox"],
-      executablePath,
-      headless: true,
-    });
+    const browser = await launchOwnedChromium(executablePath);
     try {
       await verifyPortableOpacity(browser, await readFile(resolve(import.meta.dir, "../src/tokens.css"), "utf8"));
       const origin = `http://${server.hostname}:${String(server.port)}`;

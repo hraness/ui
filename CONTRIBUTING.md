@@ -8,8 +8,11 @@ Use Bun 1.3.14 and run the complete local gate before opening a pull request:
 
 ```sh
 bun install
-bun run check
+bunx --no-install playwright-core install chromium
+env -u CHROMIUM_EXECUTABLE_PATH bun run check
 ```
+
+Browser checks use the Chromium provisioned for the pinned `playwright-core` version. They report its resolved executable and version, mute audio, and disable code-sign clones. The command above clears a shell-wide browser selection so this checkout resolves its own pinned browser. `CHROMIUM_EXECUTABLE_PATH` may point only to that provisioned executable; installed Chrome and fallback browsers are rejected. The Vite worker retains its existing process ownership and cleanup checks.
 
 Keep interactive behavior in React Aria Components. Put component-local declarations that StyleX can express in a colocated `*.stylex.ts` module. Keep approved global rules in the bounded CSS exports. Include a readable regression test with every behavior, variant, or public export change, and never assert a generated StyleX class literal. The complete gate verifies extracted artifacts and byte-identical builds from different absolute roots. Document any new theme role, public CSS contract, or StyleX compiler requirement in the README.
 
