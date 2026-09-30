@@ -95,7 +95,17 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
       - name: Provision pinned Chromium for process custody verification
-        run: bunx --no-install playwright-core install --with-deps chromium
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo tee /etc/apt/apt.conf.d/99hraness-browser-acquisition >/dev/null <<'APT'
+          Acquire::http::Timeout "20";
+          Acquire::https::Timeout "20";
+          Acquire::Retries "1";
+          APT
+          sudo apt-config shell HRANESS_APT_HTTP_TIMEOUT Acquire::http::Timeout HRANESS_APT_HTTPS_TIMEOUT Acquire::https::Timeout HRANESS_APT_RETRIES Acquire::Retries
+          bunx --no-install playwright-core install --with-deps chromium
       - run: bun run test:vite-custody
       - run: bun run test:packed-bun-browser
       - name: Generated files are committed
@@ -165,7 +175,17 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
       - name: Provision pinned Playwright Chromium
-        run: bunx --no-install playwright-core install --with-deps chromium
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo tee /etc/apt/apt.conf.d/99hraness-browser-acquisition >/dev/null <<'APT'
+          Acquire::http::Timeout "20";
+          Acquire::https::Timeout "20";
+          Acquire::Retries "1";
+          APT
+          sudo apt-config shell HRANESS_APT_HTTP_TIMEOUT Acquire::http::Timeout HRANESS_APT_HTTPS_TIMEOUT Acquire::https::Timeout HRANESS_APT_RETRIES Acquire::Retries
+          bunx --no-install playwright-core install --with-deps chromium
       - run: bun run build
       - run: ${{ matrix.command }}
       - name: Generated files are committed
@@ -222,7 +242,17 @@ jobs:
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
       - name: Provision pinned Playwright Chromium
         if: matrix.phase == 'edge'
-        run: bunx --no-install playwright-core install --with-deps chromium
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo tee /etc/apt/apt.conf.d/99hraness-browser-acquisition >/dev/null <<'APT'
+          Acquire::http::Timeout "20";
+          Acquire::https::Timeout "20";
+          Acquire::Retries "1";
+          APT
+          sudo apt-config shell HRANESS_APT_HTTP_TIMEOUT Acquire::http::Timeout HRANESS_APT_HTTPS_TIMEOUT Acquire::https::Timeout HRANESS_APT_RETRIES Acquire::Retries
+          bunx --no-install playwright-core install --with-deps chromium
       - run: bun run build
       - run: bun run ./scripts/next-adopter-smoke.ts ${{ matrix.profile }} --phase=${{ matrix.phase }}
       - name: Generated files are committed
@@ -312,7 +342,17 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
       - name: Provision pinned Playwright Chromium
-        run: bunx --no-install playwright-core install --with-deps chromium
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo tee /etc/apt/apt.conf.d/99hraness-browser-acquisition >/dev/null <<'APT'
+          Acquire::http::Timeout "20";
+          Acquire::https::Timeout "20";
+          Acquire::Retries "1";
+          APT
+          sudo apt-config shell HRANESS_APT_HTTP_TIMEOUT Acquire::http::Timeout HRANESS_APT_HTTPS_TIMEOUT Acquire::https::Timeout HRANESS_APT_RETRIES Acquire::Retries
+          bunx --no-install playwright-core install --with-deps chromium
       - name: Save pinned Playwright browser cache
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.playwright-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
