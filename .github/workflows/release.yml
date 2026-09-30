@@ -249,6 +249,7 @@ jobs:
           npm install --global npm@11.19.0 --ignore-scripts --registry=https://registry.npmjs.org
           test "$(npm --version)" = "11.19.0"
       - name: Mirror canonical bytes through trusted publishing
+        id: mirror
         run: |
           set -euo pipefail
           test "$VERIFIED_TAG" = "$GITHUB_REF_NAME"
@@ -263,6 +264,7 @@ jobs:
           name="$(node -p 'require(process.env.RUNNER_TEMP + "/canonical-package/release.json").name')"
           version="$(node -p 'require(process.env.RUNNER_TEMP + "/canonical-package/release.json").version')"
           filename="$(node -p 'require(process.env.RUNNER_TEMP + "/canonical-package/release.json").filename')"
+          integrity="$(node -p 'require(process.env.RUNNER_TEMP + "/canonical-package/release.json").integrity')"
           probe="$RUNNER_TEMP/npm-view.txt"
           if ! npm view "$name" name --json --registry=https://registry.npmjs.org >/dev/null 2>"$probe"; then
             if grep -q E404 "$probe"; then
@@ -280,17 +282,23 @@ jobs:
             fi
             npm publish "$artifact/$filename" --access public --provenance --ignore-scripts --registry=https://registry.npmjs.org
           fi
-          for attempt in $(seq 1 10); do
-            predicate="$(npm view "$name@$version" dist.attestations.provenance.predicateType --prefer-online --registry=https://registry.npmjs.org 2>/dev/null || true)"
-            if [[ "$predicate" == "https://slsa.dev/provenance/v1" ]]; then
-              break
-            fi
-            if [[ "$attempt" == 10 ]]; then
-              echo "::error::npm does not report $name@$version with provenance"
-              exit 1
-            fi
-            sleep 15
-          done
+          printf 'available=true\nname=%s\nversion=%s\nintegrity=%s\n' "$name" "$version" "$integrity" >> "$GITHUB_OUTPUT"
+      - name: Wait for npm install metadata and provenance
+        if: steps.mirror.outputs.available == 'true'
+        uses: hraness/.github/actions/npm-visible@9ddbd8f7187e4528278cf078159702ea333418ce
+        with:
+          package: ${{ steps.mirror.outputs.name }}
+          version: ${{ steps.mirror.outputs.version }}
+          integrity: ${{ steps.mirror.outputs.integrity }}
+          tag: latest
+          timeout-seconds: '300'
+      - name: Verify the visible npm mirror against canonical bytes
+        if: steps.mirror.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          artifact="$RUNNER_TEMP/canonical-package"
+          name="$(node -p 'require(process.env.RUNNER_TEMP + "/canonical-package/release.json").name')"
+          version="$(node -p 'require(process.env.RUNNER_TEMP + "/canonical-package/release.json").version')"
           metadata="$RUNNER_TEMP/npm-mirror.json"
           npm view "$name@$version" --json --prefer-online --registry=https://registry.npmjs.org >"$metadata"
           bun ./scripts/release-artifact.ts mirror "$artifact" "$VERIFIED_TAG" "$GITHUB_SHA" "$metadata"
