@@ -1,83 +1,89 @@
-name: CI
+# Verification branch only. Never merge: this is not Required or a release gate.
+name: Cold browser proof (advisory)
 
 on:
-  pull_request:
   push:
-    branches: [main]
+    branches: [codex/verify-ui-cold-browser-20260930]
 
 permissions:
   contents: read
 
-# A newer push to a pull request cancels its older run. Main runs group by
-# commit and are never cancelled, so every merged SHA keeps its own result.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ui-cold-browser-proof-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: "1.3.14"
 
 jobs:
-  changes:
-    name: Changes
+  cold-browser-proof:
+    name: Cold browser proof (advisory)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/codex/verify-ui-cold-browser-20260930'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    # paths-filter lists pull request files through the API, which needs pull-requests: read.
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      code: ${{ steps.filter.outputs.code }}
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
           persist-credentials: false
-      - id: filter
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # Every pattern must hold, so the negations exclude docs-only changes; with the
-          # default "some", '**' alone matched every file and code was always true.
-          predicate-quantifier: every
-          # Everything is code except files no check reads. README.md and
-          # LICENSE stay code: the readme contract test and `bun pm pack` read them.
-          filters: |
-            code:
-              - '**'
-              - '!kb/**'
-              - '!.agents/**'
-              - '!AGENTS.md'
-              - '!CLAUDE.md'
-              - '!CONTRIBUTING.md'
-              - '!SECURITY.md'
-              - '!STYLE.md'
-              - '!WRITING.md'
-              - '!.github/dependabot.yml'
-              - '!.github/workflows/release.yml'
-              - '!.github/workflows/dependabot-auto-merge.yml'
-
-  checks:
-    name: Checks
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    permissions:
-      contents: read
-    uses: ./.github/workflows/checks.yml
-
-  required:
-    name: Required
-    if: always()
-    needs: [changes, checks]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Require every CI job
-        env:
-          CHANGES: ${{ needs.changes.result }}
-          CHECKS: ${{ needs.checks.result }}
-          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Bind proof to the reviewed candidate and a new temporary directory
+        shell: bash
         run: |
           set -euo pipefail
-          [[ "$CHANGES" == success ]]
-          if [[ "$CODE_CHANGED" == false ]]; then
-            # A deliberate paths-filter skip: only docs no check reads changed.
-            [[ "$CHECKS" == skipped ]]
-          else
-            [[ "$CHECKS" == success ]]
-          fi
+          test "$(git rev-parse HEAD^)" = 07feaf58c57938f6a7368d7c10d1a8e05d3985a0
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          test "$RUNNER_OS/$RUNNER_ARCH" = Linux/X64
+          test "$(bun --version)" = "$BUN_VERSION"
+          sha256sum --check <<'HASHES'
+          eca99246ffc8863684835be1af22455cbcae7096e09388d6f608559ebaa1e463  bun.lock
+          9346f3c656b82caf4e88bc33c8593b05206d196cb85b1f3635708fa879cc3088  package.json
+          fd29e1aa7e80afec1b82cada35d0543c5e93b9e3fe4f7159b8ce79961c3a108b  scripts/ci-ubuntu-mirror.py
+          593ca53e1ec8f77487d8b74dfdc9f22ccb8024ab9f935415015efc122743b9f3  scripts/browser-executable.ts
+          8cdb1cbfca828780943786ac208a72e5e1c1896949cde5748df29b8c386ce379  .github/workflows/checks.yml
+          HASHES
+          cat /etc/os-release
+          uname -a
+          node --version
+          bun --version
+          printf 'ImageOS=%s ImageVersion=%s\n' "${ImageOS:-unknown}" "${ImageVersion:-unknown}"
+          proof_root="$(mktemp -d "$RUNNER_TEMP/ui-cold-browser.XXXXXX")"
+          printf 'COLD_PROOF_ROOT=%s\nPLAYWRIGHT_BROWSERS_PATH=%s/browsers\nBUN_INSTALL_CACHE_DIR=%s/bun-cache\n' "$proof_root" "$proof_root" "$proof_root" >> "$GITHUB_ENV"
+      - name: Install the frozen repository dependencies
+        timeout-minutes: 3
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prove Chromium is absent before acquisition
+        run: bun scripts/ci-cold-browser-proof.ts before
+      # This run block is byte-identical to all four candidate provision blocks.
+      - name: Provision pinned Playwright Chromium
+        id: provision
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo python3 scripts/ci-ubuntu-mirror.py
+          sudo tee /etc/apt/apt.conf.d/99hraness-browser-acquisition >/dev/null <<'APT'
+          Acquire::http::Timeout "20";
+          Acquire::https::Timeout "20";
+          Acquire::Retries "1";
+          APT
+          sudo apt-config shell HRANESS_APT_HTTP_TIMEOUT Acquire::http::Timeout HRANESS_APT_HTTPS_TIMEOUT Acquire::https::Timeout HRANESS_APT_RETRIES Acquire::Retries
+          bunx --no-install playwright-core install --with-deps chromium
+      - name: Read back the effective Ubuntu mirror and acquisition limits
+        if: always() && steps.provision.outcome != 'skipped'
+        timeout-minutes: 1
+        run: bun scripts/ci-cold-browser-proof.ts after
+      - name: Open Chromium once and verify rendering, interaction, and cleanup
+        timeout-minutes: 1
+        run: timeout --signal=TERM --kill-after=10s 45s bun scripts/ci-cold-browser-proof.ts smoke
+      - name: Remove only this proof's temporary browser, profile, and package cache
+        if: always()
+        timeout-minutes: 1
+        run: bun scripts/ci-cold-browser-proof.ts cleanup
