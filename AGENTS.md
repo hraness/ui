@@ -116,3 +116,8 @@
 - Skip work that cannot change the result inside the workflow: a change-detection job runs `dorny/paths-filter@v4` (it needs job permission `pull-requests: read`, and `predicate-quantifier: some-with-excludes` needs v4), and jobs whose inputs did not change skip through job-level `if:`. Never put `paths`, `paths-ignore`, or `branches-ignore` on the `pull_request` trigger of the workflow that produces `Required`: a skipped workflow never reports `Required`, and the pull request can never merge. Every `uses:` pins a major tag or a SHA with a version comment, and Dependabot keeps `github-actions` current weekly with auto-merge.
 - Measure before and after: a CI change records the previous and new median wall time of the slowest workflow in its pull request body. Regressions that add more than a minute to `Required` are reverted forward the same day.
 <!-- hraness-ci:end -->
+
+<!-- system-one-verify:start -->
+- Use the installed `system-one-verify` skill for a pass/fail check only when earlier runs establish at least 8 KiB of output. Keep the required command unchanged and any host scheduler outside the wrapper; otherwise use native tools.
+- Read the saved complete log when warnings, coverage, or failure details matter. Compact output does not establish complete diagnostics; do not rerun a command solely to recover omitted output.
+<!-- system-one-verify:end -->
