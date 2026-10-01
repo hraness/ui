@@ -1,5 +1,58 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { lstatSync, realpathSync } from "node:fs";
+import { resolve } from "node:path";
+
+type ProcessOptions = Readonly<{
+  args: readonly string[];
+  command: string;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
+}>;
+
+const exportCollectionBrand = Symbol("Next export child collection");
+export type StylexNextExportCollection = Readonly<{ [exportCollectionBrand]: true }>;
+type ExportCollectionBinding = Readonly<{ attemptId: string; planSha256: string; root: string }>;
+const exportCollections = new WeakMap<StylexNextExportCollection, ExportCollectionBinding & { device: number; inode: number }>();
+
+/** This token proves only successful child/group collection, not build or
+ * export acceptance. It is process-local, origin-bound and usable once. */
+export async function runOwnedStylexNextExportDiscoveryProcess(options: ProcessOptions & Readonly<{
+  attemptId: string;
+  planSha256: string;
+}>): Promise<StylexNextExportCollection> {
+  assert.match(options.attemptId, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
+  assert.match(options.planSha256, /^[a-f0-9]{64}$/u);
+  const root = resolve(options.cwd);
+  assert.equal(realpathSync(root), root, "Next export process root must be physical");
+  const before = lstatSync(root);
+  assert.ok(before.isDirectory() && !before.isSymbolicLink());
+  const binding = { attemptId: options.attemptId, planSha256: options.planSha256, root, device: before.dev, inode: before.ino };
+  await runOwnedStylexNextProcess({ ...options, cwd: root });
+  const after = lstatSync(root);
+  assert.ok(after.isDirectory() && !after.isSymbolicLink());
+  assert.equal(realpathSync(root), root);
+  assert.equal(after.dev, before.dev, "Next export process root device changed");
+  assert.equal(after.ino, before.ino, "Next export process root identity changed");
+  const token: StylexNextExportCollection = Object.freeze({ [exportCollectionBrand]: true });
+  exportCollections.set(token, binding);
+  return token;
+}
+
+export function consumeStylexNextExportCollection(token: StylexNextExportCollection, expected: ExportCollectionBinding): void {
+  const binding = exportCollections.get(token);
+  assert.ok(binding, "Next export retention requires a fresh collected-child token");
+  exportCollections.delete(token);
+  assert.equal(binding.attemptId, expected.attemptId, "Next export child belongs to another attempt");
+  assert.equal(binding.planSha256, expected.planSha256, "Next export child belongs to another plan");
+  assert.equal(binding.root, expected.root, "Next export child belongs to another root");
+  const current = lstatSync(expected.root);
+  assert.ok(current.isDirectory() && !current.isSymbolicLink());
+  assert.equal(realpathSync(expected.root), expected.root);
+  assert.equal(current.dev, binding.device);
+  assert.equal(current.ino, binding.inode, "Next export root changed after child collection");
+}
 
 /** This failure forbids shared-file restoration and lease release. */
 export class UncollectedNextProcessError extends Error {}
@@ -26,13 +79,7 @@ export async function collectStylexNextProcessGroup(operations: GroupOperations)
 }
 
 /** Run one POSIX process group; settle only after a positive group-absent proof. */
-export async function runOwnedStylexNextProcess(options: Readonly<{
-  args: readonly string[];
-  command: string;
-  cwd: string;
-  env: NodeJS.ProcessEnv;
-  signal?: AbortSignal;
-}>): Promise<void> {
+export async function runOwnedStylexNextProcess(options: ProcessOptions): Promise<void> {
   assert.ok(process.platform === "darwin" || process.platform === "linux", "StyleX Next process custody supports macOS and Linux only");
   assert.notEqual(options.signal?.aborted, true, "Next child was cancelled before spawn");
   await new Promise<void>((resolvePromise, reject) => {
