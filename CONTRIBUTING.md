@@ -20,6 +20,8 @@ Keep interactive behavior in React Aria Components. Put component-local declarat
 
 ## Releases
 
+Merging a `package.json` version bump to `main` tags it automatically: once CI passes on that commit, the `Tag release` workflow creates the annotated `v<version>` tag, which starts the release workflow. Pushing the tag by hand still works.
+
 The release workflow checks the exact tagged commit, its main-branch ancestry, stable version ordering, and the complete CI suite. It then packs that checked source once with npm 11.19.0 and Bun 1.3.14, records its source commit, tree, SHA256, and SHA512 integrity, and creates a signed GitHub provenance attestation. It rejects archive files absent from that Git tree, including ignored build leftovers.
 
 The archive, `SHA256SUMS`, `release.json`, and `provenance.jsonl` are uploaded to a draft release. The workflow downloads and verifies the package identity, bytes, and signed source before publishing the immutable GitHub Release, then verifies its published assets again. An existing release must match the same source and bytes and contain exactly those assets; the workflow never replaces its assets. Install from the versioned archive URL shown in the README.
