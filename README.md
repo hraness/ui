@@ -8,6 +8,16 @@ Latest release: v0.5.25. Use the immutable dependency pin below.
 
 Ask AI provider artwork includes the LobeHub MIT notice and source record in `vendor/ask-ai-marks/`.
 
+## Choose your styling path
+
+Start with [First render](#first-render) and the complete precompiled stylesheet. You only need a compiler when your application authors StyleX recipes or combines package rules.
+
+- [Style delivery](#style-delivery): select CSS entry points, theme tokens, or the Bun and Vite compiler path.
+- [Next.js production adapter](#nextjs-production-adapter): configure the two-pass production build and recover interrupted builds.
+- [Composition patterns](#composition-patterns): compose page structure, forms, navigation, and overlays.
+- [Customize safely](#customize-safely): find component props, stable styling hooks, and caller overrides.
+- [Migrating from 0.1](#migrating-from-01): update an older consumer.
+
 ## First render
 
 Pin the current immutable release:
