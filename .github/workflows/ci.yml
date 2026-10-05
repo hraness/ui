@@ -64,7 +64,7 @@ jobs:
     name: Required
     if: always()
     needs: [changes, checks]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
       - name: Require every CI job
