@@ -285,7 +285,7 @@ jobs:
           printf 'available=true\nname=%s\nversion=%s\nintegrity=%s\n' "$name" "$version" "$integrity" >> "$GITHUB_OUTPUT"
       - name: Wait for npm install metadata and provenance
         if: steps.mirror.outputs.available == 'true'
-        uses: hraness/.github/actions/npm-visible@57f5e74425ed155504fd72997c967492d2c5dced
+        uses: hraness/.github/actions/npm-visible@0d79443a106c08433fec16ca7bb27cd62bb1389e
         with:
           package: ${{ steps.mirror.outputs.name }}
           version: ${{ steps.mirror.outputs.version }}
