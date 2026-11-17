@@ -50,7 +50,6 @@ jobs:
               - '!WRITING.md'
               - '!.github/dependabot.yml'
               - '!.github/workflows/release.yml'
-              - '!.github/workflows/dependabot-auto-merge.yml'
 
   checks:
     name: Checks
