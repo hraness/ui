@@ -1,4 +1,4 @@
-import { STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY, stylexNextProfile, stylexNextVersion } from "../build/next-profile.ts";
+import { STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY, stylexNextProfile, stylexNextVersion, type StylexNextVersion } from "../build/next-profile.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -34,8 +34,8 @@ const NODE_VERSION_PREFIX = "24.";
 // `.stylex-next`; CI starts the `fallbacks` job from a clean consumer.
 const NEXT_PHASES = ["edge", "fallbacks"] as const;
 type NextPhase = (typeof NEXT_PHASES)[number];
-function parseArguments(values: readonly string[]): Readonly<{ nextVersion: "16.2.12" | "16.3.3"; phases: readonly NextPhase[] }> {
-  let nextVersion: "16.2.12" | "16.3.3" = "16.2.12";
+function parseArguments(values: readonly string[]): Readonly<{ nextVersion: StylexNextVersion; phases: readonly NextPhase[] }> {
+  let nextVersion: StylexNextVersion = "16.2.12";
   let phases: readonly NextPhase[] = NEXT_PHASES;
   const seen = new Set<string>();
   for (const value of values) {
@@ -44,8 +44,8 @@ function parseArguments(values: readonly string[]): Readonly<{ nextVersion: "16.
     assert.ok(name !== undefined && !seen.has(name), `Next smoke repeats or omits an argument: ${value}`);
     seen.add(name);
     if (name === "--next-version") {
-      assert.equal(argument, "16.3.3", "Next smoke accepts only its two exact production profile rows");
-      nextVersion = "16.3.3";
+      assert.ok(argument === "16.3.3" || argument === "16.4.6", "Next smoke accepts only its exact production profile rows");
+      nextVersion = argument;
     } else if (name === "--phase") {
       assert.ok((NEXT_PHASES as readonly string[]).includes(argument), `Next smoke phase must be one of ${NEXT_PHASES.join(", ")}`);
       phases = [argument as NextPhase];

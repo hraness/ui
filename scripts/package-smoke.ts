@@ -7204,7 +7204,7 @@ async function verifyConsumer(
     peerDependencies?: Record<string, unknown>;
     peerDependenciesMeta?: Record<string, unknown>;
   };
-  assert.equal(installedManifest.peerDependencies?.next, "16.2.12 || 16.3.3");
+  assert.equal(installedManifest.peerDependencies?.next, "16.2.12 || 16.3.3 || 16.4.6");
   assert.deepEqual(installedManifest.peerDependenciesMeta?.next, { optional: true });
   assert.doesNotMatch(
     JSON.stringify(installedManifest),

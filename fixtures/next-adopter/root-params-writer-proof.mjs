@@ -15,7 +15,7 @@ for (const path of [nextRoot, proofRoot]) assert.ok(isAbsolute(path) && resolve(
 assert.equal(await realpath(nextRoot), nextRoot);
 const manifest = JSON.parse(await readFile(join(nextRoot, "package.json"), "utf8"));
 assert.equal(manifest.name, "next");
-assert.equal(manifest.version, "16.3.3");
+assert.ok(manifest.version === "16.3.3" || manifest.version === "16.4.6", "Root-params proof covers only exact profiles with the same pinned writer");
 const writer = join(nextRoot, "dist/server/lib/router-utils/root-params-type-utils.js");
 const writerState = await lstat(writer);
 assert.ok(writerState.isFile() && !writerState.isSymbolicLink());
@@ -57,4 +57,4 @@ const settledWriter = await lstat(writer);
 assert.ok(settledWriter.isFile() && !settledWriter.isSymbolicLink());
 for (const key of ["dev", "ino", "size", "mtimeMs", "ctimeMs"]) assert.equal(settledWriter[key], writerState[key]);
 assert.equal(hash(await readFile(writer)), writerHash);
-console.log(`Next 16.3.3 exact installed root-params writer passed ${cases} nonempty cases (seven unions, two orders) and one empty declaration; not full dynamic-root route acceptance`);
+console.log(`Next ${manifest.version} exact installed root-params writer passed ${cases} nonempty cases (seven unions, two orders) and one empty declaration; not full dynamic-root route acceptance`);

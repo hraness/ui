@@ -37,11 +37,11 @@ published archive and fresh packed-package Node import on Linux before widening
 or replacing this pin.
 
 Compiler compatibility is also an explicit package contract. The Next adapter
-qualifies exactly 16.2.12 and 16.3.3, with 16.2.12 retained as the default.
-An adopter selecting 16.3.3 sets the same exact version in its build runner and
+qualifies exactly 16.2.12, 16.3.3 and 16.4.6, with 16.2.12 retained as the default.
+An adopter selecting 16.3.3 or 16.4.6 sets the same exact version in its build runner and
 Next configuration; the installed framework and all creator, graph, type and
 postprocessing receipts must agree. The optional package peer declares those
-two versions, not a range of untested releases. The packed-consumer matrix
+three versions, not a range of untested releases. The packed-consumer matrix
 checks each profile independently. Its static-root fixture and separate
 root-parameter writer probe do not claim dynamic-root route acceptance.
 The extraction plan records the [[plans/stable-stylex-consumer-extraction|qualification evidence and remaining delivery gates]].
