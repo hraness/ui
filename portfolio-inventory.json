@@ -11,14 +11,7 @@
       "version": "0.5.25"
     }
   ],
-  "dependencies": [
-    {
-      "from": "@hraness/ui",
-      "scope": "development",
-      "specifier": "github:hraness/design-kit#v0.18.1",
-      "to": "@hraness/design-kit"
-    }
-  ],
+  "dependencies": [],
   "deployments": [],
   "brands": [],
   "publications": [

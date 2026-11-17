@@ -392,9 +392,8 @@ import { AskAiAboutThis } from "@hraness/ui";
 
 `AskAiAboutThis` renders the visible label “Ask AI about this” followed by real
 outbound links to ChatGPT, Claude, Perplexity, and Grok. Each link carries the
-provider's accent-tinted mark, vendored from the shared `@hraness/design-kit`
-provider-mark registry at build time with a committed freshness check; the
-package itself still installs nothing from that repository. Each provider
+provider's accent-tinted mark, vendored as owned source from the LobeHub
+icon set (see `vendor/ask-ai-marks/`). Each provider
 receives the minimal prompt `Tell me about https://hraness.com/stripe`, including
 the literal full URL. The component has no client state or framework dependency,
 works in server-rendered layouts, wraps on narrow surfaces, and rejects
@@ -476,7 +475,7 @@ import { RouterProvider } from "@hraness/ui";
 | Presentation | Portable tokens, finite component recipes, semantic classes, and `data-slot` values | Product token overrides, page layout, local composition, and intentional caller styles |
 | Routing | A framework-neutral bridge for navigation and intent prefetching | Router choice, route ownership, loading, and error behavior |
 | Data | None | Application state, persistence, providers, and access policy |
-| Composition | Small primitives and basic layout surfaces | Product content and higher-level patterns, optionally through `@hraness/design-kit` |
+| Composition | Small primitives and basic layout surfaces | Product content and higher-level patterns |
 
 `@hraness/ui` is ESM-only and supports React 18 or 19 with the matching React DOM range. It has no dependency on a framework, `@hraness/design-kit`, or a product repository. Consumers upgrade on their own validation schedule.
 
@@ -898,7 +897,7 @@ Use documented exports, semantic classes, `data-slot` values, public custom prop
 
 ### Where should application state and product layout live?
 
-Keep them in the product. `@hraness/ui` owns portable primitives and tokens, optional `@hraness/design-kit` owns shared presentation compositions, and each product owns content, state, data, access policy, and local layout.
+Keep them in the product. `@hraness/ui` owns portable primitives and tokens, and each product owns its presentation compositions, content, state, data, access policy, and local layout.
 
 ## Next action
 

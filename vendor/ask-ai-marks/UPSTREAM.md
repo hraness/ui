@@ -12,5 +12,7 @@ including the LobeHub copyright and permission notice, is copied verbatim to
 `LICENSE` in this directory. It applies to the artwork in both the generated
 source and compiled package.
 
-`scripts/sync-ask-ai-marks.ts` selects the marks from the pinned Design Kit
-registry and checks that this license matches the vendored upstream notice.
+The marks were selected from that registry once and are now owned source in
+this repository. `@hraness/design-kit` is retired, so there is no sync step:
+when a mark changes, update the artwork from the upstream source commit above
+and keep this license notice with it.
