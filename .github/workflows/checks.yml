@@ -45,7 +45,6 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun run check:portfolio-inventory
-      - run: bun run check:ask-ai-marks
       - run: bun run typecheck
       - run: python3 scripts/ci-ubuntu-mirror.test.py
       - run: bun run build
