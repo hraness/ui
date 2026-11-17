@@ -67,7 +67,7 @@ export function deriveStylexNextSsgRoutes(prerenderValue: unknown, routesValue: 
   locales: readonly string[] | null;
   routes: readonly string[];
 }> {
-  const classificationKeys = stylexNextProfile(nextVersion).version === "16.3.3" ? ["routeType", "response", "compute", "htmlSize"] : [];
+  const classificationKeys = stylexNextProfile(nextVersion).version !== "16.2.12" ? ["routeType", "response", "compute", "htmlSize"] : [];
   const prerender = object(prerenderValue, "Next prerender manifest");
   knownKeys(prerender, ["version", "routes", "dynamicRoutes", "notFoundRoutes", "preview"], [], "Next prerender manifest");
   assert.equal(prerender.version, 4, "Next prerender manifest version changed");

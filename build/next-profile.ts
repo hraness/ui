@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 // Each exact profile retains its own audited creator closure. No semver ranges,
 // installed-version inference, or unknown-version fallback are admitted.
 export const STYLEX_NEXT_REQUIRED_VERSION = "16.2.12" as const;
-export const STYLEX_NEXT_PRODUCTION_VERSIONS = Object.freeze(["16.2.12", "16.3.3"] as const);
+export const STYLEX_NEXT_PRODUCTION_VERSIONS = Object.freeze(["16.2.12", "16.3.3", "16.4.6"] as const);
 export type StylexNextVersion = (typeof STYLEX_NEXT_PRODUCTION_VERSIONS)[number];
 export function stylexNextVersion(value: unknown): StylexNextVersion {
-  assert.ok(value === "16.2.12" || value === "16.3.3", "Next production profile must be exactly 16.2.12 or 16.3.3");
+  assert.ok(value === "16.2.12" || value === "16.3.3" || value === "16.4.6", "Next production profile must be exactly 16.2.12, 16.3.3, or 16.4.6");
   return value;
 }
+
+type Creator = readonly [path: string, sha256: string];
+export type StylexNextFrameworkRole = keyof typeof STYLEX_NEXT_FRAMEWORK_INPUTS;
 
 export const STYLEX_NEXT_FRAMEWORK_INPUTS = {
   "build-manifest": ["dist/build/webpack/plugins/build-manifest-plugin.js", "692c330f4409ea48f411627f578942ca8dcf2d24eb4df11d58b110257f580ed1"],
@@ -74,16 +77,34 @@ const TYPE_INPUTS_1633 = {
   "dist/server/lib/router-utils/root-params-type-utils.js": "d08e53213b27e02f5b7825c863f90c27d6885f096b6234781068c0cf0678e0a2",
 } as const;
 
-type Creator = readonly [path: string, sha256: string];
 export const STYLEX_NEXT_BUILTIN_GLOBAL_ERROR_ENTRY = "next/dist/client/components/builtin/global-error" as const;
 const builtinGlobalErrorInputs = (loaderHash: string): readonly Creator[] => Object.freeze([
   Object.freeze(["dist/build/webpack/loaders/next-app-loader/index.js", loaderHash] as const),
   Object.freeze(STYLEX_NEXT_FRAMEWORK_INPUTS["server-reference-manifest"]),
   Object.freeze(["dist/client/components/builtin/global-error.js", "773bfaf8baf4d1a40a58e887d1be8c071bd821063a643c91f34d8d2bf73150bf"] as const),
 ]);
+// Next 16.4.6 rebuilt these framework creators without changing the manifests
+// they write: error-code wrappers are gone and one module-id null check is
+// explicit. Each role keeps its 16.2.12 owner path.
+const FRAMEWORK_INPUTS_1646: Readonly<Record<StylexNextFrameworkRole, Creator>> = Object.freeze(Object.fromEntries(
+  Object.entries(STYLEX_NEXT_FRAMEWORK_INPUTS).map(([role, [path, hash]]) => [role, Object.freeze([path, ({
+    "dist/build/webpack/plugins/build-manifest-plugin.js": "c336f65ea065dc7f48f9e77f6b767022f3bfee3ab21cf03bbbb683dcacb52b8d",
+    "dist/build/webpack/plugins/flight-manifest-plugin.js": "9a4e503f277cc994fc9d4c55359c3f4c87fb7077afbbd8ec363001be670e65c3",
+    "dist/build/webpack/plugins/middleware-plugin.js": "ab24b6ffc629f4431483795ebf8f352906192362710410ebe589dbafc43de898",
+  } as Readonly<Record<string, string>>)[path] ?? hash] as const)]),
+) as Record<StylexNextFrameworkRole, Creator>);
+
+const TYPE_INPUTS_1646 = {
+  ...TYPE_INPUTS_1633,
+  "dist/build/index.js": "703b238e7059508ee0a952c5de4242e02affcae8ab2a14b2bbb04c2398779a2d",
+  "dist/build/webpack/plugins/next-types-plugin/index.js": "4d9c62b028412da166c7ba5e1ed4c61505fa17705e309188a0609f38b2461c13",
+  "dist/server/lib/router-utils/typegen.js": "02a6846ac8fb81e958c29f3b3bfd890be03f923aa536ee817fb530674cacd9e2",
+  "dist/server/lib/router-utils/cache-life-type-utils.js": "91351ec6b96b17818cc05207eca1799ee3e4d87a10cbe0d5788f002b88834e7a",
+} as const;
+
 type Profile = Readonly<{
   version: StylexNextVersion;
-  frameworkInputs: typeof STYLEX_NEXT_FRAMEWORK_INPUTS;
+  frameworkInputs: Readonly<Record<StylexNextFrameworkRole, Creator>>;
   auxiliaryTraceCreator: Creator;
   proxyRenameCreator: Creator;
   emptyEntryInputs: readonly Creator[];
@@ -125,6 +146,30 @@ const profiles: Readonly<Record<StylexNextVersion, Profile>> = Object.freeze({
         : path === "dist/compiled/devalue/devalue.umd.js" ? "af28257cb157845d45caf6f06e582bdd5bd438e2ad066949bdfd2186837d0232" : hash,
     ]))),
     typeInputs: Object.freeze(TYPE_INPUTS_1633),
+    nativeTypeNames: Object.freeze(["cache-life.d.ts", "link.d.ts", "root-params.d.ts", "routes.d.ts", "validator.ts"]),
+    requiredNativeTypeNames: Object.freeze(["root-params.d.ts", "routes.d.ts", "validator.ts"]), rootParams: true,
+  }),
+  "16.4.6": Object.freeze({
+    version: "16.4.6", frameworkInputs: FRAMEWORK_INPUTS_1646,
+    auxiliaryTraceCreator: Object.freeze([
+      "dist/build/webpack/plugins/next-trace-entrypoints-plugin.js",
+      "5c66b8c1b0046fd4dac2ce5580776c1c62c3579a0cb73780a7eeef9ce87640f9",
+    ] as const),
+    proxyRenameCreator: Object.freeze(["dist/build/index.js", TYPE_INPUTS_1646["dist/build/index.js"]] as const),
+    builtinGlobalErrorInputs: Object.freeze([
+      Object.freeze(["dist/build/webpack/loaders/next-app-loader/index.js", "61dec03764a93db3db816346c00f31b1a14f3b743b3498d7dab534dcdb7709f3"] as const),
+      FRAMEWORK_INPUTS_1646["server-reference-manifest"],
+      Object.freeze(["dist/client/components/builtin/global-error.js", "773bfaf8baf4d1a40a58e887d1be8c071bd821063a643c91f34d8d2bf73150bf"] as const),
+    ]),
+    emptyEntryInputs: Object.freeze(STYLEX_NEXT_EMPTY_ENTRY_INPUTS.map(([path, hash]): Creator => Object.freeze([
+      path, path === "dist/compiled/webpack/bundle5.js" ? "1a8627c55931e3486fc71af9cf2d7de1f0ccf34d6011607fe05ed5404f3b77b9" : hash,
+    ]))),
+    ssgInputs: Object.freeze(STYLEX_NEXT_SSG_INPUTS.map(([path, hash]): Creator => Object.freeze([
+      path, path === "dist/build/index.js" ? TYPE_INPUTS_1646["dist/build/index.js"]
+        : path === "dist/compiled/devalue/devalue.umd.js" ? "af28257cb157845d45caf6f06e582bdd5bd438e2ad066949bdfd2186837d0232"
+        : path === STYLEX_NEXT_FRAMEWORK_INPUTS["ssg-manifest"][0] ? FRAMEWORK_INPUTS_1646["ssg-manifest"][1] : hash,
+    ]))),
+    typeInputs: Object.freeze(TYPE_INPUTS_1646),
     nativeTypeNames: Object.freeze(["cache-life.d.ts", "link.d.ts", "root-params.d.ts", "routes.d.ts", "validator.ts"]),
     requiredNativeTypeNames: Object.freeze(["root-params.d.ts", "routes.d.ts", "validator.ts"]), rootParams: true,
   }),

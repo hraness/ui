@@ -205,16 +205,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The two exact profile rows of `test:next-adopter`, each split into
+        # The three exact profile rows of `test:next-adopter`, each split into
         # its two phases: the full Edge build with the server and browser
         # proof, and the no-Edge then default-error rebuilds.
-        next: ["16.2.12", "16.3.3"]
+        next: ["16.2.12", "16.3.3", "16.4.6"]
         phase: [edge, fallbacks]
         include:
           - next: "16.2.12"
             profile: ""
           - next: "16.3.3"
             profile: --next-version=16.3.3
+          - next: "16.4.6"
+            profile: --next-version=16.4.6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -18,9 +18,9 @@ describe("exact Next production profiles", () => {
 
   test("retains the legacy default and rejects every unqualified version without coercion", () => {
     assert.equal(STYLEX_NEXT_REQUIRED_VERSION, "16.2.12");
-    assert.deepEqual(STYLEX_NEXT_PRODUCTION_VERSIONS, ["16.2.12", "16.3.3"]);
+    assert.deepEqual(STYLEX_NEXT_PRODUCTION_VERSIONS, ["16.2.12", "16.3.3", "16.4.6"]);
     for (const version of STYLEX_NEXT_PRODUCTION_VERSIONS) assert.equal(stylexNextVersion(version), version);
-    for (const version of [undefined, null, 16.3, "16.3.1", "16.3.4", "^16.3.3", "16.3.3-canary.1", " 16.3.3", { toString: () => "16.3.3" }]) {
+    for (const version of [undefined, null, 16.3, "16.3.1", "16.3.4", "^16.3.3", "16.3.3-canary.1", " 16.3.3", { toString: () => "16.3.3" }, "16.4.0", "16.4.5", "16.4.7", "^16.4.6", "16.4"]) {
       assert.throws(() => stylexNextVersion(version));
     }
   });
@@ -37,8 +37,20 @@ describe("exact Next production profiles", () => {
     assert.notDeepEqual(old.ssgInputs, next.ssgInputs);
     assert.equal(old.typeInputs["dist/server/lib/router-utils/root-params-type-utils.js"], undefined);
     assert.equal(next.typeInputs["dist/server/lib/router-utils/root-params-type-utils.js"], "d08e53213b27e02f5b7825c863f90c27d6885f096b6234781068c0cf0678e0a2");
-    for (const profile of [old, next]) {
-      for (const value of [profile, profile.frameworkInputs, profile.auxiliaryTraceCreator, profile.proxyRenameCreator, profile.emptyEntryInputs, ...profile.emptyEntryInputs, profile.builtinGlobalErrorInputs, ...profile.builtinGlobalErrorInputs, profile.ssgInputs, ...profile.ssgInputs, profile.typeInputs, profile.nativeTypeNames]) assert.ok(Object.isFrozen(value));
+    const latest = stylexNextProfile("16.4.6");
+    assert.notEqual(latest.frameworkInputs, next.frameworkInputs, "16.4.6 rebuilt three manifest writers");
+    assert.deepEqual(
+      Object.entries(latest.frameworkInputs).filter(([role, [, hash]]) => hash !== next.frameworkInputs[role as keyof typeof next.frameworkInputs][1]).map(([role]) => role).sort(),
+      ["build-manifest", "client-reference-manifest", "interception-rewrite-manifest", "middleware-build-manifest", "ssg-manifest"],
+    );
+    assert.equal(latest.auxiliaryTraceCreator[1], "5c66b8c1b0046fd4dac2ce5580776c1c62c3579a0cb73780a7eeef9ce87640f9");
+    assert.notDeepEqual(latest.proxyRenameCreator, next.proxyRenameCreator);
+    assert.deepEqual(latest.emptyEntryInputs, next.emptyEntryInputs);
+    assert.notDeepEqual(latest.ssgInputs, next.ssgInputs);
+    assert.equal(latest.typeInputs["dist/server/lib/router-utils/root-params-type-utils.js"], next.typeInputs["dist/server/lib/router-utils/root-params-type-utils.js"]);
+    assert.equal(latest.rootParams, true);
+    for (const profile of [old, next, latest]) {
+      for (const value of [profile, profile.frameworkInputs, ...Object.values(profile.frameworkInputs), profile.auxiliaryTraceCreator, profile.proxyRenameCreator, profile.emptyEntryInputs, ...profile.emptyEntryInputs, profile.builtinGlobalErrorInputs, ...profile.builtinGlobalErrorInputs, profile.ssgInputs, ...profile.ssgInputs, profile.typeInputs, profile.nativeTypeNames]) assert.ok(Object.isFrozen(value));
       for (const inputs of [profile.emptyEntryInputs, profile.builtinGlobalErrorInputs, profile.ssgInputs]) {
         assert.deepEqual(inputs.map(([path]) => path), [...new Set(inputs.map(([path]) => path))].sort());
         for (const [path, hash] of inputs) { assert.match(path, /^dist\//u); assert.match(hash, /^[a-f0-9]{64}$/u); }
@@ -59,6 +71,11 @@ describe("exact Next production profiles", () => {
     const next = stylexNextProfile("16.3.3");
     assert.notDeepEqual(profile.builtinGlobalErrorInputs[0], next.builtinGlobalErrorInputs[0]);
     assert.deepEqual(profile.builtinGlobalErrorInputs.slice(1), next.builtinGlobalErrorInputs.slice(1));
+    // 16.4.6 changes only its app loader; its installed bytes are proven by the
+    // packed Next adopter row that installs that exact framework.
+    const latest = stylexNextProfile("16.4.6");
+    assert.notDeepEqual(latest.builtinGlobalErrorInputs[0], next.builtinGlobalErrorInputs[0]);
+    assert.deepEqual(latest.builtinGlobalErrorInputs.slice(1), profile.builtinGlobalErrorInputs.slice(1));
   });
 
   test("keeps trace and proxy rename creators version-bound without admitting new server entries", () => {
