@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
-test("Required preserves change-filter skips with Bash only on slim", () => {
+test("Required preserves change-filter skips with Bash only on Cloudflare", () => {
   const block = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8").split("  required:\n")[1]!;
   const baseline = `    name: Required
     if: always()
@@ -25,7 +25,7 @@ test("Required preserves change-filter skips with Bash only on slim", () => {
             [[ "$CHECKS" == success ]]
           fi
 `;
-  expect(block).toBe(baseline.replace("runs-on: ubuntu-latest", "runs-on: ubuntu-slim"));
+  expect(block).toBe(baseline.replace("runs-on: ubuntu-latest", "runs-on: hraness-cf"));
   const baselineScript = baseline.split("        run: |\n")[1]!.replace(/^          /gm, "");
   const script = block.split("        run: |\n")[1]!.replace(/^          /gm, "");
   const version = spawnSync("/bin/bash", ["--noprofile", "--norc", "-c", 'printf "%s" "$BASH_VERSINFO"'], { encoding: "utf8" });

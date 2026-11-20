@@ -17,7 +17,7 @@ concurrency:
 jobs:
   changes:
     name: Changes
-    runs-on: ubuntu-latest
+    runs-on: hraness-cf
     timeout-minutes: 5
     # paths-filter lists pull request files through the API, which needs pull-requests: read.
     permissions:
@@ -63,7 +63,7 @@ jobs:
     name: Required
     if: always()
     needs: [changes, checks]
-    runs-on: ubuntu-slim
+    runs-on: hraness-cf
     timeout-minutes: 5
     steps:
       - name: Require every CI job
