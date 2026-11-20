@@ -18,7 +18,7 @@ env:
 jobs:
   static:
     name: Static
-    runs-on: ubuntu-latest
+    runs-on: hraness-cf
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,7 +65,7 @@ jobs:
 
   package:
     name: Package
-    runs-on: ubuntu-latest
+    runs-on: hraness-cf
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,7 +119,7 @@ jobs:
 
   vite:
     name: Vite adopters (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: hraness-cf
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -200,7 +200,7 @@ jobs:
 
   next:
     name: Next adopter (${{ matrix.next }}, ${{ matrix.phase }})
-    runs-on: ubuntu-latest
+    runs-on: hraness-cf
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -270,7 +270,7 @@ jobs:
 
   unit:
     name: Unit (${{ matrix.shard }})
-    runs-on: ubuntu-latest
+    runs-on: hraness-cf
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -317,7 +317,7 @@ jobs:
 
   browser:
     name: Browser
-    runs-on: ubuntu-latest
+    runs-on: hraness-cf
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
