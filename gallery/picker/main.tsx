@@ -30,6 +30,7 @@ function Example() {
     <div className="example" data-query={query.text} data-reason={query.reason}>
       <SearchableSelect
         label="Destination"
+        description="Press Alt+Enter to preview the highlighted destination."
         value={destination}
         options={places}
         onChange={setDestination}

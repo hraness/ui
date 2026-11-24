@@ -4,7 +4,7 @@ Accessible React components built on React Aria, with compiled StyleX styles and
 
 `@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives with small fixed sets of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
 
-Latest release: v0.5.28. Use the immutable dependency pin below.
+Latest release: v0.5.29. Use the immutable dependency pin below.
 
 Ask AI provider artwork includes the LobeHub MIT notice and source record in `vendor/ask-ai-marks/`.
 
@@ -25,7 +25,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.28/hraness-ui-0.5.28.tgz"
+    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.29/hraness-ui-0.5.29.tgz"
   }
 }
 ```
@@ -483,7 +483,7 @@ Use `SearchableSelect` for a finite set of choices. Give each option a stable st
 />
 ```
 
-Type to narrow choices by name, alias, abbreviation or a common misspelling. A symbol-only query matches literal emoji and punctuation in the options. Use the arrows to move and Enter to choose. Escape cancels the search. When focus stays in the field after a choice or cancellation, type to start a fresh search. Tab leaves the field with its saved value. Pass `onPreview` to enable Alt+Enter on the active result and describe the preview in the calling interface. `onQueryChange(text, reason)` identifies direct edits as `input` and dismissal or commitment as `reset`. Both selection and preview callbacks receive the option ID. `rankSelectOptions(options, query)` returns the same ordering for other actions on a filtered collection.
+Type to narrow choices by name, alias, abbreviation or a common misspelling. On a touchscreen, tapping the saved label opens the list and selects the text for a new search. A tap while editing places the caret in your query. A symbol-only query matches literal emoji and punctuation in the options. Use the arrows to move and Enter to choose. Escape cancels the search. When focus stays in the field after a choice or cancellation, type to start a fresh search. Tab leaves the field with its saved value. Pass `onPreview` to enable Alt+Enter on the active result and describe the shortcut with the field’s `description`. `onQueryChange(text, reason)` identifies direct edits as `input` and dismissal or commitment as `reset`. Both selection and preview callbacks receive the option ID. `rankSelectOptions(options, query)` returns the same ordering for other actions on a filtered collection.
 
 The control and its list use the shared field, focus, surface and accent tokens. Set `className` on the field and `popoverClassName` on its portaled list when a local product theme needs both. The list opens inside the nearest modal dialog. Existing applications with their own reset can import `@hraness/ui/tokens.css` and `@hraness/ui/stylex.css`. Localize `label`, `placeholder`, `openLabel` and `emptyText` in the calling product. When an app lets people choose their interface language, wrap it in `<I18nProvider locale={language}>` from `@hraness/ui` so React Aria uses that language for built-in labels and announcements.
 

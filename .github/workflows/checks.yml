@@ -346,7 +346,13 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
-      - name: Provision pinned Playwright Chromium
+      - name: Restore pinned picker WebKit
+        id: webkit-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/hraness-picker-webkit
+          key: picker-webkit-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
+      - name: Provision pinned Chromium and WebKit
         timeout-minutes: 5
         shell: bash
         run: |
@@ -358,16 +364,25 @@ jobs:
           Acquire::Retries "1";
           APT
           sudo apt-config shell HRANESS_APT_HTTP_TIMEOUT Acquire::http::Timeout HRANESS_APT_HTTPS_TIMEOUT Acquire::https::Timeout HRANESS_APT_RETRIES Acquire::Retries
-          bunx --no-install playwright-core install --with-deps chromium
+          bunx --no-install playwright-core install-deps chromium webkit
+          bunx --no-install playwright-core install chromium
+          PLAYWRIGHT_BROWSERS_PATH="$HOME/.cache/hraness-picker-webkit" bunx --no-install playwright-core install webkit
       - name: Save pinned Playwright browser cache
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.playwright-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
+      - name: Save pinned picker WebKit
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.webkit-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/hraness-picker-webkit
+          key: picker-webkit-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}
       - run: bun run build
       - run: bun run test:browser
-      - run: bun run test:picker
+      - run: bun run ra check
+      - run: PLAYWRIGHT_BROWSERS_PATH="$HOME/.cache/hraness-picker-webkit" bun run test:picker-webkit
       - name: Generated files are committed
         run: |
           generated_status="$(git status --porcelain --untracked-files=all -- dist bun.lock)"

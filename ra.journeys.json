@@ -1,6 +1,24 @@
 {
   "version": 1,
   "journeys": {
+    "touch-a-saved-choice": {
+      "title": "Search and edit a saved choice on a phone",
+      "start": "Open the package gallery with A Coruña saved.",
+      "steps": [
+        {
+          "action": "Tap the text near its left edge, type Por Norte, then tap near the first word boundary and type t.",
+          "expect": "The first tap opens the options. The edit appears at the caret in the query and the saved destination is still A Coruña.",
+          "image": "01-edit.png"
+        },
+        {
+          "action": "Dismiss the search, tap the center of the field, type Athens and tap Αθήνα.",
+          "expect": "The new query replaces the saved label, and choosing the Greek result commits the destination.",
+          "image": "02-choose.png"
+        }
+      ],
+      "run": ["ra", "check", "picker-touch", "--at", "phone"],
+      "sources": ["src/searchable-select.tsx", "gallery/picker/touch-journey.ts", "ra.config.ts"]
+    },
     "choose-and-preview": {
       "title": "Preview a destination and commit it with the keyboard",
       "start": "Open the package gallery with A Coruña saved in a synthetic trip.",

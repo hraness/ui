@@ -144,7 +144,14 @@ describe("resolveFirstBrowserExecutable", () => {
     for (const job of ["package", "vite", "next", "browser"]) {
       const section = workflow.slice(workflow.indexOf(`\n  ${job}:`)).split(/\n  [a-z]+:/u)[1];
       assert.ok(section !== undefined);
-      expect(section).toContain("bunx --no-install playwright-core install --with-deps chromium");
+      if (job === "browser") {
+        expect(section).toContain("bunx --no-install playwright-core install-deps chromium webkit");
+        expect(section).toMatch(/^\s+bunx --no-install playwright-core install chromium$/mu);
+        expect(section).toContain('PLAYWRIGHT_BROWSERS_PATH="$HOME/.cache/hraness-picker-webkit" bunx --no-install playwright-core install webkit');
+        expect(section).toContain('PLAYWRIGHT_BROWSERS_PATH="$HOME/.cache/hraness-picker-webkit" bun run test:picker-webkit');
+      } else {
+        expect(section).toContain("bunx --no-install playwright-core install --with-deps chromium");
+      }
     }
   });
 });
