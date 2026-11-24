@@ -2197,7 +2197,6 @@ function requireCardFamilyContract(
     [/font-size:\s*var\(--text-heading\);/u, "the CardTitle size"],
     [/font-size:\s*var\(--text-label\);/u, "the CardDescription size"],
     [/font-weight:\s*var\(--font-weight-bold\);/u, "the CardTitle weight"],
-    [/forced-color-adjust:\s*auto;/u, "the forced-colors Card adjustment"],
     [/gap:\s*var\(--space-2\);/u, "the CardHeader and CardFooter gap"],
     [/gap:\s*var\(--space-4\);/u, "the PressableCard gap"],
     [/gap:\s*var\(--space-6\);/u, "the Card root gap"],
@@ -2221,6 +2220,12 @@ function requireCardFamilyContract(
   for (const [pattern, description] of declarations) {
     requireMatch(compiledCss, pattern, description);
   }
+  requireCompiledConditionalDeclaration(
+    compiledStyleRules(compiledCss, cardStyleMap, "surface"),
+    "@media(forced-colors:active)",
+    /forced-color-adjust:\s*auto;/u,
+    "the forced-colors Card adjustment",
+  );
   const nativePseudoFallbacks = [
     [/:hover\s*\{\s*border-color:\s*color-mix\(in oklch,var\(--ui-primary\) 24%,var\(--ui-surface-edge\)\);/u, "the native PressableCard hover fallback"],
     [/:active\s*\{\s*transform:\s*translateY\(1px\);/u, "the native PressableCard active fallback"],
@@ -6691,6 +6696,7 @@ const [
   legacyComponents,
   orderedStylesheet,
   cardSource,
+  cardStyleSource,
   toolbarSource,
   contentSource,
   contentStyleSource,
@@ -6733,6 +6739,7 @@ const [
     readFile(resolve(repository, "src/components.css"), "utf8"),
     readFile(resolve(repository, "src/styles.css"), "utf8"),
     readFile(resolve(repository, "src/card.tsx"), "utf8"),
+    readFile(resolve(repository, "src/card.stylex.ts"), "utf8"),
     readFile(resolve(repository, "src/toolbar.tsx"), "utf8"),
     readFile(resolve(repository, "src/content.tsx"), "utf8"),
     readFile(resolve(repository, "src/content.stylex.ts"), "utf8"),
@@ -6769,6 +6776,12 @@ const [
     readFile(resolve(repository, "src/toast.tsx"), "utf8"),
     readFile(resolve(repository, "src/toast.stylex.ts"), "utf8"),
   ]);
+
+const cardStyleMap = namedCompiledStyleMap(
+  compiledJavaScript,
+  sourceStyleKeys(cardStyleSource, "cardStyles"),
+  "cardStyles class map",
+);
 
 const visuallyHiddenSources: VisuallyHiddenSources = {
   actions: actionsSource,
@@ -8317,11 +8330,19 @@ assert.throws(
   /native PressableCard hover fallback/u,
   "the Card-family guard must reject a missing native hover fallback",
 );
+const forcedCardRule = compiledStyleRules(compiledCss, cardStyleMap, "surface").find((rule) =>
+  /forced-color-adjust:\s*auto;/u.test(rule.body)
+  && normalizedHeader(rule.ancestors.at(-1)?.header ?? "") === "@media(forced-colors:active)"
+);
+assert.ok(forcedCardRule, "negative control needs the Card surface forced-colors rule");
 assert.throws(
   () =>
     requireCardFamilyContract(
       legacyComponents,
-      compiledCss.replace("forced-color-adjust: auto;", "forced-color-adjust: none;"),
+      compiledCss.replace(
+        forcedCardRule.source,
+        forcedCardRule.source.replace("forced-color-adjust: auto;", "forced-color-adjust: none;"),
+      ),
       compiledJavaScript,
     ),
   /forced-colors Card adjustment/u,
