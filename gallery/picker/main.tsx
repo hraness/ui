@@ -47,7 +47,9 @@ function Example() {
           Preview: {places.find((item) => item.id === preview)?.label}
         </output>
       )}
-      <Button onPress={() => setDestination("coruna")}>Restore original destination</Button>
+      <Button id="restore-destination" onPress={() => setDestination("coruna")}>
+        Restore original destination
+      </Button>
     </div>
   );
 }

@@ -51,6 +51,12 @@ export default defineConfig({
       ready: '[data-slot="searchable-select"]',
       async steps(p) {
         const input = field(p);
+        const heading = await p
+          .getByRole("heading", { name: "Choose a destination" })
+          .boundingBox();
+        assert.ok(heading);
+        await input.click();
+        await p.getByRole("listbox").waitFor();
         await input.fill("nothinggg");
         await p.getByText("No matching destinations").waitFor();
         await checkpoint(p, "01-empty.png");
@@ -69,7 +75,7 @@ export default defineConfig({
         assert.equal(await input.getAttribute("aria-expanded"), "false");
         await input.fill("Port");
         await input.press("ArrowDown");
-        await p.getByRole("heading", { name: "Choose a destination" }).click();
+        await p.mouse.click(heading.x + heading.width / 2, heading.y + 2);
         assert.equal(await input.getAttribute("aria-expanded"), "false");
         assert.equal(await saved(p).innerText(), "Saved destination: A Coruña");
         await input.fill("Athens");
@@ -149,14 +155,19 @@ export default defineConfig({
         await input.fill("Port");
         await input.press("ArrowDown");
         assert.equal(await active(p), "porto");
-        const option = p.getByRole("option", { name: "Porto", exact: true });
-        assert.equal(
-          await option.evaluate((el) => {
-            const style = getComputedStyle(el);
-            return style.forcedColorAdjust === "none" && style.color !== style.backgroundColor;
-          }),
-          true,
+        await p.getByRole("option", { name: "Porto Alegre", exact: true }).hover();
+        await input.press("ArrowUp");
+        const current = await active(p);
+        assert.ok(current);
+        const highlighted = await p.getByRole("option").evaluateAll((rows) =>
+          rows
+            .filter((row) => {
+              const style = getComputedStyle(row);
+              return style.forcedColorAdjust === "none" && style.color !== style.backgroundColor;
+            })
+            .map((row) => row.getAttribute("data-key")),
         );
+        assert.deepEqual(highlighted, [current]);
       },
     },
     "picker-composition": {
@@ -182,7 +193,7 @@ export default defineConfig({
         await input.fill("port");
         // An external update can arrive while a user is searching, without shifting focus.
         await p
-          .getByRole("button", { name: "Restore original destination" })
+          .locator("#restore-destination")
           .evaluate((element) => (element as HTMLElement).click());
         assert.equal(await input.inputValue(), "A Coruña");
         assert.equal(await input.getAttribute("aria-expanded"), "false");

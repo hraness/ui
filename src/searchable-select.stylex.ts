@@ -29,6 +29,9 @@ export const pickerStyles = stylex.create({
     paddingBlock: "var(--space-3)",
     paddingInline: "var(--space-3)",
   },
+  hovered: {
+    backgroundColor: { default: "var(--ui-muted)", "@media (forced-colors: active)": "Canvas" },
+  },
   focused: {
     backgroundColor: { default: "var(--ui-accent)", "@media (forced-colors: active)": "Highlight" },
     color: {

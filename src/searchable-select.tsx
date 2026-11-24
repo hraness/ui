@@ -1,16 +1,8 @@
 "use client";
 
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type Ref,
-} from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import * as stylex from "@stylexjs/stylex";
+import { useObjectRef } from "react-aria/useObjectRef";
 import {
   Button,
   ComboBox,
@@ -65,7 +57,7 @@ interface PickerContentsProps<Id extends string> extends SearchableSelectProps<I
 
 function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
   const state = useContext(ComboBoxStateContext);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useObjectRef<HTMLInputElement>(p.inputRef);
   const composing = useRef(false);
   const previousValue = useRef(p.value);
   useEffect(() => {
@@ -73,14 +65,6 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
     previousValue.current = p.value;
     if ((changed || p.isDisabled) && state?.isOpen) state.revert();
   }, [p.value, p.isDisabled, state]);
-  const setInputRef = useCallback(
-    (element: HTMLInputElement | null) => {
-      input.current = element;
-      if (typeof p.inputRef === "function") return p.inputRef(element);
-      if (p.inputRef) p.inputRef.current = element;
-    },
-    [p.inputRef],
-  );
   const popover = stylex.props(selectFieldStyles.popover, pickerStyles.popup);
   const dialog = input.current?.closest('dialog[open], [aria-modal="true"]');
   return (
@@ -101,7 +85,7 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
           </span>
         )}
         <Input
-          ref={setInputRef}
+          ref={input}
           {...(p.placeholder ? { placeholder: p.placeholder } : {})}
           autoComplete="off"
           spellCheck={false}
@@ -109,6 +93,9 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
           {...stylex.props(fieldStyles.input, fieldStyles.inputDefault)}
           onFocus={(e) => {
             if (p.draft === null) e.currentTarget.select();
+          }}
+          onClick={() => {
+            if (state && !state.isOpen) state.open(null, "manual");
           }}
           onChange={(e) => {
             p.edit(e.currentTarget.value);
@@ -210,7 +197,8 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
               className={(s) =>
                 stylex.props(
                   selectFieldStyles.option,
-                  !s.isDisabled && (s.isFocused || s.isHovered) && pickerStyles.focused,
+                  !s.isDisabled && s.isHovered && pickerStyles.hovered,
+                  !s.isDisabled && s.isFocused && pickerStyles.focused,
                   s.isDisabled && selectFieldStyles.optionDisabled,
                 ).className ?? ""
               }
@@ -221,10 +209,7 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
                     {item.icon && (
                       <span
                         aria-hidden="true"
-                        {...stylex.props(
-                          pickerStyles.icon,
-                          (s.isFocused || s.isHovered) && pickerStyles.focusText,
-                        )}
+                        {...stylex.props(pickerStyles.icon, s.isFocused && pickerStyles.focusText)}
                       >
                         {item.icon}
                       </span>
@@ -243,7 +228,7 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
                           {...stylex.props(
                             selectFieldStyles.optionDescription,
                             pickerStyles.secondary,
-                            (s.isFocused || s.isHovered) && pickerStyles.focusText,
+                            s.isFocused && pickerStyles.focusText,
                           )}
                         >
                           {item.description}
@@ -256,7 +241,7 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
                       aria-hidden="true"
                       {...stylex.props(
                         selectFieldStyles.optionCheck,
-                        (s.isFocused || s.isHovered) && pickerStyles.focusText,
+                        s.isFocused && pickerStyles.focusText,
                       )}
                     >
                       ✓
