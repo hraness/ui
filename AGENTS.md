@@ -127,4 +127,4 @@
 
 The package gallery exercises the shipped React Aria field with synthetic destinations and the package stylesheet. Run `bun run build`, then `bun run ra map`. Replay `bun run ra walk choose-and-preview` and `bun run ra walk recover-a-search`. Each writes its screenshots and action results under `.ra/walks/`. Open the checkpoint images when reviewing focus, touch layout or selection changes.
 
-Run `bun run test:picker` for all gallery states and viewports. The same checks run in the browser job in CI. The local commands require Node 24 and the Chromium for this package’s pinned Playwright version. Use the host scheduler’s compute lane for an isolated headless run.
+Run `bun run test:picker` for all gallery states and viewports. The same checks run in the browser job in CI. The local commands require Node 24 and the Chromium for this package’s pinned Playwright version. Use the host scheduler’s compute lane for an isolated headless run. The desktop walkthrough also uses the native clipboard shortcut in the isolated Linux CI browser and checks that the input receives a paste event.

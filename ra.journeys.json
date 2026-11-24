@@ -35,14 +35,19 @@
       "start": "Open the package gallery with A Coruña saved in a synthetic trip.",
       "steps": [
         {
-          "action": "Search for nothinggg.",
-          "expect": "The list reports that it has no matching destinations.",
+          "action": "Type nothinggg and press Down, Enter, Alt+Enter and Up.",
+          "expect": "The list reports no matches. The typed query and the original saved destination stay in place.",
           "image": "01-empty.png"
         },
         {
-          "action": "Press Escape, browse another result and leave with Tab. Search for Athens and choose Αθήνα.",
-          "expect": "Escape and Tab keep A Coruña. Choosing the Greek result saves Αθήνα.",
-          "image": "02-recovered.png"
+          "action": "Clear the query, press Escape and type xyz. Dismiss the second search, reopen by pointer and choose Porto. Restore the original destination, type Poto, move left twice and insert r.",
+          "expect": "Typing after Escape starts a fresh search. A pointer chooses Porto. Editing in the middle of a new query produces Porto while A Coruña stays saved.",
+          "image": "02-edited.png"
+        },
+        {
+          "action": "Browse the Porto results and leave with Tab. Try another search, click outside, then search for Athens and choose Αθήνα.",
+          "expect": "Tab and the outside click keep A Coruña. Choosing the Greek result saves Αθήνα.",
+          "image": "03-recovered.png"
         }
       ],
       "run": [

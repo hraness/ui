@@ -60,6 +60,22 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
   const input = useObjectRef<HTMLInputElement>(p.inputRef);
   const composing = useRef(false);
   const previousValue = useRef(p.value);
+  const wasSearching = useRef(false);
+  const isSearching = Boolean(state?.isOpen) || p.draft !== null;
+  useEffect(() => {
+    const element = input.current;
+    if (
+      wasSearching.current &&
+      !isSearching &&
+      element &&
+      element.ownerDocument.activeElement === element
+    ) {
+      // Typing again replaces the restored label when focus stays in the field.
+      element.select();
+    }
+    wasSearching.current = isSearching;
+  }, [input, isSearching]);
+
   useEffect(() => {
     const changed = previousValue.current !== p.value;
     previousValue.current = p.value;

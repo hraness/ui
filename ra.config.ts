@@ -27,7 +27,7 @@ export default defineConfig({
     "picker-keyboard": {
       url,
       ready: '[data-slot="searchable-select"]',
-      async steps(p) {
+      async steps(p, reached) {
         const input = field(p);
         await input.fill("Oprto");
         // Single-edit transposition finds the complete display name through its alias.
@@ -44,6 +44,36 @@ export default defineConfig({
         assert.equal(await input.inputValue(), "Porto");
         assert.equal(await input.getAttribute("aria-expanded"), "false");
         await checkpoint(p, "02-selected.png");
+        // A dedicated CI browser owns its clipboard. Interactive Macs keep their system clipboard.
+        if (
+          process.env.CI === "true" &&
+          process.platform === "linux" &&
+          reached.view === "desktop"
+        ) {
+          await p
+            .context()
+            .grantPermissions(["clipboard-read", "clipboard-write"], {
+              origin: new URL(p.url()).origin,
+            });
+          await p.bringToFront();
+          await p.evaluate(() => navigator.clipboard.writeText("Athens"));
+          await input.evaluate((element) => {
+            element.addEventListener(
+              "input",
+              (event) => {
+                element.setAttribute("data-paste-input-type", (event as InputEvent).inputType);
+              },
+              { once: true },
+            );
+          });
+          await input.press("Control+v");
+          assert.equal(await input.getAttribute("data-paste-input-type"), "insertFromPaste");
+          assert.equal(await input.inputValue(), "Athens");
+          await p.getByRole("option", { name: "Αθήνα", exact: true }).waitFor();
+          assert.equal(await saved(p).innerText(), "Saved destination: Porto");
+          await input.press("Escape");
+          assert.equal(await input.inputValue(), "Porto");
+        }
       },
     },
     "picker-recovery": {
@@ -80,7 +110,17 @@ export default defineConfig({
         assert.equal(await input.inputValue(), "xyz");
         await input.press("Escape");
         await input.click();
-        await p.getByRole("listbox").waitFor();
+        await p.getByRole("option", { name: "Porto", exact: true }).click();
+        assert.equal(await saved(p).innerText(), "Saved destination: Porto");
+        await p.getByRole("button", { name: "Restore original destination" }).click();
+        await input.focus();
+        await input.pressSequentially("Poto");
+        await input.press("ArrowLeft");
+        await input.press("ArrowLeft");
+        await input.pressSequentially("r");
+        assert.equal(await input.inputValue(), "Porto");
+        assert.equal(await saved(p).innerText(), "Saved destination: A Coruña");
+        await checkpoint(p, "02-edited.png");
         await input.fill("Port");
         await p.getByRole("option", { name: "Porto", exact: true }).waitFor();
         await input.press("ArrowDown");
@@ -95,7 +135,7 @@ export default defineConfig({
         await input.fill("Athens");
         await p.getByRole("option", { name: "Αθήνα", exact: true }).click();
         await p.getByText("Saved destination: Αθήνα", { exact: true }).waitFor();
-        await checkpoint(p, "02-recovered.png");
+        await checkpoint(p, "03-recovered.png");
       },
     },
     "picker-browse": {
