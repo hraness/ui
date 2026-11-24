@@ -55,12 +55,14 @@ export default defineConfig({
           .getByRole("heading", { name: "Choose a destination" })
           .boundingBox();
         assert.ok(heading);
-        await input.fill("nothinggg");
+        await input.focus();
+        await input.pressSequentially("nothinggg");
         for (const key of ["ArrowDown", "Enter", "Alt+Enter", "ArrowUp"]) {
           await input.press(key);
           assert.equal(await input.inputValue(), "nothinggg");
           assert.equal(await input.getAttribute("aria-expanded"), "true");
-          assert.equal(await p.getByRole("option").count(), 0);
+          assert.equal(await p.locator('[data-slot="searchable-select-option"]').count(), 0);
+          assert.equal(await active(p), null);
           assert.equal(await saved(p).innerText(), "Saved destination: A Coruña");
           assert.equal(await p.getByLabel("Preview").count(), 0);
         }
@@ -73,9 +75,9 @@ export default defineConfig({
         await input.press("Escape");
         assert.equal(await p.locator(".example").getAttribute("data-reason"), "reset");
         assert.equal(await input.inputValue(), "A Coruña");
-        await input.fill("another missing destination");
+        await input.pressSequentially("xyz");
         await input.press("ArrowDown");
-        assert.equal(await input.inputValue(), "another missing destination");
+        assert.equal(await input.inputValue(), "xyz");
         await input.press("Escape");
         await input.click();
         await p.getByRole("listbox").waitFor();
