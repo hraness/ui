@@ -1,6 +1,6 @@
 {
   "name": "@hraness/ui",
-  "version": "0.5.26",
+  "version": "0.5.27",
   "description": "Accessible React components built on React Aria, with compiled StyleX styles and CSS theme tokens.",
   "license": "MIT",
   "type": "module",
@@ -139,6 +139,9 @@
     "src/router.tsx",
     "src/select-field.stylex.ts",
     "src/select-field.tsx",
+    "src/select-search.ts",
+    "src/searchable-select.stylex.ts",
+    "src/searchable-select.tsx",
     "src/separator.stylex.ts",
     "src/skip-link.stylex.ts",
     "src/skip-link.tsx",
@@ -180,8 +183,10 @@
     "kb:catalog": "bunx --bun --package https://github.com/hraness/wordcell/releases/download/v0.24.0/hraness-wordcell-0.24.0.tgz wordcell catalog --root kb",
     "kb:search": "bunx --bun --package https://github.com/hraness/wordcell/releases/download/v0.24.0/hraness-wordcell-0.24.0.tgz wordcell search --root kb --mode exact --selected-passage",
     "check:quick": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run test",
-    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:vite-custody && bun run test:vite78-adopter && bun run test:next-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser",
-    "prepack": "bun run check"
+    "check": "bun run check:portfolio-inventory && bun run typecheck && bun run build && bun run check:committed-dist && bun run check:stylex-artifacts && bun run check:stylex-compiler-artifacts && bun run check:stylex-determinism && bun run check:stylex-consumer-layers && bun run test:package && bun run test:vite-adopter && bun run test:vite-custody && bun run test:vite78-adopter && bun run test:next-adopter && bun run test:packed-bun-browser && bun run test && bun run test:browser && bun run test:picker",
+    "prepack": "bun run check",
+    "ra": "node node_modules/@hraness/ra/dist/cli.js",
+    "test:picker": "bun run ra check"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "4.2.3",
@@ -236,6 +241,7 @@
   },
   "devDependencies": {
     "@babel/core": "7.29.7",
+    "@hraness/ra": "https://github.com/hraness/ra/releases/download/v0.4.0/hraness-ra-0.4.0.tgz",
     "@stylexjs/babel-plugin": "0.19.0",
     "@stylexjs/unplugin": "0.19.0",
     "@types/babel__core": "7.20.5",
