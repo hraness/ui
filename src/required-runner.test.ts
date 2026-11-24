@@ -25,7 +25,7 @@ test("Required preserves change-filter skips with Bash only on Cloudflare", () =
             [[ "$CHECKS" == success ]]
           fi
 `;
-  expect(block).toBe(baseline.replace("runs-on: ubuntu-latest", "runs-on: hraness-cf"));
+  expect(block).toBe(baseline.replace("runs-on: ubuntu-latest", "runs-on: ubuntu-24.04"));
   const baselineScript = baseline.split("        run: |\n")[1]!.replace(/^          /gm, "");
   const script = block.split("        run: |\n")[1]!.replace(/^          /gm, "");
   const version = spawnSync("/bin/bash", ["--noprofile", "--norc", "-c", 'printf "%s" "$BASH_VERSINFO"'], { encoding: "utf8" });

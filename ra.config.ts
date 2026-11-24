@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { defineConfig } from "@hraness/ra";
-import type { Page } from "playwright-core";
+import type { Locator, Page } from "playwright-core";
 
 const url = "/gallery/picker/";
 const field = (p: Page) => p.getByRole("combobox", { name: "Destination" });
 const saved = (p: Page) => p.getByLabel("Saved destination");
+// The field writes its text a render after the selection it reports, so wait for it rather than reading it once.
+async function valueSettles(input: Locator, value: string) {
+  await input.page().waitForFunction(([e, v]) => (e as HTMLInputElement).value === v, [await input.elementHandle(), value] as const);
+}
 async function checkpoint(page: Page, file: string) {
   if (process.env.RA_WALK_DIR)
     await page.screenshot({ path: process.env.RA_WALK_DIR + "/" + file });
@@ -41,6 +45,7 @@ export default defineConfig({
         await checkpoint(p, "01-preview.png");
         await input.press("Enter");
         await p.getByText("Saved destination: Porto", { exact: true }).waitFor();
+        await valueSettles(input, "Porto");
         assert.equal(await input.inputValue(), "Porto");
         assert.equal(await input.getAttribute("aria-expanded"), "false");
         await checkpoint(p, "02-selected.png");
@@ -72,6 +77,7 @@ export default defineConfig({
           await p.getByRole("option", { name: "Αθήνα", exact: true }).waitFor();
           assert.equal(await saved(p).innerText(), "Saved destination: Porto");
           await input.press("Escape");
+          await valueSettles(input, "Porto");
           assert.equal(await input.inputValue(), "Porto");
         }
       },
