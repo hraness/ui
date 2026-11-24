@@ -51,6 +51,7 @@
     "fixtures/vite8-adopter/custody.ts",
     "fixtures/vite8-adopter/diagnostics.ts",
     "fixtures/vite8-adopter/cancellation-owner.ts",
+    "ra.config.ts",
     "gallery/**/*.ts",
     "gallery/**/*.tsx",
     "examples/**/*.ts",

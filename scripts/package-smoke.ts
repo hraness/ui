@@ -3885,6 +3885,8 @@ import {
   RadioOption,
   SocialIcon,
   StatusDot,
+  SearchableSelect,
+  rankSelectOptions,
   SelectField,
   Slider,
   SettingsCard,
@@ -5163,6 +5165,14 @@ assert.match(nativeSelectMarkup, /<select[^>]*name="native-choice"[^>]*>/u);
 assert.match(nativeSelectMarkup, /<option value="alpha" selected="">Alpha<\/option>/u);
 assert.match(nativeSelectMarkup, /<option disabled="" value="beta">Beta<\/option>/u);
 
+const destinations = [{id: "porto", label: "Porto", keywords: ["Oporto"]}];
+const searchableMarkup = renderToStaticMarkup(React.createElement(SearchableSelect, {
+  label: "Destination", name: "destination", options: destinations, value: "porto", onChange() {},
+}));
+assert.match(searchableMarkup, /role="combobox"/u);
+assert.match(searchableMarkup, /name="destination"[^>]*value="porto"/u);
+assert.deepEqual(rankSelectOptions(destinations, "Oprto"), destinations);
+
 const fileFieldMarkup = renderToStaticMarkup(React.createElement(FileField, {
   controlXstyle: fieldControlXstyle,
   label: "Attachment",
@@ -5432,6 +5442,8 @@ import {
   RadioOption,
   SocialIcon,
   StatusDot,
+  SearchableSelect,
+  rankSelectOptions,
   SelectField,
   Slider,
   SettingsCard,
@@ -5999,6 +6011,15 @@ const nativeSelectMarkup: string = renderToStaticMarkup(createElement(NativeSele
   value: "alpha",
   xstyle: styles.field,
 }));
+const destinations = [{id: "porto", label: "Porto", keywords: ["Oporto"]}] as const;
+const searchableMarkup: string = renderToStaticMarkup(createElement(SearchableSelect<"porto">, {
+  label: "Destination",
+  options: rankSelectOptions(destinations, "porto"),
+  value: null,
+  onChange: (id: "porto") => void id,
+  onPreview: (id: "porto") => void id,
+  onQueryChange: (query: string, reason: "input" | "reset") => void [query, reason],
+}));
 const fileFieldMarkup: string = renderToStaticMarkup(createElement(FileField, {
   controlXstyle: styles.fieldControl,
   label: "Attachment",
@@ -6368,6 +6389,7 @@ void switchMarkup;
 void nativeSelectMarkup;
 void fileFieldMarkup;
 void selectFieldMarkup;
+void searchableMarkup;
 void formMarkup;
 void pageMarkup;
 void footerMarkup;

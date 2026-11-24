@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "journeys": {
+    "choose-and-preview": {
+      "title": "Preview a destination and commit it with the keyboard",
+      "start": "Open the package gallery with A Coruña saved in a synthetic trip.",
+      "steps": [
+        {
+          "action": "Type Oprto, use the down arrow and press Alt+Enter.",
+          "expect": "Porto is announced as the active option. Its preview appears while A Coruña stays saved.",
+          "image": "01-preview.png"
+        },
+        {
+          "action": "Press Enter.",
+          "expect": "The picker closes, focus stays in the field and the saved destination is Porto.",
+          "image": "02-selected.png"
+        }
+      ],
+      "run": [
+        "ra",
+        "check",
+        "picker-keyboard",
+        "--at",
+        "desktop"
+      ],
+      "sources": [
+        "src/searchable-select.tsx",
+        "src/select-search.ts",
+        "gallery/picker/main.tsx",
+        "ra.config.ts"
+      ]
+    },
+    "recover-a-search": {
+      "title": "Recover an empty search and choose in another language",
+      "start": "Open the package gallery with A Coruña saved in a synthetic trip.",
+      "steps": [
+        {
+          "action": "Search for nothinggg.",
+          "expect": "The list reports that it has no matching destinations.",
+          "image": "01-empty.png"
+        },
+        {
+          "action": "Press Escape, browse another result and leave with Tab. Search for Athens and choose Αθήνα.",
+          "expect": "Escape and Tab keep A Coruña. Choosing the Greek result saves Αθήνα.",
+          "image": "02-recovered.png"
+        }
+      ],
+      "run": [
+        "ra",
+        "check",
+        "picker-recovery",
+        "--at",
+        "desktop"
+      ],
+      "sources": [
+        "src/searchable-select.tsx",
+        "src/select-search.ts",
+        "gallery/picker/main.tsx",
+        "ra.config.ts"
+      ]
+    }
+  }
+}

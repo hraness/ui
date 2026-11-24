@@ -19,6 +19,8 @@ export * from "./overlays.js";
 export * from "./quiet-site.js";
 export * from "./router.js";
 export * from "./select-field.js";
+export * from "./select-search.js";
+export * from "./searchable-select.js";
 export * from "./skip-link.js";
 export {
   ThemedSurface,

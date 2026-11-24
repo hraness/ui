@@ -9,6 +9,10 @@
     inset: 0;
   }
 
+  .x1ghz6dp {
+    margin: 0;
+  }
+
   .x1bpp3o7 {
     margin: auto;
   }
@@ -199,6 +203,10 @@
     gap: .125rem;
   }
 
+  .xxhr3t {
+    gap: 0;
+  }
+
   .xm15xud {
     gap: var(--space-1);
   }
@@ -281,6 +289,10 @@
 
   .x1rea2x4 {
     overflow: visible;
+  }
+
+  .xish69e {
+    overscroll-behavior: contain;
   }
 
   .x1dus959 {
@@ -1171,6 +1183,10 @@
     font-weight: var(--font-weight-regular);
   }
 
+  .x1tzjh5l {
+    forced-color-adjust: auto;
+  }
+
   .x1kzknox {
     forced-color-adjust: none;
   }
@@ -1329,6 +1345,10 @@
 
   .xk0yrii {
     margin-inline-start: var(--space-2);
+  }
+
+  .x1ix1aha {
+    margin-inline-start: var(--space-3);
   }
 
   .xa8254d {
@@ -1993,7 +2013,7 @@
       background-color: canvastext;
     }
 
-    .x170n6oi.x170n6oi {
+    .x1jzqe4.x1jzqe4, .x170n6oi.x170n6oi {
       background-color: highlight;
     }
 
@@ -2073,6 +2093,10 @@
       color: highlight;
     }
 
+    .x1k5gbb1.x1k5gbb1 {
+      color: highlighttext;
+    }
+
     .x15ldeyv.x15ldeyv {
       display: none;
     }
@@ -2085,7 +2109,7 @@
       forced-color-adjust: auto;
     }
 
-    .xm958hk.xm958hk {
+    .x1g12otp.x1g12otp, .xm958hk.xm958hk {
       forced-color-adjust: none;
     }
   }
@@ -2332,6 +2356,10 @@
     max-height: calc(100dvh - 2rem);
   }
 
+  .x15ni28a {
+    max-height: min(22rem,var(--available-height, 70vh));
+  }
+
   .x8di0vd {
     max-height: min(24rem,var(--visual-viewport-height, 70vh));
   }
@@ -2342,6 +2370,10 @@
 
   .x7ab17h {
     max-height: none;
+  }
+
+  .x8l92br {
+    max-height: var(--available-height, 70vh);
   }
 
   .x193iq5w {
@@ -2358,6 +2390,10 @@
 
   .x1vpbbxe {
     max-width: 48rem;
+  }
+
+  .xht1ndd {
+    max-width: calc(100vw - 1rem);
   }
 
   .x1glul6l {
@@ -2546,6 +2582,10 @@
 
   .x1nulscw {
     min-width: max(var(--control-height-transport),var(--hraness-action-coarse-min, 0px));
+  }
+
+  .xndurpx {
+    min-width: max(var(--hraness-field-height, var(--interactive-target-compact)),var(--hraness-field-coarse-min, 0px));
   }
 
   .xrmaxj9 {
@@ -2899,7 +2939,7 @@
       min-height: var(--interactive-target-min, 3rem);
     }
 
-    .x1ai14st.x1ai14st {
+    .x1351z2a.x1351z2a, .x1ai14st.x1ai14st {
       min-height: var(--interactive-target-min);
     }
 
@@ -2919,7 +2959,7 @@
       min-width: var(--control-height-transport);
     }
 
-    .x927kn3.x927kn3 {
+    .xxw6k5n.xxw6k5n, .x927kn3.x927kn3 {
       min-width: var(--interactive-target-min);
     }
   }

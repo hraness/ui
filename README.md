@@ -4,7 +4,7 @@ Accessible React components built on React Aria, with compiled StyleX styles and
 
 `@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives with small fixed sets of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
 
-Latest release: v0.5.26. Use the immutable dependency pin below.
+Latest release: v0.5.27. Use the immutable dependency pin below.
 
 Ask AI provider artwork includes the LobeHub MIT notice and source record in `vendor/ask-ai-marks/`.
 
@@ -25,7 +25,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.26/hraness-ui-0.5.26.tgz"
+    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.27/hraness-ui-0.5.27.tgz"
   }
 }
 ```
@@ -466,6 +466,26 @@ import { RouterProvider } from "@hraness/ui";
   <App />
 </RouterProvider>
 ```
+
+### Select a value by typing
+
+Use `SearchableSelect` for a finite set of choices. Give each option a stable string ID and a visible label. Optional keywords help people find a choice by another name. Optional descriptions distinguish similar choices, and a decorative `icon` can identify their family.
+
+```tsx
+<SearchableSelect
+  label="Destination"
+  options={[
+    { id: "porto", label: "Porto", keywords: ["Oporto"], description: "Norte" },
+    { id: "coruna", label: "A Coruña", description: "Galicia", lang: "gl" },
+  ]}
+  value={destination}
+  onChange={setDestination}
+/>
+```
+
+Type to narrow choices by name, alias, abbreviation or a common misspelling. Use the arrows to move and Enter to choose. Escape cancels the search. Tab leaves the field with its saved value. Pass `onPreview` to enable Alt+Enter on the active result and describe the preview in the calling interface. `onQueryChange(text, reason)` identifies direct edits as `input` and dismissal or commitment as `reset`. Both selection and preview callbacks receive the option ID. `rankSelectOptions(options, query)` returns the same ordering for other actions on a filtered collection.
+
+The control and its list use the shared field, focus, surface and accent tokens. Set `className` on the field and `popoverClassName` on its portaled list when a local product theme needs both. The list opens inside the nearest modal dialog. Existing applications with their own reset can import `@hraness/ui/tokens.css` and `@hraness/ui/stylex.css`. Localize `label`, `placeholder`, `openLabel` and `emptyText` in the calling product.
 
 ## What the package handles and what your app handles
 
