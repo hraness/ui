@@ -10,6 +10,16 @@ const identity: ReleaseIdentity = { tag: "v0.5.22", commit: "1".repeat(40), tree
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))); });
 
+test("release signing jobs run on GitHub-hosted Linux accepted by the provenance verifiers", async () => {
+  const path = new URL("../.github/workflows/release.yml", import.meta.url);
+  const workflow = Bun.YAML.parse(await readFile(path, "utf8")) as {
+    jobs: Record<string, { "runs-on"?: string }>;
+  };
+  for (const name of ["stage", "npm"]) {
+    assert.match(workflow.jobs[name]?.["runs-on"] ?? "", /^ubuntu-(?:latest|\d{2}\.\d{2})$/u, name);
+  }
+});
+
 async function command(argv: readonly string[], cwd: string): Promise<string> {
   const child = Bun.spawn([...argv], { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
   const [code, output, error] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);

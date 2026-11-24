@@ -4,7 +4,7 @@ Accessible React components built on React Aria, with compiled StyleX styles and
 
 `@hraness/ui` is the shared component and theme layer for Hraness web products. It provides accessible actions, form fields, menus, dialogs, tables, and other primitives with small fixed sets of variants and stable styling hooks, plus a navigation bridge you connect to your app's router. Each product keeps its own content, state, data, layout, and visual identity.
 
-Latest release: v0.5.27. Use the immutable dependency pin below.
+Latest release: v0.5.28. Use the immutable dependency pin below.
 
 Ask AI provider artwork includes the LobeHub MIT notice and source record in `vendor/ask-ai-marks/`.
 
@@ -25,7 +25,7 @@ Pin the current immutable release:
 ```json
 {
   "dependencies": {
-    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.27/hraness-ui-0.5.27.tgz"
+    "@hraness/ui": "https://github.com/hraness/ui/releases/download/v0.5.28/hraness-ui-0.5.28.tgz"
   }
 }
 ```
