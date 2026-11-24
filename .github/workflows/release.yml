@@ -17,7 +17,7 @@ jobs:
     name: Verify
     permissions:
       contents: read
-    runs-on: hraness-cf
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       verified_tag: ${{ steps.identity.outputs.tag }}
@@ -75,7 +75,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
-    runs-on: hraness-cf
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
@@ -125,7 +125,7 @@ jobs:
     permissions:
       contents: write
       attestations: read
-    runs-on: hraness-cf
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       GH_REPO: ${{ github.repository }}
@@ -224,7 +224,7 @@ jobs:
       contents: read
       attestations: read
       id-token: write
-    runs-on: hraness-cf
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       GH_REPO: ${{ github.repository }}
