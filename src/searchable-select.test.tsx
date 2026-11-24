@@ -36,6 +36,7 @@ test("server renders a labeled editable combobox and its controlled form id", ()
       options={places}
       value="spanish"
       name="destination"
+      description="Preview a match with Alt+Enter."
       onChange={() => {}}
     />,
   );
@@ -45,6 +46,9 @@ test("server renders a labeled editable combobox and its controlled form id", ()
   expect(html).toMatch(/<input[^>]*lang="gl"/u);
   expect(html).toContain('name="destination"');
   expect(html).toContain('value="spanish"');
+  const description = html.match(/<span[^>]*id="([^"]+)"[^>]*>Preview a match/u)?.[1];
+  expect(description).toBeTruthy();
+  expect(html.match(/<input[^>]*aria-describedby="([^"]+)"/u)?.[1]?.split(" ")).toContain(description!);
 });
 
 test("original spelling resolves accent collisions and equally good choices preserve their supplied order", () => {

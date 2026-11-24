@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { defineConfig } from "@hraness/ra";
 import type { Locator, Page } from "playwright-core";
+import { scrollFromDestination, touchDestination } from "./gallery/picker/touch-journey.ts";
 
 const url = "/gallery/picker/";
 const field = (p: Page) => p.getByRole("combobox", { name: "Destination" });
@@ -28,6 +29,15 @@ export default defineConfig({
   },
   views: ["desktop", "phone", "phone.dark", "320x700", "desktop.forced-colors"],
   states: {
+    "picker-touch": {
+      url,
+      views: ["phone", "phone.dark"],
+      ready: '[data-slot="searchable-select"]',
+      async steps(p) {
+        await scrollFromDestination(p);
+        await touchDestination(p, (file) => checkpoint(p, file));
+      },
+    },
     "picker-keyboard": {
       url,
       ready: '[data-slot="searchable-select"]',

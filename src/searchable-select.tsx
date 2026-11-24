@@ -1,6 +1,15 @@
 "use client";
 
-import { useContext, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import {
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
 import * as stylex from "@stylexjs/stylex";
 import { useObjectRef } from "react-aria/useObjectRef";
 import {
@@ -40,6 +49,7 @@ export interface SearchableSelectProps<Id extends string> {
   readonly isDisabled?: boolean;
   readonly placeholder?: string;
   readonly emptyText?: string;
+  /** The disclosure action. React Aria appends the field label to its accessible name. */
   readonly openLabel?: string;
   readonly description?: ReactNode;
   readonly name?: string;
@@ -49,6 +59,7 @@ export interface SearchableSelectProps<Id extends string> {
 }
 
 interface PickerContentsProps<Id extends string> extends SearchableSelectProps<Id> {
+  readonly descriptionId: string;
   readonly draft: string | null;
   readonly edit: (text: string) => void;
   readonly ranked: readonly SearchableSelectOption<Id>[];
@@ -59,6 +70,7 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
   const state = useContext(ComboBoxStateContext);
   const input = useObjectRef<HTMLInputElement>(p.inputRef);
   const composing = useRef(false);
+  const touchPress = useRef<{ x: number; y: number; cancelled: boolean } | null>(null);
   const previousValue = useRef(p.value);
   const wasSearching = useRef(false);
   const isSearching = Boolean(state?.isOpen) || p.draft !== null;
@@ -111,8 +123,49 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
           onFocus={(e) => {
             if (p.draft === null) e.currentTarget.select();
           }}
-          onClick={() => {
-            if (state && !state.isOpen) state.open(null, "manual");
+          onClick={(e) => {
+            if (state && !state.isOpen) {
+              if (p.draft === null) e.currentTarget.select();
+              state.open(null, "manual");
+            }
+          }}
+          onPointerDownCapture={(e) => {
+            if (e.pointerType === "touch" && e.isPrimary) {
+              touchPress.current = { x: e.clientX, y: e.clientY, cancelled: false };
+            }
+          }}
+          onPointerMoveCapture={(e) => {
+            const press = touchPress.current;
+            if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) {
+              press.cancelled = true;
+            }
+          }}
+          onPointerCancelCapture={() => {
+            if (touchPress.current) touchPress.current.cancelled = true;
+          }}
+          onContextMenuCapture={() => {
+            if (touchPress.current) touchPress.current.cancelled = true;
+          }}
+          onTouchCancelCapture={() => {
+            touchPress.current = null;
+          }}
+          onTouchEndCapture={(e) => {
+            const press = touchPress.current;
+            // VoiceOver can send a centered touchend without a pointer. React Aria handles it.
+            if (!press || !state || p.isDisabled) return;
+            if (e.touches.length > 0) press.cancelled = true;
+            else touchPress.current = null;
+            if (press.cancelled || e.changedTouches.length !== 1 || p.draft !== null) {
+              // Preserve native scrolling and caret placement in an existing draft.
+              e.stopPropagation();
+              return;
+            }
+            // WebKit places its caret after the compatibility click, undoing focus-time select().
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.focus({ preventScroll: true });
+            e.currentTarget.select();
+            if (!state.isOpen) state.open(null, "manual");
           }}
           onChange={(e) => {
             p.edit(e.currentTarget.value);
@@ -194,9 +247,9 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
         </Button>
       </Group>
       {p.description && (
-        <Text slot="description" {...stylex.props(fieldStyles.description)}>
+        <span id={p.descriptionId} slot="description" {...stylex.props(fieldStyles.description)}>
           {p.description}
-        </Text>
+        </span>
       )}
       <Popover
         data-slot="searchable-select-popover"
@@ -285,6 +338,7 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
 
 /** A fixed-choice editable picker. Query text and preview never write the selected ID. */
 export function SearchableSelect<Id extends string>(p: SearchableSelectProps<Id>) {
+  const descriptionId = useId();
   const [draft, setDraft] = useState<string | null>(null);
   const currentDraft = useRef<string | null>(null);
   const selected = p.options.find((item) => item.id === p.value);
@@ -301,6 +355,7 @@ export function SearchableSelect<Id extends string>(p: SearchableSelectProps<Id>
       data-slot="searchable-select"
       {...root}
       className={cn(root.className, p.className)}
+      {...(p.description ? { "aria-describedby": descriptionId } : {})}
       {...(p.name ? { name: p.name } : {})}
       menuTrigger="manual"
       allowsEmptyCollection
@@ -316,7 +371,14 @@ export function SearchableSelect<Id extends string>(p: SearchableSelectProps<Id>
         if (next && next.id !== p.value) p.onChange(next.id);
       }}
     >
-      <PickerContents {...p} selected={selected} ranked={ranked} draft={draft} edit={changeDraft} />
+      <PickerContents
+        {...p}
+        descriptionId={descriptionId}
+        selected={selected}
+        ranked={ranked}
+        draft={draft}
+        edit={changeDraft}
+      />
     </ComboBox>
   );
 }
