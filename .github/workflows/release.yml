@@ -75,7 +75,8 @@ jobs:
       contents: read
       id-token: write
       attestations: write
-    runs-on: hraness-cf
+    # The release verifier requires a GitHub-hosted signer in the provenance certificate.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
@@ -224,7 +225,8 @@ jobs:
       contents: read
       attestations: read
       id-token: write
-    runs-on: hraness-cf
+    # npm's trusted publisher accepts GitHub-hosted OIDC for this existing mirror.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       GH_REPO: ${{ github.repository }}
