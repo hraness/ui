@@ -3885,6 +3885,7 @@ import {
   RadioOption,
   SocialIcon,
   StatusDot,
+  I18nProvider,
   SearchableSelect,
   rankSelectOptions,
   SelectField,
@@ -5166,9 +5167,11 @@ assert.match(nativeSelectMarkup, /<option value="alpha" selected="">Alpha<\/opti
 assert.match(nativeSelectMarkup, /<option disabled="" value="beta">Beta<\/option>/u);
 
 const destinations = [{id: "porto", label: "Porto", keywords: ["Oporto"]}];
-const searchableMarkup = renderToStaticMarkup(React.createElement(SearchableSelect, {
-  label: "Destination", name: "destination", options: destinations, value: "porto", onChange() {},
-}));
+const searchableMarkup = renderToStaticMarkup(React.createElement(I18nProvider, {locale: "pt"},
+  React.createElement(SearchableSelect, {
+    label: "Destino", name: "destination", options: destinations, value: "porto", onChange() {},
+  }),
+));
 assert.match(searchableMarkup, /role="combobox"/u);
 assert.match(searchableMarkup, /name="destination"[^>]*value="porto"/u);
 assert.deepEqual(rankSelectOptions(destinations, "Oprto"), destinations);

@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { rankSelectOptions, SearchableSelect } from "./index";
+import { I18nProvider, rankSelectOptions, SearchableSelect } from "./index";
 
 const places = [
   { id: "harbor", label: "North Harbor", keywords: ["Quayside"] },
   { id: "station", label: "Harbor Station", description: "Platform 2" },
   { id: "port", label: "Port", keywords: ["Harbor"] },
   { id: "county", label: "Harbor", description: "County" },
-  { id: "spanish", label: "A Coruña" },
+  { id: "spanish", label: "A Coruña", lang: "gl" },
   { id: "greek", label: "Αθήνα", keywords: ["Athens"] },
   { id: "chinese", label: "國語", keywords: ["Mandarin"] },
   { id: "lab", label: "Programming" },
@@ -42,6 +42,7 @@ test("server renders a labeled editable combobox and its controlled form id", ()
   expect(html).toContain('role="combobox"');
   expect(html).toContain("Destination");
   expect(html).toContain('value="A Coruña"');
+  expect(html).toMatch(/<input[^>]*lang="gl"/u);
   expect(html).toContain('name="destination"');
   expect(html).toContain('value="spanish"');
 });
@@ -74,4 +75,16 @@ test("an externally blank or disabled selection is represented in the server mar
   );
   expect(html).toContain('placeholder="Choose a destination"');
   expect(html).not.toContain('value="A Coruña"');
+});
+
+test("the application locale controls React Aria's built-in picker labels", () => {
+  const field = (
+    <SearchableSelect label="Destination" options={places} value={null} onChange={() => {}} />
+  );
+  const render = (locale: string) =>
+    renderToStaticMarkup(<I18nProvider locale={locale}>{field}</I18nProvider>);
+  const disclosure = (html: string) => html.match(/<button[^>]*aria-label="([^"]+)"/u)?.[1];
+  expect(disclosure(render("en-US"))).toBeTruthy();
+  expect(disclosure(render("ja"))).toBeTruthy();
+  expect(disclosure(render("ja"))).not.toBe(disclosure(render("en-US")));
 });

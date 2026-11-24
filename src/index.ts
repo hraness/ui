@@ -35,3 +35,4 @@ export * from "./toast.js";
 export * from "./toolbar.js";
 export * from "./visually-hidden.js";
 export { cn } from "./lib/utils.js";
+export { I18nProvider, type I18nProviderProps } from "react-aria-components";

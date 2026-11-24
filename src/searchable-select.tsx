@@ -86,6 +86,7 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
         )}
         <Input
           ref={input}
+          {...(p.draft === null && p.selected?.lang ? { lang: p.selected.lang } : {})}
           {...(p.placeholder ? { placeholder: p.placeholder } : {})}
           autoComplete="off"
           spellCheck={false}
