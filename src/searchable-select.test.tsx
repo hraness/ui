@@ -88,3 +88,23 @@ test("the application locale controls React Aria's built-in picker labels", () =
   expect(disclosure(render("ja"))).toBeTruthy();
   expect(disclosure(render("ja"))).not.toBe(disclosure(render("en-US")));
 });
+
+test("symbol-only searches match literal labels, aliases and message text", () => {
+  const options = [
+    { id: "word", label: "Music rehearsal" },
+    { id: "exact", label: "🎹" },
+    { id: "alias", label: "Keyboard", keywords: ["🎹"] },
+    { id: "embedded", label: "We played 🎹 today" },
+    { id: "different", label: "🎺" },
+    { id: "variation", label: "☕️" },
+    { id: "punctuation", label: "C++" },
+  ];
+  expect(rankSelectOptions(options, "🎹").map((option) => option.id)).toEqual([
+    "exact",
+    "alias",
+    "embedded",
+  ]);
+  expect(rankSelectOptions(options, "☕").map((option) => option.id)).toEqual(["variation"]);
+  expect(rankSelectOptions(options, "++").map((option) => option.id)).toEqual(["punctuation"]);
+  expect(rankSelectOptions(options, "🍊")).toEqual([]);
+});

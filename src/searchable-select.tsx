@@ -114,7 +114,20 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
               if (["Enter", "Escape", "ArrowUp", "ArrowDown"].includes(e.key)) e.stopPropagation();
               return;
             }
-            if (!state?.isOpen) return;
+            if (!state) return;
+            if (
+              p.draft !== null &&
+              ["ArrowDown", "ArrowUp", "Enter"].includes(e.key) &&
+              !p.ranked.some((item) => !item.isDisabled)
+            ) {
+              // A manual open or commit in React Aria can restore the selected text.
+              // There is nothing to navigate or commit while the filtered list is empty.
+              e.preventDefault();
+              e.stopPropagation();
+              if (!state.isOpen) state.open(null, "input");
+              return;
+            }
+            if (!state.isOpen) return;
             if (e.key === "Tab" || e.key === "Escape") {
               // Tab leaves normally. An exploratory arrow press never changes the saved value.
               e.stopPropagation();
@@ -123,19 +136,15 @@ function PickerContents<Id extends string>(p: PickerContentsProps<Id>) {
               return;
             }
             if (e.key !== "Enter" || e.ctrlKey || e.metaKey || e.shiftKey) return;
-            const active =
-              p.ranked.find((item) => item.id === state.selectionManager.focusedKey) ??
-              p.ranked.find((item) => !item.isDisabled);
+            const focused = p.ranked.find(
+              (item) => item.id === state.selectionManager.focusedKey && !item.isDisabled,
+            );
+            const active = focused ?? p.ranked.find((item) => !item.isDisabled);
             if (e.altKey && p.onPreview) {
               e.preventDefault();
               e.stopPropagation();
-              if (active && !active.isDisabled) p.onPreview(active.id);
-            } else if (
-              !e.altKey &&
-              state.selectionManager.focusedKey == null &&
-              p.draft !== null &&
-              active
-            ) {
+              if (active) p.onPreview(active.id);
+            } else if (!e.altKey && !focused && p.draft !== null && active) {
               e.preventDefault();
               e.stopPropagation();
               state.selectionManager.select(active.id);
@@ -289,7 +298,6 @@ export function SearchableSelect<Id extends string>(p: SearchableSelectProps<Id>
       onChange={(key) => {
         const next = p.options.find((item) => item.id === key && !item.isDisabled);
         if (next && next.id !== p.value) p.onChange(next.id);
-        changeDraft(null);
       }}
     >
       <PickerContents {...p} selected={selected} ranked={ranked} draft={draft} edit={changeDraft} />

@@ -1,5 +1,5 @@
-# Reusable check fan-out. `bun run check` is a serial chain of sixteen scripts;
-# this workflow runs the same commands as parallel jobs so wall time is bounded
+# The local `bun run check` runs the checks in sequence. This workflow
+# runs the same commands as parallel jobs so wall time is bounded
 # by the slowest slice instead of the sum. The Next smoke, the Vite toolchain
 # matrix and the unit tests are split further into matrix rows that together
 # cover exactly what the local scripts run. CI (pull_request, push) and Release

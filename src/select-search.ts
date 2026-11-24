@@ -16,6 +16,15 @@ function fold(text: string): string {
     .trim();
 }
 
+/** Ignore presentation selectors while retaining emoji, punctuation and joined sequences. */
+function literal(text: string): string {
+  return text
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[\uFE0E\uFE0F]/gu, "")
+    .trim();
+}
+
 /** One insertion, deletion, replacement or adjacent transposition in a complete word. */
 function near(a: string, b: string): boolean {
   if (Math.abs(a.length - b.length) > 2) return false;
@@ -34,12 +43,12 @@ function near(a: string, b: string): boolean {
   );
 }
 
-function wordCost(term: string, word: string): number {
+function wordCost(term: string, word: string, approximate: boolean): number {
   if (term === word) return 0;
   if (word.startsWith(term)) return 1;
   const offset = word.indexOf(term);
   if (offset >= 0) return 3 + Math.min(offset, 10) / 20;
-  if (term.length < 3) return Infinity;
+  if (!approximate || term.length < 3) return Infinity;
   let first = -1;
   let end = -1;
   for (const character of term) {
@@ -58,26 +67,29 @@ export function rankSelectOptions<T extends SelectSearchText>(
   options: readonly T[],
   query: string,
 ): T[] {
-  const spelling = query.trim().normalize("NFC").toLowerCase();
-  const phrase = fold(query);
-  if (!phrase) return [...options];
+  const spelling = literal(query);
+  if (!spelling) return [...options];
+  const folded = fold(query);
+  const approximate = folded.length > 0;
+  const normalize = approximate ? fold : literal;
+  const phrase = folded || spelling;
   const terms = phrase.split(" ");
   const matches: { option: T; score: number }[] = [];
   for (const option of options) {
-    const label = fold(option.label);
-    const aliases = (option.keywords ?? []).map(fold);
+    const label = normalize(option.label);
+    const aliases = (option.keywords ?? []).map(normalize);
     const fields = [
       { words: label.split(" "), weight: 0 },
       { words: aliases.flatMap((a) => a.split(" ")), weight: 0.75 },
-      { words: fold(option.description ?? "").split(" "), weight: 2 },
+      { words: normalize(option.description ?? "").split(" "), weight: 2 },
     ];
     let score =
       label === phrase ? -5 : aliases.includes(phrase) ? -3 : label.startsWith(phrase) ? -1 : 0;
-    if (option.label.normalize("NFC").toLowerCase() === spelling) score -= 1;
+    if (literal(option.label) === spelling) score -= 1;
     for (const term of terms) {
       let best = Infinity;
       for (const { words, weight } of fields) {
-        for (const word of words) best = Math.min(best, weight + wordCost(term, word));
+        for (const word of words) best = Math.min(best, weight + wordCost(term, word, approximate));
       }
       score += best;
       if (!Number.isFinite(score)) break;

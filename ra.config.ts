@@ -55,9 +55,15 @@ export default defineConfig({
           .getByRole("heading", { name: "Choose a destination" })
           .boundingBox();
         assert.ok(heading);
-        await input.click();
-        await p.getByRole("listbox").waitFor();
         await input.fill("nothinggg");
+        for (const key of ["ArrowDown", "Enter", "Alt+Enter", "ArrowUp"]) {
+          await input.press(key);
+          assert.equal(await input.inputValue(), "nothinggg");
+          assert.equal(await input.getAttribute("aria-expanded"), "true");
+          assert.equal(await p.getByRole("option").count(), 0);
+          assert.equal(await saved(p).innerText(), "Saved destination: A Coruña");
+          assert.equal(await p.getByLabel("Preview").count(), 0);
+        }
         await p.getByText("No matching destinations").waitFor();
         await checkpoint(p, "01-empty.png");
         assert.equal(await p.locator(".example").getAttribute("data-reason"), "input");
@@ -67,6 +73,12 @@ export default defineConfig({
         await input.press("Escape");
         assert.equal(await p.locator(".example").getAttribute("data-reason"), "reset");
         assert.equal(await input.inputValue(), "A Coruña");
+        await input.fill("another missing destination");
+        await input.press("ArrowDown");
+        assert.equal(await input.inputValue(), "another missing destination");
+        await input.press("Escape");
+        await input.click();
+        await p.getByRole("listbox").waitFor();
         await input.fill("Port");
         await p.getByRole("option", { name: "Porto", exact: true }).waitFor();
         await input.press("ArrowDown");
@@ -190,6 +202,13 @@ export default defineConfig({
         await input.dispatchEvent("compositionend", { data: "東京" });
         await input.press("Enter");
         assert.equal(await saved(p).innerText(), "Saved destination: 東京");
+        await input.fill("Port");
+        await input.press("ArrowDown");
+        await input.fill("Athens");
+        await input.press("Alt+Enter");
+        assert.equal(await p.getByLabel("Preview").innerText(), "Preview: Αθήνα");
+        assert.equal(await saved(p).innerText(), "Saved destination: 東京");
+        await input.press("Escape");
         await input.fill("port");
         // An external update can arrive while a user is searching, without shifting focus.
         await p
