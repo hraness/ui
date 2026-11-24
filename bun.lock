@@ -15,6 +15,7 @@
       },
       "devDependencies": {
         "@babel/core": "7.29.7",
+        "@hraness/ra": "https://github.com/hraness/ra/releases/download/v0.4.0/hraness-ra-0.4.0.tgz",
         "@stylexjs/babel-plugin": "0.19.0",
         "@stylexjs/unplugin": "0.19.0",
         "@types/babel__core": "7.20.5",
@@ -157,6 +158,8 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.28.2", "", { "os": "win32", "cpu": "ia32" }, "sha512-YmJbfTlvU7Sdn9BB+4PRES4oB6pxgS37MAONj+hBr/cpXS1aBPKXxNnDbu+QCWPj0o9dgyxeq79g6c5P8KeuYA=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.28.2", "", { "os": "win32", "cpu": "x64" }, "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g=="],
+
+    "@hraness/ra": ["@hraness/ra@https://github.com/hraness/ra/releases/download/v0.4.0/hraness-ra-0.4.0.tgz", { "peerDependencies": { "playwright-core": ">=1.58" }, "optionalPeers": ["playwright-core"], "bin": { "ra": "./dist/cli.js" } }, "sha512-KJHxd/MpRrwwsz36C8xggv8Gqfk6YIym3gOgCDlUAv5vK+H70znW6l2ycjAhmXOrvcTJri2SkbpzTVuAT4YyeA=="],
 
     "@hugeicons/core-free-icons": ["@hugeicons/core-free-icons@4.2.3", "", {}, "sha512-fpiU0qFZkv4ABi23xJ2m4qNr0BBfuIaYjPboN8WDA6aj9D+OzXa7eykxKOpACZRuGbDz1U9S5DsNx1d5KNnsgA=="],
 
